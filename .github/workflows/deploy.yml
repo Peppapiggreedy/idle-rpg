@@ -1,0 +1,48 @@
+# Сборка и деплой на GitHub Pages при каждом пуше в main.
+# Официальный подход Vite: https://vite.dev/guide/static-deploy#github-pages
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  # Позволяет запустить workflow вручную со вкладки Actions
+  workflow_dispatch:
+
+# Права GITHUB_TOKEN для деплоя на GitHub Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Один деплой за раз; начатые прогоны не отменяем, чтобы деплой завершился
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: lts/*
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Build
+        run: npm run build
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./dist
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
