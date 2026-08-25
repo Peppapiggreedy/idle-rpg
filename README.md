@@ -8,12 +8,25 @@ Idle RPG в браузере: герой сам сражается с мобам
 
 ## Играть
 
-Игра будет доступна по адресу: **https://peppapiggreedy.github.io/idle-rpg/**
+Игра доступна по адресу: **https://Peppapiggreedy.github.io/idle-rpg/**
 
 Деплой происходит автоматически при каждом пуше в `main`
 (см. [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)).
-В настройках репозитория (Settings → Pages) источником должен быть выбран
-**GitHub Actions**.
+
+## Как проверить, что деплой жив
+
+1. Открой вкладку **Actions** и убедись, что последний прогон «Deploy to GitHub Pages»
+   зелёный — в нём два job'а: `build` и `deploy`.
+2. Открой https://Peppapiggreedy.github.io/idle-rpg/ — должна загрузиться страница игры.
+   Если браузер показывает старую версию, обнови страницу с очисткой кеша
+   (Ctrl+Shift+R / Cmd+Shift+R).
+3. Если вместо игры **404**: зайди в Settings → Pages и проверь, что в разделе
+   Source выбрано **GitHub Actions**. Workflow пытается включить это сам
+   (`enablement: true`), но если у токена не хватило прав — переключи вручную
+   и перезапусти workflow кнопкой «Run workflow».
+4. Если страница белая, а в консоли браузера ошибки загрузки `/assets/...`:
+   значит разъехался `base` в [`vite.config.ts`](vite.config.ts) — он должен быть
+   ровно `'/idle-rpg/'`, совпадая с именем репозитория.
 
 ## Запуск локально
 
