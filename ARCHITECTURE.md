@@ -23,7 +23,7 @@
 | `events.ts` | шина `AttackEvent`: `emit`/`subscribe`. Логика эмитит, UI подписывается (задел под всплывающие числа урона) | types |
 | `combat.ts` | `estimateCombatRate(state)` — урон и убийства в секунду; единственный источник темпа боя для UI и оффлайна | numbers, state, data/balance |
 | `formulas.ts` | `upgradeCost` (base·1.15^owned), `xpToNextLevel` (floor(10·L^1.5) с эпсилоном против погрешности pow), `applyXp` (перенос остатка, мультиуровень, предохранитель) | numbers, types |
-| `loop.ts` | планировщик: rAF + аккумулятор, фикс. шаг `STEP_MS=100`, максимум 10 шагов/кадр, сброс «долга»; метрики fps/tps. Технические константы живут здесь — это не баланс | — |
+| `loop.ts` | планировщик: rAF + аккумулятор, фикс. шаг `STEP_MS=100`, максимум 10 шагов/кадр, сброс «долга»; метрики fps/tps; `setSpeed(m)` — дебаг-ускорение игрового времени (лимит шагов за кадр сохраняется). Технические константы живут здесь — это не баланс | — |
 | `state.ts` | `GameState`, `createInitialState(seed?)`, `spawnMonster`, `pushEvent`, `COMBAT_LOG_SIZE`. Общая зависимость tick/loot/save — взаимных импортов между ними нет | numbers, formulas, rng, data/{monsters,balance}, types |
 | `tick.ts` | **конвейер тика** из шести чистых шагов `(state, ctx) => state` (см. раздел 3); реэкспорт state-модуля для совместимости | numbers, formulas, loot, rng, state, data/{balance,monsters}, types |
 | `upgrades.ts` | `buyUpgrade`, `ownedCount` | numbers, formulas, state, types |
@@ -59,7 +59,9 @@
 `CombatScreen` (моб, HP-бар, статы; **рендер событий лога** — весь русский текст
 боя в функции `eventText`), `HeroPanel`, `UpgradePanel`, `InventoryPanel`,
 `SaveControls`, `OfflineModal`, `NoticeBar` (карта `NoticeCode` → текст),
-`DebugOverlay` (`?debug=0` скрывает).
+`DebugOverlay` (`?debug=0` скрывает), `DebugPanel` (рендерится только при
+`?debug=1`: множитель скорости симуляции ×1/×10/×100 через `loop.setSpeed`,
+чит-кнопки дебаг-экшенами стора, удары/мин по шине, сид rng).
 
 ### `src/lib/types/index.ts`
 

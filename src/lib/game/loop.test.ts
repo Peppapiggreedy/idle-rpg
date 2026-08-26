@@ -65,6 +65,36 @@ describe('createGameLoop', () => {
     loop.stop()
   })
 
+  it('setSpeed(10): игровое время течёт в 10 раз быстрее реального', () => {
+    const h = makeHarness()
+    let steps = 0
+    const loop = createGameLoop({ step: () => steps++, now: h.now, raf: h.raf, caf: h.caf })
+    loop.start()
+    loop.setSpeed(10)
+    // 10 кадров по 100 мс реального времени = 10 c игрового = 100 шагов
+    for (let i = 0; i < 10; i++) h.frame(100)
+    expect(steps).toBe(100)
+    loop.stop()
+  })
+
+  it('setSpeed(100) уважает лимит шагов за кадр и не копит бесконечный долг', () => {
+    const h = makeHarness()
+    let steps = 0
+    const loop = createGameLoop({ step: () => steps++, now: h.now, raf: h.raf, caf: h.caf })
+    loop.start()
+    loop.setSpeed(100)
+    // Каждый кадр приносит 10 c игрового времени (100 шагов), но за кадр
+    // исполняется не больше MAX_STEPS_PER_FRAME; излишек сбрасывается.
+    for (let i = 0; i < 5; i++) h.frame(100)
+    expect(steps).toBe(5 * MAX_STEPS_PER_FRAME)
+    // Возврат к ×1 — обычный темп без накопленного долга.
+    loop.setSpeed(1)
+    steps = 0
+    h.frame(100)
+    expect(steps).toBeLessThanOrEqual(2)
+    loop.stop()
+  })
+
   it('после stop шаги не выполняются', () => {
     const h = makeHarness()
     let steps = 0
