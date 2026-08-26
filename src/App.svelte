@@ -1,4 +1,5 @@
 <script lang="ts">
+  import DebugOverlay from './lib/ui/DebugOverlay.svelte'
   import GoldCounter from './lib/ui/GoldCounter.svelte'
 </script>
 
@@ -11,6 +12,8 @@
   </p>
   <GoldCounter />
 </main>
+
+<DebugOverlay />
 
 <style>
   main {

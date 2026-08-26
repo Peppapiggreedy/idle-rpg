@@ -1,9 +1,6 @@
-// Игровая логика: тики, бой, формулы, сохранение.
-import Decimal from 'break_infinity.js'
-
-// Форматирует большое число для отображения в интерфейсе.
-export function formatNumber(value: Decimal): string {
-  if (value.lt(1000)) return value.toFixed(0)
-  if (value.lt(1e6)) return value.toNumber().toLocaleString('ru-RU')
-  return value.toExponential(2).replace('e+', 'e')
-}
+// Игровая логика: цикл, формулы, сейв. Не знает про Svelte и DOM.
+export { Decimal, formatNumber } from './numbers'
+export { createGameLoop, STEP_MS, MAX_STEPS_PER_FRAME } from './loop'
+export type { GameLoop, GameLoopOptions, LoopMetrics } from './loop'
+export { createInitialState, tick } from './tick'
+export type { GameState } from './tick'
