@@ -1,7 +1,7 @@
 // Покупка апгрейдов: чистые операции над состоянием, без DOM и Svelte.
 import { Decimal } from './numbers'
 import { upgradeCost } from './formulas'
-import type { GameState } from './tick'
+import type { GameState } from './state'
 import type { UpgradeDef } from '../types'
 
 export function ownedCount(state: GameState, def: UpgradeDef): Decimal {

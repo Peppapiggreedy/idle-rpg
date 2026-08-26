@@ -34,7 +34,7 @@
   }
   .xp-fill {
     height: 100%;
-    background: #7e6fff;
+    background: var(--color-xp);
     transition: width 0.1s linear;
   }
   .xp-text {

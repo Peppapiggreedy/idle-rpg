@@ -126,13 +126,16 @@ describe('save/load', () => {
     const result = loadGame({ storage })
     expect(result.kind).toBe('error')
     if (result.kind !== 'error') return
-    expect(result.message.length).toBeGreaterThan(10)
+    expect(result.reason).toBe('corrupted')
   })
 
   it('сейв из будущей версии не загружается, но и не роняет игру', () => {
     const storage = makeStorage()
     storage.setItem(SAVE_KEY, JSON.stringify({ version: 99, gold: '1' }))
-    expect(loadGame({ storage }).kind).toBe('error')
+    const result = loadGame({ storage })
+    expect(result.kind).toBe('error')
+    if (result.kind !== 'error') return
+    expect(result.reason).toBe('newer-version')
   })
 
   it('пустое хранилище — свежий старт без ошибок', () => {

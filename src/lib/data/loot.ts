@@ -24,6 +24,9 @@ export const LOOT_NOUNS = [
   'Бердыш',
 ] as const
 
+// Имя для предмета из сейва с испорченным полем name.
+export const FALLBACK_ITEM_NAME = 'Безымянный трофей'
+
 // Шанс, что с убитого моба выпадет предмет.
 export const DROP_CHANCE = 0.25
 // Базовая прибавка к урону предмета common-тира; тиры множат её на bonusMult.

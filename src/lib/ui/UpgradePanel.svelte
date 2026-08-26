@@ -39,7 +39,7 @@
     cursor: pointer;
   }
   button:hover:not(:disabled) {
-    border-color: #d4a017;
+    border-color: var(--color-gold);
   }
   button:disabled {
     opacity: 0.5;

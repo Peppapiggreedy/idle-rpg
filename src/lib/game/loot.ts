@@ -1,7 +1,8 @@
 // Генерация и продажа лута. Случайность приходит снаружи (rng),
 // поэтому вся логика детерминированно тестируется.
 import { Decimal } from './numbers'
-import type { GameState } from './tick'
+import type { Rng } from './rng'
+import type { GameState } from './state'
 import type { Item } from '../types'
 import { RARITIES, RARITY_BY_ID, type RarityDef } from '../data/rarity'
 import {
@@ -12,9 +13,9 @@ import {
   LOOT_NOUNS,
 } from '../data/loot'
 
-export const INVENTORY_SIZE = 12
-
-export type Rng = () => number
+// Реэкспорт для обратной совместимости импортов.
+export { INVENTORY_SIZE } from '../data/balance'
+export type { Rng } from './rng'
 
 // Взвешенная рулетка: чем больше weight тира, тем шире его отрезок на [0, 1).
 export function rollRarity(rng: Rng): RarityDef {

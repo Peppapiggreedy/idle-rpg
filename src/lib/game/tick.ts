@@ -1,123 +1,126 @@
-// Чистая функция симуляции одного шага. Не знает про Svelte, DOM и время кадров:
-// получает состояние и длительность шага, возвращает новое состояние.
-import { Decimal, formatNumber } from './numbers'
-import { applyXp, xpToNextLevel } from './formulas'
-import type { Item, Monster, MonsterTemplate } from '../types'
+// Тик — конвейер чистых шагов (state, ctx) => state. Порядок фиксирован и важен:
+//   1. applyCombat          — урон мобу; фиксирует смерть в ctx.killedMonster
+//   2. applyKillRewards     — золото за убитого + событие kill
+//   3. applyLevelUps        — опыт за убитого, перенос остатка + событие levelup
+//   4. applyLootDrop        — бросок дропа (единственный потребитель rng) + событие loot
+//   5. applyRespawn         — взводит таймер после смерти ИЛИ ведёт отсчёт и спавнит
+//   6. applyAutosaveCounter — копит игровое время для автосейва (сохраняет стор)
+// Шаги не знают ни про UI, ни про Svelte; текст для игрока рендерится из событий в UI.
+import { Decimal } from './numbers'
+import { applyXp } from './formulas'
+import { rollLoot } from './loot'
+import type { Rng } from './rng'
+import { pushEvent, spawnMonster, type GameState } from './state'
+import { INVENTORY_SIZE, RESPAWN_DELAY_MS } from '../data/balance'
 import { FIRST_MONSTER } from '../data/monsters'
-import { RARITY_BY_ID } from '../data/rarity'
-import { INVENTORY_SIZE, rollLoot, type Rng } from './loot'
-import { randomSeed } from './rng'
+import type { Monster } from '../types'
 
-// Пауза между смертью моба и появлением следующего.
-export const RESPAWN_DELAY_MS = 300
-// Сколько последних событий боя храним для лога на экране.
-export const COMBAT_LOG_SIZE = 5
-
-export interface GameState {
-  totalTicks: Decimal
-  playtimeMs: Decimal
-  gold: Decimal
-  level: Decimal
-  currentXp: Decimal
-  xpToNext: Decimal
-  baseDamage: Decimal // пока равен урону в секунду; апгрейды добавляют к нему
-  upgrades: Record<string, Decimal> // id апгрейда -> сколько куплено
-  inventory: Item[]
-  itemSeq: number // служебный счётчик для уникальных id предметов
-  rngSeed: number // служебный сид потока случайности (в сейв пока не пишется)
-  monster: Monster
-  // Служебный обратный отсчёт до респауна в мс (как dtMs): 0 — моб жив.
-  respawnMsLeft: number
-  combatLog: string[] // последние события, новые в начале
+// Контекст одного тика: вход (dtMs, rng) и факты, которыми шаги обмениваются.
+interface TickContext {
+  dtMs: number
+  rng: Rng
+  killedMonster: Monster | null
 }
 
-export function spawnMonster(template: MonsterTemplate): Monster {
-  return { ...template, currentHp: template.maxHp }
+type TickStep = (state: GameState, ctx: TickContext) => GameState
+
+const applyCombat: TickStep = (s, ctx) => {
+  if (s.respawnMsLeft > 0) return s
+  // Урон за шаг: baseDamage — урон в секунду, поэтому dps * dt / 1000;
+  // итог не зависит от частоты шагов симуляции.
+  const damage = s.baseDamage.times(ctx.dtMs).div(1000)
+  const hpLeft = s.monster.currentHp.minus(damage)
+  if (hpLeft.gt(0)) return { ...s, monster: { ...s.monster, currentHp: hpLeft } }
+  ctx.killedMonster = s.monster
+  return { ...s, monster: { ...s.monster, currentHp: new Decimal(0) } }
 }
 
-export function createInitialState(rngSeed: number = randomSeed()): GameState {
-  const level = new Decimal(1)
+const applyKillRewards: TickStep = (s, ctx) => {
+  const killed = ctx.killedMonster
+  if (!killed) return s
   return {
-    totalTicks: new Decimal(0),
-    playtimeMs: new Decimal(0),
-    gold: new Decimal(0),
-    level,
-    currentXp: new Decimal(0),
-    xpToNext: xpToNextLevel(level),
-    baseDamage: new Decimal(10),
-    upgrades: {},
-    inventory: [],
-    itemSeq: 0,
-    rngSeed,
-    monster: spawnMonster(FIRST_MONSTER),
-    respawnMsLeft: 0,
-    combatLog: [],
+    ...s,
+    gold: s.gold.plus(killed.goldReward),
+    combatLog: pushEvent(s.combatLog, {
+      type: 'kill',
+      monsterName: killed.name,
+      gold: killed.goldReward,
+      xp: killed.xpReward,
+    }),
   }
 }
 
-function pushLog(log: string[], entry: string): string[] {
-  return [entry, ...log].slice(0, COMBAT_LOG_SIZE)
+const applyLevelUps: TickStep = (s, ctx) => {
+  const killed = ctx.killedMonster
+  if (!killed) return s
+  const leveled = applyXp(s.level, s.currentXp, killed.xpReward)
+  let combatLog = s.combatLog
+  if (leveled.level.gt(s.level)) {
+    combatLog = pushEvent(combatLog, { type: 'levelup', level: leveled.level })
+  }
+  return {
+    ...s,
+    level: leveled.level,
+    currentXp: leveled.currentXp,
+    xpToNext: leveled.xpToNext,
+    combatLog,
+  }
 }
 
+const applyLootDrop: TickStep = (s, ctx) => {
+  if (!ctx.killedMonster) return s
+  // Дроп только при свободном слоте; rng при полном инвентаре не трогаем.
+  if (s.inventory.length >= INVENTORY_SIZE) return s
+  const item = rollLoot(ctx.rng, s.itemSeq)
+  if (!item) return s
+  return {
+    ...s,
+    inventory: [...s.inventory, item],
+    itemSeq: s.itemSeq + 1,
+    combatLog: pushEvent(s.combatLog, { type: 'loot', item }),
+  }
+}
+
+const applyRespawn: TickStep = (s, ctx) => {
+  // Смерть на этом тике — взводим таймер; отсчёт начнётся со следующего тика.
+  if (ctx.killedMonster) return { ...s, respawnMsLeft: RESPAWN_DELAY_MS }
+  if (s.respawnMsLeft <= 0) return s
+  const left = s.respawnMsLeft - ctx.dtMs
+  if (left > 0) return { ...s, respawnMsLeft: left }
+  const monster = spawnMonster(FIRST_MONSTER)
+  return {
+    ...s,
+    respawnMsLeft: 0,
+    monster,
+    combatLog: pushEvent(s.combatLog, { type: 'spawn', monsterName: monster.name }),
+  }
+}
+
+const applyAutosaveCounter: TickStep = (s, ctx) => {
+  return { ...s, msSinceAutosave: s.msSinceAutosave + ctx.dtMs }
+}
+
+const PIPELINE: TickStep[] = [
+  applyCombat,
+  applyKillRewards,
+  applyLevelUps,
+  applyLootDrop,
+  applyRespawn,
+  applyAutosaveCounter,
+]
+
 export function tick(state: GameState, dtMs: number, rng: Rng): GameState {
-  const s: GameState = {
+  const ctx: TickContext = { dtMs, rng, killedMonster: null }
+  let s: GameState = {
     ...state,
     totalTicks: state.totalTicks.plus(1),
     playtimeMs: state.playtimeMs.plus(dtMs),
   }
-
-  // Моб мёртв — ждём респауна вместо боя.
-  if (s.respawnMsLeft > 0) {
-    const left = s.respawnMsLeft - dtMs
-    if (left > 0) return { ...s, respawnMsLeft: left }
-    const monster = spawnMonster(FIRST_MONSTER)
-    return {
-      ...s,
-      respawnMsLeft: 0,
-      monster,
-      combatLog: pushLog(s.combatLog, `Появился ${monster.name}`),
-    }
-  }
-
-  // Урон за шаг: baseDamage — это урон в секунду, поэтому dps * dt / 1000;
-  // итог не зависит от частоты шагов симуляции.
-  const damage = s.baseDamage.times(dtMs).div(1000)
-  const hpLeft = s.monster.currentHp.minus(damage)
-
-  if (hpLeft.lte(0)) {
-    const { name, goldReward, xpReward } = s.monster
-    const leveled = applyXp(s.level, s.currentXp, xpReward)
-    let combatLog = pushLog(
-      s.combatLog,
-      `${name} повержен! +${formatNumber(goldReward)} золота, +${formatNumber(xpReward)} опыта`,
-    )
-    if (leveled.level.gt(s.level)) {
-      combatLog = pushLog(combatLog, `Новый уровень: ${formatNumber(leveled.level)}!`)
-    }
-    // Дроп лута: только если есть свободный слот в инвентаре.
-    let inventory = s.inventory
-    let itemSeq = s.itemSeq
-    if (inventory.length < INVENTORY_SIZE) {
-      const item = rollLoot(rng, itemSeq)
-      if (item) {
-        inventory = [...inventory, item]
-        itemSeq += 1
-        combatLog = pushLog(combatLog, `Выпало: ${item.name} [${RARITY_BY_ID[item.rarity].name}]`)
-      }
-    }
-    return {
-      ...s,
-      monster: { ...s.monster, currentHp: new Decimal(0) },
-      gold: s.gold.plus(goldReward),
-      inventory,
-      itemSeq,
-      level: leveled.level,
-      currentXp: leveled.currentXp,
-      xpToNext: leveled.xpToNext,
-      respawnMsLeft: RESPAWN_DELAY_MS,
-      combatLog,
-    }
-  }
-
-  return { ...s, monster: { ...s.monster, currentHp: hpLeft } }
+  for (const step of PIPELINE) s = step(s, ctx)
+  return s
 }
+
+// Реэкспорт для обратной совместимости импортов (тесты, index).
+export { COMBAT_LOG_SIZE, createInitialState, spawnMonster } from './state'
+export type { GameState } from './state'
+export { RESPAWN_DELAY_MS } from '../data/balance'

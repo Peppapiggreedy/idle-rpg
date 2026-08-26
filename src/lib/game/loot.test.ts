@@ -56,7 +56,7 @@ describe('дроп в бою', () => {
   it('с моба падает предмет и попадает в инвентарь с записью в лог', () => {
     const s = killOneMonster(createInitialState(), () => 0)
     expect(s.inventory.length).toBe(1)
-    expect(s.combatLog.some((l) => l.startsWith('Выпало:'))).toBe(true)
+    expect(s.combatLog.some((e) => e.type === 'loot')).toBe(true)
   })
 
   it('при полном инвентаре предмет не падает', () => {

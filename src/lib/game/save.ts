@@ -5,14 +5,16 @@ import { Decimal } from './numbers'
 import { RARITY_BY_ID } from '../data/rarity'
 import type { Item, Rarity } from '../types'
 import { applyXp, xpToNextLevel } from './formulas'
-import { RESPAWN_DELAY_MS, createInitialState, spawnMonster, type GameState } from './tick'
+import { createInitialState, spawnMonster, type GameState } from './state'
+import { AUTOSAVE_INTERVAL_S, OFFLINE_CAP_HOURS, RESPAWN_DELAY_MS } from '../data/balance'
+import { FALLBACK_ITEM_NAME } from '../data/loot'
 import { FIRST_MONSTER } from '../data/monsters'
 
 export const SAVE_KEY = 'idle-rpg-save'
 export const SAVE_VERSION = 2
-export const AUTOSAVE_INTERVAL_MS = 15_000
-// Потолок оффлайн-прогресса: больше 8 часов отсутствия не оплачивается.
-export const OFFLINE_CAP_MS = 8 * 60 * 60 * 1000
+export const AUTOSAVE_INTERVAL_MS = AUTOSAVE_INTERVAL_S * 1000
+// Потолок оффлайн-прогресса: дольше отсутствовать можно, но не оплачивается.
+export const OFFLINE_CAP_MS = OFFLINE_CAP_HOURS * 60 * 60 * 1000
 // Короче минуты отсутствия — награду начисляем, но модалку не показываем.
 export const OFFLINE_MODAL_MIN_MS = 60_000
 
@@ -93,7 +95,7 @@ function itemFromSaved(raw: SavedItem, index: number): Item {
   const rarity: Rarity = raw.rarity in RARITY_BY_ID ? (raw.rarity as Rarity) : 'common'
   return {
     id: typeof raw.id === 'string' ? raw.id : `item-restored-${index}`,
-    name: typeof raw.name === 'string' ? raw.name : 'Безымянный трофей',
+    name: typeof raw.name === 'string' ? raw.name : FALLBACK_ITEM_NAME,
     rarity,
     statBonus: parseDec(raw.statBonus, '1'),
   }
@@ -198,9 +200,12 @@ export function saveGame(state: GameState, deps: SaveDeps = {}): void {
   storage.setItem(SAVE_KEY, JSON.stringify(payloadFromState(state, now())))
 }
 
+// Причины отказа загрузки; текст для игрока по коду рендерит UI.
+export type LoadErrorReason = 'corrupted' | 'newer-version'
+
 export type LoadResult =
   | { kind: 'fresh' }
-  | { kind: 'error'; message: string }
+  | { kind: 'error'; reason: LoadErrorReason }
   | { kind: 'loaded'; state: GameState; offline: OfflineReport | null }
 
 export function loadGame(deps: SaveDeps = {}): LoadResult {
@@ -213,19 +218,10 @@ export function loadGame(deps: SaveDeps = {}): LoadResult {
   try {
     parsed = JSON.parse(raw)
   } catch {
-    return {
-      kind: 'error',
-      message: 'Сохранение повреждено и не читается — игра начата заново. Прости!',
-    }
+    return { kind: 'error', reason: 'corrupted' }
   }
   const payload = migrateSave(parsed)
-  if (payload === null) {
-    return {
-      kind: 'error',
-      message:
-        'Сохранение не удалось прочитать (возможно, оно из более новой версии игры) — игра начата заново.',
-    }
-  }
+  if (payload === null) return { kind: 'error', reason: 'newer-version' }
 
   let state = stateFromPayload(payload)
   // Отрицательная разница (часы перевели назад) — ничего не начисляем;

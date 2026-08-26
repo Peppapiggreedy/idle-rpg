@@ -9,7 +9,7 @@ export type { XpResult } from './formulas'
 export { buyUpgrade, ownedCount } from './upgrades'
 export { rollRarity, rollLoot, sellItem, sellPrice, INVENTORY_SIZE } from './loot'
 export { createRng, randomSeed } from './rng'
-export type { Rng } from './loot'
+export type { Rng } from './rng'
 export {
   saveGame,
   loadGame,
@@ -25,4 +25,12 @@ export {
   OFFLINE_CAP_MS,
   OFFLINE_MODAL_MIN_MS,
 } from './save'
-export type { SavePayloadV2, SavedItem, SaveStorage, SaveDeps, OfflineReport, LoadResult } from './save'
+export type {
+  SavePayloadV2,
+  SavedItem,
+  SaveStorage,
+  SaveDeps,
+  OfflineReport,
+  LoadResult,
+  LoadErrorReason,
+} from './save'
