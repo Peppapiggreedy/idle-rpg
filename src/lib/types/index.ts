@@ -1,14 +1,6 @@
-// TypeScript-типы и интерфейсы игры. Структуры данных — по PLAN.md.
-// Все игровые числа — Decimal; служебные version и lastTimestamp — обычные number.
-import type Decimal from 'break_infinity.js'
-
-export interface Character {
-  level: Decimal
-  currentXp: Decimal
-  xpToNext: Decimal
-  baseDamage: Decimal
-  gold: Decimal
-}
+// TypeScript-типы и интерфейсы игры. Decimal берётся только из game/numbers.
+// Игровые величины — Decimal; служебные (version, lastTimestamp, счётчики) — number.
+import type { Decimal } from '../game/numbers'
 
 export interface Monster {
   id: string
@@ -40,17 +32,12 @@ export interface Item {
   statBonus: Decimal
 }
 
-export interface Zone {
-  id: string
-  name: string
-  monsterPool: string[] // id мобов из src/lib/data
-  unlockCost: Decimal
-}
-
-export interface SaveData {
-  version: number
-  character: Character
-  currentZoneId: string
-  lastTimestamp: number // Date.now() последнего сохранения, для оффлайн-прогресса
-  upgrades: Record<string, Decimal> // id апгрейда -> сколько куплено
-}
+// Структурированные события боя. Логика их эмитит, весь текст для игрока
+// рендерит UI. Тип 'hit' зарезервирован (в лог сейчас не пишется, чтобы
+// не вымывать важные события десятью ударами в секунду).
+export type CombatEvent =
+  | { type: 'hit'; damage: Decimal }
+  | { type: 'kill'; monsterName: string; gold: Decimal; xp: Decimal }
+  | { type: 'levelup'; level: Decimal }
+  | { type: 'loot'; item: Item }
+  | { type: 'spawn'; monsterName: string }

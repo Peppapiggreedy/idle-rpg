@@ -79,6 +79,6 @@
     cursor: pointer;
   }
   button:hover {
-    border-color: #d4a017;
+    border-color: var(--color-gold);
   }
 </style>

@@ -1,6 +1,6 @@
 // Детерминированная случайность. Внутри src/lib/game Math.random не вызывается:
 // весь поток случайных чисел выводится из сида, чтобы прогоны воспроизводились.
-import type { Rng } from './loot'
+export type Rng = () => number
 
 // mulberry32: быстрый 32-битный PRNG, один сид -> воспроизводимый поток [0, 1).
 export function createRng(seed: number): Rng {

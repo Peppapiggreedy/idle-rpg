@@ -1,6 +1,24 @@
 <script lang="ts">
   import { formatNumber } from '../game'
   import { gameState } from '../stores/game'
+  import { RARITY_BY_ID } from '../data/rarity'
+  import type { CombatEvent } from '../types'
+
+  // Весь текст боевого лога живёт здесь: логика отдаёт только события.
+  function eventText(e: CombatEvent): string {
+    switch (e.type) {
+      case 'kill':
+        return `${e.monsterName} повержен! +${formatNumber(e.gold)} золота, +${formatNumber(e.xp)} опыта`
+      case 'levelup':
+        return `Новый уровень: ${formatNumber(e.level)}!`
+      case 'loot':
+        return `Выпало: ${e.item.name} [${RARITY_BY_ID[e.item.rarity].name}]`
+      case 'spawn':
+        return `Появился ${e.monsterName}`
+      case 'hit':
+        return '' // удары в лог не пишутся (см. types/CombatEvent)
+    }
+  }
 
   const hpPercent = $derived(
     Math.max(
@@ -36,8 +54,8 @@
   </div>
 
   <ul class="log">
-    {#each $gameState.combatLog as entry}
-      <li>{entry}</li>
+    {#each $gameState.combatLog as event}
+      <li>{eventText(event)}</li>
     {/each}
   </ul>
 </section>
@@ -69,7 +87,7 @@
     font-variant-numeric: tabular-nums;
   }
   .value.gold {
-    color: #d4a017;
+    color: var(--color-gold);
   }
 
   .monster h2 {

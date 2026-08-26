@@ -1,5 +1,8 @@
 :root {
   color-scheme: light dark;
+  /* Декоративные цвета валют — единственное место определения. */
+  --color-gold: #d4a017;
+  --color-xp: #7e6fff;
   font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
   font-size: 16px;
   line-height: 1.5;

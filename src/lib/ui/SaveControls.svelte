@@ -46,7 +46,7 @@
     opacity: 0.85;
   }
   button:hover {
-    border-color: #d4a017;
+    border-color: var(--color-gold);
     opacity: 1;
   }
 </style>

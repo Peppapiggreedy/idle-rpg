@@ -2,7 +2,8 @@
 // и вызывают экшены, цикл и экшены пишут в состояние.
 import { get, readonly, writable } from 'svelte/store'
 import { createGameLoop, type GameLoop, type LoopMetrics } from '../game/loop'
-import { createInitialState, tick, type GameState } from '../game/tick'
+import { createInitialState, type GameState } from '../game/state'
+import { tick } from '../game/tick'
 import { createRng } from '../game/rng'
 import { buyUpgrade } from '../game/upgrades'
 import { sellItem } from '../game/loot'
@@ -31,15 +32,20 @@ export function dismissOfflineReport(): void {
   offline.set(null)
 }
 
-// Короткие уведомления игроку (ошибка сейва, итог импорта); null — баннер скрыт.
-const notice = writable<string | null>(null)
+// Короткие уведомления игроку кодами; текст по коду рендерит NoticeBar.
+export type NoticeCode =
+  | 'save-corrupted'
+  | 'save-newer-version'
+  | 'save-load-failed'
+  | 'import-invalid'
+  | 'import-success'
+const notice = writable<NoticeCode | null>(null)
 export const saveNotice = readonly(notice)
 export function dismissNotice(): void {
   notice.set(null)
 }
 
 let loop: GameLoop | null = null
-let msSinceSave = 0
 
 /** Сохраняет игру немедленно (автосейв, visibilitychange, экспорт). */
 export function persistNow(): void {
@@ -60,10 +66,10 @@ export function initGame(): void {
         offline.set(result.offline)
       }
     } else if (result.kind === 'error') {
-      notice.set(result.message)
+      notice.set(result.reason === 'corrupted' ? 'save-corrupted' : 'save-newer-version')
     }
   } catch {
-    notice.set('Не удалось загрузить сохранение — игра начата заново.')
+    notice.set('save-load-failed')
   }
   // Фиксируем свежий lastTimestamp (в т.ч. после перевода часов назад).
   persistNow()
@@ -77,11 +83,10 @@ export function startGameLoop(): void {
   loop = createGameLoop({
     step: (dtMs) => {
       state.update((s) => tick(s, dtMs, rng))
-      // Автосейв на игровом времени: каждые 15 секунд симуляции.
-      msSinceSave += dtMs
-      if (msSinceSave >= AUTOSAVE_INTERVAL_MS) {
-        msSinceSave = 0
+      // Счётчик копит applyAutosaveCounter внутри тика; стор сохраняет и сбрасывает.
+      if (get(state).msSinceAutosave >= AUTOSAVE_INTERVAL_MS) {
         persistNow()
+        state.update((s) => ({ ...s, msSinceAutosave: 0 }))
       }
     },
     onMetrics: (m) => metrics.set(m),
@@ -114,11 +119,11 @@ export function exportSaveString(): string {
 export function importSaveString(input: string): boolean {
   const payload = decodeSaveString(input)
   if (!payload) {
-    notice.set('Не удалось прочитать строку сейва — проверь, что скопирована целиком.')
+    notice.set('import-invalid')
     return false
   }
   state.set(stateFromPayload(payload))
   persistNow()
-  notice.set('Сейв импортирован.')
+  notice.set('import-success')
   return true
 }

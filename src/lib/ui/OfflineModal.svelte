@@ -62,10 +62,10 @@
     gap: 0.4rem;
   }
   .gold {
-    color: #d4a017;
+    color: var(--color-gold);
   }
   .xp {
-    color: #7e6fff;
+    color: var(--color-xp);
   }
   button {
     font: inherit;
@@ -77,6 +77,6 @@
     cursor: pointer;
   }
   button:hover {
-    border-color: #d4a017;
+    border-color: var(--color-gold);
   }
 </style>

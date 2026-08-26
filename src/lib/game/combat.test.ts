@@ -59,7 +59,7 @@ describe('боевой tick', () => {
     s = run(s, RESPAWN_DELAY_MS) // 3 тика ожидания респауна
     expect(s.monster.currentHp.eq(s.monster.maxHp)).toBe(true)
     expect(s.respawnMsLeft).toBe(0)
-    expect(s.combatLog[0]).toContain('Появился')
+    expect(s.combatLog[0].type).toBe('spawn')
     // Награда не начислялась повторно.
     expect(s.gold.toNumber()).toBe(5)
   })
