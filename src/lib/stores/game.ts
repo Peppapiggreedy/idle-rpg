@@ -10,6 +10,8 @@ import { xpToNextLevel } from '../game/formulas'
 import { Decimal } from '../game/numbers'
 import { applyOfflineProgress } from '../game/save'
 import { sellItem } from '../game/loot'
+import { equipItem, setAutoEquip, unequipItem } from '../game/equipment'
+import type { SlotId } from '../data/slots'
 import {
   AUTOSAVE_INTERVAL_MS,
   OFFLINE_MODAL_MIN_MS,
@@ -128,6 +130,21 @@ export function sellInventoryItem(itemId: string): void {
   state.update((s) => sellItem(s, itemId))
 }
 
+/** Надеть предмет из инвентаря; снятое возвращается в инвентарь. */
+export function equipInventoryItem(itemId: string): void {
+  state.update((s) => equipItem(s, itemId))
+}
+
+/** Снять предмет из слота в инвентарь; при полном инвентаре ничего не делает. */
+export function unequipSlot(slot: SlotId): void {
+  state.update((s) => unequipItem(s, slot))
+}
+
+/** Галочка «надевать автоматически, если лучше». */
+export function toggleAutoEquip(enabled: boolean): void {
+  state.update((s) => setAutoEquip(s, enabled))
+}
+
 /** Строка экспорта (base64) текущего состояния; заодно сохраняет игру. */
 export function exportSaveString(): string {
   persistNow()
@@ -168,7 +185,7 @@ export function debugKillMonster(): void {
     return {
       ...s,
       monster: { ...s.monster, currentHp: Decimal.min(s.monster.currentHp, new Decimal(0.01)) },
-      swingTimerMs: s.stats.swingTime * 1000,
+      swingProgress: 1,
     }
   })
 }

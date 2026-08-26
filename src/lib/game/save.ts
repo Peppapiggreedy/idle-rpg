@@ -5,33 +5,42 @@ import { Decimal } from './numbers'
 import { RARITY_BY_ID } from '../data/rarity'
 import type { Item, Rarity } from '../types'
 import { applyXp, xpToNextLevel } from './formulas'
-import { createInitialState, spawnMonster, type GameState } from './state'
-import { ensureStats } from './stats'
+import { createInitialState, emptyEquipment, spawnMonster, type Equipment, type GameState } from './state'
+import { ensureStats, STAT_IDS, type ModifierKind, type StatId, type StatModifier } from './stats'
+import { SLOT_IDS, type SlotId } from '../data/slots'
 import { AUTOSAVE_INTERVAL_S, LEGACY_V3_SWING_TIME_S, OFFLINE_CAP_HOURS } from '../data/balance'
 import { estimateCombatRate } from './combat'
 import { FALLBACK_ITEM_NAME } from '../data/loot'
 import { FIRST_MONSTER } from '../data/monsters'
 
 export const SAVE_KEY = 'idle-rpg-save'
-export const SAVE_VERSION = 6
+export const SAVE_VERSION = 7
 export const AUTOSAVE_INTERVAL_MS = AUTOSAVE_INTERVAL_S * 1000
 // Потолок оффлайн-прогресса: дольше отсутствовать можно, но не оплачивается.
 export const OFFLINE_CAP_MS = OFFLINE_CAP_HOURS * 60 * 60 * 1000
 // Короче минуты отсутствия — награду начисляем, но модалку не показываем.
 export const OFFLINE_MODAL_MIN_MS = 60_000
 
-// Актуальный формат сейва (v6). Все Decimal — строки. Прямых полей урона
+// Актуальный формат сейва (v7). Все Decimal — строки. Прямых полей урона
 // и скорости атаки в формате НЕТ: статы — производные от счётчиков покупок
-// (и будущих экипировки/талантов), пересчитываются конвейером stats.ts.
+// и надетой экипировки, пересчитываются конвейером stats.ts.
+export interface SavedModifier {
+  stat: string
+  kind: string
+  value: string
+  source: string
+}
+
 export interface SavedItem {
   id: string
   name: string
   rarity: string
-  statBonus: string
+  slot: string
+  mods: SavedModifier[]
 }
 
-export interface SavePayloadV6 {
-  version: 6
+export interface SavePayloadV7 {
+  version: 7
   lastTimestamp: number
   gold: string
   level: string
@@ -42,6 +51,8 @@ export interface SavePayloadV6 {
   reviveMsLeft: number
   upgrades: Record<string, string>
   inventory: SavedItem[]
+  equipment: Record<string, SavedItem | null>
+  autoEquip: boolean
   itemSeq: number
   totalTicks: string
   playtimeMs: string
@@ -72,18 +83,35 @@ function parseDec(value: unknown, fallback: string): Decimal {
   return new Decimal(fallback)
 }
 
-export function payloadFromState(state: GameState, lastTimestamp: number): SavePayloadV6 {
+function savedFromItem(item: Item): SavedItem {
+  return {
+    id: item.id,
+    name: item.name,
+    rarity: item.rarity,
+    slot: item.slot,
+    mods: item.mods.map((m) => ({
+      stat: m.stat,
+      kind: m.kind,
+      value: m.value.toString(),
+      source: m.source,
+    })),
+  }
+}
+
+export function payloadFromState(state: GameState, lastTimestamp: number): SavePayloadV7 {
   const upgrades: Record<string, string> = {}
   for (const [id, owned] of Object.entries(state.upgrades)) upgrades[id] = owned.toString()
+  const equipment: Record<string, SavedItem | null> = {}
+  for (const slot of SLOT_IDS) {
+    const item = state.equipment[slot]
+    equipment[slot] = item ? savedFromItem(item) : null
+  }
   return {
-    version: 6,
+    version: 7,
     lastTimestamp,
-    inventory: state.inventory.map((i) => ({
-      id: i.id,
-      name: i.name,
-      rarity: i.rarity,
-      statBonus: i.statBonus.toString(),
-    })),
+    inventory: state.inventory.map(savedFromItem),
+    equipment,
+    autoEquip: state.autoEquip,
     itemSeq: state.itemSeq,
     gold: state.gold.toString(),
     level: state.level.toString(),
@@ -98,20 +126,57 @@ export function payloadFromState(state: GameState, lastTimestamp: number): SaveP
   }
 }
 
-// Восстанавливает состояние поверх дефолтов: новые поля будущих версий
-// автоматически получают значения из createInitialState. Моб и лог — свежие.
+const MODIFIER_KINDS: ModifierKind[] = ['base', 'flat', 'percent', 'multiplier']
+
+// Модификатор из сейва: неизвестный стат или kind — мусор, такой модификатор
+// выбрасываем, иначе он молча испортит конвейер статов.
+function modifierFromSaved(raw: SavedModifier): StatModifier | null {
+  if (typeof raw !== 'object' || raw === null) return null
+  if (!STAT_IDS.includes(raw.stat as StatId)) return null
+  if (!MODIFIER_KINDS.includes(raw.kind as ModifierKind)) return null
+  return {
+    stat: raw.stat as StatId,
+    kind: raw.kind as ModifierKind,
+    value: parseDec(raw.value, '0'),
+    source: typeof raw.source === 'string' ? raw.source : 'equipment',
+  }
+}
+
 function itemFromSaved(raw: SavedItem, index: number): Item {
   // Неизвестная редкость (например, из будущей версии) деградирует до common.
   const rarity: Rarity = raw.rarity in RARITY_BY_ID ? (raw.rarity as Rarity) : 'common'
+  // Неизвестный слот деградирует до талисмана: слот без base-модификаторов,
+  // предмет останется носимым и ничего не сломает в бою.
+  const slot: SlotId = SLOT_IDS.includes(raw.slot as SlotId) ? (raw.slot as SlotId) : 'trinket'
+  const mods = Array.isArray(raw.mods)
+    ? raw.mods.map(modifierFromSaved).filter((m): m is StatModifier => m !== null)
+    : []
   return {
     id: typeof raw.id === 'string' ? raw.id : `item-restored-${index}`,
     name: typeof raw.name === 'string' ? raw.name : FALLBACK_ITEM_NAME,
     rarity,
-    statBonus: parseDec(raw.statBonus, '1'),
+    slot,
+    mods,
   }
 }
 
-export function stateFromPayload(p: SavePayloadV6): GameState {
+// Экипировка из сейва: предмет обязан лежать в СВОЁМ слоте, иначе оружие могло
+// бы задать базу боя из слота брони. Чужой предмет просто не надевается.
+function equipmentFromSaved(raw: Record<string, SavedItem | null> | undefined): Equipment {
+  const equipment = emptyEquipment()
+  if (typeof raw !== 'object' || raw === null) return equipment
+  SLOT_IDS.forEach((slot, index) => {
+    const saved = raw[slot]
+    if (!saved) return
+    const item = itemFromSaved(saved, index)
+    if (item.slot === slot) equipment[slot] = item
+  })
+  return equipment
+}
+
+// Восстанавливает состояние поверх дефолтов: новые поля будущих версий
+// автоматически получают значения из createInitialState. Моб и лог — свежие.
+export function stateFromPayload(p: SavePayloadV7): GameState {
   const level = Decimal.max(parseDec(p.level, '1'), new Decimal(1))
   const upgrades: Record<string, Decimal> = {}
   for (const [id, owned] of Object.entries(p.upgrades ?? {})) upgrades[id] = parseDec(owned, '0')
@@ -125,6 +190,8 @@ export function stateFromPayload(p: SavePayloadV6): GameState {
     totalTicks: parseDec(p.totalTicks, '0'),
     playtimeMs: parseDec(p.playtimeMs, '0'),
     inventory: Array.isArray(p.inventory) ? p.inventory.map(itemFromSaved) : [],
+    equipment: equipmentFromSaved(p.equipment),
+    autoEquip: typeof p.autoEquip === 'boolean' ? p.autoEquip : true,
     itemSeq: typeof p.itemSeq === 'number' ? p.itemSeq : 0,
     monster: spawnMonster(FIRST_MONSTER),
   }
@@ -151,7 +218,38 @@ type RawSave = Record<string, unknown>
 // и haste, но ключ в уже сохранённых JSON остался прежним — читаем как есть.
 const LEGACY_V3_SPEED_FIELD = 'attackSpeed'
 
+// Старый предмет (до экипировки) не имел ни слота, ни модификаторов — только
+// statBonus, прибавку к силе атаки. Слот выбираем 'trinket': он без
+// base-модификаторов, поэтому предмет не подменит базу боя.
+function itemV6toV7(raw: unknown): RawSave {
+  const old = (typeof raw === 'object' && raw !== null ? raw : {}) as RawSave
+  return {
+    id: old.id,
+    name: old.name,
+    rarity: old.rarity,
+    slot: 'trinket',
+    mods: [
+      {
+        stat: 'attackPower',
+        kind: 'flat',
+        value: parseDec(old.statBonus, '1').toString(),
+        source: 'equipment:trinket',
+      },
+    ],
+  }
+}
+
 const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
+  // 6 -> 7: появилась экипировка. У предметов вместо statBonus теперь slot и
+  // mods в формате конвейера статов; сама экипировка пустая — старые предметы
+  // остаются в инвентаре, игрок наденет их сам.
+  6: (raw) => ({
+    ...raw,
+    version: 7,
+    inventory: Array.isArray(raw.inventory) ? raw.inventory.map(itemV6toV7) : [],
+    equipment: {},
+    autoEquip: true,
+  }),
   // 5 -> 6: сменилась МОДЕЛЬ урона (диапазон оружия + сила атаки через
   // AP_NORMALIZATION), но набор полей формата не изменился: урон и раньше был
   // производным от счётчика покупок. Миграция-тождество — версия лишь помечает,
@@ -199,7 +297,7 @@ const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
 }
 
 // null = сейв непригоден (не объект или из более новой версии игры).
-export function migrateSave(raw: unknown): SavePayloadV6 | null {
+export function migrateSave(raw: unknown): SavePayloadV7 | null {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null
   let data = raw as RawSave
   let version = typeof data.version === 'number' ? data.version : 0
@@ -210,7 +308,7 @@ export function migrateSave(raw: unknown): SavePayloadV6 | null {
     data = step(data)
     version = typeof data.version === 'number' ? data.version : version + 1
   }
-  return data as unknown as SavePayloadV6
+  return data as unknown as SavePayloadV7
 }
 
 export interface OfflineReport {
@@ -321,7 +419,7 @@ export function encodeSaveString(state: GameState, now: () => number = Date.now)
 }
 
 // Понимает base64 от экспорта и, на всякий случай, голый JSON.
-export function decodeSaveString(input: string): SavePayloadV6 | null {
+export function decodeSaveString(input: string): SavePayloadV7 | null {
   const attempts = [
     () => JSON.parse(fromBase64(input.trim())),
     () => JSON.parse(input.trim()),

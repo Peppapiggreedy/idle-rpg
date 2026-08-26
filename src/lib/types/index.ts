@@ -1,6 +1,8 @@
 // TypeScript-типы и интерфейсы игры. Decimal берётся только из game/numbers.
 // Игровые величины — Decimal; служебные (version, lastTimestamp, счётчики) — number.
 import type { Decimal } from '../game/numbers'
+import type { StatModifier } from '../game/stats'
+import type { SlotId } from '../data/slots'
 
 export interface Monster {
   id: string
@@ -12,11 +14,11 @@ export interface Monster {
   damageMin: Decimal // нижняя граница урона по герою; 0/0 — моб не атакует
   damageMax: Decimal // верхняя граница урона по герою
   swingTime: number // секунд между ударами моба (у мобов нет оружия — время замаха задано прямо)
-  swingTimerMs: number // замах моба (runtime, в шаблоне отсутствует)
+  swingProgress: number // доля замаха моба 0..1 (runtime, в шаблоне отсутствует)
 }
 
 // Шаблон моба для src/lib/data: без runtime-полей — они появляются при спавне.
-export type MonsterTemplate = Omit<Monster, 'currentHp' | 'swingTimerMs'>
+export type MonsterTemplate = Omit<Monster, 'currentHp' | 'swingProgress'>
 
 // Описание апгрейда для src/lib/data: цена растёт как baseCost * costGrowth^owned.
 export interface UpgradeDef {
@@ -33,7 +35,10 @@ export interface Item {
   id: string
   name: string
   rarity: Rarity
-  statBonus: Decimal
+  slot: SlotId
+  // Модификаторы предмета в формате конвейера статов. У оружия среди них
+  // ОБЯЗАТЕЛЬНО три kind: 'base' — weaponSpeed, weaponDamageMin, weaponDamageMax.
+  mods: StatModifier[]
 }
 
 // Структурированные события боя для лога. Логика их эмитит,

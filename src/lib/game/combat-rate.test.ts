@@ -21,14 +21,16 @@ describe('estimateCombatRate', () => {
 
   it('награда за час оффлайна отличается от часа симуляции не более чем на 5%', () => {
     const HOUR_MS = 3_600_000
-    // Реальная симуляция часа с фиксированным сидом.
+    // Реальная симуляция часа с фиксированным сидом. Автонадевание выключено:
+    // оффлайн-агрегат считает по текущим статам и лут в них не подмешивает,
+    // поэтому сравниваем именно формулы боя, а не эффект найденной экипировки.
     const rng = createRng(777)
-    let sim = createInitialState(777)
+    let sim = { ...createInitialState(777), autoEquip: false }
     for (let t = 0; t < HOUR_MS; t += STEP_MS) sim = tick(sim, STEP_MS, rng, () => {})
     const simKills = sim.gold.div(sim.monster.goldReward).toNumber()
 
     // Оффлайн-агрегат за тот же час (та же estimateCombatRate, что в онлайне).
-    const { report } = applyOfflineProgress(createInitialState(777), HOUR_MS)
+    const { report } = applyOfflineProgress({ ...createInitialState(777), autoEquip: false }, HOUR_MS)
     const offlineKills = report!.kills.toNumber()
 
     const relDiff = Math.abs(offlineKills - simKills) / simKills
