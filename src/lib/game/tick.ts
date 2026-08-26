@@ -57,14 +57,14 @@ const applyCombat: TickStep = (s, ctx) => {
   // Во время респауна свинг-таймер стоит: первый удар по новому мобу — через
   // полный замах, без бесплатного «накопленного» удара.
   if (s.respawnMsLeft > 0) return s
-  const attackSpeedMs = s.stats.attackSpeed * 1000
+  const swingTimeMs = s.stats.swingTime * 1000
   let swingTimerMs = s.swingTimerMs + ctx.dtMs
   let monster = s.monster
   let combatLog = s.combatLog
   // Удар при каждом полном замахе; таймер сбрасывается ПЕРЕНОСОМ остатка,
   // иначе на медленном тике теряется время между ударами.
-  while (swingTimerMs >= attackSpeedMs && ctx.killedMonster === null) {
-    swingTimerMs -= attackSpeedMs
+  while (swingTimerMs >= swingTimeMs && ctx.killedMonster === null) {
+    swingTimerMs -= swingTimeMs
     const isCrit = ctx.rng() < s.stats.critChance
     const amount = isCrit
       ? s.stats.attackPower.times(s.stats.critMultiplier)
@@ -135,13 +135,13 @@ const applyMonsterAttack: TickStep = (s, ctx) => {
   // Моб бьёт, только пока оба живы; мирные мобы (damage 0) не бьют вовсе.
   if (s.heroState === 'dead' || s.respawnMsLeft > 0 || ctx.killedMonster) return s
   if (s.monster.damage.lte(0)) return s
-  const attackSpeedMs = s.monster.attackSpeed * 1000
+  const monsterSwingTimeMs = s.monster.swingTime * 1000
   let monsterSwingMs = s.monster.swingTimerMs + ctx.dtMs
   let currentHp = s.currentHp
   let combatLog = s.combatLog
   let died = false
-  while (monsterSwingMs >= attackSpeedMs && !died) {
-    monsterSwingMs -= attackSpeedMs
+  while (monsterSwingMs >= monsterSwingTimeMs && !died) {
+    monsterSwingMs -= monsterSwingTimeMs
     // Входящий урон срезается на damageReduction из конвейера статов.
     const amount = s.monster.damage.times(1 - s.stats.damageReduction)
     currentHp = Decimal.max(currentHp.minus(amount), new Decimal(0))

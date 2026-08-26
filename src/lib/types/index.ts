@@ -10,7 +10,7 @@ export interface Monster {
   goldReward: Decimal
   xpReward: Decimal
   damage: Decimal // урон одного удара по герою; 0 — моб не атакует
-  attackSpeed: number // секунд между ударами моба
+  swingTime: number // секунд между ударами моба (у мобов нет оружия — время замаха задано прямо)
   swingTimerMs: number // замах моба (runtime, в шаблоне отсутствует)
 }
 

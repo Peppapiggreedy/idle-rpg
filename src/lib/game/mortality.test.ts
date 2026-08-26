@@ -21,7 +21,7 @@ const BRUTE: MonsterTemplate = {
   goldReward: new Decimal(5),
   xpReward: new Decimal(3),
   damage: new Decimal(60),
-  attackSpeed: 1,
+  swingTime: 1,
 }
 
 function inZone(template: MonsterTemplate): GameState {

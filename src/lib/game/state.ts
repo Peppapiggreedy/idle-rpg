@@ -17,7 +17,7 @@ export interface GameState {
   level: Decimal
   currentXp: Decimal
   xpToNext: Decimal
-  swingTimerMs: number // накопленное время замаха; удар при достижении stats.attackSpeed
+  swingTimerMs: number // накопленное время замаха; удар при достижении stats.swingTime
   currentHp: Decimal // текущее здоровье героя, кап — stats.maxHp
   currentMana: Decimal // текущая мана героя, кап — stats.maxMana
   heroState: 'alive' | 'dead'
