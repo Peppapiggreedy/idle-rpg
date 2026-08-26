@@ -6,6 +6,7 @@ import type { Item, Monster, MonsterTemplate } from '../types'
 import { FIRST_MONSTER } from '../data/monsters'
 import { RARITY_BY_ID } from '../data/rarity'
 import { INVENTORY_SIZE, rollLoot, type Rng } from './loot'
+import { randomSeed } from './rng'
 
 // Пауза между смертью моба и появлением следующего.
 export const RESPAWN_DELAY_MS = 300
@@ -23,6 +24,7 @@ export interface GameState {
   upgrades: Record<string, Decimal> // id апгрейда -> сколько куплено
   inventory: Item[]
   itemSeq: number // служебный счётчик для уникальных id предметов
+  rngSeed: number // служебный сид потока случайности (в сейв пока не пишется)
   monster: Monster
   // Служебный обратный отсчёт до респауна в мс (как dtMs): 0 — моб жив.
   respawnMsLeft: number
@@ -33,7 +35,7 @@ export function spawnMonster(template: MonsterTemplate): Monster {
   return { ...template, currentHp: template.maxHp }
 }
 
-export function createInitialState(): GameState {
+export function createInitialState(rngSeed: number = randomSeed()): GameState {
   const level = new Decimal(1)
   return {
     totalTicks: new Decimal(0),
@@ -46,6 +48,7 @@ export function createInitialState(): GameState {
     upgrades: {},
     inventory: [],
     itemSeq: 0,
+    rngSeed,
     monster: spawnMonster(FIRST_MONSTER),
     respawnMsLeft: 0,
     combatLog: [],
@@ -56,7 +59,7 @@ function pushLog(log: string[], entry: string): string[] {
   return [entry, ...log].slice(0, COMBAT_LOG_SIZE)
 }
 
-export function tick(state: GameState, dtMs: number, rng: Rng = Math.random): GameState {
+export function tick(state: GameState, dtMs: number, rng: Rng): GameState {
   const s: GameState = {
     ...state,
     totalTicks: state.totalTicks.plus(1),

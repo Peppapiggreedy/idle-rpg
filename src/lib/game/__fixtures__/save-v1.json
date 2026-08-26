@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "lastTimestamp": 0,
+  "gold": "77",
+  "level": "5",
+  "currentXp": "3",
+  "baseDamage": "12",
+  "upgrades": { "weapon-sharpening": "2" },
+  "totalTicks": "10",
+  "playtimeMs": "1000"
+}

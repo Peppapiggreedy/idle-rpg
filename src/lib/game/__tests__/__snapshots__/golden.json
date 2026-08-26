@@ -1,0 +1,29 @@
+{
+  "step-3000": {
+    "gold": "455",
+    "level": "5",
+    "currentXp": "104",
+    "baseDamage": "10",
+    "totalTicks": "3000",
+    "inventoryCount": 12,
+    "inventorySellTotal": "75"
+  },
+  "step-12000": {
+    "gold": "1815",
+    "level": "9",
+    "currentXp": "252",
+    "baseDamage": "10",
+    "totalTicks": "12000",
+    "inventoryCount": 12,
+    "inventorySellTotal": "75"
+  },
+  "step-36000": {
+    "gold": "5455",
+    "level": "15",
+    "currentXp": "80",
+    "baseDamage": "10",
+    "totalTicks": "36000",
+    "inventoryCount": 12,
+    "inventorySellTotal": "75"
+  }
+}

@@ -3,6 +3,7 @@
 import { get, readonly, writable } from 'svelte/store'
 import { createGameLoop, type GameLoop, type LoopMetrics } from '../game/loop'
 import { createInitialState, tick, type GameState } from '../game/tick'
+import { createRng } from '../game/rng'
 import { buyUpgrade } from '../game/upgrades'
 import { sellItem } from '../game/loot'
 import {
@@ -71,9 +72,11 @@ export function initGame(): void {
 /** Запускает единственный игровой цикл. Повторный вызов ничего не делает. */
 export function startGameLoop(): void {
   if (loop) return
+  // Единственный на игру поток случайности; создаётся один раз из сида состояния.
+  const rng = createRng(get(state).rngSeed)
   loop = createGameLoop({
     step: (dtMs) => {
-      state.update((s) => tick(s, dtMs))
+      state.update((s) => tick(s, dtMs, rng))
       // Автосейв на игровом времени: каждые 15 секунд симуляции.
       msSinceSave += dtMs
       if (msSinceSave >= AUTOSAVE_INTERVAL_MS) {
