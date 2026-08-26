@@ -2,8 +2,10 @@
 // получает состояние и длительность шага, возвращает новое состояние.
 import { Decimal, formatNumber } from './numbers'
 import { applyXp, xpToNextLevel } from './formulas'
-import type { Monster, MonsterTemplate } from '../types'
+import type { Item, Monster, MonsterTemplate } from '../types'
 import { FIRST_MONSTER } from '../data/monsters'
+import { RARITY_BY_ID } from '../data/rarity'
+import { INVENTORY_SIZE, rollLoot, type Rng } from './loot'
 
 // Пауза между смертью моба и появлением следующего.
 export const RESPAWN_DELAY_MS = 300
@@ -19,6 +21,8 @@ export interface GameState {
   xpToNext: Decimal
   baseDamage: Decimal // пока равен урону в секунду; апгрейды добавляют к нему
   upgrades: Record<string, Decimal> // id апгрейда -> сколько куплено
+  inventory: Item[]
+  itemSeq: number // служебный счётчик для уникальных id предметов
   monster: Monster
   // Служебный обратный отсчёт до респауна в мс (как dtMs): 0 — моб жив.
   respawnMsLeft: number
@@ -40,6 +44,8 @@ export function createInitialState(): GameState {
     xpToNext: xpToNextLevel(level),
     baseDamage: new Decimal(10),
     upgrades: {},
+    inventory: [],
+    itemSeq: 0,
     monster: spawnMonster(FIRST_MONSTER),
     respawnMsLeft: 0,
     combatLog: [],
@@ -50,7 +56,7 @@ function pushLog(log: string[], entry: string): string[] {
   return [entry, ...log].slice(0, COMBAT_LOG_SIZE)
 }
 
-export function tick(state: GameState, dtMs: number): GameState {
+export function tick(state: GameState, dtMs: number, rng: Rng = Math.random): GameState {
   const s: GameState = {
     ...state,
     totalTicks: state.totalTicks.plus(1),
@@ -85,10 +91,23 @@ export function tick(state: GameState, dtMs: number): GameState {
     if (leveled.level.gt(s.level)) {
       combatLog = pushLog(combatLog, `Новый уровень: ${formatNumber(leveled.level)}!`)
     }
+    // Дроп лута: только если есть свободный слот в инвентаре.
+    let inventory = s.inventory
+    let itemSeq = s.itemSeq
+    if (inventory.length < INVENTORY_SIZE) {
+      const item = rollLoot(rng, itemSeq)
+      if (item) {
+        inventory = [...inventory, item]
+        itemSeq += 1
+        combatLog = pushLog(combatLog, `Выпало: ${item.name} [${RARITY_BY_ID[item.rarity].name}]`)
+      }
+    }
     return {
       ...s,
       monster: { ...s.monster, currentHp: new Decimal(0) },
       gold: s.gold.plus(goldReward),
+      inventory,
+      itemSeq,
       level: leveled.level,
       currentXp: leveled.currentXp,
       xpToNext: leveled.xpToNext,

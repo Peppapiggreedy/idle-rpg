@@ -2,6 +2,7 @@
   import CombatScreen from './lib/ui/CombatScreen.svelte'
   import HeroPanel from './lib/ui/HeroPanel.svelte'
   import UpgradePanel from './lib/ui/UpgradePanel.svelte'
+  import InventoryPanel from './lib/ui/InventoryPanel.svelte'
   import DebugOverlay from './lib/ui/DebugOverlay.svelte'
   import NoticeBar from './lib/ui/NoticeBar.svelte'
   import OfflineModal from './lib/ui/OfflineModal.svelte'
@@ -14,6 +15,7 @@
   <HeroPanel />
   <CombatScreen />
   <UpgradePanel />
+  <InventoryPanel />
   <SaveControls />
 </main>
 

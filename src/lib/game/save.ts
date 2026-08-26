@@ -2,27 +2,38 @@
 // строкой через toString(). localStorage и часы инжектируются, чтобы логика
 // тестировалась в node без браузера.
 import { Decimal } from './numbers'
+import { RARITY_BY_ID } from '../data/rarity'
+import type { Item, Rarity } from '../types'
 import { applyXp, xpToNextLevel } from './formulas'
 import { RESPAWN_DELAY_MS, createInitialState, spawnMonster, type GameState } from './tick'
 import { FIRST_MONSTER } from '../data/monsters'
 
 export const SAVE_KEY = 'idle-rpg-save'
-export const SAVE_VERSION = 1
+export const SAVE_VERSION = 2
 export const AUTOSAVE_INTERVAL_MS = 15_000
 // Потолок оффлайн-прогресса: больше 8 часов отсутствия не оплачивается.
 export const OFFLINE_CAP_MS = 8 * 60 * 60 * 1000
 // Короче минуты отсутствия — награду начисляем, но модалку не показываем.
 export const OFFLINE_MODAL_MIN_MS = 60_000
 
-// Формат сейва v1. Все Decimal — строки.
-export interface SavePayloadV1 {
-  version: 1
+// Актуальный формат сейва (v2). Все Decimal — строки.
+export interface SavedItem {
+  id: string
+  name: string
+  rarity: string
+  statBonus: string
+}
+
+export interface SavePayloadV2 {
+  version: 2
   lastTimestamp: number
   gold: string
   level: string
   currentXp: string
   baseDamage: string
   upgrades: Record<string, string>
+  inventory: SavedItem[]
+  itemSeq: number
   totalTicks: string
   playtimeMs: string
 }
@@ -52,12 +63,19 @@ function parseDec(value: unknown, fallback: string): Decimal {
   return new Decimal(fallback)
 }
 
-export function payloadFromState(state: GameState, lastTimestamp: number): SavePayloadV1 {
+export function payloadFromState(state: GameState, lastTimestamp: number): SavePayloadV2 {
   const upgrades: Record<string, string> = {}
   for (const [id, owned] of Object.entries(state.upgrades)) upgrades[id] = owned.toString()
   return {
-    version: 1,
+    version: 2,
     lastTimestamp,
+    inventory: state.inventory.map((i) => ({
+      id: i.id,
+      name: i.name,
+      rarity: i.rarity,
+      statBonus: i.statBonus.toString(),
+    })),
+    itemSeq: state.itemSeq,
     gold: state.gold.toString(),
     level: state.level.toString(),
     currentXp: state.currentXp.toString(),
@@ -70,7 +88,18 @@ export function payloadFromState(state: GameState, lastTimestamp: number): SaveP
 
 // Восстанавливает состояние поверх дефолтов: новые поля будущих версий
 // автоматически получают значения из createInitialState. Моб и лог — свежие.
-export function stateFromPayload(p: SavePayloadV1): GameState {
+function itemFromSaved(raw: SavedItem, index: number): Item {
+  // Неизвестная редкость (например, из будущей версии) деградирует до common.
+  const rarity: Rarity = raw.rarity in RARITY_BY_ID ? (raw.rarity as Rarity) : 'common'
+  return {
+    id: typeof raw.id === 'string' ? raw.id : `item-restored-${index}`,
+    name: typeof raw.name === 'string' ? raw.name : 'Безымянный трофей',
+    rarity,
+    statBonus: parseDec(raw.statBonus, '1'),
+  }
+}
+
+export function stateFromPayload(p: SavePayloadV2): GameState {
   const level = Decimal.max(parseDec(p.level, '1'), new Decimal(1))
   const upgrades: Record<string, Decimal> = {}
   for (const [id, owned] of Object.entries(p.upgrades ?? {})) upgrades[id] = parseDec(owned, '0')
@@ -84,6 +113,8 @@ export function stateFromPayload(p: SavePayloadV1): GameState {
     upgrades,
     totalTicks: parseDec(p.totalTicks, '0'),
     playtimeMs: parseDec(p.playtimeMs, '0'),
+    inventory: Array.isArray(p.inventory) ? p.inventory.map(itemFromSaved) : [],
+    itemSeq: typeof p.itemSeq === 'number' ? p.itemSeq : 0,
     monster: spawnMonster(FIRST_MONSTER),
   }
 }
@@ -92,6 +123,13 @@ export function stateFromPayload(p: SavePayloadV1): GameState {
 // v0 — «доверсионный» формат (без поля version): переносим известные поля.
 type RawSave = Record<string, unknown>
 const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
+  // 1 -> 2: появились инвентарь и счётчик id предметов.
+  1: (raw) => ({
+    ...raw,
+    version: 2,
+    inventory: [],
+    itemSeq: 0,
+  }),
   0: (raw) => ({
     version: 1,
     lastTimestamp: typeof raw.lastTimestamp === 'number' ? raw.lastTimestamp : 0,
@@ -106,7 +144,7 @@ const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
 }
 
 // null = сейв непригоден (не объект или из более новой версии игры).
-export function migrateSave(raw: unknown): SavePayloadV1 | null {
+export function migrateSave(raw: unknown): SavePayloadV2 | null {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null
   let data = raw as RawSave
   let version = typeof data.version === 'number' ? data.version : 0
@@ -117,7 +155,7 @@ export function migrateSave(raw: unknown): SavePayloadV1 | null {
     data = step(data)
     version = typeof data.version === 'number' ? data.version : version + 1
   }
-  return data as unknown as SavePayloadV1
+  return data as unknown as SavePayloadV2
 }
 
 export interface OfflineReport {
@@ -220,7 +258,7 @@ export function encodeSaveString(state: GameState, now: () => number = Date.now)
 }
 
 // Понимает base64 от экспорта и, на всякий случай, голый JSON.
-export function decodeSaveString(input: string): SavePayloadV1 | null {
+export function decodeSaveString(input: string): SavePayloadV2 | null {
   const attempts = [
     () => JSON.parse(fromBase64(input.trim())),
     () => JSON.parse(input.trim()),

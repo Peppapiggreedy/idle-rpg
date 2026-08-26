@@ -33,6 +33,10 @@ function richState(): GameState {
     upgrades: { 'weapon-sharpening': new Decimal(54) },
     totalTicks: new Decimal(100000),
     playtimeMs: new Decimal(10_000_000),
+    inventory: [
+      { id: 'item-0', name: 'Звёздный Палаш', rarity: 'epic', statBonus: new Decimal(8) },
+    ],
+    itemSeq: 1,
   }
 }
 
@@ -56,6 +60,49 @@ describe('save/load', () => {
     expect(result.offline).toBeNull()
     // Моб после загрузки свежий и с полным HP.
     expect(s.monster.currentHp.eq(s.monster.maxHp)).toBe(true)
+  })
+
+  it('сейв версии 1 (без инвентаря) мигрирует без потери прогресса', () => {
+    const storage = makeStorage()
+    // Ровно такой JSON писала версия игры с форматом сейва v1.
+    storage.setItem(
+      SAVE_KEY,
+      JSON.stringify({
+        version: 1,
+        lastTimestamp: 1000,
+        gold: '77',
+        level: '5',
+        currentXp: '3',
+        baseDamage: '12',
+        upgrades: { 'weapon-sharpening': '2' },
+        totalTicks: '10',
+        playtimeMs: '1000',
+      }),
+    )
+    const result = loadGame({ storage, now: () => 1000 })
+    expect(result.kind).toBe('loaded')
+    if (result.kind !== 'loaded') return
+    const s = result.state
+    expect(s.gold.toNumber()).toBe(77)
+    expect(s.level.toNumber()).toBe(5)
+    expect(s.currentXp.toNumber()).toBe(3)
+    expect(s.baseDamage.toNumber()).toBe(12)
+    expect(s.upgrades['weapon-sharpening'].toNumber()).toBe(2)
+    expect(s.inventory).toEqual([])
+    expect(s.itemSeq).toBe(0)
+  })
+
+  it('инвентарь переживает сохранение и загрузку', () => {
+    const storage = makeStorage()
+    saveGame(richState(), { storage, now: () => 0 })
+    const result = loadGame({ storage, now: () => 0 })
+    expect(result.kind).toBe('loaded')
+    if (result.kind !== 'loaded') return
+    const item = result.state.inventory[0]
+    expect(item.name).toBe('Звёздный Палаш')
+    expect(item.rarity).toBe('epic')
+    expect(item.statBonus.toNumber()).toBe(8)
+    expect(result.state.itemSeq).toBe(1)
   })
 
   it('сейв прошлой версии (v0, без поля version) мигрирует без потери прогресса', () => {
