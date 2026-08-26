@@ -3,14 +3,21 @@
   import HeroPanel from './lib/ui/HeroPanel.svelte'
   import UpgradePanel from './lib/ui/UpgradePanel.svelte'
   import DebugOverlay from './lib/ui/DebugOverlay.svelte'
+  import NoticeBar from './lib/ui/NoticeBar.svelte'
+  import OfflineModal from './lib/ui/OfflineModal.svelte'
+  import SaveControls from './lib/ui/SaveControls.svelte'
 </script>
 
 <main>
   <h1>Idle RPG</h1>
+  <NoticeBar />
   <HeroPanel />
   <CombatScreen />
   <UpgradePanel />
+  <SaveControls />
 </main>
+
+<OfflineModal />
 
 <DebugOverlay />
 
