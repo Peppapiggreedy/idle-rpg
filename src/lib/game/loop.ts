@@ -27,6 +27,10 @@ export interface GameLoop {
   start(): void
   stop(): void
   readonly running: boolean
+  /** Множитель игрового времени (дебаг): 1 — норма. Лимит шагов за кадр
+   * сохраняется, поэтому реальный потолок ~ MAX_STEPS_PER_FRAME * fps шагов/с;
+   * невыполнимый излишек аккуратно сбрасывается, вкладка не виснет. */
+  setSpeed(multiplier: number): void
 }
 
 export function createGameLoop(opts: GameLoopOptions): GameLoop {
@@ -38,6 +42,7 @@ export function createGameLoop(opts: GameLoopOptions): GameLoop {
   let rafId = 0
   let last = 0
   let accumulator = 0
+  let speed = 1
 
   // Счётчики метрик за текущее односекундное окно.
   let frames = 0
@@ -47,7 +52,8 @@ export function createGameLoop(opts: GameLoopOptions): GameLoop {
   function frame(): void {
     if (!running) return
     const t = now()
-    accumulator += t - last
+    // Игровое время течёт в speed раз быстрее реального (дебаг-ускорение).
+    accumulator += (t - last) * speed
     last = t
 
     let steps = 0
@@ -90,6 +96,9 @@ export function createGameLoop(opts: GameLoopOptions): GameLoop {
       if (!running) return
       running = false
       caf(rafId)
+    },
+    setSpeed(multiplier: number) {
+      speed = Number.isFinite(multiplier) && multiplier > 0 ? multiplier : 1
     },
   }
 }

@@ -4,6 +4,7 @@
   import UpgradePanel from './lib/ui/UpgradePanel.svelte'
   import InventoryPanel from './lib/ui/InventoryPanel.svelte'
   import DebugOverlay from './lib/ui/DebugOverlay.svelte'
+  import DebugPanel from './lib/ui/DebugPanel.svelte'
   import NoticeBar from './lib/ui/NoticeBar.svelte'
   import OfflineModal from './lib/ui/OfflineModal.svelte'
   import SaveControls from './lib/ui/SaveControls.svelte'
@@ -22,6 +23,8 @@
 <OfflineModal />
 
 <DebugOverlay />
+
+<DebugPanel />
 
 <style>
   main {

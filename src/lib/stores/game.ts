@@ -6,6 +6,9 @@ import { createInitialState, type GameState } from '../game/state'
 import { tick } from '../game/tick'
 import { createRng } from '../game/rng'
 import { buyUpgrade } from '../game/upgrades'
+import { xpToNextLevel } from '../game/formulas'
+import { Decimal } from '../game/numbers'
+import { applyOfflineProgress } from '../game/save'
 import { sellItem } from '../game/loot'
 import {
   AUTOSAVE_INTERVAL_MS,
@@ -45,6 +48,14 @@ export function dismissNotice(): void {
   notice.set(null)
 }
 
+// Множитель скорости симуляции (дебаг-панель); применяется к игровому времени.
+const simSpeedStore = writable(1)
+export const simSpeed = readonly(simSpeedStore)
+
+// Игровое время на момент старта сессии — для показателя «время сессии» в дебаге.
+const sessionStart = writable(0)
+export const sessionStartPlaytimeMs = readonly(sessionStart)
+
 let loop: GameLoop | null = null
 
 /** Сохраняет игру немедленно (автосейв, visibilitychange, экспорт). */
@@ -73,6 +84,7 @@ export function initGame(): void {
   }
   // Фиксируем свежий lastTimestamp (в т.ч. после перевода часов назад).
   persistNow()
+  sessionStart.set(get(state).playtimeMs.toNumber())
 }
 
 /** Запускает единственный игровой цикл. Повторный вызов ничего не делает. */
@@ -91,7 +103,14 @@ export function startGameLoop(): void {
     },
     onMetrics: (m) => metrics.set(m),
   })
+  loop.setSpeed(get(simSpeedStore))
   loop.start()
+}
+
+/** Дебаг: множитель игрового времени (1/10/100). */
+export function setSimulationSpeed(multiplier: number): void {
+  simSpeedStore.set(multiplier)
+  loop?.setSpeed(multiplier)
 }
 
 export function stopGameLoop(): void {
@@ -126,4 +145,48 @@ export function importSaveString(input: string): boolean {
   persistNow()
   notice.set('import-success')
   return true
+}
+
+// ---------- Дебаг-экшены (панель ?debug=1) ----------
+
+export function debugAddLevel(): void {
+  state.update((s) => {
+    const level = s.level.plus(1)
+    return { ...s, level, currentXp: new Decimal(0), xpToNext: xpToNextLevel(level) }
+  })
+}
+
+export function debugAddGold(amount: number): void {
+  state.update((s) => ({ ...s, gold: s.gold.plus(amount) }))
+}
+
+/** Убийство текущего моба честно, через конвейер: hp почти ноль + готовый
+ * замах — следующий тик добивает, награды/лут/события идут обычным путём. */
+export function debugKillMonster(): void {
+  state.update((s) => {
+    if (s.respawnMsLeft > 0) return s
+    return {
+      ...s,
+      monster: { ...s.monster, currentHp: Decimal.min(s.monster.currentHp, new Decimal(0.01)) },
+      swingTimerMs: s.attackSpeed * 1000,
+    }
+  })
+}
+
+export function debugResetSave(): void {
+  state.set(createInitialState())
+  offline.set(null)
+  sessionStart.set(0)
+  persistNow()
+}
+
+/** Симуляция оффлайна тем же кодом, что и настоящая загрузка (с потолком 8 ч). */
+export function debugSimulateOffline(hours: number): void {
+  if (!Number.isFinite(hours) || hours <= 0) return
+  state.update((s) => {
+    const { state: next, report } = applyOfflineProgress(s, hours * 3_600_000)
+    if (report) offline.set(report)
+    return next
+  })
+  persistNow()
 }
