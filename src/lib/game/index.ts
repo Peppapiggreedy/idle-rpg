@@ -7,3 +7,19 @@ export type { GameState } from './tick'
 export { upgradeCost, xpToNextLevel, applyXp, MAX_LEVELUPS_PER_CALL } from './formulas'
 export type { XpResult } from './formulas'
 export { buyUpgrade, ownedCount } from './upgrades'
+export {
+  saveGame,
+  loadGame,
+  migrateSave,
+  applyOfflineProgress,
+  encodeSaveString,
+  decodeSaveString,
+  stateFromPayload,
+  payloadFromState,
+  SAVE_KEY,
+  SAVE_VERSION,
+  AUTOSAVE_INTERVAL_MS,
+  OFFLINE_CAP_MS,
+  OFFLINE_MODAL_MIN_MS,
+} from './save'
+export type { SavePayloadV1, SaveStorage, SaveDeps, OfflineReport, LoadResult } from './save'
