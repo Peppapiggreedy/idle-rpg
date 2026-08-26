@@ -7,7 +7,7 @@ import type { Item, Rarity } from '../types'
 import { applyXp, xpToNextLevel } from './formulas'
 import { createInitialState, spawnMonster, type GameState } from './state'
 import { ensureStats } from './stats'
-import { AUTOSAVE_INTERVAL_S, OFFLINE_CAP_HOURS, START_ATTACK_SPEED_S } from '../data/balance'
+import { AUTOSAVE_INTERVAL_S, LEGACY_V3_SWING_TIME_S, OFFLINE_CAP_HOURS } from '../data/balance'
 import { estimateCombatRate } from './combat'
 import { FALLBACK_ITEM_NAME } from '../data/loot'
 import { FIRST_MONSTER } from '../data/monsters'
@@ -147,26 +147,30 @@ export function stateFromPayload(p: SavePayloadV5): GameState {
 // Цепочка миграций: MIGRATIONS[v] переводит формат v в v+1.
 // v0 — «доверсионный» формат (без поля version): переносим известные поля.
 type RawSave = Record<string, unknown>
+// Историческое имя поля формата v3. Стат с тех пор разделён на weaponSpeed
+// и haste, но ключ в уже сохранённых JSON остался прежним — читаем как есть.
+const LEGACY_V3_SPEED_FIELD = 'attackSpeed'
+
 const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
   // 4 -> 5: у героя появились HP/мана и смертность; старый сейв просыпается
   // живым с полным запасом (поля добавит stateFromPayload по дефолтам).
   4: (raw) => ({ ...raw, version: 5, heroState: 'alive', reviveMsLeft: 0 }),
   // 3 -> 4: урон стал производным от счётчика покупок (конвейер статов),
-  // прямые damagePerSwing/attackSpeed из формата удалены. Для честного сейва
+  // прямые поля урона и скорости из формата удалены. Для честного сейва
   // пересчёт даёт то же значение, что хранилось.
   3: (raw) => {
     const next: RawSave = { ...raw, version: 4 }
     delete next.damagePerSwing
-    delete next.attackSpeed
+    delete next[LEGACY_V3_SPEED_FIELD]
     return next
   },
   // 2 -> 3: бой перешёл на дискретные удары. baseDamage был уроном в секунду;
-  // урон за удар = dps * скорость атаки, чтобы урон в секунду не изменился.
+  // урон за удар = dps * время замаха, чтобы урон в секунду не изменился.
   2: (raw) => ({
     ...raw,
     version: 3,
-    damagePerSwing: parseDec(raw.baseDamage, '10').times(START_ATTACK_SPEED_S).toString(),
-    attackSpeed: START_ATTACK_SPEED_S,
+    damagePerSwing: parseDec(raw.baseDamage, '10').times(LEGACY_V3_SWING_TIME_S).toString(),
+    [LEGACY_V3_SPEED_FIELD]: LEGACY_V3_SWING_TIME_S,
   }),
   // 1 -> 2: появились инвентарь и счётчик id предметов.
   1: (raw) => ({

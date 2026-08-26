@@ -72,7 +72,7 @@ describe('фикстуры сейвов', () => {
     const raw = JSON.parse(fixture('save-v2.json'))
     const s = loadFixture('save-v2.json')
     const dpsBefore = Number(raw.baseDamage)
-    const dpsAfter = s.stats.attackPower.div(s.stats.attackSpeed).toNumber()
+    const dpsAfter = s.stats.attackPower.div(s.stats.swingTime).toNumber()
     expect(dpsAfter).toBe(dpsBefore)
   })
 
@@ -81,7 +81,7 @@ describe('фикстуры сейвов', () => {
     const after = buyUpgrade(before, WEAPON_SHARPENING)
     const dpsGain = after.stats.attackPower
       .minus(before.stats.attackPower)
-      .div(after.stats.attackSpeed)
+      .div(after.stats.swingTime)
     expect(dpsGain.toNumber()).toBe(1)
   })
 

@@ -1,5 +1,13 @@
 <script lang="ts">
-  import { Decimal, explainStat, formatNumber, STAT_IDS, type StatId, type StatModifier } from '../game'
+  import {
+    Decimal,
+    explainStat,
+    explainSwingTime,
+    formatNumber,
+    STAT_IDS,
+    type StatId,
+    type StatModifier,
+  } from '../game'
   import { UPGRADES } from '../data/upgrades'
   import { gameState } from '../stores/game'
 
@@ -8,7 +16,8 @@
     attackPower: 'Сила атаки',
     maxHp: 'Здоровье',
     maxMana: 'Мана',
-    attackSpeed: 'Скорость атаки',
+    weaponSpeed: 'Скорость оружия',
+    haste: 'Ускорение',
     critChance: 'Шанс крита',
     critMultiplier: 'Множитель крита',
     hpRegen: 'Восст. здоровья (бой)',
@@ -18,20 +27,27 @@
   }
 
   // Проценты и секунды читаются иначе, чем растущие величины.
-  const PERCENT_STATS: StatId[] = ['critChance', 'damageReduction']
-  const SECONDS_STATS: StatId[] = ['attackSpeed']
+  const PERCENT_STATS: StatId[] = ['critChance', 'damageReduction', 'haste']
+  const SECONDS_STATS: StatId[] = ['weaponSpeed']
 
-  let openStat = $state<StatId | null>(null)
+  // 'swingTime' — производная строка, не модифицируемый стат.
+  type RowId = StatId | 'swingTime'
 
-  function toggle(stat: StatId) {
+  let openStat = $state<RowId | null>(null)
+
+  function toggle(stat: RowId) {
     openStat = openStat === stat ? null : stat
   }
 
+  const swing = $derived(explainSwingTime($gameState))
+  const formatSeconds = (v: number) => `${v.toFixed(2)}с`
+  const formatPercent = (v: number) => `${(v * 100).toFixed(0)}%`
+
   function statValue(stat: StatId): string {
+    if (SECONDS_STATS.includes(stat)) return formatSeconds(Number($gameState.stats[stat]))
     const v = $gameState.stats[stat]
     const d = v instanceof Decimal ? v : new Decimal(v)
     if (PERCENT_STATS.includes(stat)) return `${d.times(100).toFixed(0)}%`
-    if (SECONDS_STATS.includes(stat)) return `${d.toFixed(1)} с`
     if (stat === 'critMultiplier') return `×${d.toFixed(1)}`
     return formatNumber(d)
   }
@@ -58,6 +74,19 @@
 <section class="stats-panel">
   <h2>Статы</h2>
   <ul>
+    <li>
+      <button type="button" class="stat-row" onclick={() => toggle('swingTime')}>
+        <span class="name">Время замаха</span>
+        <span class="value">{formatSeconds(swing.swingTime)}</span>
+      </button>
+      {#if openStat === 'swingTime'}
+        <div class="breakdown">
+          <span>{formatSeconds(swing.weaponSpeed)} скорость оружия</span>
+          <span>/ (1 + {formatPercent(swing.haste)} ускорения)</span>
+          <span>= {formatSeconds(swing.swingTime)}</span>
+        </div>
+      {/if}
+    </li>
     {#each STAT_IDS as stat (stat)}
       {@const breakdown = explainStat($gameState, stat)}
       <li>
@@ -68,9 +97,17 @@
         {#if openStat === stat}
           <div class="breakdown">
             {#if PERCENT_STATS.includes(stat)}
-              <span>{breakdown.base.times(100).toFixed(0)}% база</span>
+              <span>{breakdown.base.times(100).toFixed(0)}% база{breakdown.baseSource
+                  ? ` (${sourceName(breakdown.baseSource)})`
+                  : ''}</span>
+            {:else if SECONDS_STATS.includes(stat)}
+              <span>{breakdown.base.toNumber().toFixed(2)}с база{breakdown.baseSource
+                  ? ` (${sourceName(breakdown.baseSource)})`
+                  : ''}</span>
             {:else}
-              <span>{formatNumber(breakdown.base)} база</span>
+              <span>{formatNumber(breakdown.base)} база{breakdown.baseSource
+                  ? ` (${sourceName(breakdown.baseSource)})`
+                  : ''}</span>
             {/if}
             {#each breakdown.entries as mod}
               <span>· {formatModValue(stat, mod)} {sourceName(mod.source)}</span>

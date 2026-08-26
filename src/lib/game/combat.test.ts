@@ -12,7 +12,7 @@ const DUMMY: MonsterTemplate = {
   goldReward: new Decimal(5),
   xpReward: new Decimal(3),
   damage: new Decimal(0), // мирный: не бьёт в ответ, тесты боя героя чистые
-  attackSpeed: 1,
+  swingTime: 1,
 }
 
 // rng = 1 никогда не критует и не дропает лут — тесты детерминированы.
@@ -37,7 +37,7 @@ function run(state: GameState, ms: number, rng: () => number = NO_LUCK): GameSta
 }
 
 describe('дискретные удары', () => {
-  it('удар происходит раз в attackSpeed, а не каждый тик', () => {
+  it('удар происходит раз в swingTime, а не каждый тик', () => {
     let s = stateWith(20, DUMMY)
     s = run(s, 1900) // 1.9 c — замах ещё не полный
     expect(s.monster.currentHp.toNumber()).toBe(100)
@@ -75,7 +75,7 @@ describe('дискретные удары', () => {
     expect(hit).toMatchObject({ isCrit: true })
   })
 
-  it('во время респауна замах стоит: новый моб получает первый удар через полный attackSpeed', () => {
+  it('во время респауна замах стоит: новый моб получает первый удар через полный swingTime', () => {
     let s = stateWith(200, { ...DUMMY, maxHp: new Decimal(100) }) // смерть с одного удара
     s = run(s, 2000) // удар на 2.0 c -> убил
     expect(s.gold.toNumber()).toBe(5)

@@ -1,9 +1,19 @@
 import { describe, expect, it } from 'vitest'
 import { Decimal } from './numbers'
-import { collectModifiers, ensureStats, explainStat, recomputeStats } from './stats'
+import {
+  applyModifiers,
+  collectModifiers,
+  computeSwingTime,
+  ensureStats,
+  explainStat,
+  recomputeStats,
+  STAT_IDS,
+  type StatModifier,
+} from './stats'
 import { createInitialState, type GameState } from './state'
 import { buyUpgrade } from './upgrades'
 import { WEAPON_SHARPENING } from '../data/upgrades'
+import { UNARMED } from '../data/balance'
 
 function withUpgrades(count: number): GameState {
   const s = {
@@ -14,13 +24,112 @@ function withUpgrades(count: number): GameState {
   return ensureStats(s)
 }
 
+describe('weaponSpeed / haste / swingTime', () => {
+  it('swingTime = weaponSpeed / (1 + haste)', () => {
+    expect(computeSwingTime(2, 0)).toBe(2)
+    expect(computeSwingTime(2, 0.25)).toBe(1.6)
+    expect(computeSwingTime(3, 0.5)).toBe(2)
+  })
+
+  it('haste ускоряет (swingTime падает), медленное оружие замедляет', () => {
+    const fast = applyModifiers([
+      { stat: 'haste', kind: 'flat', value: new Decimal(1), source: 'talent:frenzy' },
+    ])
+    expect(fast.haste).toBe(1)
+    expect(fast.swingTime).toBe(1) // 2 / (1 + 1)
+
+    const slow = applyModifiers([
+      { stat: 'weaponSpeed', kind: 'base', value: new Decimal(3.6), source: 'equipment:weapon' },
+    ])
+    expect(slow.swingTime).toBe(3.6)
+  })
+
+  it('swingTime не модифицируется напрямую: его нет среди статов', () => {
+    // Защита от «одно имя на две величины»: ни один источник не может выдать
+    // модификатор на swingTime — только на weaponSpeed или haste.
+    expect(STAT_IDS).not.toContain('swingTime' as unknown as (typeof STAT_IDS)[number])
+  })
+})
+
+describe("модификатор kind 'base'", () => {
+  it('ЗАМЕНЯЕТ базовое значение, а не прибавляется к нему', () => {
+    // Топор 3.6с вместо безоружных 2.0с — не 2.0 + 3.6.
+    const s = applyModifiers([
+      { stat: 'weaponSpeed', kind: 'base', value: new Decimal(3.6), source: 'equipment:weapon' },
+    ])
+    expect(s.weaponSpeed).toBe(3.6)
+  })
+
+  it('без base-модификатора берётся UNARMED из data/balance', () => {
+    expect(applyModifiers([]).weaponSpeed).toBe(UNARMED.weaponSpeed.toNumber())
+  })
+
+  it('при двух base-источниках выигрывает ПОСЛЕДНИЙ (зафиксировано намеренно)', () => {
+    const mods: StatModifier[] = [
+      { stat: 'weaponSpeed', kind: 'base', value: new Decimal(3.6), source: 'equipment:weapon' },
+      { stat: 'weaponSpeed', kind: 'base', value: new Decimal(1.4), source: 'equipment:offhand' },
+    ]
+    expect(applyModifiers(mods).weaponSpeed).toBe(1.4)
+  })
+
+  it('порядок применения: base -> flat -> percent -> multiplier', () => {
+    // (база заменена на 10, +5 flat) * (1 + 0.5) * 2 = 45
+    const s = applyModifiers([
+      { stat: 'attackPower', kind: 'base', value: new Decimal(10), source: 'equipment:weapon' },
+      { stat: 'attackPower', kind: 'flat', value: new Decimal(5), source: 'talent:heavy_blows' },
+      { stat: 'attackPower', kind: 'percent', value: new Decimal(0.5), source: 'zone:ashen_wastes' },
+      { stat: 'attackPower', kind: 'multiplier', value: new Decimal(2), source: 'talent:frenzy' },
+    ])
+    expect(s.attackPower.toNumber()).toBe(45)
+  })
+})
+
+describe('прогресс замаха при смене swingTime', () => {
+  it('пересчитывается пропорционально: доля замаха сохраняется', () => {
+    // Состояние помнит прежний замах 4с и половину прогресса (2000 мс);
+    // пересчёт даёт безоружные 2с -> прогресс обязан стать 1000 мс (та же половина).
+    const s = createInitialState(1)
+    const stale: GameState = {
+      ...s,
+      stats: { ...s.stats, weaponSpeed: 4, swingTime: 4 },
+      swingTimerMs: 2000,
+      statsDirty: true,
+    }
+    const next = ensureStats(stale)
+    expect(next.stats.swingTime).toBe(2)
+    expect(next.swingTimerMs).toBe(1000) // 2000 * 2 / 4
+  })
+
+  it('смена скорости не даёт ни мгновенного удара, ни сброса замаха', () => {
+    const s = createInitialState(1)
+    const stale: GameState = {
+      ...s,
+      stats: { ...s.stats, weaponSpeed: 1, swingTime: 1 },
+      swingTimerMs: 900, // 90% замаха
+      statsDirty: true,
+    }
+    const next = ensureStats(stale)
+    // 90% замаха остаются 90%: не 0 (сброс) и не >= swingTime (мгновенный удар).
+    expect(next.swingTimerMs).toBeCloseTo(0.9 * next.stats.swingTime * 1000, 9)
+    expect(next.swingTimerMs).toBeLessThan(next.stats.swingTime * 1000)
+    expect(next.swingTimerMs).toBeGreaterThan(0)
+  })
+
+  it('без изменения swingTime прогресс не трогается', () => {
+    const s: GameState = { ...createInitialState(1), swingTimerMs: 777, statsDirty: true }
+    expect(ensureStats(s).swingTimerMs).toBe(777)
+  })
+})
+
 describe('конвейер статов', () => {
   it('базовые статы без источников равны балансу', () => {
     const stats = createInitialState(1).stats
     expect(stats.attackPower.toNumber()).toBe(20)
     expect(stats.maxHp.toNumber()).toBe(100)
     expect(stats.maxMana.toNumber()).toBe(50)
-    expect(stats.attackSpeed).toBe(2)
+    expect(stats.weaponSpeed).toBe(2)
+    expect(stats.haste).toBe(0)
+    expect(stats.swingTime).toBe(2) // 2 / (1 + 0)
     expect(stats.critChance).toBeCloseTo(0.05, 10)
     expect(stats.critMultiplier.toNumber()).toBe(2)
     expect(stats.damageReduction).toBe(0)

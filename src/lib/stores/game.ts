@@ -168,7 +168,7 @@ export function debugKillMonster(): void {
     return {
       ...s,
       monster: { ...s.monster, currentHp: Decimal.min(s.monster.currentHp, new Decimal(0.01)) },
-      swingTimerMs: s.stats.attackSpeed * 1000,
+      swingTimerMs: s.stats.swingTime * 1000,
     }
   })
 }

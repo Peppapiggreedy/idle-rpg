@@ -15,14 +15,14 @@ export interface CombatRate {
 }
 
 export function estimateCombatRate(state: GameState): CombatRate {
-  const { attackPower, attackSpeed, critChance, critMultiplier } = state.stats
+  const { attackPower, swingTime, critChance, critMultiplier } = state.stats
   // Матожидание множителя урона: 1 + шанс_крита * (множитель - 1).
   const critFactor = new Decimal(1).plus(critMultiplier.minus(1).times(critChance))
-  const damagePerSecond = attackPower.times(critFactor).div(attackSpeed)
+  const damagePerSecond = attackPower.times(critFactor).div(swingTime)
   // Ударов на моба считаем по базовому урону (без критов): дискретность важнее
   // редких критов, при крит-шансе ~5% погрешность оценки в пределах пары процентов.
   const hitsPerKill = state.monster.maxHp.div(attackPower).ceil()
-  const fightSec = hitsPerKill.times(attackSpeed)
+  const fightSec = hitsPerKill.times(swingTime)
   const respawnSec = RESPAWN_DELAY_MS / 1000
   const killCycleSec = fightSec.plus(respawnSec)
   const idealKillsPerSecond = new Decimal(1).div(killCycleSec)
@@ -30,7 +30,7 @@ export function estimateCombatRate(state: GameState): CombatRate {
   // Баланс HP за цикл: входящие удары моба (целым числом за фазу боя) минус
   // реген (в бою медленный, в паузе респауна быстрый).
   const monsterHitsPerCycle = state.monster.damage.gt(0)
-    ? fightSec.div(state.monster.attackSpeed).floor()
+    ? fightSec.div(state.monster.swingTime).floor()
     : new Decimal(0)
   const incomingPerCycle = monsterHitsPerCycle
     .times(state.monster.damage)

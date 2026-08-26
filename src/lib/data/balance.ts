@@ -3,8 +3,16 @@
 // Баланс конкретных сущностей — в monsters.ts / upgrades.ts / rarity.ts / loot.ts.
 import { Decimal } from '../game/numbers'
 
-// Секунд между ударами на старте (используется и миграцией сейва v2 -> v3).
-export const START_ATTACK_SPEED_S = 2.0
+// Безоружный герой: пока экипировки нет, скорость оружия берётся отсюда.
+// weaponSpeed — секунд между ударами, МЕНЬШЕ = быстрее.
+export const UNARMED = {
+  weaponSpeed: new Decimal(2.0),
+}
+
+// Замороженная константа миграции сейва v2 -> v3: тогдашняя скорость удара,
+// по которой урон в секунду переводился в урон за удар. НЕ следует за балансом —
+// иначе старые сейвы начали бы мигрировать по-разному.
+export const LEGACY_V3_SWING_TIME_S = 2.0
 
 // Базовые значения всех стат Воина — ступень «base» конвейера статов.
 // Всё в Decimal: конвейер считает единообразно, конверсию в number для
@@ -13,7 +21,8 @@ export const BASE_STATS = {
   attackPower: new Decimal(20), // урон одного удара (эквивалент прежних 10 dps)
   maxHp: new Decimal(100),
   maxMana: new Decimal(50),
-  attackSpeed: new Decimal(START_ATTACK_SPEED_S), // секунд между ударами
+  weaponSpeed: UNARMED.weaponSpeed, // секунд между ударами оружия (меньше = быстрее)
+  haste: new Decimal(0), // ускорение в долях: 0.2 = +20% скорости (больше = быстрее)
   critChance: new Decimal(0.05), // вероятность крита
   critMultiplier: new Decimal(2), // множитель урона крита
   hpRegen: new Decimal(1), // hp в секунду В БОЮ (медленный)

@@ -9,8 +9,24 @@ export type { XpResult } from './formulas'
 export { buyUpgrade, ownedCount } from './upgrades'
 export { rollRarity, rollLoot, sellItem, sellPrice, INVENTORY_SIZE } from './loot'
 export { createRng, randomSeed } from './rng'
-export { recomputeStats, ensureStats, collectModifiers, explainStat, STAT_IDS } from './stats'
-export type { StatId, StatBlock, StatModifier, ModifierKind, StatBreakdown } from './stats'
+export {
+  recomputeStats,
+  applyModifiers,
+  ensureStats,
+  collectModifiers,
+  explainStat,
+  explainSwingTime,
+  computeSwingTime,
+  STAT_IDS,
+} from './stats'
+export type {
+  StatId,
+  StatBlock,
+  StatModifier,
+  ModifierKind,
+  StatBreakdown,
+  SwingTimeBreakdown,
+} from './stats'
 export { estimateCombatRate } from './combat'
 export type { CombatRate } from './combat'
 export { subscribe as subscribeAttacks, emit as emitAttack } from './events'
