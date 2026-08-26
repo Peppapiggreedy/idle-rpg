@@ -1,0 +1,117 @@
+<script lang="ts">
+  import { formatNumber } from '../game'
+  import { gameState } from '../stores/game'
+
+  const hpPercent = $derived(
+    Math.max(
+      0,
+      Math.min(
+        100,
+        $gameState.monster.currentHp.div($gameState.monster.maxHp).times(100).toNumber(),
+      ),
+    ),
+  )
+</script>
+
+<section class="combat">
+  <div class="stats">
+    <div class="stat">
+      <span class="label">Золото</span>
+      <span class="value gold">{formatNumber($gameState.gold)}</span>
+    </div>
+    <div class="stat">
+      <span class="label">Опыт</span>
+      <span class="value xp">{formatNumber($gameState.xp)}</span>
+    </div>
+    <div class="stat">
+      <span class="label">Урон в секунду</span>
+      <span class="value">{formatNumber($gameState.damagePerSecond)}</span>
+    </div>
+  </div>
+
+  <div class="monster">
+    <h2>{$gameState.monster.name}</h2>
+    <div class="hp-bar" role="progressbar" aria-valuenow={hpPercent} aria-valuemin="0" aria-valuemax="100">
+      <div class="hp-fill" style="width: {hpPercent}%"></div>
+    </div>
+    <div class="hp-text">
+      {formatNumber($gameState.monster.currentHp)} / {formatNumber($gameState.monster.maxHp)}
+    </div>
+  </div>
+
+  <ul class="log">
+    {#each $gameState.combatLog as entry}
+      <li>{entry}</li>
+    {/each}
+  </ul>
+</section>
+
+<style>
+  .combat {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  .stats {
+    display: flex;
+    justify-content: center;
+    gap: 2rem;
+    flex-wrap: wrap;
+  }
+  .stat {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+  .label {
+    font-size: 0.8rem;
+    opacity: 0.7;
+  }
+  .value {
+    font-size: 1.3rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .value.gold {
+    color: #d4a017;
+  }
+  .value.xp {
+    color: #7e6fff;
+  }
+
+  .monster h2 {
+    margin: 0 0 0.5rem;
+  }
+  .hp-bar {
+    height: 1.1rem;
+    border: 1px solid #8886;
+    border-radius: 6px;
+    overflow: hidden;
+    background: rgba(136, 136, 136, 0.15);
+  }
+  .hp-fill {
+    height: 100%;
+    background: #c0392b;
+    transition: width 0.1s linear;
+  }
+  .hp-text {
+    margin-top: 0.3rem;
+    font-size: 0.9rem;
+    font-variant-numeric: tabular-nums;
+    opacity: 0.85;
+  }
+
+  .log {
+    margin: 0 auto;
+    padding: 0;
+    list-style: none;
+    font-size: 0.9rem;
+    min-height: calc(5 * 1.5em);
+  }
+  .log li {
+    opacity: 0.9;
+  }
+  .log li:not(:first-child) {
+    opacity: 0.55;
+  }
+</style>
