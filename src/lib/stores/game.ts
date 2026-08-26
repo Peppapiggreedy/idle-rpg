@@ -1,8 +1,10 @@
-// Единственный мост между игровой логикой и UI: компоненты читают эти store,
-// цикл пишет в них. Прямых импортов src/lib/game из компонентов быть не должно.
+// Единственный мост между игровой логикой и UI: компоненты читают эти store
+// и вызывают экшены, цикл и экшены пишут в состояние.
 import { readonly, writable } from 'svelte/store'
 import { createGameLoop, type GameLoop, type LoopMetrics } from '../game/loop'
 import { createInitialState, tick, type GameState } from '../game/tick'
+import { buyUpgrade } from '../game/upgrades'
+import type { UpgradeDef } from '../types'
 
 const state = writable<GameState>(createInitialState())
 export const gameState = readonly(state)
@@ -25,4 +27,9 @@ export function startGameLoop(): void {
 export function stopGameLoop(): void {
   loop?.stop()
   loop = null
+}
+
+/** Покупка апгрейда по клику из UI; при нехватке золота ничего не меняет. */
+export function purchaseUpgrade(def: UpgradeDef): void {
+  state.update((s) => buyUpgrade(s, def))
 }

@@ -22,7 +22,7 @@ const DUMMY: MonsterTemplate = {
 function stateWith(dps: number, template: MonsterTemplate): GameState {
   return {
     ...createInitialState(),
-    damagePerSecond: new Decimal(dps),
+    baseDamage: new Decimal(dps),
     monster: spawnMonster(template),
     combatLog: [],
   }
@@ -39,7 +39,7 @@ describe('боевой tick', () => {
     s = run(s, 10_000)
     // Ровно одна выдача награды — значит ровно одна смерть моба.
     expect(s.gold.toNumber()).toBe(5)
-    expect(s.xp.toNumber()).toBe(3)
+    expect(s.currentXp.toNumber()).toBe(3)
     expect(s.monster.currentHp.toNumber()).toBe(0)
     expect(s.respawnMsLeft).toBe(RESPAWN_DELAY_MS)
   })

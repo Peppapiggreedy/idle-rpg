@@ -22,6 +22,15 @@ export interface Monster {
 // Шаблон моба для src/lib/data: без currentHp — оно появляется при спавне.
 export type MonsterTemplate = Omit<Monster, 'currentHp'>
 
+// Описание апгрейда для src/lib/data: цена растёт как baseCost * costGrowth^owned.
+export interface UpgradeDef {
+  id: string
+  name: string
+  baseCost: Decimal
+  costGrowth: Decimal
+  damageBonus: Decimal // прибавка к baseDamage за одну покупку
+}
+
 export type Rarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary'
 
 export interface Item {
