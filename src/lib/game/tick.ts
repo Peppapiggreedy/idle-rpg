@@ -1,6 +1,7 @@
 // Чистая функция симуляции одного шага. Не знает про Svelte, DOM и время кадров:
 // получает состояние и длительность шага, возвращает новое состояние.
 import { Decimal, formatNumber } from './numbers'
+import { applyXp, xpToNextLevel } from './formulas'
 import type { Monster, MonsterTemplate } from '../types'
 import { FIRST_MONSTER } from '../data/monsters'
 
@@ -13,8 +14,11 @@ export interface GameState {
   totalTicks: Decimal
   playtimeMs: Decimal
   gold: Decimal
-  xp: Decimal
-  damagePerSecond: Decimal
+  level: Decimal
+  currentXp: Decimal
+  xpToNext: Decimal
+  baseDamage: Decimal // пока равен урону в секунду; апгрейды добавляют к нему
+  upgrades: Record<string, Decimal> // id апгрейда -> сколько куплено
   monster: Monster
   // Служебный обратный отсчёт до респауна в мс (как dtMs): 0 — моб жив.
   respawnMsLeft: number
@@ -26,12 +30,16 @@ export function spawnMonster(template: MonsterTemplate): Monster {
 }
 
 export function createInitialState(): GameState {
+  const level = new Decimal(1)
   return {
     totalTicks: new Decimal(0),
     playtimeMs: new Decimal(0),
     gold: new Decimal(0),
-    xp: new Decimal(0),
-    damagePerSecond: new Decimal(10),
+    level,
+    currentXp: new Decimal(0),
+    xpToNext: xpToNextLevel(level),
+    baseDamage: new Decimal(10),
+    upgrades: {},
     monster: spawnMonster(FIRST_MONSTER),
     respawnMsLeft: 0,
     combatLog: [],
@@ -62,22 +70,30 @@ export function tick(state: GameState, dtMs: number): GameState {
     }
   }
 
-  // Урон за шаг: dps * dt / 1000 — итог не зависит от частоты шагов симуляции.
-  const damage = s.damagePerSecond.times(dtMs).div(1000)
+  // Урон за шаг: baseDamage — это урон в секунду, поэтому dps * dt / 1000;
+  // итог не зависит от частоты шагов симуляции.
+  const damage = s.baseDamage.times(dtMs).div(1000)
   const hpLeft = s.monster.currentHp.minus(damage)
 
   if (hpLeft.lte(0)) {
     const { name, goldReward, xpReward } = s.monster
+    const leveled = applyXp(s.level, s.currentXp, xpReward)
+    let combatLog = pushLog(
+      s.combatLog,
+      `${name} повержен! +${formatNumber(goldReward)} золота, +${formatNumber(xpReward)} опыта`,
+    )
+    if (leveled.level.gt(s.level)) {
+      combatLog = pushLog(combatLog, `Новый уровень: ${formatNumber(leveled.level)}!`)
+    }
     return {
       ...s,
       monster: { ...s.monster, currentHp: new Decimal(0) },
       gold: s.gold.plus(goldReward),
-      xp: s.xp.plus(xpReward),
+      level: leveled.level,
+      currentXp: leveled.currentXp,
+      xpToNext: leveled.xpToNext,
       respawnMsLeft: RESPAWN_DELAY_MS,
-      combatLog: pushLog(
-        s.combatLog,
-        `${name} повержен! +${formatNumber(goldReward)} золота, +${formatNumber(xpReward)} опыта`,
-      ),
+      combatLog,
     }
   }
 

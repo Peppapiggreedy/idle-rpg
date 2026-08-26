@@ -20,12 +20,8 @@
       <span class="value gold">{formatNumber($gameState.gold)}</span>
     </div>
     <div class="stat">
-      <span class="label">Опыт</span>
-      <span class="value xp">{formatNumber($gameState.xp)}</span>
-    </div>
-    <div class="stat">
       <span class="label">Урон в секунду</span>
-      <span class="value">{formatNumber($gameState.damagePerSecond)}</span>
+      <span class="value">{formatNumber($gameState.baseDamage)}</span>
     </div>
   </div>
 
@@ -74,9 +70,6 @@
   }
   .value.gold {
     color: #d4a017;
-  }
-  .value.xp {
-    color: #7e6fff;
   }
 
   .monster h2 {
