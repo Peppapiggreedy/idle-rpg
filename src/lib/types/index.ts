@@ -19,6 +19,9 @@ export interface Monster {
   xpReward: Decimal
 }
 
+// Шаблон моба для src/lib/data: без currentHp — оно появляется при спавне.
+export type MonsterTemplate = Omit<Monster, 'currentHp'>
+
 export type Rarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary'
 
 export interface Item {
