@@ -4,11 +4,16 @@ import { Decimal } from './numbers'
 import { xpToNextLevel } from './formulas'
 import { randomSeed } from './rng'
 import { FIRST_MONSTER } from '../data/monsters'
-import { START_BASE_DAMAGE } from '../data/balance'
+import {
+  CRIT_CHANCE,
+  CRIT_MULTIPLIER,
+  START_ATTACK_SPEED_S,
+  START_DAMAGE_PER_SWING,
+} from '../data/balance'
 import type { CombatEvent, Item, Monster, MonsterTemplate } from '../types'
 
 // Сколько последних событий боя храним для лога на экране.
-export const COMBAT_LOG_SIZE = 5
+export const COMBAT_LOG_SIZE = 8
 
 export interface GameState {
   totalTicks: Decimal
@@ -17,7 +22,11 @@ export interface GameState {
   level: Decimal
   currentXp: Decimal
   xpToNext: Decimal
-  baseDamage: Decimal // пока равен урону в секунду; апгрейды добавляют к нему
+  damagePerSwing: Decimal // урон одного удара; апгрейды добавляют к нему
+  attackSpeed: number // секунд между ударами
+  swingTimerMs: number // накопленное время замаха; удар при достижении attackSpeed
+  critChance: number // вероятность крита
+  critMultiplier: Decimal // множитель урона крита
   upgrades: Record<string, Decimal> // id апгрейда -> сколько куплено
   inventory: Item[]
   itemSeq: number // служебный счётчик для уникальных id предметов
@@ -42,7 +51,11 @@ export function createInitialState(rngSeed: number = randomSeed()): GameState {
     level,
     currentXp: new Decimal(0),
     xpToNext: xpToNextLevel(level),
-    baseDamage: START_BASE_DAMAGE,
+    damagePerSwing: START_DAMAGE_PER_SWING,
+    attackSpeed: START_ATTACK_SPEED_S,
+    swingTimerMs: 0,
+    critChance: CRIT_CHANCE,
+    critMultiplier: CRIT_MULTIPLIER,
     upgrades: {},
     inventory: [],
     itemSeq: 0,

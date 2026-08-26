@@ -9,6 +9,9 @@ export type { XpResult } from './formulas'
 export { buyUpgrade, ownedCount } from './upgrades'
 export { rollRarity, rollLoot, sellItem, sellPrice, INVENTORY_SIZE } from './loot'
 export { createRng, randomSeed } from './rng'
+export { estimateCombatRate } from './combat'
+export type { CombatRate } from './combat'
+export { subscribe as subscribeAttacks, emit as emitAttack } from './events'
 export type { Rng } from './rng'
 export {
   saveGame,
@@ -26,7 +29,7 @@ export {
   OFFLINE_MODAL_MIN_MS,
 } from './save'
 export type {
-  SavePayloadV2,
+  SavePayloadV3,
   SavedItem,
   SaveStorage,
   SaveDeps,

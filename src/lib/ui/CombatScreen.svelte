@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { formatNumber } from '../game'
+  import { estimateCombatRate, formatNumber } from '../game'
   import { gameState } from '../stores/game'
   import { RARITY_BY_ID } from '../data/rarity'
   import type { CombatEvent } from '../types'
@@ -7,6 +7,10 @@
   // Весь текст боевого лога живёт здесь: логика отдаёт только события.
   function eventText(e: CombatEvent): string {
     switch (e.type) {
+      case 'hit':
+        return e.isCrit
+          ? `КРИТ! ${formatNumber(e.damage)} урона`
+          : `Удар: ${formatNumber(e.damage)} урона`
       case 'kill':
         return `${e.monsterName} повержен! +${formatNumber(e.gold)} золота, +${formatNumber(e.xp)} опыта`
       case 'levelup':
@@ -15,10 +19,10 @@
         return `Выпало: ${e.item.name} [${RARITY_BY_ID[e.item.rarity].name}]`
       case 'spawn':
         return `Появился ${e.monsterName}`
-      case 'hit':
-        return '' // удары в лог не пишутся (см. types/CombatEvent)
     }
   }
+
+  const combatRate = $derived(estimateCombatRate($gameState))
 
   const hpPercent = $derived(
     Math.max(
@@ -38,8 +42,12 @@
       <span class="value gold">{formatNumber($gameState.gold)}</span>
     </div>
     <div class="stat">
+      <span class="label">Урон за удар</span>
+      <span class="value">{formatNumber($gameState.damagePerSwing)}</span>
+    </div>
+    <div class="stat">
       <span class="label">Урон в секунду</span>
-      <span class="value">{formatNumber($gameState.baseDamage)}</span>
+      <span class="value">{formatNumber(combatRate.damagePerSecond)}</span>
     </div>
   </div>
 
@@ -55,7 +63,7 @@
 
   <ul class="log">
     {#each $gameState.combatLog as event}
-      <li>{eventText(event)}</li>
+      <li class:crit={event.type === 'hit' && event.isCrit}>{eventText(event)}</li>
     {/each}
   </ul>
 </section>
@@ -117,12 +125,16 @@
     padding: 0;
     list-style: none;
     font-size: 0.9rem;
-    min-height: calc(5 * 1.5em);
+    min-height: calc(8 * 1.5em);
   }
   .log li {
     opacity: 0.9;
   }
   .log li:not(:first-child) {
     opacity: 0.55;
+  }
+  .log li.crit {
+    color: var(--color-gold);
+    font-weight: 600;
   }
 </style>

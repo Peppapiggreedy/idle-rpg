@@ -29,7 +29,7 @@ function richState(): GameState {
     level: new Decimal(42),
     currentXp: new Decimal(1500),
     xpToNext: xpToNextLevel(new Decimal(42)),
-    baseDamage: new Decimal(64),
+    damagePerSwing: new Decimal(64),
     upgrades: { 'weapon-sharpening': new Decimal(54) },
     totalTicks: new Decimal(100000),
     playtimeMs: new Decimal(10_000_000),
@@ -55,7 +55,7 @@ describe('save/load', () => {
     expect(s.level.toNumber()).toBe(42)
     expect(s.currentXp.toNumber()).toBe(1500)
     expect(s.xpToNext.eq(xpToNextLevel(new Decimal(42)))).toBe(true)
-    expect(s.baseDamage.toNumber()).toBe(64)
+    expect(s.damagePerSwing.toNumber()).toBe(64)
     expect(s.upgrades['weapon-sharpening'].toNumber()).toBe(54)
     expect(result.offline).toBeNull()
     // Моб после загрузки свежий и с полным HP.
@@ -86,7 +86,8 @@ describe('save/load', () => {
     expect(s.gold.toNumber()).toBe(77)
     expect(s.level.toNumber()).toBe(5)
     expect(s.currentXp.toNumber()).toBe(3)
-    expect(s.baseDamage.toNumber()).toBe(12)
+    // v1 хранил урон в секунду 12; после конверсии за удар: 12 * 2.0 = 24
+    expect(s.damagePerSwing.toNumber()).toBe(24)
     expect(s.upgrades['weapon-sharpening'].toNumber()).toBe(2)
     expect(s.inventory).toEqual([])
     expect(s.itemSeq).toBe(0)
@@ -152,8 +153,8 @@ describe('оффлайн-прогресс', () => {
     expect(after100h.report!.kills.eq(after8h.report!.kills)).toBe(true)
     expect(after100h.state.gold.eq(after8h.state.gold)).toBe(true)
     expect(after100h.report!.elapsedMs).toBe(OFFLINE_CAP_MS)
-    // Контроль формулы: цикл убийства = 30hp/10dps + 0.3с респаун = 3.3с.
-    const cycleSec = 30 / 10 + RESPAWN_DELAY_MS / 1000
+    // Контроль формулы: ceil(30hp / 20 за удар) = 2 удара * 2 c + 0.3 c респаун = 4.3 c.
+    const cycleSec = 2 * 2 + RESPAWN_DELAY_MS / 1000
     expect(after8h.report!.kills.toNumber()).toBe(Math.floor((8 * 3600) / cycleSec))
   })
 

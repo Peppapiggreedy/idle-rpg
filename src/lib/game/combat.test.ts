@@ -1,14 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { Decimal } from './numbers'
 import { STEP_MS } from './loop'
-import {
-  COMBAT_LOG_SIZE,
-  RESPAWN_DELAY_MS,
-  createInitialState,
-  spawnMonster,
-  tick,
-  type GameState,
-} from './tick'
+import { RESPAWN_DELAY_MS, createInitialState, spawnMonster, tick, type GameState } from './tick'
 import type { MonsterTemplate } from '../types'
 
 const DUMMY: MonsterTemplate = {
@@ -19,64 +12,81 @@ const DUMMY: MonsterTemplate = {
   xpReward: new Decimal(3),
 }
 
-function stateWith(dps: number, template: MonsterTemplate): GameState {
+// rng = 1 никогда не критует и не дропает лут — тесты детерминированы.
+const NO_LUCK = () => 1
+
+function stateWith(damagePerSwing: number, template: MonsterTemplate): GameState {
   return {
-    ...createInitialState(),
-    baseDamage: new Decimal(dps),
+    ...createInitialState(1),
+    damagePerSwing: new Decimal(damagePerSwing),
     monster: spawnMonster(template),
     combatLog: [],
   }
 }
 
-// rng = 1 никогда не проходит порог дропа — боевые тесты не зависят от лута.
-const NO_LOOT = () => 1
-
-function run(state: GameState, ms: number): GameState {
-  for (let t = 0; t < ms; t += STEP_MS) state = tick(state, STEP_MS, NO_LOOT)
+function run(state: GameState, ms: number, rng: () => number = NO_LUCK): GameState {
+  for (let t = 0; t < ms; t += STEP_MS) state = tick(state, STEP_MS, rng)
   return state
 }
 
-describe('боевой tick', () => {
-  it('dps 10 против 100 hp: за 10 секунд ровно одно убийство', () => {
-    let s = stateWith(10, DUMMY)
+describe('дискретные удары', () => {
+  it('удар происходит раз в attackSpeed, а не каждый тик', () => {
+    let s = stateWith(20, DUMMY)
+    s = run(s, 1900) // 1.9 c — замах ещё не полный
+    expect(s.monster.currentHp.toNumber()).toBe(100)
+    s = run(s, 100) // ровно 2.0 c — первый удар
+    expect(s.monster.currentHp.toNumber()).toBe(80)
+    expect(s.combatLog[0]).toMatchObject({ type: 'hit', isCrit: false })
+  })
+
+  it('таймер сбрасывается с переносом остатка: медленный тик не теряет время', () => {
+    // Один жирный тик в 2.5 c: удар + 0.5 c уже в замахе следующего.
+    let s = stateWith(20, DUMMY)
+    s = tick(s, 2500, NO_LUCK)
+    expect(s.monster.currentHp.toNumber()).toBe(80)
+    expect(s.swingTimerMs).toBe(500)
+    // Ещё 1.5 c — второй удар ровно вовремя (2.0 c после первого).
+    s = tick(s, 1500, NO_LUCK)
+    expect(s.monster.currentHp.toNumber()).toBe(60)
+  })
+
+  it('урон за удар 20 против 100 hp: 5 ударов, одно убийство за 10 секунд', () => {
+    let s = stateWith(20, DUMMY)
     s = run(s, 10_000)
-    // Ровно одна выдача награды — значит ровно одна смерть моба.
-    expect(s.gold.toNumber()).toBe(5)
+    expect(s.gold.toNumber()).toBe(5) // ровно одна награда
     expect(s.currentXp.toNumber()).toBe(3)
     expect(s.monster.currentHp.toNumber()).toBe(0)
     expect(s.respawnMsLeft).toBe(RESPAWN_DELAY_MS)
   })
 
-  it('урон пропорционален dt: за один тик 100 мс снимается dps/10', () => {
-    let s = stateWith(10, DUMMY)
-    s = tick(s, STEP_MS, NO_LOOT)
-    expect(s.monster.currentHp.toNumber()).toBe(99)
+  it('крит умножает урон и помечается в событии', () => {
+    // rng = 0 всегда критует (0 < 0.05).
+    let s = stateWith(20, DUMMY)
+    s = run(s, 2000, () => 0)
+    expect(s.monster.currentHp.toNumber()).toBe(100 - 40) // 20 * critMultiplier 2
+    const hit = s.combatLog.find((e) => e.type === 'hit')
+    expect(hit).toMatchObject({ isCrit: true })
   })
 
-  it('через 300 мс после смерти спавнится новый моб с полным HP', () => {
-    let s = stateWith(10, DUMMY)
-    s = run(s, 10_000) // убили
-    s = run(s, RESPAWN_DELAY_MS) // 3 тика ожидания респауна
+  it('во время респауна замах стоит: новый моб получает первый удар через полный attackSpeed', () => {
+    let s = stateWith(200, { ...DUMMY, maxHp: new Decimal(100) }) // смерть с одного удара
+    s = run(s, 2000) // удар на 2.0 c -> убил
+    expect(s.gold.toNumber()).toBe(5)
+    s = run(s, RESPAWN_DELAY_MS) // респаун
     expect(s.monster.currentHp.eq(s.monster.maxHp)).toBe(true)
-    expect(s.respawnMsLeft).toBe(0)
-    expect(s.combatLog[0].type).toBe('spawn')
-    // Награда не начислялась повторно.
-    expect(s.gold.toNumber()).toBe(5)
-  })
-
-  it('во время ожидания респауна награды не капают', () => {
-    let s = stateWith(10, DUMMY)
-    s = run(s, 10_000)
-    s = tick(s, STEP_MS, NO_LOOT) // 1-й тик ожидания
-    expect(s.gold.toNumber()).toBe(5)
+    s = run(s, 1900) // 1.9 c замаха — удара ещё нет
+    expect(s.monster.currentHp.eq(s.monster.maxHp)).toBe(true)
+    s = run(s, 100) // полный замах — удар
     expect(s.monster.currentHp.toNumber()).toBe(0)
   })
 
-  it('лог боя не длиннее пяти событий', () => {
-    // Быстрый dps против хилого моба — много смертей подряд.
-    let s = stateWith(1000, { ...DUMMY, maxHp: new Decimal(10) })
-    s = run(s, 30_000)
-    expect(s.combatLog.length).toBeLessThanOrEqual(COMBAT_LOG_SIZE)
-    expect(s.gold.gt(5)).toBe(true) // убийств было много
+  it('события удара уходят в шину через emitAttack', () => {
+    const seen: string[] = []
+    let s = stateWith(20, DUMMY)
+    for (let t = 0; t < 4000; t += STEP_MS) {
+      s = tick(s, STEP_MS, NO_LUCK, (e) => seen.push(`${e.sourceId}->${e.targetId}:${e.amount}`))
+    }
+    expect(seen.length).toBe(2) // 4 секунды = 2 удара
+    expect(seen[0]).toBe('hero->training-dummy:20')
   })
 })

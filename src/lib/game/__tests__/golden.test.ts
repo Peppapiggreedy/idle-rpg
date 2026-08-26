@@ -22,7 +22,7 @@ function fingerprint(s: GameState) {
     gold: s.gold.toString(),
     level: s.level.toString(),
     currentXp: s.currentXp.toString(),
-    baseDamage: s.baseDamage.toString(),
+    damagePerSwing: s.damagePerSwing.toString(),
     totalTicks: s.totalTicks.toString(),
     inventoryCount: s.inventory.length,
     inventorySellTotal: s.inventory

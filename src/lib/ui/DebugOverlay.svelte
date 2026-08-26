@@ -1,14 +1,20 @@
 <script lang="ts">
   import { onMount } from 'svelte'
+  import { formatNumber, subscribeAttacks } from '../game'
   import { gameState, loopMetrics } from '../stores/game'
+  import type { AttackEvent } from '../types'
 
   // Оверлей нужен для отладки вслепую на живой странице; прячется через ?debug=0.
   const visible =
     new URLSearchParams(window.location.search).get('debug') !== '0'
 
   let lastError = $state('')
+  let lastAttack = $state<AttackEvent | null>(null)
 
   onMount(() => {
+    const unsubscribe = subscribeAttacks((e) => {
+      lastAttack = e
+    })
     const onError = (e: ErrorEvent) => {
       lastError = e.message
     }
@@ -18,6 +24,7 @@
     window.addEventListener('error', onError)
     window.addEventListener('unhandledrejection', onRejection)
     return () => {
+      unsubscribe()
       window.removeEventListener('error', onError)
       window.removeEventListener('unhandledrejection', onRejection)
     }
@@ -28,6 +35,9 @@
   <div class="overlay">
     <div>fps: {$loopMetrics.fps} · tps: {$loopMetrics.tps}</div>
     <div>ticks: {$gameState.totalTicks.toFixed(0)}</div>
+    {#if lastAttack}
+      <div>hit: {formatNumber(lastAttack.amount)}{lastAttack.isCrit ? ' crit' : ''}</div>
+    {/if}
     <div>build: {__BUILD_TIME__}</div>
     {#if lastError}
       <div class="error">err: {lastError}</div>
