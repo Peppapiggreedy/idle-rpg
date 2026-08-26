@@ -28,8 +28,11 @@ function stateWith(dps: number, template: MonsterTemplate): GameState {
   }
 }
 
+// rng = 1 никогда не проходит порог дропа — боевые тесты не зависят от лута.
+const NO_LOOT = () => 1
+
 function run(state: GameState, ms: number): GameState {
-  for (let t = 0; t < ms; t += STEP_MS) state = tick(state, STEP_MS)
+  for (let t = 0; t < ms; t += STEP_MS) state = tick(state, STEP_MS, NO_LOOT)
   return state
 }
 
@@ -46,7 +49,7 @@ describe('боевой tick', () => {
 
   it('урон пропорционален dt: за один тик 100 мс снимается dps/10', () => {
     let s = stateWith(10, DUMMY)
-    s = tick(s, STEP_MS)
+    s = tick(s, STEP_MS, NO_LOOT)
     expect(s.monster.currentHp.toNumber()).toBe(99)
   })
 
@@ -64,7 +67,7 @@ describe('боевой tick', () => {
   it('во время ожидания респауна награды не капают', () => {
     let s = stateWith(10, DUMMY)
     s = run(s, 10_000)
-    s = tick(s, STEP_MS) // 1-й тик ожидания
+    s = tick(s, STEP_MS, NO_LOOT) // 1-й тик ожидания
     expect(s.gold.toNumber()).toBe(5)
     expect(s.monster.currentHp.toNumber()).toBe(0)
   })

@@ -4,6 +4,7 @@ import { get, readonly, writable } from 'svelte/store'
 import { createGameLoop, type GameLoop, type LoopMetrics } from '../game/loop'
 import { createInitialState, tick, type GameState } from '../game/tick'
 import { buyUpgrade } from '../game/upgrades'
+import { sellItem } from '../game/loot'
 import {
   AUTOSAVE_INTERVAL_MS,
   OFFLINE_MODAL_MIN_MS,
@@ -93,6 +94,11 @@ export function stopGameLoop(): void {
 /** Покупка апгрейда по клику из UI; при нехватке золота ничего не меняет. */
 export function purchaseUpgrade(def: UpgradeDef): void {
   state.update((s) => buyUpgrade(s, def))
+}
+
+/** Продажа предмета из инвентаря по клику из UI. */
+export function sellInventoryItem(itemId: string): void {
+  state.update((s) => sellItem(s, itemId))
 }
 
 /** Строка экспорта (base64) текущего состояния; заодно сохраняет игру. */

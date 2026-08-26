@@ -7,6 +7,8 @@ export type { GameState } from './tick'
 export { upgradeCost, xpToNextLevel, applyXp, MAX_LEVELUPS_PER_CALL } from './formulas'
 export type { XpResult } from './formulas'
 export { buyUpgrade, ownedCount } from './upgrades'
+export { rollRarity, rollLoot, sellItem, sellPrice, INVENTORY_SIZE } from './loot'
+export type { Rng } from './loot'
 export {
   saveGame,
   loadGame,
@@ -22,4 +24,4 @@ export {
   OFFLINE_CAP_MS,
   OFFLINE_MODAL_MIN_MS,
 } from './save'
-export type { SavePayloadV1, SaveStorage, SaveDeps, OfflineReport, LoadResult } from './save'
+export type { SavePayloadV2, SavedItem, SaveStorage, SaveDeps, OfflineReport, LoadResult } from './save'
