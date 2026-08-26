@@ -3,5 +3,8 @@
   "level": "4",
   "xp": "11",
   "damagePerSecond": "13",
+  "upgrades": {
+    "weapon-sharpening": "3"
+  },
   "lastTimestamp": 0
 }

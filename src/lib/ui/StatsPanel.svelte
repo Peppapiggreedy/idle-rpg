@@ -1,0 +1,135 @@
+<script lang="ts">
+  import { Decimal, explainStat, formatNumber, STAT_IDS, type StatId, type StatModifier } from '../game'
+  import { UPGRADES } from '../data/upgrades'
+  import { gameState } from '../stores/game'
+
+  // Весь текст панели статов живёт здесь; логика отдаёт только раскладку.
+  const STAT_NAMES: Record<StatId, string> = {
+    attackPower: 'Сила атаки',
+    maxHp: 'Здоровье',
+    maxMana: 'Мана',
+    attackSpeed: 'Скорость атаки',
+    critChance: 'Шанс крита',
+    critMultiplier: 'Множитель крита',
+    hpRegen: 'Восст. здоровья',
+    manaRegen: 'Восст. маны',
+    damageReduction: 'Снижение урона',
+  }
+
+  // Проценты и секунды читаются иначе, чем растущие величины.
+  const PERCENT_STATS: StatId[] = ['critChance', 'damageReduction']
+  const SECONDS_STATS: StatId[] = ['attackSpeed']
+
+  let openStat = $state<StatId | null>(null)
+
+  function toggle(stat: StatId) {
+    openStat = openStat === stat ? null : stat
+  }
+
+  function statValue(stat: StatId): string {
+    const v = $gameState.stats[stat]
+    const d = v instanceof Decimal ? v : new Decimal(v)
+    if (PERCENT_STATS.includes(stat)) return `${d.times(100).toFixed(0)}%`
+    if (SECONDS_STATS.includes(stat)) return `${d.toFixed(1)} с`
+    if (stat === 'critMultiplier') return `×${d.toFixed(1)}`
+    return formatNumber(d)
+  }
+
+  function formatModValue(stat: StatId, mod: StatModifier): string {
+    if (mod.kind === 'percent') return `${mod.value.gte(0) ? '+' : ''}${mod.value.times(100).toFixed(0)}%`
+    if (mod.kind === 'multiplier') return `×${mod.value.toFixed(2)}`
+    if (PERCENT_STATS.includes(stat)) return `${mod.value.gte(0) ? '+' : ''}${mod.value.times(100).toFixed(0)}%`
+    return `${mod.value.gte(0) ? '+' : ''}${formatNumber(mod.value)}`
+  }
+
+  // 'upgrade:weapon-sharpening' -> «Заточка оружия», 'base' -> «база» и т.д.
+  function sourceName(source: string): string {
+    if (source === 'base') return 'база'
+    const [kind, id] = source.split(':')
+    if (kind === 'upgrade') return UPGRADES.find((u) => u.id === id)?.name ?? id
+    if (kind === 'equipment') return `экипировка: ${id}`
+    if (kind === 'talent') return `талант: ${id}`
+    if (kind === 'zone') return `зона: ${id}`
+    return source
+  }
+</script>
+
+<section class="stats-panel">
+  <h2>Статы</h2>
+  <ul>
+    {#each STAT_IDS as stat (stat)}
+      {@const breakdown = explainStat($gameState, stat)}
+      <li>
+        <button type="button" class="stat-row" onclick={() => toggle(stat)}>
+          <span class="name">{STAT_NAMES[stat]}</span>
+          <span class="value">{statValue(stat)}</span>
+        </button>
+        {#if openStat === stat}
+          <div class="breakdown">
+            {#if PERCENT_STATS.includes(stat)}
+              <span>{breakdown.base.times(100).toFixed(0)}% база</span>
+            {:else}
+              <span>{formatNumber(breakdown.base)} база</span>
+            {/if}
+            {#each breakdown.entries as mod}
+              <span>· {formatModValue(stat, mod)} {sourceName(mod.source)}</span>
+            {/each}
+            <span>= {statValue(stat)}</span>
+          </div>
+        {/if}
+      </li>
+    {/each}
+  </ul>
+</section>
+
+<style>
+  .stats-panel h2 {
+    margin: 0 0 0.5rem;
+    font-size: 1.1rem;
+  }
+  ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    border: 1px solid #8884;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  li + li {
+    border-top: 1px solid #8883;
+  }
+  .stat-row {
+    font: inherit;
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.35em 0.8em;
+    border: none;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+  }
+  .stat-row:hover {
+    background: rgba(136, 136, 136, 0.1);
+  }
+  .name {
+    opacity: 0.85;
+  }
+  .value {
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+  }
+  .breakdown {
+    padding: 0.3em 0.9em 0.6em;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35em;
+    font-size: 0.85rem;
+    text-align: left;
+    opacity: 0.85;
+    background: rgba(136, 136, 136, 0.07);
+  }
+</style>

@@ -10,16 +10,13 @@ export interface CombatRate {
 }
 
 export function estimateCombatRate(state: GameState): CombatRate {
+  const { attackPower, attackSpeed, critChance, critMultiplier } = state.stats
   // Матожидание множителя урона: 1 + шанс_крита * (множитель - 1).
-  const critFactor = new Decimal(1).plus(
-    state.critMultiplier.minus(1).times(state.critChance),
-  )
-  const damagePerSecond = state.damagePerSwing
-    .times(critFactor)
-    .div(state.attackSpeed)
+  const critFactor = new Decimal(1).plus(critMultiplier.minus(1).times(critChance))
+  const damagePerSecond = attackPower.times(critFactor).div(attackSpeed)
   // Ударов на моба считаем по базовому урону (без критов): дискретность важнее
   // редких критов, при крит-шансе ~5% погрешность оценки в пределах пары процентов.
-  const hitsPerKill = state.monster.maxHp.div(state.damagePerSwing).ceil()
-  const killCycleSec = hitsPerKill.times(state.attackSpeed).plus(RESPAWN_DELAY_MS / 1000)
+  const hitsPerKill = state.monster.maxHp.div(attackPower).ceil()
+  const killCycleSec = hitsPerKill.times(attackSpeed).plus(RESPAWN_DELAY_MS / 1000)
   return { damagePerSecond, killsPerSecond: new Decimal(1).div(killCycleSec) }
 }
