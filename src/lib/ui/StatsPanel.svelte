@@ -1,9 +1,14 @@
 <script lang="ts">
   import {
     Decimal,
+    attackPowerContribution,
+    estimateCombatRate,
     explainStat,
     explainSwingTime,
+    expectedSwingDamage,
+    critFactor,
     formatNumber,
+    swingDamageRange,
     STAT_IDS,
     type StatId,
     type StatModifier,
@@ -14,6 +19,8 @@
   // Весь текст панели статов живёт здесь; логика отдаёт только раскладку.
   const STAT_NAMES: Record<StatId, string> = {
     attackPower: 'Сила атаки',
+    weaponDamageMin: 'Урон оружия (мин)',
+    weaponDamageMax: 'Урон оружия (макс)',
     maxHp: 'Здоровье',
     maxMana: 'Мана',
     weaponSpeed: 'Скорость оружия',
@@ -31,7 +38,7 @@
   const SECONDS_STATS: StatId[] = ['weaponSpeed']
 
   // 'swingTime' — производная строка, не модифицируемый стат.
-  type RowId = StatId | 'swingTime'
+  type RowId = StatId | 'swingTime' | 'swingDamage' | 'dps'
 
   let openStat = $state<RowId | null>(null)
 
@@ -40,6 +47,11 @@
   }
 
   const swing = $derived(explainSwingTime($gameState))
+  const damageRange = $derived(swingDamageRange($gameState.stats))
+  const apPart = $derived(attackPowerContribution($gameState.stats))
+  const avgSwing = $derived(expectedSwingDamage($gameState.stats))
+  const crit = $derived(critFactor($gameState.stats))
+  const dps = $derived(estimateCombatRate($gameState).damagePerSecond)
   const formatSeconds = (v: number) => `${v.toFixed(2)}с`
   const formatPercent = (v: number) => `${(v * 100).toFixed(0)}%`
 
@@ -74,6 +86,40 @@
 <section class="stats-panel">
   <h2>Статы</h2>
   <ul>
+    <li>
+      <button type="button" class="stat-row" onclick={() => toggle('swingDamage')}>
+        <span class="name">Урон удара</span>
+        <span class="value">{formatNumber(damageRange.min)}–{formatNumber(damageRange.max)}</span>
+      </button>
+      {#if openStat === 'swingDamage'}
+        <div class="breakdown">
+          <span
+            >{formatNumber($gameState.stats.weaponDamageMin)}–{formatNumber(
+              $gameState.stats.weaponDamageMax,
+            )} оружие</span
+          >
+          <span
+            >· +{formatNumber(apPart)} от силы атаки ({formatNumber($gameState.stats.attackPower)} ×
+            {formatSeconds($gameState.stats.weaponSpeed)} / 14)</span
+          >
+          <span>= {formatNumber(damageRange.min)}–{formatNumber(damageRange.max)}</span>
+        </div>
+      {/if}
+    </li>
+    <li>
+      <button type="button" class="stat-row" onclick={() => toggle('dps')}>
+        <span class="name">Урон в секунду</span>
+        <span class="value">{dps.toNumber().toFixed(2)}</span>
+      </button>
+      {#if openStat === 'dps'}
+        <div class="breakdown">
+          <span>{formatNumber(avgSwing)} средний удар</span>
+          <span>· ×{crit.toNumber().toFixed(2)} за криты ({formatPercent($gameState.stats.critChance)} × {$gameState.stats.critMultiplier.toNumber().toFixed(1)})</span>
+          <span>· / {formatSeconds(swing.swingTime)} замах</span>
+          <span>= {dps.toNumber().toFixed(2)}</span>
+        </div>
+      {/if}
+    </li>
     <li>
       <button type="button" class="stat-row" onclick={() => toggle('swingTime')}>
         <span class="name">Время замаха</span>

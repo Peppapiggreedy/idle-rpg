@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { Decimal } from '../numbers'
 import { createInitialState, type GameState } from '../tick'
 import { ensureStats } from '../stats'
+import { expectedSwingDamage } from '../combat'
 import { buyUpgrade } from '../upgrades'
 import { WEAPON_SHARPENING } from '../../data/upgrades'
 import {
@@ -41,6 +42,8 @@ describe('фикстуры сейвов', () => {
     ['save-v2.json'],
     ['save-v3.json'],
     ['save-v4.json'],
+    ['save-v5.json'],
+    ['save-v6.json'],
   ])('%s мигрирует до текущей версии', (name) => {
     const payload = migrateSave(JSON.parse(fixture(name)))
     expect(payload).not.toBeNull()
@@ -52,8 +55,8 @@ describe('фикстуры сейвов', () => {
     expect(s.gold.toNumber()).toBe(150)
     expect(s.level.toNumber()).toBe(4)
     expect(s.currentXp.toNumber()).toBe(11)
-    // 13 dps = 10 базовых + 3 заточки; пересчёт из счётчика: 20 + 3*2 = 26
-    expect(s.stats.attackPower.toNumber()).toBe(26)
+    // 13 dps = 10 базовых + 3 заточки; средний удар после пересчёта: 20 + 3*2 = 26
+    expect(expectedSwingDamage(s.stats).toNumber()).toBe(26)
   })
 
   it('save-v1: прогресс и апгрейды не потеряны, инвентарь пуст', () => {
@@ -61,7 +64,7 @@ describe('фикстуры сейвов', () => {
     expect(s.gold.toNumber()).toBe(77)
     expect(s.level.toNumber()).toBe(5)
     expect(s.currentXp.toNumber()).toBe(3)
-    expect(s.stats.attackPower.toNumber()).toBe(24) // 12 dps -> 20 + 2 заточки * 2
+    expect(expectedSwingDamage(s.stats).toNumber()).toBe(24) // 12 dps -> 20 + 2 заточки * 2
     expect(s.upgrades['weapon-sharpening'].toNumber()).toBe(2)
     expect(s.inventory).toEqual([])
   })
@@ -72,15 +75,15 @@ describe('фикстуры сейвов', () => {
     const raw = JSON.parse(fixture('save-v2.json'))
     const s = loadFixture('save-v2.json')
     const dpsBefore = Number(raw.baseDamage)
-    const dpsAfter = s.stats.attackPower.div(s.stats.swingTime).toNumber()
+    const dpsAfter = expectedSwingDamage(s.stats).div(s.stats.swingTime).toNumber()
     expect(dpsAfter).toBe(dpsBefore)
   })
 
   it('покупка апгрейда даёт тот же прирост урона в секунду, что и раньше (+1)', () => {
     const before = { ...createInitialState(1), gold: new Decimal(1000) }
     const after = buyUpgrade(before, WEAPON_SHARPENING)
-    const dpsGain = after.stats.attackPower
-      .minus(before.stats.attackPower)
+    const dpsGain = expectedSwingDamage(after.stats)
+      .minus(expectedSwingDamage(before.stats))
       .div(after.stats.swingTime)
     expect(dpsGain.toNumber()).toBe(1)
   })
@@ -90,14 +93,14 @@ describe('фикстуры сейвов', () => {
     const s = loadFixture('save-v3.json')
     expect(s.gold.toNumber()).toBe(900)
     // v3 хранил damagePerSwing 30 при 5 заточках; пересчёт: 20 + 5*2 = 30.
-    expect(s.stats.attackPower.toNumber()).toBe(Number(raw.damagePerSwing))
+    expect(expectedSwingDamage(s.stats).toNumber()).toBe(Number(raw.damagePerSwing))
     expect(s.inventory[0].rarity).toBe('rare')
   })
 
   it('save-v4: загружается, статы пересчитаны из источников', () => {
     const s = loadFixture('save-v4.json')
     expect(s.gold.toNumber()).toBe(1200)
-    expect(s.stats.attackPower.toNumber()).toBe(20 + 8 * 2)
+    expect(expectedSwingDamage(s.stats).toNumber()).toBe(20 + 8 * 2)
     expect(s.statsDirty).toBe(false)
   })
 

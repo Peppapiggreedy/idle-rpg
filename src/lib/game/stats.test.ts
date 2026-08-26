@@ -14,6 +14,7 @@ import { createInitialState, type GameState } from './state'
 import { buyUpgrade } from './upgrades'
 import { WEAPON_SHARPENING } from '../data/upgrades'
 import { UNARMED } from '../data/balance'
+import { expectedSwingDamage } from './combat'
 
 function withUpgrades(count: number): GameState {
   const s = {
@@ -124,7 +125,9 @@ describe('прогресс замаха при смене swingTime', () => {
 describe('конвейер статов', () => {
   it('базовые статы без источников равны балансу', () => {
     const stats = createInitialState(1).stats
-    expect(stats.attackPower.toNumber()).toBe(20)
+    expect(stats.attackPower.toNumber()).toBe(70) // даёт 70 * 2.0 / 14 = 10 к удару
+    expect(stats.weaponDamageMin.toNumber()).toBe(8)
+    expect(stats.weaponDamageMax.toNumber()).toBe(12)
     expect(stats.maxHp.toNumber()).toBe(100)
     expect(stats.maxMana.toNumber()).toBe(50)
     expect(stats.weaponSpeed).toBe(2)
@@ -139,13 +142,15 @@ describe('конвейер статов', () => {
     const mods = collectModifiers(withUpgrades(7))
     expect(mods).toHaveLength(1)
     expect(mods[0]).toMatchObject({ stat: 'attackPower', kind: 'flat', source: 'upgrade:weapon-sharpening' })
-    expect(mods[0].value.toNumber()).toBe(14) // 7 покупок по +2
+    expect(mods[0].value.toNumber()).toBe(98) // 7 покупок по +14 силы атаки
   })
 
-  it('20 купленных апгрейдов дают тот же урон, что накопительная схема: 20 + 20*2 = 60', () => {
-    // Именно этот пересчёт заменил накопительное поле damagePerSwing —
-    // базовый случай (0 покупок) закреплён golden-эталоном без изменений.
-    expect(withUpgrades(20).stats.attackPower.toNumber()).toBe(60)
+  it('20 купленных апгрейдов дают прежний средний удар 60', () => {
+    // Эквивалентность прежней накопительной схеме теперь проверяется по
+    // среднему урону удара (детально — в damage-model.test.ts).
+    const s = withUpgrades(20)
+    expect(s.stats.attackPower.toNumber()).toBe(70 + 20 * 14)
+    expect(expectedSwingDamage(s.stats).toNumber()).toBe(60)
   })
 
   it('порядок применения: base -> +flat -> *(1+сумма percent) -> *multiplier', () => {
@@ -157,7 +162,7 @@ describe('конвейер статов', () => {
       { stat: 'attackPower', kind: 'percent', value: new Decimal(0.3), source: 'zone:ashen_wastes' },
       { stat: 'attackPower', kind: 'multiplier', value: new Decimal(2), source: 'talent:frenzy' },
     ] as const
-    // (20 база + 10) * (1 + 0.2 + 0.3) * 2 = 90
+    // (70 база + 10) * (1 + 0.2 + 0.3) * 2 = 240
     let flat = new Decimal(0), percent = new Decimal(0), mult = new Decimal(1)
     for (const m of mods) {
       if (m.kind === 'flat') flat = flat.plus(m.value)
@@ -165,7 +170,7 @@ describe('конвейер статов', () => {
       else mult = mult.times(m.value)
     }
     const total = s.stats.attackPower.plus(flat).times(percent.plus(1)).times(mult)
-    expect(total.toNumber()).toBe(90)
+    expect(total.toNumber()).toBe(240)
   })
 
   it('кеш: без statsDirty пересчёта нет, объект статов тот же', () => {
@@ -180,18 +185,18 @@ describe('конвейер статов', () => {
   it('покупка апгрейда меняет урон только через пересчёт источников', () => {
     const before = { ...createInitialState(1), gold: new Decimal(100) }
     const after = buyUpgrade(before, WEAPON_SHARPENING)
-    expect(after.stats.attackPower.toNumber()).toBe(22)
+    expect(after.stats.attackPower.toNumber()).toBe(84) // 70 + 14
     expect(after.statsDirty).toBe(false)
     // Урон нигде не хранится суммой: пересчёт с нуля даёт то же.
-    expect(recomputeStats(after).attackPower.toNumber()).toBe(22)
+    expect(recomputeStats(after).attackPower.toNumber()).toBe(84)
   })
 
   it('explainStat раскладывает цифру по источникам', () => {
     const b = explainStat(withUpgrades(20), 'attackPower')
-    expect(b.base.toNumber()).toBe(20)
+    expect(b.base.toNumber()).toBe(70)
     expect(b.entries).toHaveLength(1)
     expect(b.entries[0].source).toBe('upgrade:weapon-sharpening')
-    expect(b.entries[0].value.toNumber()).toBe(40)
-    expect(b.total.toNumber()).toBe(60)
+    expect(b.entries[0].value.toNumber()).toBe(280) // 20 * 14
+    expect(b.total.toNumber()).toBe(350)
   })
 })

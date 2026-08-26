@@ -13,6 +13,7 @@
 import { Decimal } from './numbers'
 import { applyXp } from './formulas'
 import { rollLoot } from './loot'
+import { rollMonsterDamage, rollSwing } from './combat'
 import type { Rng } from './rng'
 import { pushEvent, spawnMonster, type GameState } from './state'
 import { ensureStats } from './stats'
@@ -65,10 +66,8 @@ const applyCombat: TickStep = (s, ctx) => {
   // иначе на медленном тике теряется время между ударами.
   while (swingTimerMs >= swingTimeMs && ctx.killedMonster === null) {
     swingTimerMs -= swingTimeMs
-    const isCrit = ctx.rng() < s.stats.critChance
-    const amount = isCrit
-      ? s.stats.attackPower.times(s.stats.critMultiplier)
-      : s.stats.attackPower
+    // Формула удара живёт в combat.ts — здесь только применение результата.
+    const { amount, isCrit } = rollSwing(s.stats, ctx.rng)
     const hpLeft = monster.currentHp.minus(amount)
     monster = { ...monster, currentHp: Decimal.max(hpLeft, new Decimal(0)) }
     combatLog = pushEvent(combatLog, { type: 'hit', damage: amount, isCrit })
@@ -134,7 +133,7 @@ const applyLootDrop: TickStep = (s, ctx) => {
 const applyMonsterAttack: TickStep = (s, ctx) => {
   // Моб бьёт, только пока оба живы; мирные мобы (damage 0) не бьют вовсе.
   if (s.heroState === 'dead' || s.respawnMsLeft > 0 || ctx.killedMonster) return s
-  if (s.monster.damage.lte(0)) return s
+  if (s.monster.damageMax.lte(0)) return s
   const monsterSwingTimeMs = s.monster.swingTime * 1000
   let monsterSwingMs = s.monster.swingTimerMs + ctx.dtMs
   let currentHp = s.currentHp
@@ -142,8 +141,8 @@ const applyMonsterAttack: TickStep = (s, ctx) => {
   let died = false
   while (monsterSwingMs >= monsterSwingTimeMs && !died) {
     monsterSwingMs -= monsterSwingTimeMs
-    // Входящий урон срезается на damageReduction из конвейера статов.
-    const amount = s.monster.damage.times(1 - s.stats.damageReduction)
+    // Формула входящего урона (бросок из диапазона + damageReduction) — в combat.ts.
+    const amount = rollMonsterDamage(s.monster, s.stats, ctx.rng)
     currentHp = Decimal.max(currentHp.minus(amount), new Decimal(0))
     combatLog = pushEvent(combatLog, { type: 'hurt', damage: amount, monsterName: s.monster.name })
     ctx.emitAttack({

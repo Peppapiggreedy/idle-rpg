@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest'
 import { STEP_MS } from '../loop'
 import { createRng } from '../rng'
 import { sellPrice } from '../loot'
+import { expectedSwingDamage } from '../combat'
 import { createInitialState, tick, type GameState } from '../tick'
 
 const SNAP_DIR = new URL('./__snapshots__/', import.meta.url)
@@ -22,8 +23,8 @@ function fingerprint(s: GameState) {
     gold: s.gold.toString(),
     level: s.level.toString(),
     currentXp: s.currentXp.toString(),
-    // Ключ исторический (поле переехало в конвейер статов); эталон не меняем.
-    damagePerSwing: s.stats.attackPower.toString(),
+    attackPower: s.stats.attackPower.toString(),
+    avgSwingDamage: expectedSwingDamage(s.stats).toString(),
     totalTicks: s.totalTicks.toString(),
     inventoryCount: s.inventory.length,
     inventorySellTotal: s.inventory

@@ -19,7 +19,7 @@ describe('upgradeCost и покупка', () => {
     for (let i = 0; i < 10; i++) s = buyUpgrade(s, WEAPON_SHARPENING)
     expect(s.gold.toNumber()).toBe(800)
     expect(ownedCount(s, WEAPON_SHARPENING).toNumber()).toBe(10)
-    expect(s.stats.attackPower.minus(damageBefore).toNumber()).toBe(20) // 10 покупок по +2 за удар
+    expect(s.stats.attackPower.minus(damageBefore).toNumber()).toBe(140) // 10 покупок по +14 силы атаки
   })
 
   it('при нехватке золота покупка ничего не меняет', () => {

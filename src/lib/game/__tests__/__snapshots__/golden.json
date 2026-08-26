@@ -1,29 +1,32 @@
 {
   "step-3000": {
-    "gold": "360",
+    "gold": "365",
     "level": "5",
-    "currentXp": "47",
-    "damagePerSwing": "20",
+    "currentXp": "50",
+    "attackPower": "70",
+    "avgSwingDamage": "20",
     "totalTicks": "3000",
     "inventoryCount": 12,
-    "inventorySellTotal": "85"
+    "inventorySellTotal": "75"
   },
   "step-12000": {
-    "gold": "1340",
+    "gold": "1360",
     "level": "8",
-    "currentXp": "193",
-    "damagePerSwing": "20",
+    "currentXp": "205",
+    "attackPower": "70",
+    "avgSwingDamage": "20",
     "totalTicks": "12000",
     "inventoryCount": 12,
-    "inventorySellTotal": "85"
+    "inventorySellTotal": "75"
   },
   "step-36000": {
-    "gold": "4020",
+    "gold": "4035",
     "level": "13",
-    "currentXp": "210",
-    "damagePerSwing": "20",
+    "currentXp": "219",
+    "attackPower": "70",
+    "avgSwingDamage": "20",
     "totalTicks": "36000",
     "inventoryCount": 12,
-    "inventorySellTotal": "85"
+    "inventorySellTotal": "75"
   }
 }
