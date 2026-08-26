@@ -4,6 +4,8 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { Decimal } from '../numbers'
 import { createInitialState, type GameState } from '../tick'
+import { buyUpgrade } from '../upgrades'
+import { WEAPON_SHARPENING } from '../../data/upgrades'
 import {
   SAVE_KEY,
   SAVE_VERSION,
@@ -36,6 +38,7 @@ describe('фикстуры сейвов', () => {
     ['save-v0.json'],
     ['save-v1.json'],
     ['save-v2.json'],
+    ['save-v3.json'],
   ])('%s мигрирует до текущей версии', (name) => {
     const payload = migrateSave(JSON.parse(fixture(name)))
     expect(payload).not.toBeNull()
@@ -47,7 +50,7 @@ describe('фикстуры сейвов', () => {
     expect(s.gold.toNumber()).toBe(150)
     expect(s.level.toNumber()).toBe(4)
     expect(s.currentXp.toNumber()).toBe(11)
-    expect(s.baseDamage.toNumber()).toBe(13)
+    expect(s.damagePerSwing.toNumber()).toBe(26) // 13 dps * 2.0 c за удар
   })
 
   it('save-v1: прогресс и апгрейды не потеряны, инвентарь пуст', () => {
@@ -55,9 +58,33 @@ describe('фикстуры сейвов', () => {
     expect(s.gold.toNumber()).toBe(77)
     expect(s.level.toNumber()).toBe(5)
     expect(s.currentXp.toNumber()).toBe(3)
-    expect(s.baseDamage.toNumber()).toBe(12)
+    expect(s.damagePerSwing.toNumber()).toBe(24) // 12 dps * 2.0 c за удар
     expect(s.upgrades['weapon-sharpening'].toNumber()).toBe(2)
     expect(s.inventory).toEqual([])
+  })
+
+  it('save-v2 -> v3: эффективный урон в секунду не изменился', () => {
+    // v2 хранит baseDamage = урон в секунду; v3 — урон за удар.
+    const raw = JSON.parse(fixture('save-v2.json'))
+    const s = loadFixture('save-v2.json')
+    const dpsBefore = Number(raw.baseDamage)
+    const dpsAfter = s.damagePerSwing.div(s.attackSpeed).toNumber()
+    expect(dpsAfter).toBe(dpsBefore)
+  })
+
+  it('покупка апгрейда даёт тот же прирост урона в секунду, что и раньше (+1)', () => {
+    const before = { ...createInitialState(1), gold: new Decimal(1000) }
+    const after = buyUpgrade(before, WEAPON_SHARPENING)
+    const dpsGain = after.damagePerSwing.minus(before.damagePerSwing).div(after.attackSpeed)
+    expect(dpsGain.toNumber()).toBe(1)
+  })
+
+  it('save-v3: загружается как есть', () => {
+    const s = loadFixture('save-v3.json')
+    expect(s.gold.toNumber()).toBe(900)
+    expect(s.damagePerSwing.toNumber()).toBe(30)
+    expect(s.attackSpeed).toBe(2)
+    expect(s.inventory[0].rarity).toBe('rare')
   })
 
   it('save-v2: инвентарь и счётчики не потеряны', () => {
@@ -81,7 +108,7 @@ describe('экспорт -> импорт', () => {
       gold: new Decimal('1.5e30'),
       level: new Decimal(77),
       currentXp: new Decimal(123),
-      baseDamage: new Decimal(88),
+      damagePerSwing: new Decimal(88),
       upgrades: { 'weapon-sharpening': new Decimal(67) },
       inventory: [
         { id: 'item-9', name: 'Сумрачный Бердыш', rarity: 'legendary', statBonus: new Decimal(16) },
@@ -94,7 +121,7 @@ describe('экспорт -> импорт', () => {
     expect(restored.gold.eq(original.gold)).toBe(true)
     expect(restored.level.eq(original.level)).toBe(true)
     expect(restored.currentXp.eq(original.currentXp)).toBe(true)
-    expect(restored.baseDamage.eq(original.baseDamage)).toBe(true)
+    expect(restored.damagePerSwing.eq(original.damagePerSwing)).toBe(true)
     expect(restored.upgrades['weapon-sharpening'].eq(new Decimal(67))).toBe(true)
     expect(restored.inventory).toHaveLength(1)
     expect(restored.inventory[0]).toMatchObject({ id: 'item-9', rarity: 'legendary' })

@@ -48,8 +48,8 @@ describe('rollLoot', () => {
 
 describe('дроп в бою', () => {
   function killOneMonster(state: GameState, rng: () => number): GameState {
-    // 30 hp при 10 dps: 30 тиков до смерти
-    for (let i = 0; i < 31 && state.inventory.length === 0; i++) state = tick(state, STEP_MS, rng)
+    // 30 hp при 20 за удар раз в 2 c: смерть максимум за 2 удара (~4 c)
+    for (let i = 0; i < 45 && state.inventory.length === 0; i++) state = tick(state, STEP_MS, rng)
     return state
   }
 

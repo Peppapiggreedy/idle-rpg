@@ -14,7 +14,7 @@
       onclick={() => purchaseUpgrade(def)}
     >
       <span class="name">{def.name} <span class="owned">×{formatNumber(owned)}</span></span>
-      <span class="effect">+{formatNumber(def.damageBonus)} к урону · цена {formatNumber(cost)} золота</span>
+      <span class="effect">+{formatNumber(def.damageBonus)} к урону за удар · цена {formatNumber(cost)} золота</span>
     </button>
   {/each}
 </section>

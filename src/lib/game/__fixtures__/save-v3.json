@@ -1,0 +1,16 @@
+{
+  "version": 3,
+  "lastTimestamp": 0,
+  "gold": "900",
+  "level": "12",
+  "currentXp": "50",
+  "damagePerSwing": "30",
+  "attackSpeed": 2,
+  "upgrades": { "weapon-sharpening": "5" },
+  "inventory": [
+    { "id": "item-0", "name": "Гремящий Молот", "rarity": "rare", "statBonus": "4" }
+  ],
+  "itemSeq": 1,
+  "totalTicks": "9000",
+  "playtimeMs": "900000"
+}

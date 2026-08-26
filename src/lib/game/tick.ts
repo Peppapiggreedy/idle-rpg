@@ -1,5 +1,5 @@
 // Тик — конвейер чистых шагов (state, ctx) => state. Порядок фиксирован и важен:
-//   1. applyCombat          — урон мобу; фиксирует смерть в ctx.killedMonster
+//   1. applyCombat          — дискретные удары по свинг-таймеру; смерть в ctx.killedMonster
 //   2. applyKillRewards     — золото за убитого + событие kill
 //   3. applyLevelUps        — опыт за убитого, перенос остатка + событие levelup
 //   4. applyLootDrop        — бросок дропа (единственный потребитель rng) + событие loot
@@ -11,28 +11,49 @@ import { applyXp } from './formulas'
 import { rollLoot } from './loot'
 import type { Rng } from './rng'
 import { pushEvent, spawnMonster, type GameState } from './state'
+import { emit as busEmit } from './events'
 import { INVENTORY_SIZE, RESPAWN_DELAY_MS } from '../data/balance'
 import { FIRST_MONSTER } from '../data/monsters'
-import type { Monster } from '../types'
+import type { AttackEvent, Monster } from '../types'
 
-// Контекст одного тика: вход (dtMs, rng) и факты, которыми шаги обмениваются.
+// Контекст одного тика: вход (dtMs, rng, emit) и факты, которыми шаги обмениваются.
 interface TickContext {
   dtMs: number
   rng: Rng
+  emitAttack: (event: AttackEvent) => void
   killedMonster: Monster | null
 }
 
 type TickStep = (state: GameState, ctx: TickContext) => GameState
 
 const applyCombat: TickStep = (s, ctx) => {
+  // Во время респауна свинг-таймер стоит: первый удар по новому мобу — через
+  // полный замах, без бесплатного «накопленного» удара.
   if (s.respawnMsLeft > 0) return s
-  // Урон за шаг: baseDamage — урон в секунду, поэтому dps * dt / 1000;
-  // итог не зависит от частоты шагов симуляции.
-  const damage = s.baseDamage.times(ctx.dtMs).div(1000)
-  const hpLeft = s.monster.currentHp.minus(damage)
-  if (hpLeft.gt(0)) return { ...s, monster: { ...s.monster, currentHp: hpLeft } }
-  ctx.killedMonster = s.monster
-  return { ...s, monster: { ...s.monster, currentHp: new Decimal(0) } }
+  const attackSpeedMs = s.attackSpeed * 1000
+  let swingTimerMs = s.swingTimerMs + ctx.dtMs
+  let monster = s.monster
+  let combatLog = s.combatLog
+  // Удар при каждом полном замахе; таймер сбрасывается ПЕРЕНОСОМ остатка,
+  // иначе на медленном тике теряется время между ударами.
+  while (swingTimerMs >= attackSpeedMs && ctx.killedMonster === null) {
+    swingTimerMs -= attackSpeedMs
+    const isCrit = ctx.rng() < s.critChance
+    const amount = isCrit ? s.damagePerSwing.times(s.critMultiplier) : s.damagePerSwing
+    const hpLeft = monster.currentHp.minus(amount)
+    monster = { ...monster, currentHp: Decimal.max(hpLeft, new Decimal(0)) }
+    combatLog = pushEvent(combatLog, { type: 'hit', damage: amount, isCrit })
+    ctx.emitAttack({
+      sourceId: 'hero',
+      targetId: monster.id,
+      amount,
+      isCrit,
+      abilityId: null, // авто-атака
+      timestamp: s.playtimeMs.toNumber(),
+    })
+    if (hpLeft.lte(0)) ctx.killedMonster = monster
+  }
+  return { ...s, swingTimerMs, monster, combatLog }
 }
 
 const applyKillRewards: TickStep = (s, ctx) => {
@@ -109,8 +130,13 @@ const PIPELINE: TickStep[] = [
   applyAutosaveCounter,
 ]
 
-export function tick(state: GameState, dtMs: number, rng: Rng): GameState {
-  const ctx: TickContext = { dtMs, rng, killedMonster: null }
+export function tick(
+  state: GameState,
+  dtMs: number,
+  rng: Rng,
+  emitAttack: (event: AttackEvent) => void = busEmit,
+): GameState {
+  const ctx: TickContext = { dtMs, rng, emitAttack, killedMonster: null }
   let s: GameState = {
     ...state,
     totalTicks: state.totalTicks.plus(1),

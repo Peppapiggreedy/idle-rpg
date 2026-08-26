@@ -16,7 +16,7 @@ export function buyUpgrade(state: GameState, def: UpgradeDef): GameState {
   return {
     ...state,
     gold: state.gold.minus(cost),
-    baseDamage: state.baseDamage.plus(def.damageBonus),
+    damagePerSwing: state.damagePerSwing.plus(def.damageBonus),
     upgrades: { ...state.upgrades, [def.id]: owned.plus(1) },
   }
 }

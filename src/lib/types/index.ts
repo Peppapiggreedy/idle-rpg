@@ -20,7 +20,7 @@ export interface UpgradeDef {
   name: string
   baseCost: Decimal
   costGrowth: Decimal
-  damageBonus: Decimal // прибавка к baseDamage за одну покупку
+  damageBonus: Decimal // прибавка к урону за удар за одну покупку
 }
 
 export type Rarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary'
@@ -32,12 +32,21 @@ export interface Item {
   statBonus: Decimal
 }
 
-// Структурированные события боя. Логика их эмитит, весь текст для игрока
-// рендерит UI. Тип 'hit' зарезервирован (в лог сейчас не пишется, чтобы
-// не вымывать важные события десятью ударами в секунду).
+// Структурированные события боя для лога. Логика их эмитит,
+// весь текст для игрока рендерит UI.
 export type CombatEvent =
-  | { type: 'hit'; damage: Decimal }
+  | { type: 'hit'; damage: Decimal; isCrit: boolean }
   | { type: 'kill'; monsterName: string; gold: Decimal; xp: Decimal }
   | { type: 'levelup'; level: Decimal }
   | { type: 'loot'; item: Item }
   | { type: 'spawn'; monsterName: string }
+
+// Событие одного удара для шины game/events.ts (всплывающие числа урона и т.п.).
+export interface AttackEvent {
+  sourceId: string
+  targetId: string
+  amount: Decimal
+  isCrit: boolean
+  abilityId: string | null // авто-атака = null; способности придут позже
+  timestamp: number // игровое время (playtimeMs) на момент удара
+}
