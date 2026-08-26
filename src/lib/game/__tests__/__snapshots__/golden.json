@@ -9,18 +9,18 @@
     "inventorySellTotal": "85"
   },
   "step-12000": {
-    "gold": "1425",
-    "level": "9",
-    "currentXp": "18",
+    "gold": "1340",
+    "level": "8",
+    "currentXp": "193",
     "damagePerSwing": "20",
     "totalTicks": "12000",
     "inventoryCount": 12,
     "inventorySellTotal": "85"
   },
   "step-36000": {
-    "gold": "4295",
+    "gold": "4020",
     "level": "13",
-    "currentXp": "375",
+    "currentXp": "210",
     "damagePerSwing": "20",
     "totalTicks": "36000",
     "inventoryCount": 12,

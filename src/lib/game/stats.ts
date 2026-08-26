@@ -19,6 +19,7 @@ export type StatId =
   | 'critChance'
   | 'critMultiplier'
   | 'hpRegen'
+  | 'hpRegenOutOfCombat'
   | 'manaRegen'
   | 'damageReduction'
 
@@ -30,6 +31,7 @@ export const STAT_IDS: StatId[] = [
   'critChance',
   'critMultiplier',
   'hpRegen',
+  'hpRegenOutOfCombat',
   'manaRegen',
   'damageReduction',
 ]
@@ -56,7 +58,8 @@ export interface StatBlock {
   attackSpeed: number // секунд между ударами
   critChance: number // вероятность 0..1
   critMultiplier: Decimal
-  hpRegen: Decimal
+  hpRegen: Decimal // в бою
+  hpRegenOutOfCombat: Decimal // вне боя (пауза респауна)
   manaRegen: Decimal
   damageReduction: number // доля 0..1
 }
@@ -104,6 +107,7 @@ export function recomputeStats(state: GameState): StatBlock {
     critChance: computeStat('critChance', mods).toNumber(),
     critMultiplier: computeStat('critMultiplier', mods),
     hpRegen: computeStat('hpRegen', mods),
+    hpRegenOutOfCombat: computeStat('hpRegenOutOfCombat', mods),
     manaRegen: computeStat('manaRegen', mods),
     damageReduction: computeStat('damageReduction', mods).toNumber(),
   }
