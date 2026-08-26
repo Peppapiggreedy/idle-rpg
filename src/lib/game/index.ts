@@ -8,6 +8,7 @@ export { upgradeCost, xpToNextLevel, applyXp, MAX_LEVELUPS_PER_CALL } from './fo
 export type { XpResult } from './formulas'
 export { buyUpgrade, ownedCount } from './upgrades'
 export { rollRarity, rollLoot, sellItem, sellPrice, INVENTORY_SIZE } from './loot'
+export { createRng, randomSeed } from './rng'
 export type { Rng } from './loot'
 export {
   saveGame,

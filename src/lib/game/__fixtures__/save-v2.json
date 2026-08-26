@@ -1,0 +1,16 @@
+{
+  "version": 2,
+  "lastTimestamp": 0,
+  "gold": "500",
+  "level": "9",
+  "currentXp": "40",
+  "baseDamage": "21",
+  "upgrades": { "weapon-sharpening": "11" },
+  "inventory": [
+    { "id": "item-0", "name": "Звёздный Палаш", "rarity": "epic", "statBonus": "8" },
+    { "id": "item-1", "name": "Ржавый Тесак", "rarity": "common", "statBonus": "1" }
+  ],
+  "itemSeq": 2,
+  "totalTicks": "5000",
+  "playtimeMs": "500000"
+}
