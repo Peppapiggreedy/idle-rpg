@@ -15,11 +15,11 @@ describe('upgradeCost и покупка', () => {
   it('покупка 10 апгрейдов подряд списывает ровно 200 золота', () => {
     // floor(10*1.15^k) для k=0..9: 10+11+13+15+17+20+23+26+30+35 = 200
     let s: GameState = { ...createInitialState(), gold: new Decimal(1000) }
-    const damageBefore = s.damagePerSwing
+    const damageBefore = s.stats.attackPower
     for (let i = 0; i < 10; i++) s = buyUpgrade(s, WEAPON_SHARPENING)
     expect(s.gold.toNumber()).toBe(800)
     expect(ownedCount(s, WEAPON_SHARPENING).toNumber()).toBe(10)
-    expect(s.damagePerSwing.minus(damageBefore).toNumber()).toBe(20) // 10 покупок по +2 за удар
+    expect(s.stats.attackPower.minus(damageBefore).toNumber()).toBe(20) // 10 покупок по +2 за удар
   })
 
   it('при нехватке золота покупка ничего не меняет', () => {

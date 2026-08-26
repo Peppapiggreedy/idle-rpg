@@ -29,7 +29,6 @@ function richState(): GameState {
     level: new Decimal(42),
     currentXp: new Decimal(1500),
     xpToNext: xpToNextLevel(new Decimal(42)),
-    damagePerSwing: new Decimal(64),
     upgrades: { 'weapon-sharpening': new Decimal(54) },
     totalTicks: new Decimal(100000),
     playtimeMs: new Decimal(10_000_000),
@@ -55,7 +54,6 @@ describe('save/load', () => {
     expect(s.level.toNumber()).toBe(42)
     expect(s.currentXp.toNumber()).toBe(1500)
     expect(s.xpToNext.eq(xpToNextLevel(new Decimal(42)))).toBe(true)
-    expect(s.damagePerSwing.toNumber()).toBe(64)
     expect(s.upgrades['weapon-sharpening'].toNumber()).toBe(54)
     expect(result.offline).toBeNull()
     // Моб после загрузки свежий и с полным HP.
@@ -86,8 +84,8 @@ describe('save/load', () => {
     expect(s.gold.toNumber()).toBe(77)
     expect(s.level.toNumber()).toBe(5)
     expect(s.currentXp.toNumber()).toBe(3)
-    // v1 хранил урон в секунду 12; после конверсии за удар: 12 * 2.0 = 24
-    expect(s.damagePerSwing.toNumber()).toBe(24)
+    // v1 хранил 12 dps = 10 базовых + 2 заточки; пересчёт из счётчика: 20 + 2*2 = 24
+    expect(s.stats.attackPower.toNumber()).toBe(24)
     expect(s.upgrades['weapon-sharpening'].toNumber()).toBe(2)
     expect(s.inventory).toEqual([])
     expect(s.itemSeq).toBe(0)

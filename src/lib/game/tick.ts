@@ -11,6 +11,7 @@ import { applyXp } from './formulas'
 import { rollLoot } from './loot'
 import type { Rng } from './rng'
 import { pushEvent, spawnMonster, type GameState } from './state'
+import { ensureStats } from './stats'
 import { emit as busEmit } from './events'
 import { INVENTORY_SIZE, RESPAWN_DELAY_MS } from '../data/balance'
 import { FIRST_MONSTER } from '../data/monsters'
@@ -30,7 +31,7 @@ const applyCombat: TickStep = (s, ctx) => {
   // Во время респауна свинг-таймер стоит: первый удар по новому мобу — через
   // полный замах, без бесплатного «накопленного» удара.
   if (s.respawnMsLeft > 0) return s
-  const attackSpeedMs = s.attackSpeed * 1000
+  const attackSpeedMs = s.stats.attackSpeed * 1000
   let swingTimerMs = s.swingTimerMs + ctx.dtMs
   let monster = s.monster
   let combatLog = s.combatLog
@@ -38,8 +39,10 @@ const applyCombat: TickStep = (s, ctx) => {
   // иначе на медленном тике теряется время между ударами.
   while (swingTimerMs >= attackSpeedMs && ctx.killedMonster === null) {
     swingTimerMs -= attackSpeedMs
-    const isCrit = ctx.rng() < s.critChance
-    const amount = isCrit ? s.damagePerSwing.times(s.critMultiplier) : s.damagePerSwing
+    const isCrit = ctx.rng() < s.stats.critChance
+    const amount = isCrit
+      ? s.stats.attackPower.times(s.stats.critMultiplier)
+      : s.stats.attackPower
     const hpLeft = monster.currentHp.minus(amount)
     monster = { ...monster, currentHp: Decimal.max(hpLeft, new Decimal(0)) }
     combatLog = pushEvent(combatLog, { type: 'hit', damage: amount, isCrit })
@@ -137,8 +140,9 @@ export function tick(
   emitAttack: (event: AttackEvent) => void = busEmit,
 ): GameState {
   const ctx: TickContext = { dtMs, rng, emitAttack, killedMonster: null }
+  // Кеш статов: пересчёт только если источники менялись с прошлого тика.
   let s: GameState = {
-    ...state,
+    ...ensureStats(state),
     totalTicks: state.totalTicks.plus(1),
     playtimeMs: state.playtimeMs.plus(dtMs),
   }

@@ -22,7 +22,8 @@ function fingerprint(s: GameState) {
     gold: s.gold.toString(),
     level: s.level.toString(),
     currentXp: s.currentXp.toString(),
-    damagePerSwing: s.damagePerSwing.toString(),
+    // Ключ исторический (поле переехало в конвейер статов); эталон не меняем.
+    damagePerSwing: s.stats.attackPower.toString(),
     totalTicks: s.totalTicks.toString(),
     inventoryCount: s.inventory.length,
     inventorySellTotal: s.inventory

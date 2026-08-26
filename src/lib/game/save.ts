@@ -6,20 +6,23 @@ import { RARITY_BY_ID } from '../data/rarity'
 import type { Item, Rarity } from '../types'
 import { applyXp, xpToNextLevel } from './formulas'
 import { createInitialState, spawnMonster, type GameState } from './state'
+import { ensureStats } from './stats'
 import { AUTOSAVE_INTERVAL_S, OFFLINE_CAP_HOURS, START_ATTACK_SPEED_S } from '../data/balance'
 import { estimateCombatRate } from './combat'
 import { FALLBACK_ITEM_NAME } from '../data/loot'
 import { FIRST_MONSTER } from '../data/monsters'
 
 export const SAVE_KEY = 'idle-rpg-save'
-export const SAVE_VERSION = 3
+export const SAVE_VERSION = 4
 export const AUTOSAVE_INTERVAL_MS = AUTOSAVE_INTERVAL_S * 1000
 // Потолок оффлайн-прогресса: дольше отсутствовать можно, но не оплачивается.
 export const OFFLINE_CAP_MS = OFFLINE_CAP_HOURS * 60 * 60 * 1000
 // Короче минуты отсутствия — награду начисляем, но модалку не показываем.
 export const OFFLINE_MODAL_MIN_MS = 60_000
 
-// Актуальный формат сейва (v3). Все Decimal — строки.
+// Актуальный формат сейва (v4). Все Decimal — строки. Прямых полей урона
+// и скорости атаки в формате НЕТ: статы — производные от счётчиков покупок
+// (и будущих экипировки/талантов), пересчитываются конвейером stats.ts.
 export interface SavedItem {
   id: string
   name: string
@@ -27,14 +30,12 @@ export interface SavedItem {
   statBonus: string
 }
 
-export interface SavePayloadV3 {
-  version: 3
+export interface SavePayloadV4 {
+  version: 4
   lastTimestamp: number
   gold: string
   level: string
   currentXp: string
-  damagePerSwing: string
-  attackSpeed: number
   upgrades: Record<string, string>
   inventory: SavedItem[]
   itemSeq: number
@@ -67,11 +68,11 @@ function parseDec(value: unknown, fallback: string): Decimal {
   return new Decimal(fallback)
 }
 
-export function payloadFromState(state: GameState, lastTimestamp: number): SavePayloadV3 {
+export function payloadFromState(state: GameState, lastTimestamp: number): SavePayloadV4 {
   const upgrades: Record<string, string> = {}
   for (const [id, owned] of Object.entries(state.upgrades)) upgrades[id] = owned.toString()
   return {
-    version: 3,
+    version: 4,
     lastTimestamp,
     inventory: state.inventory.map((i) => ({
       id: i.id,
@@ -83,8 +84,6 @@ export function payloadFromState(state: GameState, lastTimestamp: number): SaveP
     gold: state.gold.toString(),
     level: state.level.toString(),
     currentXp: state.currentXp.toString(),
-    damagePerSwing: state.damagePerSwing.toString(),
-    attackSpeed: state.attackSpeed,
     upgrades,
     totalTicks: state.totalTicks.toString(),
     playtimeMs: state.playtimeMs.toString(),
@@ -104,19 +103,16 @@ function itemFromSaved(raw: SavedItem, index: number): Item {
   }
 }
 
-export function stateFromPayload(p: SavePayloadV3): GameState {
+export function stateFromPayload(p: SavePayloadV4): GameState {
   const level = Decimal.max(parseDec(p.level, '1'), new Decimal(1))
   const upgrades: Record<string, Decimal> = {}
   for (const [id, owned] of Object.entries(p.upgrades ?? {})) upgrades[id] = parseDec(owned, '0')
-  return {
+  const restored: GameState = {
     ...createInitialState(),
     gold: parseDec(p.gold, '0'),
     level,
     currentXp: parseDec(p.currentXp, '0'),
     xpToNext: xpToNextLevel(level),
-    damagePerSwing: parseDec(p.damagePerSwing, '20'),
-    attackSpeed:
-      typeof p.attackSpeed === 'number' && p.attackSpeed > 0 ? p.attackSpeed : START_ATTACK_SPEED_S,
     upgrades,
     totalTicks: parseDec(p.totalTicks, '0'),
     playtimeMs: parseDec(p.playtimeMs, '0'),
@@ -124,12 +120,23 @@ export function stateFromPayload(p: SavePayloadV3): GameState {
     itemSeq: typeof p.itemSeq === 'number' ? p.itemSeq : 0,
     monster: spawnMonster(FIRST_MONSTER),
   }
+  // Статы — производные: после загрузки источников пересчитываем конвейером.
+  return ensureStats({ ...restored, statsDirty: true })
 }
 
 // Цепочка миграций: MIGRATIONS[v] переводит формат v в v+1.
 // v0 — «доверсионный» формат (без поля version): переносим известные поля.
 type RawSave = Record<string, unknown>
 const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
+  // 3 -> 4: урон стал производным от счётчика покупок (конвейер статов),
+  // прямые damagePerSwing/attackSpeed из формата удалены. Для честного сейва
+  // пересчёт даёт то же значение, что хранилось.
+  3: (raw) => {
+    const next: RawSave = { ...raw, version: 4 }
+    delete next.damagePerSwing
+    delete next.attackSpeed
+    return next
+  },
   // 2 -> 3: бой перешёл на дискретные удары. baseDamage был уроном в секунду;
   // урон за удар = dps * скорость атаки, чтобы урон в секунду не изменился.
   2: (raw) => ({
@@ -159,7 +166,7 @@ const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
 }
 
 // null = сейв непригоден (не объект или из более новой версии игры).
-export function migrateSave(raw: unknown): SavePayloadV3 | null {
+export function migrateSave(raw: unknown): SavePayloadV4 | null {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null
   let data = raw as RawSave
   let version = typeof data.version === 'number' ? data.version : 0
@@ -170,7 +177,7 @@ export function migrateSave(raw: unknown): SavePayloadV3 | null {
     data = step(data)
     version = typeof data.version === 'number' ? data.version : version + 1
   }
-  return data as unknown as SavePayloadV3
+  return data as unknown as SavePayloadV4
 }
 
 export interface OfflineReport {
@@ -267,7 +274,7 @@ export function encodeSaveString(state: GameState, now: () => number = Date.now)
 }
 
 // Понимает base64 от экспорта и, на всякий случай, голый JSON.
-export function decodeSaveString(input: string): SavePayloadV3 | null {
+export function decodeSaveString(input: string): SavePayloadV4 | null {
   const attempts = [
     () => JSON.parse(fromBase64(input.trim())),
     () => JSON.parse(input.trim()),

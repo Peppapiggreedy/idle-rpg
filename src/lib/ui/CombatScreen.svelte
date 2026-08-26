@@ -43,7 +43,7 @@
     </div>
     <div class="stat">
       <span class="label">Урон за удар</span>
-      <span class="value">{formatNumber($gameState.damagePerSwing)}</span>
+      <span class="value">{formatNumber($gameState.stats.attackPower)}</span>
     </div>
     <div class="stat">
       <span class="label">Урон в секунду</span>

@@ -4,12 +4,7 @@ import { Decimal } from './numbers'
 import { xpToNextLevel } from './formulas'
 import { randomSeed } from './rng'
 import { FIRST_MONSTER } from '../data/monsters'
-import {
-  CRIT_CHANCE,
-  CRIT_MULTIPLIER,
-  START_ATTACK_SPEED_S,
-  START_DAMAGE_PER_SWING,
-} from '../data/balance'
+import { recomputeStats, type StatBlock } from './stats'
 import type { CombatEvent, Item, Monster, MonsterTemplate } from '../types'
 
 // Сколько последних событий боя храним для лога на экране.
@@ -22,12 +17,12 @@ export interface GameState {
   level: Decimal
   currentXp: Decimal
   xpToNext: Decimal
-  damagePerSwing: Decimal // урон одного удара; апгрейды добавляют к нему
-  attackSpeed: number // секунд между ударами
-  swingTimerMs: number // накопленное время замаха; удар при достижении attackSpeed
-  critChance: number // вероятность крита
-  critMultiplier: Decimal // множитель урона крита
-  upgrades: Record<string, Decimal> // id апгрейда -> сколько куплено
+  swingTimerMs: number // накопленное время замаха; удар при достижении stats.attackSpeed
+  upgrades: Record<string, Decimal> // id апгрейда -> сколько куплено (источник статов)
+  // Производные статы из конвейера stats.ts. Прямых полей урона/скорости/критов
+  // в состоянии НЕТ — только пересчёт из источников (упгрейды, позже экипировка).
+  stats: StatBlock
+  statsDirty: boolean // источники изменились -> ensureStats пересчитает
   inventory: Item[]
   itemSeq: number // служебный счётчик для уникальных id предметов
   rngSeed: number // служебный сид потока случайности (в сейв пока не пишется)
@@ -44,19 +39,16 @@ export function spawnMonster(template: MonsterTemplate): Monster {
 
 export function createInitialState(rngSeed: number = randomSeed()): GameState {
   const level = new Decimal(1)
-  return {
+  const base: Omit<GameState, 'stats'> = {
     totalTicks: new Decimal(0),
     playtimeMs: new Decimal(0),
     gold: new Decimal(0),
     level,
     currentXp: new Decimal(0),
     xpToNext: xpToNextLevel(level),
-    damagePerSwing: START_DAMAGE_PER_SWING,
-    attackSpeed: START_ATTACK_SPEED_S,
     swingTimerMs: 0,
-    critChance: CRIT_CHANCE,
-    critMultiplier: CRIT_MULTIPLIER,
     upgrades: {},
+    statsDirty: false,
     inventory: [],
     itemSeq: 0,
     rngSeed,
@@ -65,6 +57,7 @@ export function createInitialState(rngSeed: number = randomSeed()): GameState {
     combatLog: [],
     msSinceAutosave: 0,
   }
+  return { ...base, stats: recomputeStats(base as GameState) }
 }
 
 export function pushEvent(log: CombatEvent[], event: CombatEvent): CombatEvent[] {

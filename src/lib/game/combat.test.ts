@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { Decimal } from './numbers'
 import { STEP_MS } from './loop'
 import { RESPAWN_DELAY_MS, createInitialState, spawnMonster, tick, type GameState } from './tick'
+import { ensureStats } from './stats'
 import type { MonsterTemplate } from '../types'
 
 const DUMMY: MonsterTemplate = {
@@ -15,13 +16,17 @@ const DUMMY: MonsterTemplate = {
 // rng = 1 никогда не критует и не дропает лут — тесты детерминированы.
 const NO_LUCK = () => 1
 
+// Нужный урон за удар выражаем ИСТОЧНИКОМ: базовые 20 + заточки по +2.
 function stateWith(damagePerSwing: number, template: MonsterTemplate): GameState {
-  return {
+  const owned = (damagePerSwing - 20) / 2
+  if (owned < 0 || !Number.isInteger(owned)) throw new Error('урон должен быть 20 + 2n')
+  return ensureStats({
     ...createInitialState(1),
-    damagePerSwing: new Decimal(damagePerSwing),
+    upgrades: owned > 0 ? { 'weapon-sharpening': new Decimal(owned) } : {},
+    statsDirty: true,
     monster: spawnMonster(template),
     combatLog: [],
-  }
+  })
 }
 
 function run(state: GameState, ms: number, rng: () => number = NO_LUCK): GameState {

@@ -1,0 +1,14 @@
+{
+  "version": 4,
+  "lastTimestamp": 0,
+  "gold": "1200",
+  "level": "15",
+  "currentXp": "100",
+  "upgrades": { "weapon-sharpening": "8" },
+  "inventory": [
+    { "id": "item-0", "name": "Верный Серп", "rarity": "uncommon", "statBonus": "2" }
+  ],
+  "itemSeq": 1,
+  "totalTicks": "12000",
+  "playtimeMs": "1200000"
+}
