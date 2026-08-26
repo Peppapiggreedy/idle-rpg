@@ -16,8 +16,9 @@ export const BASE_STATS = {
   attackSpeed: new Decimal(START_ATTACK_SPEED_S), // секунд между ударами
   critChance: new Decimal(0.05), // вероятность крита
   critMultiplier: new Decimal(2), // множитель урона крита
-  hpRegen: new Decimal(0), // hp в секунду
-  manaRegen: new Decimal(0), // маны в секунду
+  hpRegen: new Decimal(1), // hp в секунду В БОЮ (медленный)
+  hpRegenOutOfCombat: new Decimal(10), // hp в секунду ВНЕ боя (быстрый)
+  manaRegen: new Decimal(2), // маны в секунду (постоянный)
   damageReduction: new Decimal(0), // доля срезаемого входящего урона, 0..1
 }
 // Пауза между смертью моба и появлением следующего, мс.
@@ -28,3 +29,5 @@ export const INVENTORY_SIZE = 12
 export const OFFLINE_CAP_HOURS = 8
 // Период автосохранения по игровому времени, секунд.
 export const AUTOSAVE_INTERVAL_S = 15
+// Таймер воскрешения после смерти героя, игровых миллисекунд.
+export const REVIVE_DELAY_MS = 30_000

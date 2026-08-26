@@ -11,6 +11,8 @@ const DUMMY: MonsterTemplate = {
   maxHp: new Decimal(100),
   goldReward: new Decimal(5),
   xpReward: new Decimal(3),
+  damage: new Decimal(0), // мирный: не бьёт в ответ, тесты боя героя чистые
+  attackSpeed: 1,
 }
 
 // rng = 1 никогда не критует и не дропает лут — тесты детерминированы.

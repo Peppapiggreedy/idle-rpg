@@ -8,6 +8,8 @@ export const MEADOW_SQUELCHER: MonsterTemplate = {
   maxHp: new Decimal(30),
   goldReward: new Decimal(5),
   xpReward: new Decimal(3),
+  damage: new Decimal(4),
+  attackSpeed: 1.6,
 }
 
 // Моб, с которого начинается игра.

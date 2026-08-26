@@ -31,7 +31,7 @@ export {
   OFFLINE_MODAL_MIN_MS,
 } from './save'
 export type {
-  SavePayloadV4,
+  SavePayloadV5,
   SavedItem,
   SaveStorage,
   SaveDeps,

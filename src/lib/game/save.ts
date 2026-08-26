@@ -13,14 +13,14 @@ import { FALLBACK_ITEM_NAME } from '../data/loot'
 import { FIRST_MONSTER } from '../data/monsters'
 
 export const SAVE_KEY = 'idle-rpg-save'
-export const SAVE_VERSION = 4
+export const SAVE_VERSION = 5
 export const AUTOSAVE_INTERVAL_MS = AUTOSAVE_INTERVAL_S * 1000
 // Потолок оффлайн-прогресса: дольше отсутствовать можно, но не оплачивается.
 export const OFFLINE_CAP_MS = OFFLINE_CAP_HOURS * 60 * 60 * 1000
 // Короче минуты отсутствия — награду начисляем, но модалку не показываем.
 export const OFFLINE_MODAL_MIN_MS = 60_000
 
-// Актуальный формат сейва (v4). Все Decimal — строки. Прямых полей урона
+// Актуальный формат сейва (v5). Все Decimal — строки. Прямых полей урона
 // и скорости атаки в формате НЕТ: статы — производные от счётчиков покупок
 // (и будущих экипировки/талантов), пересчитываются конвейером stats.ts.
 export interface SavedItem {
@@ -30,12 +30,16 @@ export interface SavedItem {
   statBonus: string
 }
 
-export interface SavePayloadV4 {
-  version: 4
+export interface SavePayloadV5 {
+  version: 5
   lastTimestamp: number
   gold: string
   level: string
   currentXp: string
+  currentHp: string
+  currentMana: string
+  heroState: 'alive' | 'dead'
+  reviveMsLeft: number
   upgrades: Record<string, string>
   inventory: SavedItem[]
   itemSeq: number
@@ -68,11 +72,11 @@ function parseDec(value: unknown, fallback: string): Decimal {
   return new Decimal(fallback)
 }
 
-export function payloadFromState(state: GameState, lastTimestamp: number): SavePayloadV4 {
+export function payloadFromState(state: GameState, lastTimestamp: number): SavePayloadV5 {
   const upgrades: Record<string, string> = {}
   for (const [id, owned] of Object.entries(state.upgrades)) upgrades[id] = owned.toString()
   return {
-    version: 4,
+    version: 5,
     lastTimestamp,
     inventory: state.inventory.map((i) => ({
       id: i.id,
@@ -84,6 +88,10 @@ export function payloadFromState(state: GameState, lastTimestamp: number): SaveP
     gold: state.gold.toString(),
     level: state.level.toString(),
     currentXp: state.currentXp.toString(),
+    currentHp: state.currentHp.toString(),
+    currentMana: state.currentMana.toString(),
+    heroState: state.heroState,
+    reviveMsLeft: state.reviveMsLeft,
     upgrades,
     totalTicks: state.totalTicks.toString(),
     playtimeMs: state.playtimeMs.toString(),
@@ -103,7 +111,7 @@ function itemFromSaved(raw: SavedItem, index: number): Item {
   }
 }
 
-export function stateFromPayload(p: SavePayloadV4): GameState {
+export function stateFromPayload(p: SavePayloadV5): GameState {
   const level = Decimal.max(parseDec(p.level, '1'), new Decimal(1))
   const upgrades: Record<string, Decimal> = {}
   for (const [id, owned] of Object.entries(p.upgrades ?? {})) upgrades[id] = parseDec(owned, '0')
@@ -121,13 +129,28 @@ export function stateFromPayload(p: SavePayloadV4): GameState {
     monster: spawnMonster(FIRST_MONSTER),
   }
   // Статы — производные: после загрузки источников пересчитываем конвейером.
-  return ensureStats({ ...restored, statsDirty: true })
+  const withStats = ensureStats({ ...restored, statsDirty: true })
+  // Ресурсы героя: сохранённые значения с капом по пересчитанным статам;
+  // отсутствие/мусор в поле (сейв старой версии) означает полный запас.
+  const currentHp = Decimal.min(parseDec(p.currentHp, withStats.stats.maxHp.toString()), withStats.stats.maxHp)
+  const currentMana = Decimal.min(parseDec(p.currentMana, withStats.stats.maxMana.toString()), withStats.stats.maxMana)
+  const dead = p.heroState === 'dead'
+  return {
+    ...withStats,
+    currentHp: dead ? new Decimal(0) : currentHp,
+    currentMana,
+    heroState: dead ? 'dead' : 'alive',
+    reviveMsLeft: dead && typeof p.reviveMsLeft === 'number' && p.reviveMsLeft > 0 ? p.reviveMsLeft : dead ? 1 : 0,
+  }
 }
 
 // Цепочка миграций: MIGRATIONS[v] переводит формат v в v+1.
 // v0 — «доверсионный» формат (без поля version): переносим известные поля.
 type RawSave = Record<string, unknown>
 const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
+  // 4 -> 5: у героя появились HP/мана и смертность; старый сейв просыпается
+  // живым с полным запасом (поля добавит stateFromPayload по дефолтам).
+  4: (raw) => ({ ...raw, version: 5, heroState: 'alive', reviveMsLeft: 0 }),
   // 3 -> 4: урон стал производным от счётчика покупок (конвейер статов),
   // прямые damagePerSwing/attackSpeed из формата удалены. Для честного сейва
   // пересчёт даёт то же значение, что хранилось.
@@ -166,7 +189,7 @@ const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
 }
 
 // null = сейв непригоден (не объект или из более новой версии игры).
-export function migrateSave(raw: unknown): SavePayloadV4 | null {
+export function migrateSave(raw: unknown): SavePayloadV5 | null {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null
   let data = raw as RawSave
   let version = typeof data.version === 'number' ? data.version : 0
@@ -177,7 +200,7 @@ export function migrateSave(raw: unknown): SavePayloadV4 | null {
     data = step(data)
     version = typeof data.version === 'number' ? data.version : version + 1
   }
-  return data as unknown as SavePayloadV4
+  return data as unknown as SavePayloadV5
 }
 
 export interface OfflineReport {
@@ -194,8 +217,22 @@ export function applyOfflineProgress(
   state: GameState,
   elapsedMs: number,
 ): { state: GameState; report: OfflineReport | null } {
-  const cappedMs = Math.min(elapsedMs, OFFLINE_CAP_MS)
+  let cappedMs = Math.min(elapsedMs, OFFLINE_CAP_MS)
   if (cappedMs <= 0) return { state, report: null }
+  // Герой ушёл в оффлайн мёртвым: сперва тратим время на воскрешение.
+  if (state.heroState === 'dead') {
+    const reviveMs = Math.min(state.reviveMsLeft, cappedMs)
+    cappedMs -= reviveMs
+    state = {
+      ...state,
+      reviveMsLeft: state.reviveMsLeft - reviveMs,
+      ...(state.reviveMsLeft - reviveMs <= 0
+        ? { heroState: 'alive' as const, reviveMsLeft: 0, currentHp: state.stats.maxHp }
+        : {}),
+    }
+    if (state.heroState === 'dead' || cappedMs <= 0)
+      return { state, report: null }
+  }
   const { goldReward, xpReward } = state.monster
   const kills = estimateCombatRate(state).killsPerSecond.times(cappedMs).div(1000).floor()
   if (kills.lte(0)) return { state, report: null }
@@ -274,7 +311,7 @@ export function encodeSaveString(state: GameState, now: () => number = Date.now)
 }
 
 // Понимает base64 от экспорта и, на всякий случай, голый JSON.
-export function decodeSaveString(input: string): SavePayloadV4 | null {
+export function decodeSaveString(input: string): SavePayloadV5 | null {
   const attempts = [
     () => JSON.parse(fromBase64(input.trim())),
     () => JSON.parse(input.trim()),

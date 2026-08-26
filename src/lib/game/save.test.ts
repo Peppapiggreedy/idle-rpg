@@ -151,9 +151,13 @@ describe('оффлайн-прогресс', () => {
     expect(after100h.report!.kills.eq(after8h.report!.kills)).toBe(true)
     expect(after100h.state.gold.eq(after8h.state.gold)).toBe(true)
     expect(after100h.report!.elapsedMs).toBe(OFFLINE_CAP_MS)
-    // Контроль формулы: ceil(30hp / 20 за удар) = 2 удара * 2 c + 0.3 c респаун = 4.3 c.
+    // Контроль формулы: идеальный цикл 2 удара * 2 c + 0.3 c = 4.3 c,
+    // умноженный на uptime смертного героя (430 c жизни / 460 c цикла жизни).
     const cycleSec = 2 * 2 + RESPAWN_DELAY_MS / 1000
-    expect(after8h.report!.kills.toNumber()).toBe(Math.floor((8 * 3600) / cycleSec))
+    const uptime = 430 / 460
+    expect(after8h.report!.kills.toNumber()).toBe(
+      Math.floor(((8 * 3600) / cycleSec) * uptime),
+    )
   })
 
   it('награда считается агрегатом: золото = убийства * награда моба', () => {

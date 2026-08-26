@@ -1,0 +1,16 @@
+{
+  "version": 5,
+  "lastTimestamp": 0,
+  "gold": "2000",
+  "level": "20",
+  "currentXp": "300",
+  "currentHp": "64",
+  "currentMana": "31",
+  "heroState": "alive",
+  "reviveMsLeft": 0,
+  "upgrades": { "weapon-sharpening": "10" },
+  "inventory": [],
+  "itemSeq": 0,
+  "totalTicks": "50000",
+  "playtimeMs": "5000000"
+}

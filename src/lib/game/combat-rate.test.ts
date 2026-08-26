@@ -11,8 +11,12 @@ describe('estimateCombatRate', () => {
     const rate = estimateCombatRate(createInitialState(1))
     // 20 за удар * (1 + 0.05 * (2 - 1)) / 2 c = 10.5
     expect(rate.damagePerSecond.toNumber()).toBeCloseTo(10.5, 10)
-    // 2 удара на 30 hp * 2 c + 0.3 c респаун = 4.3 c на моба
-    expect(rate.killsPerSecond.toNumber()).toBeCloseTo(1 / 4.3, 10)
+    // Идеальный цикл: 2 удара * 2 c + 0.3 c респаун = 4.3 c на моба.
+    // Хлюпень бьёт в ответ: 2 удара по 4 за бой против 7 регена за цикл ->
+    // теряем 1 hp за 4.3 c, смерть через 430 c, uptime = 430/(430+30).
+    const uptime = 430 / 460
+    expect(rate.uptime).toBeCloseTo(uptime, 10)
+    expect(rate.killsPerSecond.toNumber()).toBeCloseTo((1 / 4.3) * uptime, 10)
   })
 
   it('награда за час оффлайна отличается от часа симуляции не более чем на 5%', () => {

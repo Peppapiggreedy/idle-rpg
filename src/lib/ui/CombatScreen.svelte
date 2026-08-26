@@ -19,6 +19,12 @@
         return `Выпало: ${e.item.name} [${RARITY_BY_ID[e.item.rarity].name}]`
       case 'spawn':
         return `Появился ${e.monsterName}`
+      case 'hurt':
+        return `${e.monsterName} бьёт: −${formatNumber(e.damage)} здоровья`
+      case 'death':
+        return 'Ты пал в бою! Воскрешение через 30 с…'
+      case 'revive':
+        return 'Ты воскрес — полный запас сил'
     }
   }
 
@@ -63,7 +69,12 @@
 
   <ul class="log">
     {#each $gameState.combatLog as event}
-      <li class:crit={event.type === 'hit' && event.isCrit}>{eventText(event)}</li>
+      <li
+        class:crit={event.type === 'hit' && event.isCrit}
+        class:hurt={event.type === 'hurt' || event.type === 'death'}
+      >
+        {eventText(event)}
+      </li>
     {/each}
   </ul>
 </section>
@@ -136,5 +147,8 @@
   .log li.crit {
     color: var(--color-gold);
     font-weight: 600;
+  }
+  .log li.hurt {
+    color: #c0392b;
   }
 </style>

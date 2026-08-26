@@ -11,7 +11,8 @@
     attackSpeed: 'Скорость атаки',
     critChance: 'Шанс крита',
     critMultiplier: 'Множитель крита',
-    hpRegen: 'Восст. здоровья',
+    hpRegen: 'Восст. здоровья (бой)',
+    hpRegenOutOfCombat: 'Восст. здоровья (отдых)',
     manaRegen: 'Восст. маны',
     damageReduction: 'Снижение урона',
   }

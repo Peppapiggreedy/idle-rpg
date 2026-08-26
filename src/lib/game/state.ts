@@ -18,6 +18,10 @@ export interface GameState {
   currentXp: Decimal
   xpToNext: Decimal
   swingTimerMs: number // накопленное время замаха; удар при достижении stats.attackSpeed
+  currentHp: Decimal // текущее здоровье героя, кап — stats.maxHp
+  currentMana: Decimal // текущая мана героя, кап — stats.maxMana
+  heroState: 'alive' | 'dead'
+  reviveMsLeft: number // обратный отсчёт воскрешения; > 0 только при heroState 'dead'
   upgrades: Record<string, Decimal> // id апгрейда -> сколько куплено (источник статов)
   // Производные статы из конвейера stats.ts. Прямых полей урона/скорости/критов
   // в состоянии НЕТ — только пересчёт из источников (упгрейды, позже экипировка).
@@ -34,7 +38,7 @@ export interface GameState {
 }
 
 export function spawnMonster(template: MonsterTemplate): Monster {
-  return { ...template, currentHp: template.maxHp }
+  return { ...template, currentHp: template.maxHp, swingTimerMs: 0 }
 }
 
 export function createInitialState(rngSeed: number = randomSeed()): GameState {
@@ -47,6 +51,10 @@ export function createInitialState(rngSeed: number = randomSeed()): GameState {
     currentXp: new Decimal(0),
     xpToNext: xpToNextLevel(level),
     swingTimerMs: 0,
+    currentHp: new Decimal(0), // заполняется ниже из пересчитанных статов
+    currentMana: new Decimal(0),
+    heroState: 'alive',
+    reviveMsLeft: 0,
     upgrades: {},
     statsDirty: false,
     inventory: [],
@@ -57,7 +65,8 @@ export function createInitialState(rngSeed: number = randomSeed()): GameState {
     combatLog: [],
     msSinceAutosave: 0,
   }
-  return { ...base, stats: recomputeStats(base as GameState) }
+  const stats = recomputeStats(base as GameState)
+  return { ...base, stats, currentHp: stats.maxHp, currentMana: stats.maxMana }
 }
 
 export function pushEvent(log: CombatEvent[], event: CombatEvent): CombatEvent[] {

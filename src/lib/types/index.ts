@@ -9,10 +9,13 @@ export interface Monster {
   currentHp: Decimal
   goldReward: Decimal
   xpReward: Decimal
+  damage: Decimal // урон одного удара по герою; 0 — моб не атакует
+  attackSpeed: number // секунд между ударами моба
+  swingTimerMs: number // замах моба (runtime, в шаблоне отсутствует)
 }
 
-// Шаблон моба для src/lib/data: без currentHp — оно появляется при спавне.
-export type MonsterTemplate = Omit<Monster, 'currentHp'>
+// Шаблон моба для src/lib/data: без runtime-полей — они появляются при спавне.
+export type MonsterTemplate = Omit<Monster, 'currentHp' | 'swingTimerMs'>
 
 // Описание апгрейда для src/lib/data: цена растёт как baseCost * costGrowth^owned.
 export interface UpgradeDef {
@@ -40,6 +43,9 @@ export type CombatEvent =
   | { type: 'levelup'; level: Decimal }
   | { type: 'loot'; item: Item }
   | { type: 'spawn'; monsterName: string }
+  | { type: 'hurt'; damage: Decimal; monsterName: string }
+  | { type: 'death' }
+  | { type: 'revive' }
 
 // Событие одного удара для шины game/events.ts (всплывающие числа урона и т.п.).
 export interface AttackEvent {
