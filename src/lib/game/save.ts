@@ -13,14 +13,14 @@ import { FALLBACK_ITEM_NAME } from '../data/loot'
 import { FIRST_MONSTER } from '../data/monsters'
 
 export const SAVE_KEY = 'idle-rpg-save'
-export const SAVE_VERSION = 5
+export const SAVE_VERSION = 6
 export const AUTOSAVE_INTERVAL_MS = AUTOSAVE_INTERVAL_S * 1000
 // Потолок оффлайн-прогресса: дольше отсутствовать можно, но не оплачивается.
 export const OFFLINE_CAP_MS = OFFLINE_CAP_HOURS * 60 * 60 * 1000
 // Короче минуты отсутствия — награду начисляем, но модалку не показываем.
 export const OFFLINE_MODAL_MIN_MS = 60_000
 
-// Актуальный формат сейва (v5). Все Decimal — строки. Прямых полей урона
+// Актуальный формат сейва (v6). Все Decimal — строки. Прямых полей урона
 // и скорости атаки в формате НЕТ: статы — производные от счётчиков покупок
 // (и будущих экипировки/талантов), пересчитываются конвейером stats.ts.
 export interface SavedItem {
@@ -30,8 +30,8 @@ export interface SavedItem {
   statBonus: string
 }
 
-export interface SavePayloadV5 {
-  version: 5
+export interface SavePayloadV6 {
+  version: 6
   lastTimestamp: number
   gold: string
   level: string
@@ -72,11 +72,11 @@ function parseDec(value: unknown, fallback: string): Decimal {
   return new Decimal(fallback)
 }
 
-export function payloadFromState(state: GameState, lastTimestamp: number): SavePayloadV5 {
+export function payloadFromState(state: GameState, lastTimestamp: number): SavePayloadV6 {
   const upgrades: Record<string, string> = {}
   for (const [id, owned] of Object.entries(state.upgrades)) upgrades[id] = owned.toString()
   return {
-    version: 5,
+    version: 6,
     lastTimestamp,
     inventory: state.inventory.map((i) => ({
       id: i.id,
@@ -111,7 +111,7 @@ function itemFromSaved(raw: SavedItem, index: number): Item {
   }
 }
 
-export function stateFromPayload(p: SavePayloadV5): GameState {
+export function stateFromPayload(p: SavePayloadV6): GameState {
   const level = Decimal.max(parseDec(p.level, '1'), new Decimal(1))
   const upgrades: Record<string, Decimal> = {}
   for (const [id, owned] of Object.entries(p.upgrades ?? {})) upgrades[id] = parseDec(owned, '0')
@@ -152,6 +152,12 @@ type RawSave = Record<string, unknown>
 const LEGACY_V3_SPEED_FIELD = 'attackSpeed'
 
 const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
+  // 5 -> 6: сменилась МОДЕЛЬ урона (диапазон оружия + сила атаки через
+  // AP_NORMALIZATION), но набор полей формата не изменился: урон и раньше был
+  // производным от счётчика покупок. Миграция-тождество — версия лишь помечает,
+  // что сейв записан кодом с новой боевой формулой; пересчёт статов при загрузке
+  // даёт прежний эффективный урон в секунду (есть тест).
+  5: (raw) => ({ ...raw, version: 6 }),
   // 4 -> 5: у героя появились HP/мана и смертность; старый сейв просыпается
   // живым с полным запасом (поля добавит stateFromPayload по дефолтам).
   4: (raw) => ({ ...raw, version: 5, heroState: 'alive', reviveMsLeft: 0 }),
@@ -193,7 +199,7 @@ const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
 }
 
 // null = сейв непригоден (не объект или из более новой версии игры).
-export function migrateSave(raw: unknown): SavePayloadV5 | null {
+export function migrateSave(raw: unknown): SavePayloadV6 | null {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null
   let data = raw as RawSave
   let version = typeof data.version === 'number' ? data.version : 0
@@ -204,7 +210,7 @@ export function migrateSave(raw: unknown): SavePayloadV5 | null {
     data = step(data)
     version = typeof data.version === 'number' ? data.version : version + 1
   }
-  return data as unknown as SavePayloadV5
+  return data as unknown as SavePayloadV6
 }
 
 export interface OfflineReport {
@@ -315,7 +321,7 @@ export function encodeSaveString(state: GameState, now: () => number = Date.now)
 }
 
 // Понимает base64 от экспорта и, на всякий случай, голый JSON.
-export function decodeSaveString(input: string): SavePayloadV5 | null {
+export function decodeSaveString(input: string): SavePayloadV6 | null {
   const attempts = [
     () => JSON.parse(fromBase64(input.trim())),
     () => JSON.parse(input.trim()),

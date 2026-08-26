@@ -1,0 +1,18 @@
+{
+  "version": 6,
+  "lastTimestamp": 0,
+  "gold": "3000",
+  "level": "22",
+  "currentXp": "120",
+  "currentHp": "80",
+  "currentMana": "40",
+  "heroState": "alive",
+  "reviveMsLeft": 0,
+  "upgrades": { "weapon-sharpening": "12" },
+  "inventory": [
+    { "id": "item-0", "name": "Закалённый Кастет", "rarity": "rare", "statBonus": "4" }
+  ],
+  "itemSeq": 1,
+  "totalTicks": "60000",
+  "playtimeMs": "6000000"
+}

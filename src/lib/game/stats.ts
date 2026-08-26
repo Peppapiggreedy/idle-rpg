@@ -20,6 +20,8 @@ import { UPGRADES } from '../data/upgrades'
 // величина, её нельзя модифицировать напрямую — только через weaponSpeed/haste.
 export type StatId =
   | 'attackPower'
+  | 'weaponDamageMin'
+  | 'weaponDamageMax'
   | 'maxHp'
   | 'maxMana'
   | 'weaponSpeed'
@@ -33,6 +35,8 @@ export type StatId =
 
 export const STAT_IDS: StatId[] = [
   'attackPower',
+  'weaponDamageMin',
+  'weaponDamageMax',
   'maxHp',
   'maxMana',
   'weaponSpeed',
@@ -62,7 +66,9 @@ export interface StatModifier {
 // Готовые статы. Вероятности/доли/секунды — number (правило CLAUDE.md),
 // неограниченно растущие величины — Decimal.
 export interface StatBlock {
-  attackPower: Decimal
+  attackPower: Decimal // сила атаки: вклад в удар через AP_NORMALIZATION
+  weaponDamageMin: Decimal // нижняя граница урона оружия
+  weaponDamageMax: Decimal // верхняя граница урона оружия
   maxHp: Decimal
   maxMana: Decimal
   weaponSpeed: number // секунд между ударами оружия (меньше = быстрее)
@@ -129,6 +135,8 @@ export function applyModifiers(mods: StatModifier[]): StatBlock {
   const haste = computeStat('haste', mods).toNumber()
   return {
     attackPower: computeStat('attackPower', mods),
+    weaponDamageMin: computeStat('weaponDamageMin', mods),
+    weaponDamageMax: computeStat('weaponDamageMax', mods),
     maxHp: computeStat('maxHp', mods),
     maxMana: computeStat('maxMana', mods),
     weaponSpeed,

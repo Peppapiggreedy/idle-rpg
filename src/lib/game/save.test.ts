@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { Decimal } from './numbers'
 import { xpToNextLevel } from './formulas'
+import { expectedSwingDamage } from './combat'
 import { createInitialState, RESPAWN_DELAY_MS, type GameState } from './tick'
 import {
   OFFLINE_CAP_MS,
@@ -84,8 +85,8 @@ describe('save/load', () => {
     expect(s.gold.toNumber()).toBe(77)
     expect(s.level.toNumber()).toBe(5)
     expect(s.currentXp.toNumber()).toBe(3)
-    // v1 хранил 12 dps = 10 базовых + 2 заточки; пересчёт из счётчика: 20 + 2*2 = 24
-    expect(s.stats.attackPower.toNumber()).toBe(24)
+    // v1 хранил 12 dps = 10 базовых + 2 заточки; средний удар: 20 + 2*2 = 24
+    expect(expectedSwingDamage(s.stats).toNumber()).toBe(24)
     expect(s.upgrades['weapon-sharpening'].toNumber()).toBe(2)
     expect(s.inventory).toEqual([])
     expect(s.itemSeq).toBe(0)

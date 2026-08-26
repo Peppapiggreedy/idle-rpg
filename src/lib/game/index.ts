@@ -8,7 +8,7 @@ export { upgradeCost, xpToNextLevel, applyXp, MAX_LEVELUPS_PER_CALL } from './fo
 export type { XpResult } from './formulas'
 export { buyUpgrade, ownedCount } from './upgrades'
 export { rollRarity, rollLoot, sellItem, sellPrice, INVENTORY_SIZE } from './loot'
-export { createRng, randomSeed } from './rng'
+export { createRng, randomSeed, randRange } from './rng'
 export {
   recomputeStats,
   applyModifiers,
@@ -27,8 +27,16 @@ export type {
   StatBreakdown,
   SwingTimeBreakdown,
 } from './stats'
-export { estimateCombatRate } from './combat'
-export type { CombatRate } from './combat'
+export {
+  estimateCombatRate,
+  rollSwing,
+  rollMonsterDamage,
+  swingDamageRange,
+  expectedSwingDamage,
+  attackPowerContribution,
+  critFactor,
+} from './combat'
+export type { CombatRate, SwingResult } from './combat'
 export { subscribe as subscribeAttacks, emit as emitAttack } from './events'
 export type { Rng } from './rng'
 export {
@@ -47,7 +55,7 @@ export {
   OFFLINE_MODAL_MIN_MS,
 } from './save'
 export type {
-  SavePayloadV5,
+  SavePayloadV6,
   SavedItem,
   SaveStorage,
   SaveDeps,

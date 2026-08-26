@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { Decimal } from './numbers'
 import { STEP_MS } from './loop'
 import { RESPAWN_DELAY_MS, createInitialState, spawnMonster, tick, type GameState } from './tick'
-import { ensureStats } from './stats'
+import { applyModifiers } from './stats'
 import type { MonsterTemplate } from '../types'
 
 const DUMMY: MonsterTemplate = {
@@ -11,24 +11,31 @@ const DUMMY: MonsterTemplate = {
   maxHp: new Decimal(100),
   goldReward: new Decimal(5),
   xpReward: new Decimal(3),
-  damage: new Decimal(0), // мирный: не бьёт в ответ, тесты боя героя чистые
+  damageMin: new Decimal(0), // мирный: не бьёт в ответ, тесты боя героя чистые
+  damageMax: new Decimal(0),
   swingTime: 1,
 }
 
 // rng = 1 никогда не критует и не дропает лут — тесты детерминированы.
 const NO_LUCK = () => 1
 
-// Нужный урон за удар выражаем ИСТОЧНИКОМ: базовые 20 + заточки по +2.
+// Точный урон за удар задаём base-модификаторами — ровно так, как это будет
+// делать оружие: сила атаки 0 и вырожденный диапазон min = max. Бросок урона
+// тогда детерминирован и НЕ расходует rng, в потоке остаётся только бросок крита —
+// поэтому тесты механики тика не зависят от разброса урона.
 function stateWith(damagePerSwing: number, template: MonsterTemplate): GameState {
-  const owned = (damagePerSwing - 20) / 2
-  if (owned < 0 || !Number.isInteger(owned)) throw new Error('урон должен быть 20 + 2n')
-  return ensureStats({
+  const stats = applyModifiers([
+    { stat: 'attackPower', kind: 'base', value: new Decimal(0), source: 'test:fixture' },
+    { stat: 'weaponDamageMin', kind: 'base', value: new Decimal(damagePerSwing), source: 'test:fixture' },
+    { stat: 'weaponDamageMax', kind: 'base', value: new Decimal(damagePerSwing), source: 'test:fixture' },
+  ])
+  return {
     ...createInitialState(1),
-    upgrades: owned > 0 ? { 'weapon-sharpening': new Decimal(owned) } : {},
-    statsDirty: true,
+    stats,
+    statsDirty: false,
     monster: spawnMonster(template),
     combatLog: [],
-  })
+  }
 }
 
 function run(state: GameState, ms: number, rng: () => number = NO_LUCK): GameState {

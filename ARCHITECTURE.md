@@ -1,6 +1,6 @@
 # ARCHITECTURE.md — реальное состояние кода
 
-Снимок после разделения скорости атаки на weaponSpeed/haste (ветка weapon-speed-haste).
+Снимок после ввода формулы урона с диапазоном оружия и силой атаки (ветка weapon-damage-formula).
 Документ описывает то, что есть в `src/` фактически. Обновляется вместе с кодом.
 
 ## 1. Карта модулей
@@ -19,10 +19,10 @@
 | Файл | Отвечает за | Импортирует |
 |---|---|---|
 | `numbers.ts` | реэкспорт `Decimal` (единственная точка импорта break_infinity) и `formatNumber` (1.23K/…/1.00e15) | break_infinity.js |
-| `rng.ts` | тип `Rng`, `createRng(seed)` (mulberry32), `randomSeed()` без Math.random. Единственный источник случайности | — |
+| `rng.ts` | тип `Rng`, `createRng(seed)` (mulberry32), `randRange(rng, min, max)` (при min = max поток не расходуется), `randomSeed()` без Math.random. Единственный источник случайности | numbers |
 | `events.ts` | шина `AttackEvent`: `emit`/`subscribe`. Логика эмитит, UI подписывается (задел под всплывающие числа урона) | types |
 | `stats.ts` | **конвейер статов — единственный источник правды производных чисел**: 11 стат, модификаторы {stat, kind: **base**/flat/percent/multiplier, value, source}, порядок base → +flat → ×(1+Σpercent) → ×multiplier; `base` заменяет дефолт `BASE_STATS` (последний выигрывает при дублях); производный `swingTime = weaponSpeed/(1+haste)` вне `StatId` — модификатор на него невозможен; кеш `statsDirty`/`ensureStats` + пропорциональный пересчёт прогресса замаха; `applyModifiers` (чистое ядро), `explainStat`/`explainSwingTime` для панели | numbers, state (тип), data/{balance,upgrades} |
-| `combat.ts` | `estimateCombatRate(state)` — урон/с, убийств/с, uptime и время до смерти; моделирует цикл «фарм → смерть → воскрешение»; единственный источник темпа боя для UI и оффлайна | numbers, state, data/balance |
+| `combat.ts` | **ЕДИНСТВЕННЫЙ дом боевых формул**: `rollSwing` (бросок урона оружия + вклад силы атаки + крит), `rollMonsterDamage`, `swingDamageRange`/`expectedSwingDamage`/`critFactor`, `estimateCombatRate` (урон/с, убийств/с, uptime, время до смерти; цикл «фарм → смерть → воскрешение»). tick вызывает эти функции, оффлайн-агрегат — только `estimateCombatRate`; своей формулы нет ни у кого | numbers, rng, state, stats, data/balance, types |
 | `formulas.ts` | `upgradeCost` (base·1.15^owned), `xpToNextLevel` (floor(10·L^1.5) с эпсилоном против погрешности pow), `applyXp` (перенос остатка, мультиуровень, предохранитель) | numbers, types |
 | `loop.ts` | планировщик: rAF + аккумулятор, фикс. шаг `STEP_MS=100`, максимум 10 шагов/кадр, сброс «долга»; метрики fps/tps; `setSpeed(m)` — дебаг-ускорение игрового времени (лимит шагов за кадр сохраняется). Технические константы живут здесь — это не баланс | — |
 | `state.ts` | `GameState`, `createInitialState(seed?)`, `spawnMonster`, `pushEvent`, `COMBAT_LOG_SIZE`. Общая зависимость tick/loot/save — взаимных импортов между ними нет | numbers, formulas, rng, data/{monsters,balance}, types |
@@ -89,20 +89,31 @@
 в фиксированном порядке; факты тика передаются через контекст:
 
 1. `applyRevive` — мёртвый герой: отсчёт 30 c; по нулю — полный HP, свежий моб
-2. `applyCombat` — удары героя по свинг-таймеру (`stats.swingTime`) с переносом остатка; криты; события `hit` + шина
+2. `applyCombat` — удары героя по свинг-таймеру (`stats.swingTime`) с переносом остатка; урон и крит считает `combat.rollSwing`; события `hit` + шина
 3. `applyKillRewards` — золото + событие `kill`
 4. `applyLevelUps` — опыт через `applyXp` + событие `levelup`
 5. `applyLootDrop` — бросок дропа (единственный потребитель rng) + событие `loot`
-6. `applyMonsterAttack` — ответные удары моба по своему `swingTime` из данных; урон ×(1−damageReduction);
+6. `applyMonsterAttack` — ответные удары моба по своему `swingTime` из данных; урон считает `combat.rollMonsterDamage` (бросок из `damageMin..damageMax` ×(1−damageReduction));
    события `hurt` + шина; `currentHp <= 0` → `death`, таймер воскрешения
 7. `applyRegen` — HP (в бою `hpRegen`, вне боя `hpRegenOutOfCombat`), мана `manaRegen`
 8. `applyRespawn` — таймер 300 мс после смерти моба ИЛИ отсчёт и спавн (`spawn`)
 9. `applyAutosaveCounter` — копит игровое время для автосейва
 
-rng потребляется в порядке: крит-ролл каждого удара, затем (на убийстве)
-дроп/редкость/имя. Лог — последние 8 событий. Урон, скорость и криты берутся из `state.stats` (конвейер `stats.ts`;
-база — `BASE_STATS` в `data/balance.ts`, безоружная скорость — `UNARMED.weaponSpeed`,
-апгрейд — flat-модификатор +2×счётчик). Хардкодов скорости в tick/combat нет.
+rng потребляется в порядке: бросок урона оружия, крит-ролл, затем (на убийстве)
+дроп/редкость/имя. Бросок урона моба поток не трогает, пока `damageMin = damageMax`. Лог — последние 8 событий. Формулы боя (все — в `combat.ts`):
+
+```
+swingTime   = weaponSpeed / (1 + haste)
+swingDamage = rand(weaponDamageMin, weaponDamageMax)
+              + attackPower × weaponSpeed / AP_NORMALIZATION   (AP_NORMALIZATION = 14)
+```
+
+Во второй формуле стоит БАЗОВАЯ `weaponSpeed`, а не ускоренная `swingTime`: иначе
+haste сократился бы сам с собой и не повышал урон в секунду. Медленное оружие
+получает больший вклад силы атаки за удар — ровно настолько, чтобы сравняться
+по урону в секунду с быстрым (14 силы атаки = +1 урона в секунду при любой скорости).
+База — `BASE_STATS` в `data/balance.ts`, безоружные значения — `UNARMED`
+(скорость 2.0с, урон 8–12), апгрейд — flat-модификатор +14×счётчик к силе атаки.
 Темп боя (dps с матожиданием критов, убийств/с) считает ТОЛЬКО
 `estimateCombatRate` — им пользуются и UI, и оффлайн-агрегат; тест держит
 расхождение оффлайна с реальной симуляцией часа в пределах 5%.
@@ -110,9 +121,9 @@ rng потребляется в порядке: крит-ролл каждого
 
 ## 4. Сохранение
 
-- Версия формата: **5** (`SAVE_VERSION`), ключ `idle-rpg-save`. Автосейв 15 с
+- Версия формата: **6** (`SAVE_VERSION`), ключ `idle-rpg-save`. Автосейв 15 с
   (значение в `data/balance.ts`) + `visibilitychange`.
-- Формат — `SavePayloadV5` (Decimal строками): version, lastTimestamp, gold, level,
+- Формат — `SavePayloadV6` (Decimal строками): version, lastTimestamp, gold, level,
   currentXp, currentHp, currentMana, heroState, reviveMsLeft, upgrades,
   inventory[{id,name,rarity,statBonus}], itemSeq, totalTicks, playtimeMs. Прямых полей урона в формате нет — статы
   пересчитываются из счётчиков покупок при загрузке. Не сохраняются: monster/respawn, combatLog, xpToNext,
@@ -120,7 +131,8 @@ rng потребляется в порядке: крит-ролл каждого
 - Миграции: 0→1 (доверсионный формат, legacy-алиасы `xp`/`damagePerSecond`),
   1→2 (пустые inventory/itemSeq), 2→3 (конверсия dps → урон за удар),
   3→4 (прямые поля урона удалены, пересчёт из счётчиков), 4→5 (HP/мана/смертность;
-  старый сейв просыпается живым с полным запасом). Сейв из будущей версии и битый JSON → коды
+  старый сейв просыпается живым с полным запасом), 5→6 (тождество: сменилась
+  модель урона, набор полей — нет; версия помечает сейвы новой формулы). Сейв из будущей версии и битый JSON → коды
   `newer-version`/`corrupted`, текст рендерит NoticeBar. Фикстуры всех версий — в
   `__fixtures__`, тесты грузят их через `loadGame`.
 - Оффлайн: потолок 8 ч (balance), награда агрегатом, часы назад — ничего.

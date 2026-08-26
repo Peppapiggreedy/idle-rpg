@@ -8,7 +8,9 @@ export const MEADOW_SQUELCHER: MonsterTemplate = {
   maxHp: new Decimal(30),
   goldReward: new Decimal(5),
   xpReward: new Decimal(3),
-  damage: new Decimal(4),
+  // Диапазон урона: пока min = max (миграция прежнего единственного числа).
+  damageMin: new Decimal(4),
+  damageMax: new Decimal(4),
   swingTime: 1.6,
 }
 
