@@ -13,6 +13,7 @@
   // и на машине без WebGL она не нужна вовсе — пусть не едет в основной бандл.
   import type * as ThreeNs from 'three'
   import { onDestroy, onMount } from 'svelte'
+  import { get } from 'svelte/store'
   import { formatNumber } from '../game'
   import { subscribe as subscribeAttacks } from '../game/events'
   import {
@@ -22,7 +23,7 @@
     MOBILE_BREAKPOINT,
   } from '../data/render'
   import { gameState, simSpeed } from '../stores/game'
-  import { reportSceneFailure } from '../stores/ui'
+  import { reportSceneFailure, uiSettings } from '../stores/ui'
   import { isDebugMode, showsSceneHelpers } from '../ui/route'
   import { disposeSceneGraph } from './dispose'
   import {
@@ -381,7 +382,12 @@
 
     // --- Цикл рендера ---
 
-    const gate = createFrameGate(SCENE_FPS)
+    // Потолок кадров сцены — из настроек игрока; SCENE_FPS остаётся
+    // значением по умолчанию для случая «лимит снят».
+    let gate = createFrameGate(get(uiSettings).fpsLimit ?? SCENE_FPS)
+    const unsubscribeFps = uiSettings.subscribe((s) => {
+      gate = createFrameGate(s.fpsLimit ?? SCENE_FPS)
+    })
     let frameId = 0
     let running = true
     let framesThisSecond = 0
@@ -557,6 +563,14 @@
       previous = performance.now()
       secondStart = previous
       framesThisSecond = 0
+      // Вкладку спрятали — снимаем всплывающие числа. Убирает их кадр
+      // сцены, а он остановлен: без этого последние числа замерли бы
+      // в DOM и встретили игрока по возвращении, показывая урон,
+      // которому уже минута.
+      if (document.hidden) {
+        floaters.clear()
+        painted = []
+      }
     }
     document.addEventListener('visibilitychange', onVisibility)
 
@@ -565,6 +579,7 @@
     return () => {
       running = false
       cancelAnimationFrame(frameId)
+      unsubscribeFps()
       unloadScenery()
       document.removeEventListener('visibilitychange', onVisibility)
       observer.disconnect()

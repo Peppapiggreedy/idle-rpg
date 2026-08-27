@@ -57,12 +57,15 @@ describe('слой 3D только читает', () => {
   })
 
   it('единственная запись наружу — сообщение о несработавшей сцене', () => {
+    // Из стора ИНТЕРФЕЙСА сцене позволено читать настройки и сообщить,
+    // что она не завелась. Больше ничего: ни setTextMode, ни setFpsLimit —
+    // менять настройки игрока картинка не вправе.
     const scene = readFileSync(new URL('Scene3D.svelte', RENDER3D_DIR), 'utf8')
     const uiImports = [...scene.matchAll(/import\s*\{([^}]*)\}\s*from\s*'[^']*stores\/ui'/g)]
       .flatMap((m) => m[1].split(','))
       .map((s) => s.trim())
       .filter(Boolean)
-    expect(uiImports).toEqual(['reportSceneFailure'])
+    expect(uiImports.sort()).toEqual(['reportSceneFailure', 'uiSettings'])
   })
 })
 
