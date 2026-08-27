@@ -58,7 +58,7 @@ describe('дискретные удары', () => {
     let s = stateWith(20, DUMMY)
     s = tick(s, 2500, NO_LUCK)
     expect(s.monster.currentHp.toNumber()).toBe(80)
-    expect(s.swingTimerMs).toBe(500)
+    expect(s.swingProgress).toBeCloseTo(0.25, 9) // 0.5 c из 2.0 c замаха
     // Ещё 1.5 c — второй удар ровно вовремя (2.0 c после первого).
     s = tick(s, 1500, NO_LUCK)
     expect(s.monster.currentHp.toNumber()).toBe(60)

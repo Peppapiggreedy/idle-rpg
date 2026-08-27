@@ -14,6 +14,7 @@ import { Decimal } from './numbers'
 import { applyXp } from './formulas'
 import { rollLoot } from './loot'
 import { rollMonsterDamage, rollSwing } from './combat'
+import { autoEquipIfBetter } from './equipment'
 import type { Rng } from './rng'
 import { pushEvent, spawnMonster, type GameState } from './state'
 import { ensureStats } from './stats'
@@ -21,6 +22,9 @@ import { emit as busEmit } from './events'
 import { INVENTORY_SIZE, RESPAWN_DELAY_MS, REVIVE_DELAY_MS } from '../data/balance'
 import { FIRST_MONSTER } from '../data/monsters'
 import type { AttackEvent, Monster } from '../types'
+
+// Погрешность накопления долей замаха: 0.05 и подобные не представимы в double.
+const SWING_EPS = 1e-9
 
 // Контекст одного тика: вход (dtMs, rng, emit) и факты, которыми шаги обмениваются.
 interface TickContext {
@@ -46,7 +50,7 @@ const applyRevive: TickStep = (s, ctx) => {
     heroState: 'alive',
     reviveMsLeft: 0,
     currentHp: s.stats.maxHp,
-    swingTimerMs: 0,
+    swingProgress: 0,
     monster,
     respawnMsLeft: 0,
     combatLog,
@@ -58,14 +62,16 @@ const applyCombat: TickStep = (s, ctx) => {
   // Во время респауна свинг-таймер стоит: первый удар по новому мобу — через
   // полный замах, без бесплатного «накопленного» удара.
   if (s.respawnMsLeft > 0) return s
-  const swingTimeMs = s.stats.swingTime * 1000
-  let swingTimerMs = s.swingTimerMs + ctx.dtMs
+  // Прогресс копится ДОЛЕЙ замаха: dt / swingTime. Смена оружия или haste
+  // в середине замаха сохраняет долю — без сброса и без мгновенного удара.
+  let swingProgress = s.swingProgress + ctx.dtMs / (s.stats.swingTime * 1000)
   let monster = s.monster
   let combatLog = s.combatLog
-  // Удар при каждом полном замахе; таймер сбрасывается ПЕРЕНОСОМ остатка,
-  // иначе на медленном тике теряется время между ударами.
-  while (swingTimerMs >= swingTimeMs && ctx.killedMonster === null) {
-    swingTimerMs -= swingTimeMs
+  // Удар при каждом полном замахе; остаток доли переносится, иначе на
+  // медленном тике теряется время между ударами. EPS гасит накопленную
+  // погрешность дробей (0.05 не представима в double).
+  while (swingProgress >= 1 - SWING_EPS && ctx.killedMonster === null) {
+    swingProgress = Math.max(0, swingProgress - 1)
     // Формула удара живёт в combat.ts — здесь только применение результата.
     const { amount, isCrit } = rollSwing(s.stats, ctx.rng)
     const hpLeft = monster.currentHp.minus(amount)
@@ -81,7 +87,7 @@ const applyCombat: TickStep = (s, ctx) => {
     })
     if (hpLeft.lte(0)) ctx.killedMonster = monster
   }
-  return { ...s, swingTimerMs, monster, combatLog }
+  return { ...s, swingProgress, monster, combatLog }
 }
 
 const applyKillRewards: TickStep = (s, ctx) => {
@@ -122,25 +128,26 @@ const applyLootDrop: TickStep = (s, ctx) => {
   if (s.inventory.length >= INVENTORY_SIZE) return s
   const item = rollLoot(ctx.rng, s.itemSeq)
   if (!item) return s
-  return {
+  const withItem: GameState = {
     ...s,
     inventory: [...s.inventory, item],
     itemSeq: s.itemSeq + 1,
     combatLog: pushEvent(s.combatLog, { type: 'loot', item }),
   }
+  // Автонадевание сравнивает предметы по оценочному урону в секунду.
+  return autoEquipIfBetter(withItem, item)
 }
 
 const applyMonsterAttack: TickStep = (s, ctx) => {
   // Моб бьёт, только пока оба живы; мирные мобы (damage 0) не бьют вовсе.
   if (s.heroState === 'dead' || s.respawnMsLeft > 0 || ctx.killedMonster) return s
   if (s.monster.damageMax.lte(0)) return s
-  const monsterSwingTimeMs = s.monster.swingTime * 1000
-  let monsterSwingMs = s.monster.swingTimerMs + ctx.dtMs
+  let monsterSwing = s.monster.swingProgress + ctx.dtMs / (s.monster.swingTime * 1000)
   let currentHp = s.currentHp
   let combatLog = s.combatLog
   let died = false
-  while (monsterSwingMs >= monsterSwingTimeMs && !died) {
-    monsterSwingMs -= monsterSwingTimeMs
+  while (monsterSwing >= 1 - SWING_EPS && !died) {
+    monsterSwing = Math.max(0, monsterSwing - 1)
     // Формула входящего урона (бросок из диапазона + damageReduction) — в combat.ts.
     const amount = rollMonsterDamage(s.monster, s.stats, ctx.rng)
     currentHp = Decimal.max(currentHp.minus(amount), new Decimal(0))
@@ -155,7 +162,7 @@ const applyMonsterAttack: TickStep = (s, ctx) => {
     })
     if (currentHp.lte(0)) died = true
   }
-  const next = { ...s, currentHp, monster: { ...s.monster, swingTimerMs: monsterSwingMs }, combatLog }
+  const next = { ...s, currentHp, monster: { ...s.monster, swingProgress: monsterSwing }, combatLog }
   if (!died) return next
   // Смерть героя: 30 игровых секунд простоя, награды не капают.
   return {
@@ -225,6 +232,6 @@ export function tick(
 }
 
 // Реэкспорт для обратной совместимости импортов (тесты, index).
-export { COMBAT_LOG_SIZE, createInitialState, spawnMonster } from './state'
-export type { GameState } from './state'
+export { COMBAT_LOG_SIZE, createInitialState, spawnMonster, emptyEquipment } from './state'
+export type { GameState, Equipment } from './state'
 export { RESPAWN_DELAY_MS } from '../data/balance'

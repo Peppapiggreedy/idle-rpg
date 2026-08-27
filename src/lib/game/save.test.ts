@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { Decimal } from './numbers'
 import { xpToNextLevel } from './formulas'
 import { expectedSwingDamage } from './combat'
-import { createInitialState, RESPAWN_DELAY_MS, type GameState } from './tick'
+import { emptyEquipment, createInitialState, RESPAWN_DELAY_MS, type GameState } from './tick'
 import {
   OFFLINE_CAP_MS,
   SAVE_KEY,
@@ -34,9 +34,32 @@ function richState(): GameState {
     totalTicks: new Decimal(100000),
     playtimeMs: new Decimal(10_000_000),
     inventory: [
-      { id: 'item-0', name: 'Звёздный Палаш', rarity: 'epic', statBonus: new Decimal(8) },
+      {
+        id: 'item-0',
+        name: 'Звёздный Оберег',
+        rarity: 'epic',
+        slot: 'trinket',
+        mods: [
+          { stat: 'attackPower', kind: 'flat', value: new Decimal(8), source: 'equipment:trinket' },
+        ],
+      },
     ],
-    itemSeq: 1,
+    equipment: {
+      ...emptyEquipment(),
+      weapon: {
+        id: 'item-1',
+        name: 'Верный Полуторник',
+        rarity: 'rare',
+        slot: 'weapon',
+        mods: [
+          { stat: 'weaponSpeed', kind: 'base', value: new Decimal(2.2), source: 'equipment:weapon' },
+          { stat: 'weaponDamageMin', kind: 'base', value: new Decimal(44), source: 'equipment:weapon' },
+          { stat: 'weaponDamageMax', kind: 'base', value: new Decimal(88), source: 'equipment:weapon' },
+        ],
+      },
+    },
+    autoEquip: false,
+    itemSeq: 2,
   }
 }
 
@@ -99,10 +122,26 @@ describe('save/load', () => {
     expect(result.kind).toBe('loaded')
     if (result.kind !== 'loaded') return
     const item = result.state.inventory[0]
-    expect(item.name).toBe('Звёздный Палаш')
+    expect(item.name).toBe('Звёздный Оберег')
     expect(item.rarity).toBe('epic')
-    expect(item.statBonus.toNumber()).toBe(8)
-    expect(result.state.itemSeq).toBe(1)
+    expect(item.slot).toBe('trinket')
+    expect(item.mods[0].value.toNumber()).toBe(8)
+    expect(result.state.itemSeq).toBe(2)
+  })
+
+  it('надетая экипировка переживает сохранение и продолжает задавать базу боя', () => {
+    const storage = makeStorage()
+    saveGame(richState(), { storage, now: () => 0 })
+    const result = loadGame({ storage, now: () => 0 })
+    expect(result.kind).toBe('loaded')
+    if (result.kind !== 'loaded') return
+    const weapon = result.state.equipment.weapon
+    expect(weapon?.name).toBe('Верный Полуторник')
+    // Три base-модификатора оружия снова задают базу конвейера статов.
+    expect(result.state.stats.weaponSpeed).toBeCloseTo(2.2, 9)
+    expect(result.state.stats.weaponDamageMin.toNumber()).toBe(44)
+    expect(result.state.stats.weaponDamageMax.toNumber()).toBe(88)
+    expect(result.state.autoEquip).toBe(false)
   })
 
   it('сейв прошлой версии (v0, без поля version) мигрирует без потери прогресса', () => {

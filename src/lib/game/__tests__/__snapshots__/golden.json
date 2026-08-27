@@ -1,32 +1,41 @@
 {
   "step-3000": {
-    "gold": "365",
-    "level": "5",
-    "currentXp": "50",
-    "attackPower": "70",
-    "avgSwingDamage": "20",
+    "gold": "490",
+    "level": "6",
+    "currentXp": "14",
+    "attackPower": "161",
+    "avgSwingDamage": "58.3",
+    "weaponSpeed": "2.2000",
+    "swingTime": "2.2000",
+    "equipped": "weapon,head,chest,hands,legs,trinket",
     "totalTicks": "3000",
     "inventoryCount": 12,
-    "inventorySellTotal": "75"
+    "inventorySellTotal": "90"
   },
   "step-12000": {
-    "gold": "1360",
-    "level": "8",
-    "currentXp": "205",
-    "attackPower": "70",
-    "avgSwingDamage": "20",
+    "gold": "2290",
+    "level": "10",
+    "currentXp": "267",
+    "attackPower": "161",
+    "avgSwingDamage": "58.3",
+    "weaponSpeed": "2.2000",
+    "swingTime": "2.2000",
+    "equipped": "weapon,head,chest,hands,legs,trinket",
     "totalTicks": "12000",
     "inventoryCount": 12,
-    "inventorySellTotal": "75"
+    "inventorySellTotal": "90"
   },
   "step-36000": {
-    "gold": "4035",
-    "level": "13",
-    "currentXp": "219",
-    "attackPower": "70",
-    "avgSwingDamage": "20",
+    "gold": "7090",
+    "level": "16",
+    "currentXp": "481",
+    "attackPower": "161",
+    "avgSwingDamage": "58.3",
+    "weaponSpeed": "2.2000",
+    "swingTime": "2.2000",
+    "equipped": "weapon,head,chest,hands,legs,trinket",
     "totalTicks": "36000",
     "inventoryCount": 12,
-    "inventorySellTotal": "75"
+    "inventorySellTotal": "90"
   }
 }

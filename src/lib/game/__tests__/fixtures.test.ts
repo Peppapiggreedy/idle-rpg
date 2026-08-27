@@ -44,6 +44,7 @@ describe('фикстуры сейвов', () => {
     ['save-v4.json'],
     ['save-v5.json'],
     ['save-v6.json'],
+    ['save-v7.json'],
   ])('%s мигрирует до текущей версии', (name) => {
     const payload = migrateSave(JSON.parse(fixture(name)))
     expect(payload).not.toBeNull()
@@ -112,9 +113,36 @@ describe('фикстуры сейвов', () => {
     expect(s.inventory.length).toBe(2)
     expect(s.inventory[0].name).toBe('Звёздный Палаш')
     expect(s.inventory[0].rarity).toBe('epic')
-    expect(s.inventory[0].statBonus.toNumber()).toBe(8)
     expect(s.itemSeq).toBe(2)
     expect(s.totalTicks.toNumber()).toBe(5000)
+  })
+
+  it('save-v6 -> v7: statBonus превращается в модификатор силы атаки', () => {
+    const raw = JSON.parse(fixture('save-v6.json'))
+    const s = loadFixture('save-v6.json')
+    const item = s.inventory[0]
+    expect(item.name).toBe('Закалённый Кастет')
+    expect(item.slot).toBe('trinket') // слот без base — база боя не подменяется
+    expect(item.mods).toHaveLength(1)
+    expect(item.mods[0]).toMatchObject({ stat: 'attackPower', kind: 'flat' })
+    expect(item.mods[0].value.toNumber()).toBe(Number(raw.inventory[0].statBonus))
+    // Экипировки в v6 не было: предмет ждёт в инвентаре, слоты пусты.
+    expect(Object.values(s.equipment).every((i) => i === null)).toBe(true)
+    expect(s.autoEquip).toBe(true)
+  })
+
+  it('save-v7: надетая экипировка задаёт базу боя после загрузки', () => {
+    const s = loadFixture('save-v7.json')
+    expect(s.gold.toNumber()).toBe(9000)
+    expect(s.equipment.weapon?.name).toBe('Закалённый Крушитель')
+    expect(s.equipment.chest?.name).toBe('Пастуший Кафтан')
+    // Три base-модификатора оружия перебили безоружные значения из баланса.
+    expect(s.stats.weaponSpeed).toBeCloseTo(3.4, 9)
+    expect(s.stats.weaponDamageMin.toNumber()).toBe(68)
+    expect(s.stats.weaponDamageMax.toNumber()).toBe(136)
+    // Сила атаки: база 70 + 18 заточек * 14 + 7 с нагрудника, всё это +10% с оружия.
+    expect(s.stats.attackPower.toNumber()).toBeCloseTo((70 + 18 * 14 + 7) * 1.1, 9)
+    expect(s.statsDirty).toBe(false)
   })
 })
 
@@ -128,7 +156,15 @@ describe('экспорт -> импорт', () => {
       currentXp: new Decimal(123),
       upgrades: { 'weapon-sharpening': new Decimal(67) },
       inventory: [
-        { id: 'item-9', name: 'Сумрачный Бердыш', rarity: 'legendary', statBonus: new Decimal(16) },
+        {
+          id: 'item-9',
+          name: 'Сумрачный Венец',
+          rarity: 'legendary',
+          slot: 'head',
+          mods: [
+            { stat: 'attackPower', kind: 'flat', value: new Decimal(16), source: 'equipment:head' },
+          ],
+        },
       ],
       itemSeq: 10,
     })

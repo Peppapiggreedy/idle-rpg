@@ -86,19 +86,19 @@ describe("модификатор kind 'base'", () => {
 })
 
 describe('прогресс замаха при смене swingTime', () => {
-  it('пересчитывается пропорционально: доля замаха сохраняется', () => {
-    // Состояние помнит прежний замах 4с и половину прогресса (2000 мс);
-    // пересчёт даёт безоружные 2с -> прогресс обязан стать 1000 мс (та же половина).
+  it('доля замаха сохраняется: смена оружия не сбрасывает удар', () => {
+    // Прогресс хранится ДОЛЕЙ 0..1, поэтому при смене swingTime он остаётся
+    // тем же: половина замаха 4с превращается в половину замаха 2с сама.
     const s = createInitialState(1)
     const stale: GameState = {
       ...s,
       stats: { ...s.stats, weaponSpeed: 4, swingTime: 4 },
-      swingTimerMs: 2000,
+      swingProgress: 0.5,
       statsDirty: true,
     }
     const next = ensureStats(stale)
     expect(next.stats.swingTime).toBe(2)
-    expect(next.swingTimerMs).toBe(1000) // 2000 * 2 / 4
+    expect(next.swingProgress).toBe(0.5)
   })
 
   it('смена скорости не даёт ни мгновенного удара, ни сброса замаха', () => {
@@ -106,19 +106,19 @@ describe('прогресс замаха при смене swingTime', () => {
     const stale: GameState = {
       ...s,
       stats: { ...s.stats, weaponSpeed: 1, swingTime: 1 },
-      swingTimerMs: 900, // 90% замаха
+      swingProgress: 0.9, // 90% замаха
       statsDirty: true,
     }
     const next = ensureStats(stale)
-    // 90% замаха остаются 90%: не 0 (сброс) и не >= swingTime (мгновенный удар).
-    expect(next.swingTimerMs).toBeCloseTo(0.9 * next.stats.swingTime * 1000, 9)
-    expect(next.swingTimerMs).toBeLessThan(next.stats.swingTime * 1000)
-    expect(next.swingTimerMs).toBeGreaterThan(0)
+    // 90% замаха остаются 90%: не 0 (сброс) и не >= 1 (мгновенный удар).
+    expect(next.swingProgress).toBe(0.9)
+    expect(next.swingProgress).toBeLessThan(1)
+    expect(next.swingProgress).toBeGreaterThan(0)
   })
 
   it('без изменения swingTime прогресс не трогается', () => {
-    const s: GameState = { ...createInitialState(1), swingTimerMs: 777, statsDirty: true }
-    expect(ensureStats(s).swingTimerMs).toBe(777)
+    const s: GameState = { ...createInitialState(1), swingProgress: 0.777, statsDirty: true }
+    expect(ensureStats(s).swingProgress).toBe(0.777)
   })
 })
 

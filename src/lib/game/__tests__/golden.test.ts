@@ -9,6 +9,7 @@ import { createRng } from '../rng'
 import { sellPrice } from '../loot'
 import { expectedSwingDamage } from '../combat'
 import { createInitialState, tick, type GameState } from '../tick'
+import { SLOT_IDS } from '../../data/slots'
 
 const SNAP_DIR = new URL('./__snapshots__/', import.meta.url)
 const SNAP_FILE = new URL('./__snapshots__/golden.json', import.meta.url)
@@ -25,6 +26,11 @@ function fingerprint(s: GameState) {
     currentXp: s.currentXp.toString(),
     attackPower: s.stats.attackPower.toString(),
     avgSwingDamage: expectedSwingDamage(s.stats).toString(),
+    // Экипировка — источник статов, поэтому она в отпечатке: смена базы боя
+    // или правила автонадевания обязаны ронять golden.
+    weaponSpeed: s.stats.weaponSpeed.toFixed(4),
+    swingTime: s.stats.swingTime.toFixed(4),
+    equipped: SLOT_IDS.filter((slot) => s.equipment[slot] !== null).join(','),
     totalTicks: s.totalTicks.toString(),
     inventoryCount: s.inventory.length,
     inventorySellTotal: s.inventory

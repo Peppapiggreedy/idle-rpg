@@ -1,0 +1,56 @@
+{
+  "version": 7,
+  "lastTimestamp": 0,
+  "gold": "9000",
+  "level": "31",
+  "currentXp": "260",
+  "currentHp": "150",
+  "currentMana": "50",
+  "heroState": "alive",
+  "reviveMsLeft": 0,
+  "upgrades": { "weapon-sharpening": "18" },
+  "inventory": [
+    {
+      "id": "item-3",
+      "name": "Гремящий Оберег",
+      "rarity": "uncommon",
+      "slot": "trinket",
+      "mods": [
+        { "stat": "attackPower", "kind": "flat", "value": "14", "source": "equipment:trinket" },
+        { "stat": "maxHp", "kind": "flat", "value": "20", "source": "equipment:trinket" }
+      ]
+    }
+  ],
+  "equipment": {
+    "weapon": {
+      "id": "item-1",
+      "name": "Закалённый Крушитель",
+      "rarity": "rare",
+      "slot": "weapon",
+      "mods": [
+        { "stat": "weaponSpeed", "kind": "base", "value": "3.4", "source": "equipment:weapon" },
+        { "stat": "weaponDamageMin", "kind": "base", "value": "68", "source": "equipment:weapon" },
+        { "stat": "weaponDamageMax", "kind": "base", "value": "136", "source": "equipment:weapon" },
+        { "stat": "attackPower", "kind": "percent", "value": "0.1", "source": "equipment:weapon" }
+      ]
+    },
+    "head": null,
+    "chest": {
+      "id": "item-2",
+      "name": "Пастуший Кафтан",
+      "rarity": "common",
+      "slot": "chest",
+      "mods": [
+        { "stat": "attackPower", "kind": "flat", "value": "7", "source": "equipment:chest" },
+        { "stat": "maxHp", "kind": "flat", "value": "10", "source": "equipment:chest" }
+      ]
+    },
+    "hands": null,
+    "legs": null,
+    "trinket": null
+  },
+  "autoEquip": true,
+  "itemSeq": 4,
+  "totalTicks": "90000",
+  "playtimeMs": "9000000"
+}

@@ -15,6 +15,7 @@ import { Decimal } from './numbers'
 import type { GameState } from './state'
 import { BASE_STATS } from '../data/balance'
 import { UPGRADES } from '../data/upgrades'
+import { SLOT_IDS } from '../data/slots'
 
 // Модифицируемые статы. swingTime сюда НЕ входит намеренно: это производная
 // величина, её нельзя модифицировать напрямую — только через weaponSpeed/haste.
@@ -87,6 +88,14 @@ export interface StatBlock {
 // пересчёт, и в раскладку на панели статов.
 export function collectModifiers(state: GameState): StatModifier[] {
   const mods: StatModifier[] = []
+  // Экипировка: модификаторы лежат прямо в предмете, source уже проставлен
+  // генератором ('equipment:weapon' и т.д.). Оружие среди них задаёт БАЗУ
+  // weaponSpeed / weaponDamageMin / weaponDamageMax через kind 'base' —
+  // сняли оружие, и значения вернулись к UNARMED из data/balance.ts.
+  for (const slot of SLOT_IDS) {
+    const item = state.equipment?.[slot]
+    if (item) mods.push(...item.mods)
+  }
   // Апгрейды: урон пересчитывается из СЧЁТЧИКА покупок, а не хранится суммой.
   for (const def of UPGRADES) {
     const owned = state.upgrades[def.id]
@@ -156,18 +165,12 @@ export function recomputeStats(state: GameState): StatBlock {
 }
 
 // Кеш: пересчёт только при statsDirty — флаг взводят операции, меняющие набор
-// источников (покупка апгрейда, загрузка сейва); чистое чтение бесплатно.
-// При смене swingTime прогресс замаха пересчитывается пропорционально: смена
-// оружия или баффа в середине замаха не сбрасывает удар и не даёт мгновенный.
+// источников (покупка апгрейда, смена экипировки, загрузка сейва); чистое
+// чтение бесплатно. Прогресс замаха трогать не нужно: он хранится ДОЛЕЙ 0..1,
+// поэтому при смене swingTime сохраняется сам.
 export function ensureStats(state: GameState): GameState {
   if (!state.statsDirty) return state
-  const stats = recomputeStats(state)
-  const oldSwingTime = state.stats?.swingTime
-  let swingTimerMs = state.swingTimerMs
-  if (oldSwingTime && oldSwingTime > 0 && stats.swingTime > 0 && oldSwingTime !== stats.swingTime) {
-    swingTimerMs = (swingTimerMs * stats.swingTime) / oldSwingTime
-  }
-  return { ...state, stats, swingTimerMs, statsDirty: false }
+  return { ...state, stats: recomputeStats(state), statsDirty: false }
 }
 
 // Раскладка одной статы для панели «Статы»: откуда взялась итоговая цифра.
