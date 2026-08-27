@@ -96,6 +96,10 @@
         симулировать {offlineHours} ч оффлайна
       </button>
     </div>
+
+    <div class="row">
+      <a href="./balance?debug=1">прогон баланса →</a>
+    </div>
   </aside>
 {/if}
 
@@ -116,6 +120,9 @@
     background: rgba(0, 0, 0, 0.8);
     border: 1px solid #4a4;
     border-radius: 8px;
+  }
+  a {
+    color: #9f9;
   }
   .title {
     font-weight: 700;

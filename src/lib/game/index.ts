@@ -118,6 +118,8 @@ export {
   clearedXpBonus,
 } from './dungeons'
 export type { DungeonDef, BossDef, DungeonStatus, DungeonBlockReason } from './dungeons'
+export { simulate, buildSimState, simWeaponItem, totalXpEarned, spreadOf, BALANCE_PRESET } from './simulate'
+export type { SimResult, SimBuild, SimOptions, SimWeapon } from './simulate'
 export { subscribe as subscribeAttacks, emit as emitAttack } from './events'
 export type { Rng } from './rng'
 export {
