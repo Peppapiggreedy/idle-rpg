@@ -1,17 +1,19 @@
 <script lang="ts">
-  // Боевая сцена — главный элемент экрана. Самой 3D-сцены ещё нет, поэтому
-  // здесь заглушка ПРАВИЛЬНЫХ ПРОПОРЦИЙ: 16:9 на десктопе, 4:3 на мобильном.
-  // Макет из-за этого уже верный, и когда появится canvas, он встанет ровно
-  // на это место, ничего не сдвинув.
+  // Рама боевой сцены: держит пропорции (16:9 на десктопе, 4:3 на мобильном)
+  // и накрывает холст читаемой подписью — имя моба и его здоровье игрок
+  // должен видеть, а по цветной коробке уровень не прочитать.
   //
-  // Заглушка не пустая: имя моба и его здоровье игрок должен видеть и сейчас.
-  // Всё остальное про бой — в ленте лога под сценой и в текстовом режиме.
+  // Сам холст и всё, что связано с three, — в render3d/Scene3D.svelte.
+  // Рама про WebGL не знает вовсе и остаётся верной, даже если сцена
+  // не заведётся: тогда App покажет на этом месте текстовую панель.
   import { formatNumber } from '../game'
   import { gameState } from '../stores/game'
+  import Scene3D from '../render3d/Scene3D.svelte'
   import { StatBar } from './kit'
 </script>
 
 <div class="scene" role="img" aria-label="Боевая сцена: {$gameState.monster.name}">
+  <Scene3D />
   <div class="inner">
     <div class="target">
       <span class="name">{$gameState.monster.name}</span>
@@ -26,22 +28,23 @@
         $gameState.monster.maxHp,
       )}"
     />
-    <p class="stub">Здесь будет боевая сцена</p>
   </div>
 </div>
 
 <style>
   .scene {
-    /* Пропорции держит сам блок: заменим содержимое на canvas — раскладка
-       не шелохнётся. Мобильный 4:3 выше и занимает верх экрана целиком. */
+    /* Пропорции держит сам блок, а не холст: холст растянут по нему
+       абсолютно, поэтому пересчёт размера рендерера не может сдвинуть
+       раскладку. Мобильный 4:3 выше и занимает верх экрана целиком. */
+    position: relative;
     aspect-ratio: 4 / 3;
     width: 100%;
     display: flex;
     align-items: flex-end;
     border: 1px solid var(--c-border);
     border-radius: var(--radius-lg);
-    /* Пока сцены нет — спокойный градиент, а не пустой прямоугольник:
-       так видно, что это отведённое место, а не сломанная вёрстка. */
+    /* Фон под холстом: он виден ровно те доли секунды, пока грузится чанк
+       с three, и не должен мигать чёрным прямоугольником. */
     background:
       radial-gradient(
         120% 90% at 50% 0%,
@@ -51,6 +54,10 @@
     overflow: hidden;
   }
   .inner {
+    /* Подпись лежит ПОВЕРХ холста и не перехватывает указатель: сцена
+       ниже по стеку должна оставаться доступной для будущего управления. */
+    position: relative;
+    pointer-events: none;
     width: 100%;
     display: flex;
     flex-direction: column;
@@ -68,18 +75,15 @@
     font-weight: var(--weight-bold);
     line-height: var(--leading-tight);
   }
+  .name,
+  .level {
+    /* Подпись лежит на сцене: без тени она теряется на светлой площадке. */
+    text-shadow: var(--shadow-sm);
+  }
   .level {
     font-size: var(--text-xs);
     color: var(--c-text-faint);
   }
-  .stub {
-    margin: 0;
-    font-size: var(--text-2xs);
-    letter-spacing: var(--tracking-wide);
-    text-transform: uppercase;
-    color: var(--c-text-faint);
-  }
-
   @media (min-width: 720px) {
     .scene {
       aspect-ratio: 16 / 9;
