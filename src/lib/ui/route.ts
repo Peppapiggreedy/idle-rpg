@@ -43,3 +43,17 @@ export function presetName(location: Location = window.location): string | null 
 export function isScreenshotMode(location: Location = window.location): boolean {
   return presetName(location) !== null
 }
+
+/**
+ * Выключена ли боевая сцена (`?scene=off`). Нужен для съёмки интерфейса:
+ * сцена рисуется WebGL, а в headless-браузере он идёт через программный
+ * растеризатор — результат от прогона к прогону не совпадает до пикселя.
+ * Снимки интерфейса делаются без сцены и потому сравнимы с эталоном.
+ *
+ * В отличие от ?state= этот параметр НЕ требует ?debug=1: он ничего не
+ * подменяет в игре, а только убирает картинку — пусть остаётся способом
+ * открыть игру там, где WebGL мешает.
+ */
+export function isSceneDisabled(location: Location = window.location): boolean {
+  return new URLSearchParams(location.search).get('scene') === 'off'
+}
