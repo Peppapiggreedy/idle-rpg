@@ -9,6 +9,7 @@ import {
   createInitialState,
   defaultAbilitySettings,
   emptyEquipment,
+  monsterFromTemplate,
   spawnMonster,
   type AbilitySettings,
   type Equipment,
@@ -27,13 +28,16 @@ import {
 } from '../data/balance'
 import { ABILITIES, ABILITY_BY_ID } from '../data/abilities'
 import { TALENTS } from '../data/talents'
+import { DUNGEONS, DUNGEON_BY_ID, buildBoss } from '../data/dungeons'
+import { currentBoss } from './dungeons'
+import type { DungeonRun } from '../types'
 import { rankOf } from './talents'
 import { FALLBACK_ITEM_NAME } from '../data/loot'
 import { SAFE_ZONE, ZONE_BY_ID } from '../data/zones'
 import { currentZone, zoneRate } from './zones'
 
 export const SAVE_KEY = 'idle-rpg-save'
-export const SAVE_VERSION = 11
+export const SAVE_VERSION = 12
 export const AUTOSAVE_INTERVAL_MS = AUTOSAVE_INTERVAL_S * 1000
 // Потолок оффлайн-прогресса: дольше отсутствовать можно, но не оплачивается.
 export const OFFLINE_CAP_MS = OFFLINE_CAP_HOURS * 60 * 60 * 1000
@@ -42,7 +46,7 @@ export const OFFLINE_MODAL_MIN_MS = 60_000
 // Шаг, которым идёт оффлайн-агрегат.
 export const OFFLINE_CHUNK_MS = OFFLINE_CHUNK_MIN * 60_000
 
-// Актуальный формат сейва (v11). Все Decimal — строки. Прямых полей урона
+// Актуальный формат сейва (v12). Все Decimal — строки. Прямых полей урона
 // и скорости атаки в формате НЕТ: статы — производные от счётчиков покупок
 // и надетой экипировки, пересчитываются конвейером stats.ts.
 export interface SavedModifier {
@@ -65,8 +69,14 @@ export interface SavedAbilitySetting {
   priority: number
 }
 
-export interface SavePayloadV11 {
-  version: 11
+export interface SavedDungeonRun {
+  dungeonId: string
+  bossIndex: number
+  fightMs: number
+}
+
+export interface SavePayloadV12 {
+  version: 12
   lastTimestamp: number
   gold: string
   level: string
@@ -84,6 +94,9 @@ export interface SavePayloadV11 {
   autoEquip: boolean
   currentZoneId: string
   lastSurvivedZoneId: string | null
+  // Забег по данжу переживает перезагрузку, но не смерть внутри.
+  dungeonRun: SavedDungeonRun | null
+  dungeonsCleared: Record<string, boolean>
   // Умения: мана уже была, добавились кулдауны и глобальный кулдаун.
   // Очередь onNextSwing и наложенные эффекты НЕ сохраняются: они висели на
   // мобе, а моб при загрузке спавнится заново.
@@ -136,7 +149,7 @@ function savedFromItem(item: Item): SavedItem {
   }
 }
 
-export function payloadFromState(state: GameState, lastTimestamp: number): SavePayloadV11 {
+export function payloadFromState(state: GameState, lastTimestamp: number): SavePayloadV12 {
   const upgrades: Record<string, string> = {}
   for (const [id, owned] of Object.entries(state.upgrades)) upgrades[id] = owned.toString()
   const equipment: Record<string, SavedItem | null> = {}
@@ -160,14 +173,21 @@ export function payloadFromState(state: GameState, lastTimestamp: number): SaveP
     const rank = rankOf(state.talents, talent.id)
     if (rank > 0) talents[talent.id] = rank
   }
+  // Пишем только реально пройденные данжи — false в сейве это мусор.
+  const dungeonsCleared: Record<string, boolean> = {}
+  for (const dungeon of DUNGEONS) {
+    if (state.dungeonsCleared[dungeon.id] === true) dungeonsCleared[dungeon.id] = true
+  }
   return {
-    version: 11,
+    version: 12,
     lastTimestamp,
     inventory: state.inventory.map(savedFromItem),
     equipment,
     autoEquip: state.autoEquip,
     currentZoneId: state.currentZoneId,
     lastSurvivedZoneId: state.lastSurvivedZoneId,
+    dungeonRun: state.dungeonRun ? { ...state.dungeonRun } : null,
+    dungeonsCleared,
     gcdMsLeft: Math.max(0, state.gcdMsLeft),
     abilityCooldownsMs,
     abilitySettings,
@@ -296,7 +316,34 @@ function talentsFromSaved(raw: unknown): Record<string, number> {
   return ranks
 }
 
-export function stateFromPayload(p: SavePayloadV11): GameState {
+// Забег из сейва: чужой данж или индекс за пределами цепочки — забега нет.
+// Лучше выйти наружу, чем застрять перед несуществующим боссом.
+function dungeonRunFromSaved(raw: unknown): DungeonRun | null {
+  if (typeof raw !== 'object' || raw === null) return null
+  const { dungeonId, bossIndex, fightMs } = raw as Record<string, unknown>
+  if (typeof dungeonId !== 'string') return null
+  const dungeon = DUNGEON_BY_ID[dungeonId]
+  if (!dungeon) return null
+  if (typeof bossIndex !== 'number' || !Number.isInteger(bossIndex)) return null
+  if (bossIndex < 0 || bossIndex >= dungeon.bosses.length) return null
+  return {
+    dungeonId,
+    bossIndex,
+    fightMs: typeof fightMs === 'number' && Number.isFinite(fightMs) && fightMs > 0 ? fightMs : 0,
+  }
+}
+
+function clearedFromSaved(raw: unknown): Record<string, boolean> {
+  const cleared: Record<string, boolean> = {}
+  if (typeof raw !== 'object' || raw === null) return cleared
+  const saved = raw as Record<string, unknown>
+  for (const dungeon of DUNGEONS) {
+    if (saved[dungeon.id] === true) cleared[dungeon.id] = true
+  }
+  return cleared
+}
+
+export function stateFromPayload(p: SavePayloadV12): GameState {
   const level = Decimal.max(parseDec(p.level, '1'), new Decimal(1))
   const upgrades: Record<string, Decimal> = {}
   for (const [id, owned] of Object.entries(p.upgrades ?? {})) upgrades[id] = parseDec(owned, '0')
@@ -317,6 +364,8 @@ export function stateFromPayload(p: SavePayloadV11): GameState {
     inventory: Array.isArray(p.inventory) ? p.inventory.map(itemFromSaved) : [],
     equipment: equipmentFromSaved(p.equipment),
     autoEquip: typeof p.autoEquip === 'boolean' ? p.autoEquip : true,
+    dungeonRun: dungeonRunFromSaved(p.dungeonRun),
+    dungeonsCleared: clearedFromSaved(p.dungeonsCleared),
     currentZoneId: zoneIdFromSaved(p.currentZoneId, SAFE_ZONE.id),
     lastSurvivedZoneId:
       p.lastSurvivedZoneId === null || p.lastSurvivedZoneId === undefined
@@ -333,7 +382,12 @@ export function stateFromPayload(p: SavePayloadV11): GameState {
   }
   // Моб не сохраняется: спавним свежего из восстановленной зоны. Поток
   // случайности берём от сида состояния — загрузка остаётся детерминированной.
-  restored.monster = spawnMonster(currentZone(restored), createRng(restored.rngSeed))
+  // Внутри данжа перед героем стоит босс цепочки, а не моб зоны. HP боссу
+  // возвращаем полное: бой начинается заново, зато и ярость сброшена.
+  const boss = currentBoss(restored)
+  restored.monster = boss
+    ? monsterFromTemplate(buildBoss(boss))
+    : spawnMonster(currentZone(restored), createRng(restored.rngSeed))
   // Статы — производные: после загрузки источников пересчитываем конвейером.
   const withStats = ensureStats({ ...restored, statsDirty: true })
   // Ресурсы героя: сохранённые значения с капом по пересчитанным статам;
@@ -379,6 +433,9 @@ function itemV6toV7(raw: unknown): RawSave {
 }
 
 const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
+  // 11 -> 12: появился данж. Старый сейв просыпается снаружи и без
+  // достижений — цепочку ещё предстоит пройти.
+  11: (raw) => ({ ...raw, version: 12, dungeonRun: null, dungeonsCleared: {} }),
   // 10 -> 11: появилось дерево талантов. Очки начисляются от уровня, так что
   // старый герой сразу получит все заработанные — вкладывать их ему самому.
   10: (raw) => ({ ...raw, version: 11, talents: {}, talentResets: 0 }),
@@ -453,7 +510,7 @@ const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
 }
 
 // null = сейв непригоден (не объект или из более новой версии игры).
-export function migrateSave(raw: unknown): SavePayloadV11 | null {
+export function migrateSave(raw: unknown): SavePayloadV12 | null {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null
   let data = raw as RawSave
   let version = typeof data.version === 'number' ? data.version : 0
@@ -464,7 +521,7 @@ export function migrateSave(raw: unknown): SavePayloadV11 | null {
     data = step(data)
     version = typeof data.version === 'number' ? data.version : version + 1
   }
-  return data as unknown as SavePayloadV11
+  return data as unknown as SavePayloadV12
 }
 
 export interface OfflineReport {
@@ -483,6 +540,9 @@ export function applyOfflineProgress(
 ): { state: GameState; report: OfflineReport | null } {
   let cappedMs = Math.min(elapsedMs, OFFLINE_CAP_MS)
   if (cappedMs <= 0) return { state, report: null }
+  // В данже оффлайна нет: цепочка боссов — активный контент, сама она себя
+  // не проходит. Забег ждёт героя ровно там, где он его оставил.
+  if (state.dungeonRun) return { state, report: null }
   // Герой ушёл в оффлайн мёртвым: сперва тратим время на воскрешение.
   if (state.heroState === 'dead') {
     const reviveMs = Math.min(state.reviveMsLeft, cappedMs)
@@ -606,7 +666,7 @@ export function encodeSaveString(state: GameState, now: () => number = Date.now)
 }
 
 // Понимает base64 от экспорта и, на всякий случай, голый JSON.
-export function decodeSaveString(input: string): SavePayloadV11 | null {
+export function decodeSaveString(input: string): SavePayloadV12 | null {
   const attempts = [
     () => JSON.parse(fromBase64(input.trim())),
     () => JSON.parse(input.trim()),

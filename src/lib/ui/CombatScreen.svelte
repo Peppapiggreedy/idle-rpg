@@ -38,6 +38,16 @@
         return e.reason === 'travel'
           ? `Ты отправился в зону «${e.zoneName}»`
           : `Тебя отбросило в зону «${e.zoneName}»`
+      case 'boss':
+        return `Босс ${e.index} из ${e.total}: ${e.bossName}`
+      case 'enrage':
+        return `Ярость! ${e.bossName} бьёт на ${Math.round((e.multiplier - 1) * 100)}% сильнее`
+      case 'dungeon-exit':
+        return e.defeated ? 'Тебя вынесли из данжа — цепочка сброшена' : 'Ты вышел из данжа'
+      case 'dungeon-clear':
+        return e.firstClear
+          ? `«${e.dungeonName}» пройден впервые! Достижение: +5% опыта навсегда`
+          : `«${e.dungeonName}» пройден`
     }
   }
 

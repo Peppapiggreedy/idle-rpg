@@ -13,6 +13,8 @@ import { ABILITY_BY_ID } from '../../data/abilities'
 import { GCD_MS } from '../../data/balance'
 import { TALENT_BY_ID } from '../../data/talents'
 import { availablePoints, earnedPoints, spentPoints } from '../talents'
+import { clearedXpBonus } from '../dungeons'
+import { DUNGEONS } from '../../data/dungeons'
 import {
   SAVE_KEY,
   SAVE_VERSION,
@@ -54,6 +56,7 @@ describe('фикстуры сейвов', () => {
     ['save-v9.json'],
     ['save-v10.json'],
     ['save-v11.json'],
+    ['save-v12.json'],
   ])('%s мигрирует до текущей версии', (name) => {
     const payload = migrateSave(JSON.parse(fixture(name)))
     expect(payload).not.toBeNull()
@@ -265,6 +268,43 @@ describe('фикстуры сейвов', () => {
     expect(s.talents['talent-from-the-future']).toBeUndefined()
     expect(s.talents['keen-eye']).toBeUndefined()
     expect(s.talentResets).toBe(0)
+  })
+
+  it('save-v11 -> v12: старый сейв просыпается снаружи и без достижений', () => {
+    const s = loadFixture('save-v11.json')
+    expect(s.dungeonRun).toBeNull()
+    expect(s.dungeonsCleared).toEqual({})
+    expect(clearedXpBonus(s.dungeonsCleared).eq(1)).toBe(true)
+    expect(s.gold.toNumber()).toBe(320000) // прогресс не потерян
+  })
+
+  it('save-v12: забег и достижение переживают загрузку', () => {
+    const s = loadFixture('save-v12.json')
+    expect(s.dungeonRun).toMatchObject({ dungeonId: 'sunken-barrow', bossIndex: 1 })
+    expect(s.dungeonsCleared['sunken-barrow']).toBe(true)
+    // Перед героем стоит босс цепочки, а не моб зоны, и с полным здоровьем.
+    expect(s.monster.id).toBe(DUNGEONS[0].bosses[1].id)
+    expect(s.monster.currentHp.eq(s.monster.maxHp)).toBe(true)
+    expect(clearedXpBonus(s.dungeonsCleared).gt(1)).toBe(true)
+  })
+
+  it('битый забег из сейва выкидывает наружу, а не запирает перед пустотой', () => {
+    const raw = JSON.parse(fixture('save-v12.json'))
+    const wrongDungeon = stateFromPayload(
+      migrateSave({ ...raw, dungeonRun: { dungeonId: 'нет-такого', bossIndex: 0, fightMs: 0 } })!,
+    )
+    expect(wrongDungeon.dungeonRun).toBeNull()
+
+    const wrongIndex = stateFromPayload(
+      migrateSave({ ...raw, dungeonRun: { dungeonId: 'sunken-barrow', bossIndex: 99, fightMs: 0 } })!,
+    )
+    expect(wrongIndex.dungeonRun).toBeNull()
+
+    // Чужие данжи в списке пройденных бонуса не дают.
+    const fakeClear = stateFromPayload(
+      migrateSave({ ...raw, dungeonsCleared: { 'данж-из-будущего': true } })!,
+    )
+    expect(fakeClear.dungeonsCleared).toEqual({})
   })
 
   it('сейв с неизвестной зоной деградирует до безопасной, а не ломается', () => {

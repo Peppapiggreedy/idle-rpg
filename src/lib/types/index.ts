@@ -59,6 +59,19 @@ export type CombatEvent =
   | { type: 'revive' }
   // Смена зоны: 'travel' — по воле игрока, 'retreat' — откат после смерти.
   | { type: 'zone'; zoneName: string; reason: 'travel' | 'retreat' }
+  // Данж: очередной босс цепочки, выход наружу, полное прохождение.
+  | { type: 'boss'; bossName: string; index: number; total: number }
+  | { type: 'dungeon-exit'; defeated: boolean }
+  | { type: 'dungeon-clear'; dungeonName: string; firstClear: boolean }
+  | { type: 'enrage'; bossName: string; multiplier: number }
+
+// Активный забег по данжу. Хранится в состоянии и в сейве: цепочку можно
+// продолжить после перезагрузки, но не после смерти внутри.
+export interface DungeonRun {
+  dungeonId: string
+  bossIndex: number
+  fightMs: number // сколько идёт бой с текущим боссом; от него ярость
+}
 
 // Событие одного удара для шины game/events.ts (всплывающие числа урона и т.п.).
 export interface AttackEvent {

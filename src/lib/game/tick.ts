@@ -2,6 +2,7 @@
 //   1. applyRevive          — мёртвый герой: отсчёт воскрешения; по нулю — полный HP
 //                             и откат в последнюю зону, где он выживал
 //   2. applyCooldowns       — кулдауны умений и GCD идут игровым временем
+//   2a. applyEnrage         — время боя с боссом; по нему растёт его урон
 //   2a. applyAutocast       — таймер реакции и применение умения по приоритету
 //   3. applyPendingKill     — моб, добитый мгновенным умением вне тика
 //   4. applyCombat          — удары героя по свинг-таймеру; умение из очереди
@@ -30,6 +31,15 @@ import { ABILITY_BY_ID } from '../data/abilities'
 import { currentZone, reviveInZone } from './zones'
 import { advanceCooldowns, autocastStep, consumeQueuedAbility } from './abilities'
 import { reviveMultiplier } from './talents'
+import {
+  advanceDungeon,
+  clearedXpBonus,
+  currentBoss,
+  enrageMultiplier,
+  leaveDungeon,
+  type BossDef,
+} from './dungeons'
+import { rollBossLoot } from './loot'
 import type { AttackEvent, Monster } from '../types'
 
 // Погрешность накопления долей замаха: 0.05 и подобные не представимы в double.
@@ -69,6 +79,26 @@ const applyRevive: TickStep = (s, ctx) => {
 // Кулдауны умений и GCD идут ИГРОВЫМ временем: множитель скорости из
 // отладочной панели ускоряет их ровно так же, как бой.
 const applyCooldowns: TickStep = (s, ctx) => advanceCooldowns(s, ctx.dtMs)
+
+// Время боя с текущим боссом копится игровым временем — от него ярость.
+// Скачок ярости пишем в лог один раз, в момент перехода на новую ступень.
+const applyEnrage: TickStep = (s, ctx) => {
+  const boss = currentBoss(s)
+  if (!s.dungeonRun || !boss || s.heroState === 'dead') return s
+  const fightMs = s.dungeonRun.fightMs + ctx.dtMs
+  const before = enrageMultiplier(boss, s.dungeonRun.fightMs)
+  const after = enrageMultiplier(boss, fightMs)
+  const next = { ...s, dungeonRun: { ...s.dungeonRun, fightMs } }
+  if (after === before) return next
+  return {
+    ...next,
+    combatLog: pushEvent(next.combatLog, {
+      type: 'enrage',
+      bossName: boss.name,
+      multiplier: after,
+    }),
+  }
+}
 
 // Автокаст: ведёт таймер реакции и жмёт первое доступное умение по приоритету.
 // Стоит ПОСЛЕ кулдаунов (иначе умение, освободившееся на этом тике, пришлось
@@ -192,7 +222,7 @@ const applyKillRewards: TickStep = (s, ctx) => {
       type: 'kill',
       monsterName: killed.name,
       gold: killed.goldReward,
-      xp: killed.xpReward,
+      xp: killed.xpReward.times(clearedXpBonus(s.dungeonsCleared)),
     }),
   }
 }
@@ -200,7 +230,9 @@ const applyKillRewards: TickStep = (s, ctx) => {
 const applyLevelUps: TickStep = (s, ctx) => {
   const killed = ctx.killedMonster
   if (!killed) return s
-  const leveled = applyXp(s.level, s.currentXp, killed.xpReward)
+  // Достижение за пройденный данж даёт постоянный бонус к опыту.
+  const xp = killed.xpReward.times(clearedXpBonus(s.dungeonsCleared))
+  const leveled = applyXp(s.level, s.currentXp, xp)
   let combatLog = s.combatLog
   if (leveled.level.gt(s.level)) {
     combatLog = pushEvent(combatLog, { type: 'levelup', level: leveled.level })
@@ -218,6 +250,9 @@ const applyLevelUps: TickStep = (s, ctx) => {
 
 const applyLootDrop: TickStep = (s, ctx) => {
   if (!ctx.killedMonster) return s
+  // Босс роняет свой пул целиком, а не по общему шансу дропа.
+  const boss = currentBoss(s)
+  if (boss) return dropBossLoot(s, boss, ctx)
   // Дроп только при свободном слоте; rng при полном инвентаре не трогаем.
   if (s.inventory.length >= INVENTORY_SIZE) return s
   const item = rollLoot(ctx.rng, s.itemSeq)
@@ -232,6 +267,23 @@ const applyLootDrop: TickStep = (s, ctx) => {
   return autoEquipIfBetter(withItem, item)
 }
 
+// Лут босса: сколько влезет в инвентарь, остальное пропадает.
+function dropBossLoot(s: GameState, boss: BossDef, ctx: TickContext): GameState {
+  const free = INVENTORY_SIZE - s.inventory.length
+  if (free <= 0) return s
+  const items = rollBossLoot(boss.loot, ctx.rng, s.itemSeq).slice(0, free)
+  let next: GameState = { ...s, itemSeq: s.itemSeq + items.length }
+  for (const item of items) {
+    next = {
+      ...next,
+      inventory: [...next.inventory, item],
+      combatLog: pushEvent(next.combatLog, { type: 'loot', item }),
+    }
+    next = autoEquipIfBetter(next, item)
+  }
+  return next
+}
+
 const applyMonsterAttack: TickStep = (s, ctx) => {
   // Моб бьёт, только пока оба живы; мирные мобы (damage 0) не бьют вовсе.
   if (s.heroState === 'dead' || s.respawnMsLeft > 0 || ctx.killedMonster) return s
@@ -243,7 +295,13 @@ const applyMonsterAttack: TickStep = (s, ctx) => {
   while (monsterSwing >= 1 - SWING_EPS && !died) {
     monsterSwing = Math.max(0, monsterSwing - 1)
     // Формула входящего урона (бросок из диапазона + damageReduction) — в combat.ts.
-    const amount = rollMonsterDamage(s.monster, s.stats, ctx.rng)
+    const boss = currentBoss(s)
+    const amount = rollMonsterDamage(
+      s.monster,
+      s.stats,
+      ctx.rng,
+      boss && s.dungeonRun ? enrageMultiplier(boss, s.dungeonRun.fightMs) : 1,
+    )
     currentHp = Decimal.max(currentHp.minus(amount), new Decimal(0))
     combatLog = pushEvent(combatLog, { type: 'hurt', damage: amount, monsterName: s.monster.name })
     ctx.emitAttack({
@@ -259,7 +317,7 @@ const applyMonsterAttack: TickStep = (s, ctx) => {
   const next = { ...s, currentHp, monster: { ...s.monster, swingProgress: monsterSwing }, combatLog }
   if (!died) return next
   // Смерть героя: 30 игровых секунд простоя, награды не капают.
-  return {
+  const dead: GameState = {
     ...next,
     heroState: 'dead',
     // Талант «Скорое возвращение» режет простой; множитель живёт в данных.
@@ -268,6 +326,9 @@ const applyMonsterAttack: TickStep = (s, ctx) => {
     activeEffects: [],
     combatLog: pushEvent(next.combatLog, { type: 'death' }),
   }
+  // Смерть в данже выкидывает наружу: лут за убитых боссов уже в сумке,
+  // а прогресс цепочки не сохраняется — заходить придётся заново.
+  return dead.dungeonRun ? leaveDungeon(dead, ctx.rng, true) : dead
 }
 
 const applyRegen: TickStep = (s, ctx) => {
@@ -283,6 +344,12 @@ const applyRegen: TickStep = (s, ctx) => {
 const applyRespawn: TickStep = (s, ctx) => {
   // Смерть моба на этом тике — взводим таймер; отсчёт начнётся со следующего тика.
   if (ctx.killedMonster) return { ...s, respawnMsLeft: RESPAWN_DELAY_MS }
+  // В данже пауза ведёт не к респауну, а к следующему боссу цепочки.
+  if (s.dungeonRun && s.respawnMsLeft > 0) {
+    const left = s.respawnMsLeft - ctx.dtMs
+    if (left > 0) return { ...s, respawnMsLeft: left }
+    return advanceDungeon(s, ctx.rng)
+  }
   if (s.respawnMsLeft <= 0) return s
   const left = s.respawnMsLeft - ctx.dtMs
   if (left > 0) return { ...s, respawnMsLeft: left }
@@ -303,6 +370,7 @@ const applyAutosaveCounter: TickStep = (s, ctx) => {
 const PIPELINE: TickStep[] = [
   applyRevive,
   applyCooldowns,
+  applyEnrage,
   applyAutocast,
   applyPendingKill,
   applyCombat,

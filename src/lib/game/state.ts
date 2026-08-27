@@ -10,7 +10,7 @@ import { AUTOCAST_DELAY_MS } from '../data/balance'
 import { recomputeStats, type StatBlock } from './stats'
 import { SLOT_IDS, type SlotId } from '../data/slots'
 import { createRng, type Rng } from './rng'
-import type { CombatEvent, Item, Monster, MonsterTemplate } from '../types'
+import type { CombatEvent, DungeonRun, Item, Monster, MonsterTemplate } from '../types'
 
 // Сколько последних событий боя храним для лога на экране.
 export const COMBAT_LOG_SIZE = 8
@@ -58,6 +58,10 @@ export interface GameState {
   inventory: Item[]
   itemSeq: number // служебный счётчик для уникальных id предметов
   rngSeed: number // служебный сид потока случайности (в сейв пока не пишется)
+  // Активный забег по данжу; null — герой снаружи. Прогресс цепочки живёт
+  // только здесь: смерть внутри стирает его целиком.
+  dungeonRun: DungeonRun | null
+  dungeonsCleared: Record<string, boolean> // данжи, пройденные целиком хоть раз
   currentZoneId: string // где герой фармит сейчас
   // Последняя зона, в которой герой ВЫЖИЛ (убил там хотя бы одного моба).
   // Смерть отбрасывает сюда; null — выживать ещё негде, значит в безопасную.
@@ -146,6 +150,8 @@ export function createInitialState(rngSeed: number = randomSeed()): GameState {
     equipment: emptyEquipment(),
     autoEquip: true,
     statsDirty: false,
+    dungeonRun: null,
+    dungeonsCleared: {},
     currentZoneId: SAFE_ZONE.id,
     lastSurvivedZoneId: null,
     inventory: [],

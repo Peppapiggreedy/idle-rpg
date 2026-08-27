@@ -1,0 +1,133 @@
+{
+  "version": 12,
+  "lastTimestamp": 0,
+  "gold": "760000",
+  "level": "28",
+  "currentXp": "40",
+  "currentHp": "150",
+  "currentMana": "42",
+  "heroState": "alive",
+  "reviveMsLeft": 0,
+  "upgrades": {
+    "weapon-sharpening": "18"
+  },
+  "inventory": [
+    {
+      "id": "item-3",
+      "name": "Гремящий Оберег",
+      "rarity": "uncommon",
+      "slot": "trinket",
+      "mods": [
+        {
+          "stat": "attackPower",
+          "kind": "flat",
+          "value": "14",
+          "source": "equipment:trinket"
+        },
+        {
+          "stat": "maxHp",
+          "kind": "flat",
+          "value": "20",
+          "source": "equipment:trinket"
+        }
+      ]
+    }
+  ],
+  "equipment": {
+    "weapon": {
+      "id": "item-1",
+      "name": "Закалённый Крушитель",
+      "rarity": "rare",
+      "slot": "weapon",
+      "mods": [
+        {
+          "stat": "weaponSpeed",
+          "kind": "base",
+          "value": "3.4",
+          "source": "equipment:weapon"
+        },
+        {
+          "stat": "weaponDamageMin",
+          "kind": "base",
+          "value": "68",
+          "source": "equipment:weapon"
+        },
+        {
+          "stat": "weaponDamageMax",
+          "kind": "base",
+          "value": "136",
+          "source": "equipment:weapon"
+        },
+        {
+          "stat": "attackPower",
+          "kind": "percent",
+          "value": "0.1",
+          "source": "equipment:weapon"
+        }
+      ]
+    },
+    "head": null,
+    "chest": {
+      "id": "item-2",
+      "name": "Пастуший Кафтан",
+      "rarity": "common",
+      "slot": "chest",
+      "mods": [
+        {
+          "stat": "attackPower",
+          "kind": "flat",
+          "value": "7",
+          "source": "equipment:chest"
+        },
+        {
+          "stat": "maxHp",
+          "kind": "flat",
+          "value": "10",
+          "source": "equipment:chest"
+        }
+      ]
+    },
+    "hands": null,
+    "legs": null,
+    "trinket": null
+  },
+  "autoEquip": true,
+  "itemSeq": 4,
+  "totalTicks": "520000",
+  "playtimeMs": "52000000",
+  "currentZoneId": "mirefen-hollows",
+  "lastSurvivedZoneId": "mirefen-hollows",
+  "gcdMsLeft": 900,
+  "abilityCooldownsMs": {
+    "quick-strike": 1200,
+    "shattering-blow": 9000
+  },
+  "abilitySettings": {
+    "quick-strike": {
+      "autocast": true,
+      "priority": 2
+    },
+    "rending-wound": {
+      "autocast": false,
+      "priority": 0
+    },
+    "shattering-blow": {
+      "autocast": true,
+      "priority": 1
+    }
+  },
+  "talents": {
+    "honed-edge": 5,
+    "keen-eye": 2,
+    "thick-hide": 3
+  },
+  "talentResets": 2,
+  "dungeonRun": {
+    "dungeonId": "sunken-barrow",
+    "bossIndex": 1,
+    "fightMs": 21000
+  },
+  "dungeonsCleared": {
+    "sunken-barrow": true
+  }
+}

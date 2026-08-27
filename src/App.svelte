@@ -3,6 +3,7 @@
   import ZonePanel from './lib/ui/ZonePanel.svelte'
   import AbilityPanel from './lib/ui/AbilityPanel.svelte'
   import TalentPanel from './lib/ui/TalentPanel.svelte'
+  import DungeonPanel from './lib/ui/DungeonPanel.svelte'
   import HeroPanel from './lib/ui/HeroPanel.svelte'
   import UpgradePanel from './lib/ui/UpgradePanel.svelte'
   import InventoryPanel from './lib/ui/InventoryPanel.svelte'
@@ -21,6 +22,7 @@
   <HeroPanel />
   <CombatScreen />
   <AbilityPanel />
+  <DungeonPanel />
   <ZonePanel />
   <TalentPanel />
   <UpgradePanel />

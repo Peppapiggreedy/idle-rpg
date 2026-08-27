@@ -102,6 +102,22 @@ export {
   reviveMultiplier,
 } from './talents'
 export type { TalentStatus, TalentBlockReason, TalentRanks } from './talents'
+export {
+  DUNGEONS,
+  DUNGEON_BY_ID,
+  dungeonById,
+  activeDungeon,
+  currentBoss,
+  dungeonStatus,
+  allDungeonStatuses,
+  enterDungeon,
+  leaveDungeon,
+  advanceDungeon,
+  enrageMultiplier,
+  secondsToEnrage,
+  clearedXpBonus,
+} from './dungeons'
+export type { DungeonDef, BossDef, DungeonStatus, DungeonBlockReason } from './dungeons'
 export { subscribe as subscribeAttacks, emit as emitAttack } from './events'
 export type { Rng } from './rng'
 export {
@@ -120,7 +136,8 @@ export {
   OFFLINE_MODAL_MIN_MS,
 } from './save'
 export type {
-  SavePayloadV11,
+  SavePayloadV12,
+  SavedDungeonRun,
   SavedItem,
   SavedModifier,
   SaveStorage,
