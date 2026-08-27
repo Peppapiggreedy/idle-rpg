@@ -1,5 +1,6 @@
 <script lang="ts">
   import CombatScreen from './lib/ui/CombatScreen.svelte'
+  import ZonePanel from './lib/ui/ZonePanel.svelte'
   import HeroPanel from './lib/ui/HeroPanel.svelte'
   import UpgradePanel from './lib/ui/UpgradePanel.svelte'
   import InventoryPanel from './lib/ui/InventoryPanel.svelte'
@@ -17,6 +18,7 @@
   <NoticeBar />
   <HeroPanel />
   <CombatScreen />
+  <ZonePanel />
   <UpgradePanel />
   <StatsPanel />
   <EquipmentPanel />

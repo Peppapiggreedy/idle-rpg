@@ -25,6 +25,10 @@
         return 'Ты пал в бою! Воскрешение через 30 с…'
       case 'revive':
         return 'Ты воскрес — полный запас сил'
+      case 'zone':
+        return e.reason === 'travel'
+          ? `Ты отправился в зону «${e.zoneName}»`
+          : `Тебя отбросило в зону «${e.zoneName}»`
     }
   }
 
@@ -58,7 +62,7 @@
   </div>
 
   <div class="monster">
-    <h2>{$gameState.monster.name}</h2>
+    <h2>{$gameState.monster.name} <span class="level">{$gameState.monster.level} ур.</span></h2>
     <div class="hp-bar" role="progressbar" aria-valuenow={hpPercent} aria-valuemin="0" aria-valuemax="100">
       <div class="hp-fill" style="width: {hpPercent}%"></div>
     </div>
@@ -80,6 +84,12 @@
 </section>
 
 <style>
+  h2 .level {
+    font-size: 0.7em;
+    font-weight: 400;
+    opacity: 0.6;
+  }
+
   .combat {
     display: flex;
     flex-direction: column;

@@ -7,6 +7,7 @@ import type { SlotId } from '../data/slots'
 export interface Monster {
   id: string
   name: string
+  level: number // уровень моба; от него масштабируются hp, урон и награды
   maxHp: Decimal
   currentHp: Decimal
   goldReward: Decimal
@@ -52,6 +53,8 @@ export type CombatEvent =
   | { type: 'hurt'; damage: Decimal; monsterName: string }
   | { type: 'death' }
   | { type: 'revive' }
+  // Смена зоны: 'travel' — по воле игрока, 'retreat' — откат после смерти.
+  | { type: 'zone'; zoneName: string; reason: 'travel' | 'retreat' }
 
 // Событие одного удара для шины game/events.ts (всплывающие числа урона и т.п.).
 export interface AttackEvent {

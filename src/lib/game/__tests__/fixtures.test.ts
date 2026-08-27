@@ -8,6 +8,7 @@ import { ensureStats } from '../stats'
 import { expectedSwingDamage } from '../combat'
 import { buyUpgrade } from '../upgrades'
 import { WEAPON_SHARPENING } from '../../data/upgrades'
+import { SAFE_ZONE, ZONE_BY_ID } from '../../data/zones'
 import {
   SAVE_KEY,
   SAVE_VERSION,
@@ -45,6 +46,7 @@ describe('фикстуры сейвов', () => {
     ['save-v5.json'],
     ['save-v6.json'],
     ['save-v7.json'],
+    ['save-v8.json'],
   ])('%s мигрирует до текущей версии', (name) => {
     const payload = migrateSave(JSON.parse(fixture(name)))
     expect(payload).not.toBeNull()
@@ -129,6 +131,34 @@ describe('фикстуры сейвов', () => {
     // Экипировки в v6 не было: предмет ждёт в инвентаре, слоты пусты.
     expect(Object.values(s.equipment).every((i) => i === null)).toBe(true)
     expect(s.autoEquip).toBe(true)
+  })
+
+  it('save-v7 -> v8: старый сейв просыпается в безопасной зоне', () => {
+    const s = loadFixture('save-v7.json')
+    expect(s.currentZoneId).toBe(SAFE_ZONE.id)
+    // Выживать ещё негде: смерть вернёт в ту же безопасную зону.
+    expect(s.lastSurvivedZoneId).toBeNull()
+    expect(SAFE_ZONE.monsterPool.map((a) => a.id)).toContain(s.monster.id)
+    // Прогресс не потерян.
+    expect(s.gold.toNumber()).toBe(9000)
+    expect(s.equipment.weapon?.name).toBe('Закалённый Крушитель')
+  })
+
+  it('save-v8: зона восстанавливается, моб берётся из её пула', () => {
+    const s = loadFixture('save-v8.json')
+    expect(s.currentZoneId).toBe('hollow-quarry')
+    expect(s.lastSurvivedZoneId).toBe('hollow-quarry')
+    const pool = ZONE_BY_ID['hollow-quarry'].monsterPool.map((a) => a.id)
+    expect(pool).toContain(s.monster.id)
+    expect(s.monster.level).toBeGreaterThanOrEqual(4)
+    expect(s.monster.level).toBeLessThanOrEqual(6)
+    expect(s.gold.toNumber()).toBe(24000)
+  })
+
+  it('сейв с неизвестной зоной деградирует до безопасной, а не ломается', () => {
+    const raw = JSON.parse(fixture('save-v8.json'))
+    const s = stateFromPayload(migrateSave({ ...raw, currentZoneId: 'зона-из-будущего' })!)
+    expect(s.currentZoneId).toBe(SAFE_ZONE.id)
   })
 
   it('save-v7: надетая экипировка задаёт базу боя после загрузки', () => {

@@ -13,7 +13,7 @@
 // множители перемножаются. Менять порядок нельзя — это баланс.
 import { Decimal } from './numbers'
 import type { GameState } from './state'
-import { BASE_STATS } from '../data/balance'
+import { BASE_STATS, PER_LEVEL } from '../data/balance'
 import { UPGRADES } from '../data/upgrades'
 import { SLOT_IDS } from '../data/slots'
 
@@ -88,6 +88,17 @@ export interface StatBlock {
 // пересчёт, и в раскладку на панели статов.
 export function collectModifiers(state: GameState): StatModifier[] {
   const mods: StatModifier[] = []
+  // Уровень персонажа: живучесть и мана. Урон уровень НЕ даёт — его копят
+  // апгрейдами и экипировкой; уровень открывает зоны и позволяет в них выжить.
+  const levelsGained = Decimal.max(state.level.minus(1), new Decimal(0))
+  if (levelsGained.gt(0)) {
+    const source = 'level'
+    mods.push(
+      { stat: 'maxHp', kind: 'flat', value: PER_LEVEL.maxHp.times(levelsGained), source },
+      { stat: 'hpRegen', kind: 'flat', value: PER_LEVEL.hpRegen.times(levelsGained), source },
+      { stat: 'maxMana', kind: 'flat', value: PER_LEVEL.maxMana.times(levelsGained), source },
+    )
+  }
   // Экипировка: модификаторы лежат прямо в предмете, source уже проставлен
   // генератором ('equipment:weapon' и т.д.). Оружие среди них задаёт БАЗУ
   // weaponSpeed / weaponDamageMin / weaponDamageMax через kind 'base' —

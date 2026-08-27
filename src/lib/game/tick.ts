@@ -1,15 +1,16 @@
 // Тик — конвейер чистых шагов (state, ctx) => state. Порядок фиксирован и важен:
 //   1. applyRevive          — мёртвый герой: отсчёт воскрешения; по нулю — полный HP
-//                             и переход в стартовую зону (свежий моб)
+//                             и откат в последнюю зону, где он выживал
 //   2. applyCombat          — удары героя по свинг-таймеру; смерть моба в ctx.killedMonster
 //   3. applyKillRewards     — золото за убитого + событие kill
 //   4. applyLevelUps        — опыт за убитого, перенос остатка + событие levelup
-//   5. applyLootDrop        — бросок дропа (единственный потребитель rng) + событие loot
+//   5. applyLootDrop        — бросок дропа + событие loot
 //   6. applyMonsterAttack   — ответный удар моба по своему свинг-таймеру; может убить героя
 //   7. applyRegen           — реген HP (в бою медленный, вне боя быстрый) и маны
 //   8. applyRespawn         — взводит таймер после смерти моба ИЛИ ведёт отсчёт и спавнит
 //   9. applyAutosaveCounter — копит игровое время для автосейва (сохраняет стор)
 // Шаги не знают ни про UI, ни про Svelte; текст для игрока рендерится из событий в UI.
+// rng потребляют: удар героя (урон + крит), дроп, удар моба и спавн (уровень + архетип).
 import { Decimal } from './numbers'
 import { applyXp } from './formulas'
 import { rollLoot } from './loot'
@@ -20,7 +21,7 @@ import { pushEvent, spawnMonster, type GameState } from './state'
 import { ensureStats } from './stats'
 import { emit as busEmit } from './events'
 import { INVENTORY_SIZE, RESPAWN_DELAY_MS, REVIVE_DELAY_MS } from '../data/balance'
-import { FIRST_MONSTER } from '../data/monsters'
+import { currentZone, reviveInZone } from './zones'
 import type { AttackEvent, Monster } from '../types'
 
 // Погрешность накопления долей замаха: 0.05 и подобные не представимы в double.
@@ -40,21 +41,13 @@ const applyRevive: TickStep = (s, ctx) => {
   if (s.heroState !== 'dead') return s
   const left = s.reviveMsLeft - ctx.dtMs
   if (left > 0) return { ...s, reviveMsLeft: left }
-  // Воскрешение: полный HP и «последняя зона, где выживал» — пока зон нет,
-  // это стартовая: свежий моб с полным здоровьем.
-  const monster = spawnMonster(FIRST_MONSTER)
-  let combatLog = pushEvent(s.combatLog, { type: 'revive' })
-  combatLog = pushEvent(combatLog, { type: 'spawn', monsterName: monster.name })
-  return {
-    ...s,
-    heroState: 'alive',
-    reviveMsLeft: 0,
-    currentHp: s.stats.maxHp,
-    swingProgress: 0,
-    monster,
-    respawnMsLeft: 0,
-    combatLog,
-  }
+  // Воскрешение: полный HP и откат в последнюю зону, где герой выживал
+  // (если такой нет — в безопасную). Смена зоны сама спавнит моба и пишет лог.
+  const revived = reviveInZone(
+    { ...s, combatLog: pushEvent(s.combatLog, { type: 'revive' }) },
+    ctx.rng,
+  )
+  return { ...revived, heroState: 'alive', reviveMsLeft: 0, currentHp: s.stats.maxHp }
 }
 
 const applyCombat: TickStep = (s, ctx) => {
@@ -95,6 +88,8 @@ const applyKillRewards: TickStep = (s, ctx) => {
   if (!killed) return s
   return {
     ...s,
+    // Убил моба — значит в этой зоне выживает; сюда же вернёт смерть.
+    lastSurvivedZoneId: s.currentZoneId,
     gold: s.gold.plus(killed.goldReward),
     combatLog: pushEvent(s.combatLog, {
       type: 'kill',
@@ -118,6 +113,8 @@ const applyLevelUps: TickStep = (s, ctx) => {
     level: leveled.level,
     currentXp: leveled.currentXp,
     xpToNext: leveled.xpToNext,
+    // Уровень — источник статов (живучесть), поэтому конвейер надо пересчитать.
+    statsDirty: s.statsDirty || leveled.level.gt(s.level),
     combatLog,
   }
 }
@@ -189,7 +186,7 @@ const applyRespawn: TickStep = (s, ctx) => {
   if (s.respawnMsLeft <= 0) return s
   const left = s.respawnMsLeft - ctx.dtMs
   if (left > 0) return { ...s, respawnMsLeft: left }
-  const monster = spawnMonster(FIRST_MONSTER)
+  const monster = spawnMonster(currentZone(s), ctx.rng)
   return {
     ...s,
     respawnMsLeft: 0,
@@ -232,6 +229,12 @@ export function tick(
 }
 
 // Реэкспорт для обратной совместимости импортов (тесты, index).
-export { COMBAT_LOG_SIZE, createInitialState, spawnMonster, emptyEquipment } from './state'
+export {
+  COMBAT_LOG_SIZE,
+  createInitialState,
+  spawnMonster,
+  monsterFromTemplate,
+  emptyEquipment,
+} from './state'
 export type { GameState, Equipment } from './state'
 export { RESPAWN_DELAY_MS } from '../data/balance'

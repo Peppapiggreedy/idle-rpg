@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { estimateCombatRate } from './combat'
-import { createInitialState } from './state'
+import { createInitialState, monsterFromTemplate } from './state'
+import { COMMON, buildMonster } from '../data/monsters'
+import { Decimal } from './numbers'
 import { tick } from './tick'
 import { STEP_MS } from './loop'
 import { createRng } from './rng'
@@ -8,7 +10,17 @@ import { applyOfflineProgress } from './save'
 
 describe('estimateCombatRate', () => {
   it('считает урон в секунду с матожиданием критов', () => {
-    const rate = estimateCombatRate(createInitialState(1))
+    // Явный моб: спавн в зоне случаен, а формулу проверяем на фиксированных числах.
+    // Обычный моб 1 уровня — 30 hp, 4 урона каждые 1.6 c.
+    const squelcher = buildMonster(
+      { id: 'test-squelcher', name: 'Хлюпень', role: COMMON },
+      1,
+      new Decimal(1),
+    )
+    const rate = estimateCombatRate({
+      ...createInitialState(1),
+      monster: monsterFromTemplate(squelcher),
+    })
     // 20 за удар * (1 + 0.05 * (2 - 1)) / 2 c = 10.5
     expect(rate.damagePerSecond.toNumber()).toBeCloseTo(10.5, 10)
     // Идеальный цикл: 2 удара * 2 c + 0.3 c респаун = 4.3 c на моба.
@@ -19,7 +31,13 @@ describe('estimateCombatRate', () => {
     expect(rate.killsPerSecond.toNumber()).toBeCloseTo((1 / 4.3) * uptime, 10)
   })
 
-  it('награда за час оффлайна отличается от часа симуляции не более чем на 5%', () => {
+  // Бюджет расхождения — 8%, и это осознанно. Оффлайн-агрегат усредняет темп
+  // по пулу зоны и считает смертность по СРЕДНЕЙ потере HP, тогда как в бою
+  // запас HP переносится из схватки в схватку: после мелочи герой входит в
+  // здоровяка с другим запасом. Точнее одним агрегатом не выйдет — только
+  // проигрыванием тиков. Порог держит модель честной: уедет формула боя или
+  // темп зоны — тест упадёт.
+  it('награда за час оффлайна отличается от часа симуляции не более чем на 8%', () => {
     const HOUR_MS = 3_600_000
     // Реальная симуляция часа с фиксированным сидом. Автонадевание выключено:
     // оффлайн-агрегат считает по текущим статам и лут в них не подмешивает,
@@ -27,13 +45,15 @@ describe('estimateCombatRate', () => {
     const rng = createRng(777)
     let sim = { ...createInitialState(777), autoEquip: false }
     for (let t = 0; t < HOUR_MS; t += STEP_MS) sim = tick(sim, STEP_MS, rng, () => {})
-    const simKills = sim.gold.div(sim.monster.goldReward).toNumber()
+    // Сравниваем ЗОЛОТО, а не убийства: в зоне пул из трёх мобов с разной
+    // наградой, поэтому «убийства» нельзя восстановить делением на награду.
+    const simGold = sim.gold.toNumber()
 
     // Оффлайн-агрегат за тот же час (та же estimateCombatRate, что в онлайне).
     const { report } = applyOfflineProgress({ ...createInitialState(777), autoEquip: false }, HOUR_MS)
-    const offlineKills = report!.kills.toNumber()
+    const offlineGold = report!.gold.toNumber()
 
-    const relDiff = Math.abs(offlineKills - simKills) / simKills
-    expect(relDiff).toBeLessThanOrEqual(0.05)
+    const relDiff = Math.abs(offlineGold - simGold) / simGold
+    expect(relDiff).toBeLessThanOrEqual(0.08)
   })
 })

@@ -31,6 +31,11 @@ function fingerprint(s: GameState) {
     weaponSpeed: s.stats.weaponSpeed.toFixed(4),
     swingTime: s.stats.swingTime.toFixed(4),
     equipped: SLOT_IDS.filter((slot) => s.equipment[slot] !== null).join(','),
+    // Зона — источник мобов, а значит и всех наград: смена зон или правил
+    // отката после смерти обязана ронять golden.
+    zone: s.currentZoneId,
+    lastSurvivedZone: s.lastSurvivedZoneId ?? '-',
+    monster: `${s.monster.id}:${s.monster.level}`,
     totalTicks: s.totalTicks.toString(),
     inventoryCount: s.inventory.length,
     inventorySellTotal: s.inventory
