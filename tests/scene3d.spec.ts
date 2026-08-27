@@ -34,16 +34,25 @@ test('сцена рисует первый кадр и молчит в конс�
 
 test('?helpers=1 добавляет оси и сетку, без него их нет', async ({ page }) => {
   // Сравниваем ОТНОСИТЕЛЬНО, а не с фиксированным числом: сколько геометрий
-  // в сцене, зависит от обстановки зоны и от того, что попало в кадр.
-  // Проверяемое утверждение — «с флагом их ровно на две больше».
+  // в сцене, зависит от обстановки зоны, от того, что попало в кадр, и от
+  // того, доехали ли модели. Проверяемое утверждение — «с флагом их ровно
+  // на две больше», поэтому обе замера делаются в одинаковом состоянии:
+  // после загрузки обеих моделей.
+  const settled = async () => {
+    await expect(page.locator(SCENE_READY)).toBeAttached({ timeout: 30_000 })
+    await expect(page.locator('text=/hero-knight: \\d+ клипов/')).toBeVisible({ timeout: 30_000 })
+    await expect(page.locator('text=/monster-skeleton: \\d+ клипов/')).toBeVisible({
+      timeout: 30_000,
+    })
+    await page.waitForTimeout(1500)
+  }
+
   await openGame(page)
-  await expect(page.locator(SCENE_READY)).toBeAttached({ timeout: 30_000 })
-  await page.waitForTimeout(1200)
+  await settled()
   const plain = await probe(page, 'geometries')
 
   await openGame(page, '&helpers=1')
-  await expect(page.locator(SCENE_READY)).toBeAttached({ timeout: 30_000 })
-  await page.waitForTimeout(1200)
+  await settled()
   expect(await probe(page, 'geometries')).toBe(plain + 2)
 })
 
@@ -180,4 +189,50 @@ test('двадцать смен зоны не растят память виде
   console.log(`geometries: было ${before}, стало ${after}`)
   expect(after, `было ${before}, стало ${after}`).toBeLessThanOrEqual(before + 1)
   void travel
+})
+
+test('модели встают на место коробок и играют клип покоя', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', (e) => errors.push(String(e)))
+  await openGame(page)
+  await expect(page.locator(SCENE_READY)).toBeAttached({ timeout: 30_000 })
+  // Оверлей показывает, что реально лежит в файле, — по нему и проверяем.
+  await expect(page.locator('text=/hero-knight: \\d+ клипов/')).toBeVisible({ timeout: 30_000 })
+  await expect(page.locator('text=/monster-skeleton: \\d+ клипов/')).toBeVisible()
+  // И что маппинг состояний ведёт на реальные клипы, а не на прочерки.
+  const mapped = await page.locator('.map').first().innerText()
+  expect(mapped).toContain('idle=Idle')
+  expect(mapped).not.toContain('—')
+  expect(errors).toEqual([])
+})
+
+test('модель не загрузилась — игра идёт на коробках, а не падает', async ({ page }) => {
+  // Файл может не доехать: сеть, кеш, чужой прокси. Сцена обязана
+  // остаться играбельной, а причина — попасть в оверлей.
+  await page.route('**/models/*.glb', (route) => route.abort())
+  const errors: string[] = []
+  page.on('pageerror', (e) => errors.push(String(e)))
+  await openGame(page)
+  await expect(page.locator(SCENE_READY)).toBeAttached({ timeout: 30_000 })
+  await expect(page.locator('.error').first()).toContainText('модель не загрузилась', {
+    timeout: 30_000,
+  })
+  // Сцена продолжает рисоваться, страница жива.
+  await expect(page.locator('canvas')).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('модель скачивается один раз, а не на каждый респаун моба', async ({ page }) => {
+  const requests: string[] = []
+  page.on('request', (r) => {
+    if (r.url().includes('/models/')) requests.push(r.url())
+  })
+  await openGame(page)
+  await expect(page.locator(SCENE_READY)).toBeAttached({ timeout: 30_000 })
+  await expect(page.locator('text=/monster-skeleton: \\d+ клипов/')).toBeVisible({
+    timeout: 30_000,
+  })
+  await page.waitForTimeout(3000)
+  // Ровно два файла: герой и моб. Ни одного повтора.
+  expect(requests.filter((u) => u.endsWith('.glb')).length).toBe(2)
 })

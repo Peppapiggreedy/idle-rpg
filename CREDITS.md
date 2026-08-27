@@ -30,6 +30,44 @@ Idle RPG собрана на чужих плечах. Здесь перечис�
 
 Исходники: https://github.com/Peppapiggreedy/idle-rpg
 
+## Модели
+
+Персонажи взяты из паков KayKit за авторством Kay Lousberg и распространяются
+под лицензией [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/):
+она не требует указания авторства, но мы его указываем.
+
+| Модель | Файл | Пак | Автор | Лицензия |
+|---|---|---|---|---|
+| Герой | `public/models/Knight.glb` | [KayKit Character Pack: Adventurers 1.0](https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0) | Kay Lousberg | CC0 1.0 |
+| Моб | `public/models/Skeleton_Minion.glb` | [KayKit Character Pack: Skeletons 1.0](https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Skeletons-1.0) | Kay Lousberg | CC0 1.0 |
+
+Оригинальные тексты лицензий лежат рядом с моделями:
+`public/models/LICENSE-KayKit-Adventurers.txt` и
+`LICENSE-KayKit-Skeletons.txt`. Файлы взяты без изменений; в игре меняется
+только масштаб и выбор проигрываемого клипа.
+
+Оба пака — от ОДНОГО автора намеренно: единый стиль персонажей важнее
+разнообразия, и мешать источники для героя и мобов нельзя.
+
+### Если модели придётся заменить
+
+Реестр `src/lib/data/assets.ts` описывает каждую модель вместе с маппингом
+игровых состояний на имена клипов ВНУТРИ файла. Имена у разных паков разные,
+поэтому маппинг обязателен, а в коде сцены строковых имён анимаций нет —
+это закреплено тестом. Запасные варианты, если понадобятся:
+
+- **RobotExpressive** из [three.js](https://github.com/mrdoob/three.js)
+  (`examples/models/gltf/RobotExpressive/RobotExpressive.glb`) — CC0 1.0,
+  Tomás Laulhé, правки Don McCurdy. Клипы: `Idle`, `Walking`, `Running`,
+  `Dance`, `Death`, `Sitting`, `Standing`, `Jump`, `Yes`, `No`, `Wave`,
+  `Punch`, `ThumbsUp`.
+- **Fox** из [glTF-Sample-Assets](https://github.com/KhronosGroup/glTF-Sample-Assets)
+  (`Models/Fox/glTF-Binary/Fox.glb`). Внимание: лицензия СОСТАВНАЯ — сама
+  модель CC0 (PixelMannen), а **риг и анимации под CC BY 4.0** (tomkranis),
+  конверсия тоже CC BY 4.0 (AsoboStudio, scurest). То есть при её
+  использовании атрибуция ОБЯЗАТЕЛЬНА, в отличие от CC0-моделей выше,
+  и эту таблицу нужно будет дополнить соответствующей строкой.
+
 ## Иконки
 
 Иконки интерфейса взяты с [game-icons.net](https://game-icons.net/) и
