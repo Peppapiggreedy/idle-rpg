@@ -16,6 +16,7 @@
   import { activateAbility, gameState } from '../stores/game'
   import { ABILITY_REASON_TEXT } from './abilityText'
   import { NumberText, Tooltip } from './kit'
+  import { Icon } from './icons'
 
   // Порядок кнопок = порядок приоритета: слева то, что автокаст жмёт первым.
   const ordered = $derived(abilitiesByPriority($gameState.abilitySettings, false))
@@ -84,6 +85,7 @@
           <span class="gcd" style="width: {gcdFraction * 100}%"></span>
         {/if}
         <span class="key">{hotkey(i)}</span>
+        <Icon name={ability.icon} size="lg" />
         <span class="name">{ability.name}</span>
         <span class="cost"><NumberText value={ability.manaCost} tone="mana" size="sm" /> маны</span>
         {#if status.cooldownMsLeft > 0}

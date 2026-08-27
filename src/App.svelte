@@ -16,6 +16,7 @@
   import HeroPanel from './lib/ui/HeroPanel.svelte'
   import SectionTabs from './lib/ui/SectionTabs.svelte'
   import SwingIndicator from './lib/ui/SwingIndicator.svelte'
+  import { IconSprite } from './lib/ui/icons'
 
   import StatsPanel from './lib/ui/StatsPanel.svelte'
   import EquipmentPanel from './lib/ui/EquipmentPanel.svelte'
@@ -43,6 +44,9 @@
   const textMode = $derived(sceneOff || $sceneUnavailable || isTextMode($uiSettings))
   const points = $derived(availablePoints($gameState))
 </script>
+
+<!-- Спрайт иконок: один раз на страницу, до всего остального. -->
+<IconSprite />
 
 <main>
   <header class="top">

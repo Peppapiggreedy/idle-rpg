@@ -1,5 +1,6 @@
 // Зоны — данные. Никакой логики выбора или проверок здесь нет: логика читает
 // эти поля и сама решает, что игроку доступно и насколько это опасно.
+import type { IconName } from '../ui/icons/manifest'
 import { Decimal } from '../game/numbers'
 import {
   BRUTE,
@@ -14,6 +15,8 @@ import type { MonsterTemplate } from '../types'
 export interface Zone {
   id: string
   name: string
+  /** Иконка. Тип выведен из реестра: опечатка — ошибка проверки типов. */
+  icon: IconName
   // Уровни мобов зоны: конкретный моб получает случайный уровень из диапазона.
   monsterLevelRange: { min: number; max: number }
   monsterPool: MonsterArchetype[]
@@ -25,6 +28,7 @@ export interface Zone {
 export const ZONES: Zone[] = [
   {
     id: 'shepherds-meadow',
+    icon: 'zone-shepherds-meadow',
     name: 'Пастуший луг',
     monsterLevelRange: { min: 1, max: 2 },
     monsterPool: [
@@ -38,6 +42,7 @@ export const ZONES: Zone[] = [
   },
   {
     id: 'hollow-quarry',
+    icon: 'zone-hollow-quarry',
     name: 'Полая каменоломня',
     monsterLevelRange: { min: 4, max: 6 },
     monsterPool: [
@@ -51,6 +56,7 @@ export const ZONES: Zone[] = [
   },
   {
     id: 'mirefen-hollows',
+    icon: 'zone-mirefen-hollows',
     name: 'Топкие лощины',
     monsterLevelRange: { min: 9, max: 12 },
     monsterPool: [
@@ -64,6 +70,7 @@ export const ZONES: Zone[] = [
   },
   {
     id: 'ashen-ridge',
+    icon: 'zone-ashen-ridge',
     name: 'Пепельный гребень',
     monsterLevelRange: { min: 16, max: 20 },
     monsterPool: [

@@ -11,7 +11,8 @@
     "test": "vitest run",
     "screenshots": "playwright test",
     "screenshots:update": "playwright test --update-snapshots",
-    "presets:update": "UPDATE_PRESETS=1 vitest run src/lib/game/__tests__/presets.test.ts"
+    "presets:update": "UPDATE_PRESETS=1 vitest run src/lib/game/__tests__/presets.test.ts",
+    "icons:build": "node scripts/build-icons.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.56.1",

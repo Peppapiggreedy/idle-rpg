@@ -17,6 +17,8 @@
   import { TALENT_BY_ID } from '../data/talents'
   import { gameState } from '../stores/game'
   import { Panel } from './kit'
+  import { STAT_ICONS } from '../data/stats'
+  import { Icon } from './icons'
 
   // Весь текст панели статов живёт здесь; логика отдаёт только раскладку.
   const STAT_NAMES: Record<StatId, string> = {
@@ -138,7 +140,7 @@
       {@const breakdown = explainStat($gameState, stat)}
       <li>
         <button type="button" class="stat-row" onclick={() => toggle(stat)}>
-          <span class="name">{STAT_NAMES[stat]}</span>
+          <Icon name={STAT_ICONS[stat]} size="sm" /><span class="name">{STAT_NAMES[stat]}</span>
           <span class="value">{statValue(stat)}</span>
         </button>
         {#if openStat === stat}

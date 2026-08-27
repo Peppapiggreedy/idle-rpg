@@ -2,10 +2,11 @@
   // Надетые предметы по слотам. Весь текст для игрока — здесь.
   import { formatNumber, INVENTORY_SIZE } from '../game'
   import { UNARMED } from '../data/balance'
-  import { SLOT_IDS, SLOT_NAMES } from '../data/slots'
+  import { SLOT_ICONS, SLOT_IDS, SLOT_NAMES } from '../data/slots'
   import { gameState, toggleAutoEquip, unequipSlot } from '../stores/game'
   import ItemMods from './ItemMods.svelte'
   import { Button, IconSlot, Panel, Tag } from './kit'
+  import { Icon } from './icons'
 
   const inventoryFull = $derived($gameState.inventory.length >= INVENTORY_SIZE)
 </script>
@@ -26,6 +27,7 @@
     {#each SLOT_IDS as slot (slot)}
       {@const item = $gameState.equipment[slot]}
       <IconSlot slotLabel={SLOT_NAMES[slot]} rarity={item?.rarity} active={item !== null}>
+        {#snippet badge()}<Icon name={SLOT_ICONS[slot]} size="lg" />{/snippet}
         {#if item}
           <span class="name">{item.name}</span>
           <Tag rarity={item.rarity} />

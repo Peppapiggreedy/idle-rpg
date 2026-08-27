@@ -5,6 +5,7 @@
   import { Decimal } from '../game'
   import { RARITIES } from '../data/rarity'
   import { Button, IconSlot, NumberText, Panel, StatBar, Tag, Tooltip, rarityStyle } from './kit'
+  import { Icon, ICONS, ICON_NAMES } from './icons'
   import ItemMods from './ItemMods.svelte'
   import type { Rarity } from '../types'
   import type { StatModifier } from '../game'
@@ -278,6 +279,9 @@
     <div class="slots">
       <IconSlot slotLabel="Оружие" />
       <IconSlot slotLabel="Голова" emptyText="слот закрыт" />
+      <IconSlot slotLabel="Оружие">
+        {#snippet badge()}<Icon name="slot-weapon" size="lg" />{/snippet}
+      </IconSlot>
       <IconSlot slotLabel="Кольцо" interactive active>
         <span class="item-name">Наводимая ячейка</span>
         <p class="note">interactive: реагирует на наведение и получает фокус с клавиатуры.</p>
@@ -423,6 +427,18 @@
     </div>
   </Panel>
 
+  <!-- ================= ИКОНКИ ================= -->
+  <Panel title="Иконки" subtitle="game-icons.net, CC BY 3.0 — весь набор игры с именами">
+    <div class="icons">
+      {#each ICON_NAMES as name (name)}
+        <figure title="{name} · {ICONS[name].author}">
+          <Icon {name} size="lg" />
+          <figcaption>{name}</figcaption>
+        </figure>
+      {/each}
+    </div>
+  </Panel>
+
   <p class="back"><a href="./?debug=1">← вернуться в игру</a> · <a href="./balance?debug=1">прогон баланса →</a></p>
 </main>
 
@@ -448,6 +464,30 @@
   }
   .note {
     margin: 0;
+  }
+
+  /* --- иконки --- */
+  .icons {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+    gap: var(--space-3);
+  }
+  .icons figure {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-1);
+    margin: 0;
+    padding: var(--space-2);
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius-md);
+    color: var(--c-text);
+  }
+  .icons figcaption {
+    font-size: var(--text-2xs);
+    color: var(--c-text-faint);
+    text-align: center;
+    word-break: break-word;
   }
 
   /* --- палитра --- */

@@ -11,6 +11,8 @@
     // Редкость содержимого; без неё ячейка считается пустой.
     rarity?: Rarity
     emptyText?: string
+    /** Значок слота рядом с подписью: чей это слот, видно и когда он пуст. */
+    badge?: Snippet
     // Ячейка выделена (выбрана, наведена, активна).
     active?: boolean
     interactive?: boolean
@@ -24,6 +26,7 @@
     slotLabel,
     rarity,
     emptyText = 'пусто',
+    badge,
     active = false,
     interactive = false,
     children,
@@ -46,7 +49,12 @@
   {onmouseleave}
   {onfocusin}
 >
-  {#if slotLabel}<span class="slot-label">{slotLabel}</span>{/if}
+  {#if slotLabel || badge}
+    <span class="slot-head">
+      {#if badge}<span class="badge">{@render badge()}</span>{/if}
+      {#if slotLabel}<span class="slot-label">{slotLabel}</span>{/if}
+    </span>
+  {/if}
   {#if rarity !== undefined}
     <div class="content">{@render children?.()}</div>
   {:else}
@@ -70,6 +78,16 @@
   }
   .slot:not(.filled) {
     min-height: 4rem;
+  }
+  .slot-head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+  }
+  /* Значок слота приглушён: он подсказка «чей это слот», а не содержимое. */
+  .badge {
+    display: inline-flex;
+    color: var(--c-text-faint);
   }
   .slot.filled {
     border: 1px solid color-mix(in srgb, var(--rarity-color) 70%, transparent);

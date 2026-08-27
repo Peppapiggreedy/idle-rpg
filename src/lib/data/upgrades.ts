@@ -4,6 +4,7 @@ import type { UpgradeDef } from '../types'
 
 export const WEAPON_SHARPENING: UpgradeDef = {
   id: 'weapon-sharpening',
+  icon: 'upgrade-weapon-sharpening',
   name: 'Заточка оружия',
   baseCost: new Decimal(10),
   costGrowth: new Decimal(1.15),
