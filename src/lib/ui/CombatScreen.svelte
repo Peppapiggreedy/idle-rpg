@@ -2,6 +2,7 @@
   import { estimateCombatRate, formatNumber } from '../game'
   import { gameState } from '../stores/game'
   import { RARITY_BY_ID } from '../data/rarity'
+  import { ABILITY_BY_ID } from '../data/abilities'
   import type { CombatEvent } from '../types'
 
   // Весь текст боевого лога живёт здесь: логика отдаёт только события.
@@ -11,6 +12,14 @@
         return e.isCrit
           ? `КРИТ! ${formatNumber(e.damage)} урона`
           : `Удар: ${formatNumber(e.damage)} урона`
+      case 'ability': {
+        const name = ABILITY_BY_ID[e.abilityId]?.name ?? 'Умение'
+        return e.isCrit
+          ? `КРИТ! ${name}: ${formatNumber(e.damage)} урона`
+          : `${name}: ${formatNumber(e.damage)} урона`
+      }
+      case 'effect':
+        return `${ABILITY_BY_ID[e.abilityId]?.name ?? 'Эффект'} жжёт: ${formatNumber(e.damage)} урона`
       case 'kill':
         return `${e.monsterName} повержен! +${formatNumber(e.gold)} золота, +${formatNumber(e.xp)} опыта`
       case 'levelup':

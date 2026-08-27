@@ -12,6 +12,8 @@ import { applyOfflineProgress } from '../game/save'
 import { sellItem } from '../game/loot'
 import { equipItem, setAutoEquip, unequipItem } from '../game/equipment'
 import { travelToZone as travelAction } from '../game/zones'
+import { useAbility as useAbilityAction } from '../game/abilities'
+import { emit as emitAttack } from '../game/events'
 import type { SlotId } from '../data/slots'
 import {
   AUTOSAVE_INTERVAL_MS,
@@ -157,6 +159,14 @@ export function toggleAutoEquip(enabled: boolean): void {
 /** Переход в зону по клику. В закрытую зону экшен не пустит — состояние как было. */
 export function travelToZone(zoneId: string): void {
   state.update((s) => travelAction(s, zoneId, rng()))
+}
+
+/**
+ * Нажатие на умение (клик или хоткей). Недоступное умение состояние не меняет;
+ * причину показывает abilityStatus, текст к ней рендерит панель умений.
+ */
+export function activateAbility(abilityId: string): void {
+  state.update((s) => useAbilityAction(s, abilityId, rng(), emitAttack))
 }
 
 /** Строка экспорта (base64) текущего состояния; заодно сохраняет игру. */

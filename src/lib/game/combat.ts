@@ -46,11 +46,23 @@ export interface SwingResult {
 
 // Один удар героя: сперва бросок урона оружия, затем бросок крита.
 // Порядок бросков фиксирован — от него зависит воспроизводимость прогонов.
-export function rollSwing(stats: StatBlock, rng: Rng): SwingResult {
+// weaponDamagePercent — доля удара оружия: 1 у автоатаки, у умений своя.
+// Умножаем ДО крита, чтобы крит множил уже итоговый урон умения.
+export function rollSwing(
+  stats: StatBlock,
+  rng: Rng,
+  weaponDamagePercent: Decimal = new Decimal(1),
+): SwingResult {
   const weaponRoll = randRange(rng, stats.weaponDamageMin, stats.weaponDamageMax)
-  const base = weaponRoll.plus(attackPowerContribution(stats))
+  const base = weaponRoll.plus(attackPowerContribution(stats)).times(weaponDamagePercent)
   const isCrit = rng() < stats.critChance
   return { amount: isCrit ? base.times(stats.critMultiplier) : base, isCrit }
+}
+
+// Матожидание урона удара умения без крита. Умения считаются ТОЙ ЖЕ формулой,
+// что и автоатака: своей формулы урона у них нет, только доля.
+export function expectedAbilityDamage(stats: StatBlock, weaponDamagePercent: Decimal): Decimal {
+  return expectedSwingDamage(stats).times(weaponDamagePercent)
 }
 
 // Урон моба по герою: бросок из диапазона, затем срез на damageReduction.

@@ -11,16 +11,18 @@ import { ensureStats, STAT_IDS, type ModifierKind, type StatId, type StatModifie
 import { SLOT_IDS, type SlotId } from '../data/slots'
 import {
   AUTOSAVE_INTERVAL_S,
+  GCD_MS,
   LEGACY_V3_SWING_TIME_S,
   OFFLINE_CAP_HOURS,
   OFFLINE_CHUNK_MIN,
 } from '../data/balance'
+import { ABILITY_BY_ID } from '../data/abilities'
 import { FALLBACK_ITEM_NAME } from '../data/loot'
 import { SAFE_ZONE, ZONE_BY_ID } from '../data/zones'
 import { currentZone, zoneRate } from './zones'
 
 export const SAVE_KEY = 'idle-rpg-save'
-export const SAVE_VERSION = 8
+export const SAVE_VERSION = 9
 export const AUTOSAVE_INTERVAL_MS = AUTOSAVE_INTERVAL_S * 1000
 // Потолок оффлайн-прогресса: дольше отсутствовать можно, но не оплачивается.
 export const OFFLINE_CAP_MS = OFFLINE_CAP_HOURS * 60 * 60 * 1000
@@ -29,7 +31,7 @@ export const OFFLINE_MODAL_MIN_MS = 60_000
 // Шаг, которым идёт оффлайн-агрегат.
 export const OFFLINE_CHUNK_MS = OFFLINE_CHUNK_MIN * 60_000
 
-// Актуальный формат сейва (v8). Все Decimal — строки. Прямых полей урона
+// Актуальный формат сейва (v9). Все Decimal — строки. Прямых полей урона
 // и скорости атаки в формате НЕТ: статы — производные от счётчиков покупок
 // и надетой экипировки, пересчитываются конвейером stats.ts.
 export interface SavedModifier {
@@ -47,8 +49,8 @@ export interface SavedItem {
   mods: SavedModifier[]
 }
 
-export interface SavePayloadV8 {
-  version: 8
+export interface SavePayloadV9 {
+  version: 9
   lastTimestamp: number
   gold: string
   level: string
@@ -63,6 +65,11 @@ export interface SavePayloadV8 {
   autoEquip: boolean
   currentZoneId: string
   lastSurvivedZoneId: string | null
+  // Умения: мана уже была, добавились кулдауны и глобальный кулдаун.
+  // Очередь onNextSwing и наложенные эффекты НЕ сохраняются: они висели на
+  // мобе, а моб при загрузке спавнится заново.
+  gcdMsLeft: number
+  abilityCooldownsMs: Record<string, number>
   itemSeq: number
   totalTicks: string
   playtimeMs: string
@@ -108,7 +115,7 @@ function savedFromItem(item: Item): SavedItem {
   }
 }
 
-export function payloadFromState(state: GameState, lastTimestamp: number): SavePayloadV8 {
+export function payloadFromState(state: GameState, lastTimestamp: number): SavePayloadV9 {
   const upgrades: Record<string, string> = {}
   for (const [id, owned] of Object.entries(state.upgrades)) upgrades[id] = owned.toString()
   const equipment: Record<string, SavedItem | null> = {}
@@ -116,14 +123,21 @@ export function payloadFromState(state: GameState, lastTimestamp: number): SaveP
     const item = state.equipment[slot]
     equipment[slot] = item ? savedFromItem(item) : null
   }
+  // Кулдауны нулевой длины в сейв не пишем — это мусор, а не прогресс.
+  const abilityCooldownsMs: Record<string, number> = {}
+  for (const [id, left] of Object.entries(state.abilityCooldownsMs)) {
+    if (left > 0 && id in ABILITY_BY_ID) abilityCooldownsMs[id] = left
+  }
   return {
-    version: 8,
+    version: 9,
     lastTimestamp,
     inventory: state.inventory.map(savedFromItem),
     equipment,
     autoEquip: state.autoEquip,
     currentZoneId: state.currentZoneId,
     lastSurvivedZoneId: state.lastSurvivedZoneId,
+    gcdMsLeft: Math.max(0, state.gcdMsLeft),
+    abilityCooldownsMs,
     itemSeq: state.itemSeq,
     gold: state.gold.toString(),
     level: state.level.toString(),
@@ -194,7 +208,26 @@ function zoneIdFromSaved(raw: unknown, fallback: string): string {
   return typeof raw === 'string' && raw in ZONE_BY_ID ? raw : fallback
 }
 
-export function stateFromPayload(p: SavePayloadV8): GameState {
+// Кулдауны из сейва: чужие id и мусорные числа отбрасываем, иначе умение
+// из будущей версии заперло бы кнопку навсегда.
+function cooldownsFromSaved(raw: unknown): Record<string, number> {
+  const result: Record<string, number> = {}
+  if (typeof raw !== 'object' || raw === null) return result
+  for (const [id, left] of Object.entries(raw as Record<string, unknown>)) {
+    if (!(id in ABILITY_BY_ID)) continue
+    const max = ABILITY_BY_ID[id].cooldownSec * 1000
+    if (typeof left === 'number' && Number.isFinite(left) && left > 0) {
+      result[id] = Math.min(left, max)
+    }
+  }
+  return result
+}
+
+function msFromSaved(raw: unknown, max: number): number {
+  return typeof raw === 'number' && Number.isFinite(raw) && raw > 0 ? Math.min(raw, max) : 0
+}
+
+export function stateFromPayload(p: SavePayloadV9): GameState {
   const level = Decimal.max(parseDec(p.level, '1'), new Decimal(1))
   const upgrades: Record<string, Decimal> = {}
   for (const [id, owned] of Object.entries(p.upgrades ?? {})) upgrades[id] = parseDec(owned, '0')
@@ -215,6 +248,11 @@ export function stateFromPayload(p: SavePayloadV8): GameState {
       p.lastSurvivedZoneId === null || p.lastSurvivedZoneId === undefined
         ? null
         : zoneIdFromSaved(p.lastSurvivedZoneId, SAFE_ZONE.id),
+    gcdMsLeft: msFromSaved(p.gcdMsLeft, GCD_MS),
+    abilityCooldownsMs: cooldownsFromSaved(p.abilityCooldownsMs),
+    // Очередь и эффекты были на прежнем мобе — при загрузке начинаем чисто.
+    queuedAbilityId: null,
+    activeEffects: [],
     itemSeq: typeof p.itemSeq === 'number' ? p.itemSeq : 0,
   }
   // Моб не сохраняется: спавним свежего из восстановленной зоны. Поток
@@ -265,6 +303,9 @@ function itemV6toV7(raw: unknown): RawSave {
 }
 
 const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
+  // 8 -> 9: появились активные умения. Старый сейв просыпается с готовыми
+  // умениями: кулдаунов не было — значит их и нет.
+  8: (raw) => ({ ...raw, version: 9, gcdMsLeft: 0, abilityCooldownsMs: {} }),
   // 7 -> 8: появились зоны. Старый сейв просыпается в безопасной зоне, где
   // ещё ничего не доказано: lastSurvivedZoneId пуст, смерть вернёт туда же.
   7: (raw) => ({
@@ -330,7 +371,7 @@ const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
 }
 
 // null = сейв непригоден (не объект или из более новой версии игры).
-export function migrateSave(raw: unknown): SavePayloadV8 | null {
+export function migrateSave(raw: unknown): SavePayloadV9 | null {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null
   let data = raw as RawSave
   let version = typeof data.version === 'number' ? data.version : 0
@@ -341,7 +382,7 @@ export function migrateSave(raw: unknown): SavePayloadV8 | null {
     data = step(data)
     version = typeof data.version === 'number' ? data.version : version + 1
   }
-  return data as unknown as SavePayloadV8
+  return data as unknown as SavePayloadV9
 }
 
 export interface OfflineReport {
@@ -478,7 +519,7 @@ export function encodeSaveString(state: GameState, now: () => number = Date.now)
 }
 
 // Понимает base64 от экспорта и, на всякий случай, голый JSON.
-export function decodeSaveString(input: string): SavePayloadV8 | null {
+export function decodeSaveString(input: string): SavePayloadV9 | null {
   const attempts = [
     () => JSON.parse(fromBase64(input.trim())),
     () => JSON.parse(input.trim()),

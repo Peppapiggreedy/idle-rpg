@@ -46,6 +46,10 @@ export interface Item {
 // весь текст для игрока рендерит UI.
 export type CombatEvent =
   | { type: 'hit'; damage: Decimal; isCrit: boolean }
+  // Удар умения: id, а не имя — текст рендерит UI по данным умения.
+  | { type: 'ability'; abilityId: string; damage: Decimal; isCrit: boolean }
+  // Тик эффекта (урон по времени) от умения abilityId.
+  | { type: 'effect'; abilityId: string; damage: Decimal }
   | { type: 'kill'; monsterName: string; gold: Decimal; xp: Decimal }
   | { type: 'levelup'; level: Decimal }
   | { type: 'loot'; item: Item }
@@ -62,6 +66,6 @@ export interface AttackEvent {
   targetId: string
   amount: Decimal
   isCrit: boolean
-  abilityId: string | null // авто-атака = null; способности придут позже
+  abilityId: string | null // авто-атака = null; умение — его id
   timestamp: number // игровое время (playtimeMs) на момент удара
 }

@@ -1,6 +1,6 @@
 # ARCHITECTURE.md — реальное состояние кода
 
-Снимок после ввода зон как данных (ветка claude/zones).
+Снимок после ввода активных умений (ветка claude/abilities).
 Документ описывает то, что есть в `src/` фактически. Обновляется вместе с кодом.
 
 ## 1. Карта модулей
@@ -22,7 +22,8 @@
 | `rng.ts` | тип `Rng`, `createRng(seed)` (mulberry32), `randRange(rng, min, max)` (при min = max поток не расходуется), `randomSeed()` без Math.random. Единственный источник случайности | numbers |
 | `events.ts` | шина `AttackEvent`: `emit`/`subscribe`. Логика эмитит, UI подписывается (задел под всплывающие числа урона) | types |
 | `stats.ts` | **конвейер статов — единственный источник правды производных чисел**: 13 стат, модификаторы {stat, kind: **base**/flat/percent/multiplier, value, source}, порядок base → +flat → ×(1+Σpercent) → ×multiplier; `base` заменяет дефолт `BASE_STATS` (последний выигрывает при дублях); производный `swingTime = weaponSpeed/(1+haste)` вне `StatId` — модификатор на него невозможен; `collectModifiers` собирает источники в порядке экипировка → апгрейды; кеш `statsDirty`/`ensureStats` (прогресс замаха трогать не нужно — он в долях); `applyModifiers` (чистое ядро), `explainStat`/`explainSwingTime` для панели | numbers, state (тип), data/{balance,upgrades,slots} |
-| `zones.ts` | доступ к зонам (`isZoneUnlocked`), переходы (`travelToZone`, `reviveInZone`, `retreatZone`) и **честный прогноз опасности**: `zoneRate` (темп зоны — среднее по пулу × уровням, смертность один раз на зону по средней потере HP) и `forecastZone` → `ZoneForecast` с кодом вердикта `safe/risky/deadly/hopeless`. Своей формулы боя нет — зовёт `estimateCombatRate` | numbers, combat, state, data/{balance,zones} |
+| `abilities.ts` | активные умения: `abilityStatus` (коды отказа `dead`/`cooldown`/`gcd`/`no-mana`), `useAbility` (мгновенное бьёт сразу, `onNextSwing` встаёт в очередь / снимается с неё), `consumeQueuedAbility` (замах заменяется умением, мана списывается здесь), `advanceCooldowns`. Своей формулы урона нет — зовёт `rollSwing` с долей `weaponDamagePercent` | numbers, combat, state, data/{balance,abilities} |
+| `zones.ts` | доступ к зонам (`isZoneUnlocked`), переходы (`travelToZone`, `activateAbility`, `reviveInZone`, `retreatZone`) и **честный прогноз опасности**: `zoneRate` (темп зоны — среднее по пулу × уровням, смертность один раз на зону по средней потере HP) и `forecastZone` → `ZoneForecast` с кодом вердикта `safe/risky/deadly/hopeless`. Своей формулы боя нет — зовёт `estimateCombatRate` | numbers, combat, state, data/{balance,zones} |
 | `equipment.ts` | надеть/снять/сравнить: `equipItem` (снятое возвращается в инвентарь), `unequipItem` (нужен свободный слот сумки), `isEquipped`, `isUpgrade` и `autoEquipIfBetter` (**строго по `estimateCombatRate().damagePerSecond`**, не по сумме статов), `compareItem` → `EquipComparison` с производными числами для UI | combat, stats, state, data/{balance,slots}, types |
 | `combat.ts` | **ЕДИНСТВЕННЫЙ дом боевых формул**: `rollSwing` (бросок урона оружия + вклад силы атаки + крит), `rollMonsterDamage`, `swingDamageRange`/`expectedSwingDamage`/`critFactor`, `estimateCombatRate` (урон/с, убийств/с, uptime, время до смерти; цикл «фарм → смерть → воскрешение»). tick вызывает эти функции, оффлайн-агрегат — только `estimateCombatRate`; своей формулы нет ни у кого | numbers, rng, state, stats, data/balance, types |
 | `formulas.ts` | `upgradeCost` (base·1.15^owned), `xpToNextLevel` (floor(10·L^1.5) с эпсилоном против погрешности pow), `applyXp` (перенос остатка, мультиуровень, предохранитель) | numbers, types |
@@ -44,6 +45,7 @@
 |---|---|
 | `balance.ts` | **общий баланс**: `BASE_STATS` (13 стат), `UNARMED` (2.0с, урон 8–12), `PER_LEVEL` (что даёт уровень персонажа: +14 hp, +0.8 реген, +5 маны), `AP_NORMALIZATION`, пороги вердикта зоны, респаун 300 мс, 12 слотов инвентаря, потолок оффлайна 8 ч и его шаг 1 мин, автосейв 15 с, воскрешение 30 с, `LEGACY_V3_SWING_TIME_S` (замороженная константа миграции) |
 | `monsters.ts` | роли мобов (`RUNT`/`COMMON`/`BRUTE`), база моба 1 уровня и **формула масштаба от уровня**: hp ×1.35/ур., урон ×1.12/ур., награда ×1.25/ур.; `buildMonster(архетип, уровень, множитель зоны)` |
+| `abilities.ts` | 3 умения: Скорый выпад (instant, 8 маны, кд 3с, 70% удара), Рваная рана (onNextSwing, 14 маны, кд 9с, 110% + 4 тика по 25%), Сокрушение (onNextSwing, 32 маны, кд 22с, 340%). Урон — доля удара оружия, не множитель к силе атаки |
 | `zones.ts` | 4 зоны (Пастуший луг 1–2, Полая каменоломня 4–6, Топкие лощины 9–12, Пепельный гребень 16–20): пул из трёх архетипов, множитель награды, требование по уровню персонажа, флаг безопасной; `zoneMonsterVariants` (весь набор возможных спавнов) и `representativeMonster` |
 | `upgrades.ts` | «Заточка оружия»: база 10, рост 1.15, +1 к урону |
 | `rarity.ts` | 5 тиров: веса рулетки, цвета редкостей (единственное место), множители бонуса и цены |
@@ -56,17 +58,18 @@
 `writable(GameState)` (наружу `readonly`), `loopMetrics`, `offlineReport`,
 `saveNotice` (**коды** `NoticeCode`, не строки). Экшены: `purchaseUpgrade`,
 `sellInventoryItem`, `equipInventoryItem`, `unequipSlot`, `toggleAutoEquip`,
-`travelToZone`,
+`travelToZone`, `activateAbility`,
 `exportSaveString`, `importSaveString`, `initGame`,
 `persistNow`, `startGameLoop`/`stopGameLoop`. Rng создаётся один раз из
 `state.rngSeed`. Автосейв: счётчик копит шаг конвейера `applyAutosaveCounter`,
 стор проверяет его после тика, сохраняет и сбрасывает.
 
-### `src/lib/ui/` — 12 компонентов
+### `src/lib/ui/` — 13 компонентов
 
 `CombatScreen` (моб с его уровнем, HP-бар, статы; **рендер событий лога** — весь
 русский текст боя в функции `eventText`), `HeroPanel`, `UpgradePanel`,
-`ZonePanel` (список зон: уровни мобов, награда в час и предупреждение, собранное
+`AbilityPanel` (три кнопки с заливкой кулдауна, стоимостью маны и хоткеями 1/2/3;
+текст причин отказа — здесь), `ZonePanel` (список зон: уровни мобов, награда в час и предупреждение, собранное
 из вердикта и разрыва в уровнях — в данных зоны такого текста нет),
 `EquipmentPanel` (6 слотов, кнопка «Снять», галочка автонадевания),
 `InventoryPanel` (кнопки «Надеть»/«Продать»; при наведении — сравнение
@@ -81,9 +84,9 @@
 ### `src/lib/types/index.ts`
 
 Только используемое: `Monster` (с `level`), `MonsterTemplate`, `UpgradeDef`, `Rarity`, `Item`
-(`{id, name, rarity, slot, mods}` — прямых полей бонуса нет), `CombatEvent`,
-`AttackEvent`. `Decimal` импортируется из `game/numbers`, не из break_infinity.
-Реальный формат сейва — `SavePayloadV8`, экспортируется из `save.ts`.
+(`{id, name, rarity, slot, mods}` — прямых полей бонуса нет), `CombatEvent` (включая `ability` и `effect` — с id умения, а не именем),
+`AttackEvent` (у умения `abilityId` заполнен). `Decimal` импортируется из `game/numbers`, не из break_infinity.
+Реальный формат сейва — `SavePayloadV9`, экспортируется из `save.ts`.
 
 ## 2. Состояние
 
@@ -92,7 +95,8 @@
   0..1), currentHp/currentMana, heroState/reviveMsLeft, upgrades, **equipment**
   (`Record<SlotId, Item|null>`), **autoEquip**, stats + statsDirty, inventory,
   itemSeq, rngSeed, **currentZoneId**, **lastSurvivedZoneId**, monster,
-  respawnMsLeft, combatLog (события), msSinceAutosave.
+  respawnMsLeft, combatLog (события), msSinceAutosave, **gcdMsLeft**,
+  **abilityCooldownsMs**, **queuedAbilityId**, **activeEffects**.
   Источники статов — `level`, `upgrades` и `equipment`; прямых полей урона нет.
 - Мутации — только через экшены стора: цикл (tick), покупка/продажа, initGame,
   импорт сейва, сброс счётчика автосейва.
@@ -106,24 +110,32 @@
 в фиксированном порядке; факты тика передаются через контекст:
 
 1. `applyRevive` — мёртвый герой: отсчёт 30 c; по нулю — полный HP и откат в последнюю зону, где он выживал (`lastSurvivedZoneId`), иначе в безопасную
-2. `applyCombat` — удары героя по прогрессу замаха (доля `dt/swingTime`, остаток переносится); урон и крит считает `combat.rollSwing`; события `hit` + шина
-3. `applyKillRewards` — золото + событие `kill`; помечает текущую зону как выжитую
-4. `applyLevelUps` — опыт через `applyXp` + событие `levelup`
-5. `applyLootDrop` — бросок дропа (единственный потребитель rng) + событие `loot`, затем `autoEquipIfBetter` (при включённом флаге и приросте урона в секунду)
-6. `applyMonsterAttack` — ответные удары моба по своему `swingTime` из данных; урон считает `combat.rollMonsterDamage` (бросок из `damageMin..damageMax` ×(1−damageReduction));
+2. `applyCooldowns` — кулдауны умений и GCD идут игровым временем
+3. `applyPendingKill` — моб, добитый мгновенным умением ВНЕ тика: смерть оформляет конвейер, а не умение
+4. `applyCombat` — удары героя по прогрессу замаха (доля `dt/swingTime`, остаток переносится); умение из очереди ЗАМЕНЯЕТ автоатаку; урон и крит считает `combat.rollSwing`; события `hit`/`ability` + шина
+5. `applyEffects` — тики урона по времени; стоят ДО наград, потому что тоже могут убить моба
+6. `applyKillRewards` — золото + событие `kill`; помечает текущую зону как выжитую
+7. `applyLevelUps` — опыт через `applyXp` + событие `levelup`
+8. `applyLootDrop` — бросок дропа + событие `loot`, затем `autoEquipIfBetter` (при включённом флаге и приросте урона в секунду)
+9. `applyMonsterAttack` — ответные удары моба по своему `swingTime` из данных; урон считает `combat.rollMonsterDamage` (бросок из `damageMin..damageMax` ×(1−damageReduction));
    события `hurt` + шина; `currentHp <= 0` → `death`, таймер воскрешения
-7. `applyRegen` — HP (в бою `hpRegen`, вне боя `hpRegenOutOfCombat`), мана `manaRegen`
-8. `applyRespawn` — таймер 300 мс после смерти моба ИЛИ отсчёт и спавн из пула текущей зоны (`spawn`)
-9. `applyAutosaveCounter` — копит игровое время для автосейва
+10. `applyRegen` — HP (в бою `hpRegen`, вне боя `hpRegenOutOfCombat`), мана `manaRegen`
+11. `applyRespawn` — таймер 300 мс после смерти моба ИЛИ отсчёт и спавн из пула текущей зоны (`spawn`)
+12. `applyAutosaveCounter` — копит игровое время для автосейва
 
 rng потребляется в порядке: бросок урона оружия, крит-ролл, затем (на убийстве)
 шанс дропа / редкость / слот / прилагательное / существительное-модель. Бросок урона моба поток не трогает, пока `damageMin = damageMax`. Лог — последние 8 событий. Формулы боя (все — в `combat.ts`):
 
 ```
 swingTime   = weaponSpeed / (1 + haste)
-swingDamage = rand(weaponDamageMin, weaponDamageMax)
-              + attackPower × weaponSpeed / AP_NORMALIZATION   (AP_NORMALIZATION = 14)
+swingDamage = (rand(weaponDamageMin, weaponDamageMax)
+               + attackPower × weaponSpeed / AP_NORMALIZATION) × weaponDamagePercent
+                                                    (AP_NORMALIZATION = 14)
 ```
+`weaponDamagePercent` равен 1 у автоатаки и берётся из данных у умения — поэтому
+умения масштабируются от оружия и делят с боем одну формулу. Побочный эффект,
+ради которого так и сделано: при равном уроне в секунду медленное оружие даёт
+БОЛЬШЕ урона за ману, чем быстрое (цена умения фиксирована, а удар крупнее).
 
 Во второй формуле стоит БАЗОВАЯ `weaponSpeed`, а не ускоренная `swingTime`: иначе
 haste сократился бы сам с собой и не повышал урон в секунду. Медленное оружие
@@ -143,13 +155,16 @@ haste сократился бы сам с собой и не повышал ур
 
 ## 4. Сохранение
 
-- Версия формата: **8** (`SAVE_VERSION`), ключ `idle-rpg-save`. Автосейв 15 с
+- Версия формата: **9** (`SAVE_VERSION`), ключ `idle-rpg-save`. Автосейв 15 с
   (значение в `data/balance.ts`) + `visibilitychange`.
-- Формат — `SavePayloadV8` (Decimal строками): version, lastTimestamp, gold, level,
+- Формат — `SavePayloadV9` (Decimal строками): version, lastTimestamp, gold, level,
   currentXp, currentHp, currentMana, heroState, reviveMsLeft, upgrades,
   inventory[{id,name,rarity,slot,mods[]}], equipment (слот → предмет или null),
-  autoEquip, currentZoneId, lastSurvivedZoneId, itemSeq, totalTicks, playtimeMs.
-  Неизвестный id зоны при загрузке деградирует до безопасной. Модификатор с неизвестным статом
+  autoEquip, currentZoneId, lastSurvivedZoneId, gcdMsLeft, abilityCooldownsMs,
+  itemSeq, totalTicks, playtimeMs. Неизвестный id зоны при загрузке деградирует
+  до безопасной; кулдаун чужого умения или больше своего максимума — отбрасывается
+  либо подрезается. Очередь `onNextSwing` и наложенные эффекты НЕ сохраняются:
+  они висели на мобе, а моб при загрузке спавнится заново. Модификатор с неизвестным статом
   или kind при загрузке отбрасывается, предмет в чужом слоте не надевается.
   Прямых полей урона в формате нет — статы
   пересчитываются из счётчиков покупок при загрузке. Не сохраняются: monster/respawn, combatLog, xpToNext,
@@ -162,7 +177,8 @@ haste сократился бы сам с собой и не повышал ур
   6→7 (`statBonus` предмета → `mods: [{attackPower, flat, value}]`, слот
   `trinket` — без base-модификаторов; экипировка пустая, предметы ждут
   в инвентаре), 7→8 (появились зоны: старый сейв просыпается в безопасной,
-  `lastSurvivedZoneId` пуст). Сейв из будущей версии и битый JSON → коды
+  `lastSurvivedZoneId` пуст), 8→9 (появились умения: кулдаунов не было — значит
+  их и нет). Сейв из будущей версии и битый JSON → коды
   `newer-version`/`corrupted`, текст рендерит NoticeBar. Фикстуры всех версий — в
   `__fixtures__`, тесты грузят их через `loadGame`.
 - Оффлайн: потолок 8 ч (balance), награда агрегатом ШАГАМИ по 1 мин — набранные

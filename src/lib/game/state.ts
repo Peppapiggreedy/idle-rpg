@@ -25,6 +25,14 @@ export interface GameState {
   swingProgress: number
   currentHp: Decimal // текущее здоровье героя, кап — stats.maxHp
   currentMana: Decimal // текущая мана героя, кап — stats.maxMana
+  // Умения. Кулдауны и GCD идут ИГРОВЫМ временем (тем же dtMs, что и бой),
+  // поэтому множитель скорости из отладочной панели ускоряет и их.
+  gcdMsLeft: number // глобальный кулдаун; 0 — свободен
+  abilityCooldownsMs: Record<string, number> // id умения -> сколько мс осталось
+  // Умение типа onNextSwing, поставленное в очередь: заменит следующую
+  // автоатаку. Одновременно только одно; null — очередь пуста.
+  queuedAbilityId: string | null
+  activeEffects: ActiveEffect[] // эффекты на текущем мобе (урон по времени)
   heroState: 'alive' | 'dead'
   reviveMsLeft: number // обратный отсчёт воскрешения; > 0 только при heroState 'dead'
   upgrades: Record<string, Decimal> // id апгрейда -> сколько куплено (источник статов)
@@ -46,6 +54,15 @@ export interface GameState {
   respawnMsLeft: number
   combatLog: CombatEvent[] // последние события, новые в начале
   msSinceAutosave: number // служебный счётчик игрового времени с последнего сейва
+}
+
+// Наложенный эффект. Урон тика ЗАСНЯТ в момент применения: смена оружия
+// посреди эффекта не меняет уже наложенный урон.
+export interface ActiveEffect {
+  abilityId: string
+  damagePerTick: Decimal
+  ticksLeft: number
+  msToNextTick: number
 }
 
 export type Equipment = Record<SlotId, Item | null>
@@ -80,6 +97,10 @@ export function createInitialState(rngSeed: number = randomSeed()): GameState {
     swingProgress: 0,
     currentHp: new Decimal(0), // заполняется ниже из пересчитанных статов
     currentMana: new Decimal(0),
+    gcdMsLeft: 0,
+    abilityCooldownsMs: {},
+    queuedAbilityId: null,
+    activeEffects: [],
     heroState: 'alive',
     reviveMsLeft: 0,
     upgrades: {},
