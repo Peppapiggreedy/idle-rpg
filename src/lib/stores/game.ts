@@ -1,8 +1,8 @@
 // Единственный мост между игровой логикой и UI: компоненты читают эти store
 // и вызывают экшены, цикл и экшены пишут в состояние.
 import { get, readonly, writable } from 'svelte/store'
-import { createGameLoop, type GameLoop, type LoopMetrics } from '../game/loop'
-import { createInitialState, type GameState } from '../game/state'
+import { createGameLoop, STEP_MS, type GameLoop, type LoopMetrics } from '../game/loop'
+import { createInitialState, spawnMonster, type GameState } from '../game/state'
 import { tick } from '../game/tick'
 import { createRng, type Rng } from '../game/rng'
 import { buyUpgrade } from '../game/upgrades'
@@ -11,7 +11,7 @@ import { Decimal } from '../game/numbers'
 import { applyOfflineProgress } from '../game/save'
 import { sellItem } from '../game/loot'
 import { equipItem, setAutoEquip, unequipItem } from '../game/equipment'
-import { travelToZone as travelAction } from '../game/zones'
+import { currentZone, travelToZone as travelAction } from '../game/zones'
 import { useAbility as useAbilityAction } from '../game/abilities'
 import { abilitiesByPriority } from '../game/rotation'
 import { investTalent as investTalentAction, resetTalents as resetTalentsAction } from '../game/talents'
@@ -242,6 +242,39 @@ export function importSaveString(input: string): boolean {
   persistNow()
   notice.set('import-success')
   return true
+}
+
+// ---------- Режим съёмки скриншотов (?debug=1&state=<пресет>) ----------
+
+// Сколько тиков проигрываем поверх пресета перед съёмкой. Ноль дал бы пустой
+// лог боя и нетронутые полоски — снимок выглядел бы как сломанная игра.
+// Число входит в определение снимка: поменяешь его — поменяются эталоны.
+export const SCREENSHOT_TICKS = 200
+
+// Сид потока случайности для съёмки. Он нужен ЯВНО: сейв сид не хранит
+// (см. rngSeed в state.ts), поэтому stateFromPayload выдаёт каждый раз новый —
+// и моб, и все броски за 200 тиков получались бы разными при каждой загрузке,
+// а вместе с ними ехала бы и высота страницы.
+export const SCREENSHOT_SEED = 20_260_827
+
+/**
+ * Ставит заранее заданное состояние и прокручивает фиксированное число тиков.
+ * Игровой цикл НЕ запускается и сейв НЕ трогается: снимок обязан быть
+ * воспроизводимым до пикселя, а живой цикл и localStorage этому мешают.
+ */
+export function applyScreenshotState(preset: GameState): void {
+  // Сид пришиваем к состоянию и заново спавним моба: только так и первый
+  // противник, и вся дальнейшая цепочка бросков одинаковы от прогона к прогону.
+  const seeded: GameState = {
+    ...preset,
+    rngSeed: SCREENSHOT_SEED,
+    monster: spawnMonster(currentZone(preset), createRng(SCREENSHOT_SEED)),
+  }
+  const stream = createRng(SCREENSHOT_SEED)
+  let s = seeded
+  for (let i = 0; i < SCREENSHOT_TICKS; i++) s = tick(s, STEP_MS, stream, emitAttack)
+  state.set(s)
+  sessionStart.set(s.playtimeMs.toNumber())
 }
 
 // ---------- Дебаг-экшены (панель ?debug=1) ----------

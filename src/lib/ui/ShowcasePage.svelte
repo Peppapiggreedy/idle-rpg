@@ -67,8 +67,11 @@
   const RARITY_IDS = RARITIES.map((r) => r.id) as Rarity[]
 
   // Живая полоска: витрина должна показывать плавность, а не статичную заливку.
+  // При системной настройке «меньше движения» полоска замирает — это и
+  // правильная реакция на настройку, и условие воспроизводимости снимков.
   let pulse = $state(72)
   $effect(() => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
     const id = setInterval(() => {
       pulse = pulse <= 4 ? 100 : pulse - 6
     }, 400)

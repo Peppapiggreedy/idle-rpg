@@ -7,10 +7,14 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json",
-    "test": "vitest run"
+    "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json && tsc -p tsconfig.tests.json",
+    "test": "vitest run",
+    "screenshots": "playwright test",
+    "screenshots:update": "playwright test --update-snapshots",
+    "presets:update": "UPDATE_PRESETS=1 vitest run src/lib/game/__tests__/presets.test.ts"
   },
   "devDependencies": {
+    "@playwright/test": "1.56.1",
     "@sveltejs/vite-plugin-svelte": "^7.2.0",
     "@tsconfig/svelte": "^5.0.8",
     "@types/node": "^24.13.3",

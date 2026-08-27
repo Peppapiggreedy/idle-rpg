@@ -13,9 +13,12 @@
     simSpeed,
   } from '../stores/game'
   import { Button } from './kit'
+  import { isScreenshotMode } from './route'
 
   // Панель существует только с ?debug=1 — без него не рендерится вообще.
-  const enabled = new URLSearchParams(window.location.search).get('debug') === '1'
+  // В режиме съёмки скрыта: она перекрывает игру и показывает живые счётчики.
+  const enabled =
+    new URLSearchParams(window.location.search).get('debug') === '1' && !isScreenshotMode()
 
   const SPEEDS = [1, 10, 100]
   let offlineHours = $state(8)
