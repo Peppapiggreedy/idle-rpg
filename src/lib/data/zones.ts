@@ -1,5 +1,6 @@
 // Зоны — данные. Никакой логики выбора или проверок здесь нет: логика читает
 // эти поля и сама решает, что игроку доступно и насколько это опасно.
+import type { IconName } from '../ui/icons/manifest'
 import { Decimal } from '../game/numbers'
 import {
   BRUTE,
@@ -10,21 +11,35 @@ import {
   type MonsterRole,
 } from './monsters'
 import type { MonsterTemplate } from '../types'
+import {
+  ASHEN_SCENE,
+  MEADOW_SCENE,
+  MIREFEN_SCENE,
+  QUARRY_SCENE,
+  type SceneConfig,
+} from './scenery'
 
 export interface Zone {
   id: string
   name: string
+  /** Иконка. Тип выведен из реестра: опечатка — ошибка проверки типов. */
+  icon: IconName
   // Уровни мобов зоны: конкретный моб получает случайный уровень из диапазона.
   monsterLevelRange: { min: number; max: number }
   monsterPool: MonsterArchetype[]
   rewardMultiplier: Decimal // множитель золота и опыта поверх уровня моба
   unlockRequirement: number // уровень персонажа, с которого зона открыта
   isSafe: boolean // стартовая зона: сюда возвращают, когда возвращаться некуда
+  /** Как выглядит место: туман, свет, площадка и расстановка пропсов.
+   *  Поле ОБЯЗАТЕЛЬНОЕ — новая зона без вида не соберётся. */
+  scene: SceneConfig
 }
 
 export const ZONES: Zone[] = [
   {
     id: 'shepherds-meadow',
+    scene: MEADOW_SCENE,
+    icon: 'zone-shepherds-meadow',
     name: 'Пастуший луг',
     monsterLevelRange: { min: 1, max: 2 },
     monsterPool: [
@@ -38,6 +53,8 @@ export const ZONES: Zone[] = [
   },
   {
     id: 'hollow-quarry',
+    scene: QUARRY_SCENE,
+    icon: 'zone-hollow-quarry',
     name: 'Полая каменоломня',
     monsterLevelRange: { min: 4, max: 6 },
     monsterPool: [
@@ -51,6 +68,8 @@ export const ZONES: Zone[] = [
   },
   {
     id: 'mirefen-hollows',
+    scene: MIREFEN_SCENE,
+    icon: 'zone-mirefen-hollows',
     name: 'Топкие лощины',
     monsterLevelRange: { min: 9, max: 12 },
     monsterPool: [
@@ -64,6 +83,8 @@ export const ZONES: Zone[] = [
   },
   {
     id: 'ashen-ridge',
+    scene: ASHEN_SCENE,
+    icon: 'zone-ashen-ridge',
     name: 'Пепельный гребень',
     monsterLevelRange: { min: 16, max: 20 },
     monsterPool: [

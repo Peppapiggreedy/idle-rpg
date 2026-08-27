@@ -3,6 +3,7 @@
   import { UPGRADES } from '../data/upgrades'
   import { gameState, purchaseUpgrade } from '../stores/game'
   import { NumberText, Panel } from './kit'
+  import { Icon } from './icons'
 </script>
 
 <Panel title="Улучшения">
@@ -17,7 +18,7 @@
         onclick={() => purchaseUpgrade(def)}
       >
         <span class="name">
-          {def.name}
+          <Icon name={def.icon} />{def.name}
           <span class="owned">×<NumberText value={owned} /></span>
         </span>
         <span class="effect">

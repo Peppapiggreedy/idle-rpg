@@ -4,6 +4,7 @@
   import { ZONES, ZONE_BY_ID } from '../data/zones'
   import { gameState, travelToZone } from '../stores/game'
   import { Button, NumberText, Panel, Tag } from './kit'
+  import { Icon } from './icons'
 
   const forecasts = $derived(forecastAllZones($gameState))
   const byId = $derived(new Map(forecasts.map((f) => [f.zoneId, f])))
@@ -62,7 +63,7 @@
           class:locked={!f.unlocked}
         >
           <div class="head">
-            <span class="name">{zone.name}</span>
+            <span class="title"><Icon name={zone.icon} /><span class="name">{zone.name}</span></span>
             <span class="verdict">{VERDICT_LABEL[f.verdict]}</span>
           </div>
           <div class="facts">
@@ -146,6 +147,13 @@
     align-items: baseline;
     gap: var(--space-2);
     width: 100%;
+  }
+  /* Иконка и название — одна группа: иначе space-between растащил бы их
+     по краям и название уехало бы в середину. */
+  .title {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
   }
   .name {
     font-weight: var(--weight-bold);

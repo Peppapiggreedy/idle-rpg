@@ -11,6 +11,7 @@
   import { ZONE_BY_ID } from '../data/zones'
   import { enterDungeonRun, gameState } from '../stores/game'
   import { Button, Panel, Tag } from './kit'
+  import { Icon } from './icons'
 
   const statuses = $derived(new Map(allDungeonStatuses($gameState).map((s) => [s.dungeonId, s])))
 
@@ -31,7 +32,7 @@
       {#if status}
         <li class="entry" class:locked={!status.canEnter}>
           <div class="head">
-            <span class="name">{d.name}</span>
+            <Icon name={d.icon} /><span class="name">{d.name}</span>
             {#if status.cleared}<Tag tone="gold" label="пройден" />{/if}
           </div>
           <div class="facts">

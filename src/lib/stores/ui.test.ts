@@ -10,7 +10,7 @@ import {
 describe('настройки интерфейса: разбор сохранённого', () => {
   it('пустое и мусорное значение дают настройки по умолчанию', () => {
     for (const raw of [null, undefined, 42, 'строка', [], {}]) {
-      expect(sanitizeUiSettings(raw)).toEqual({ textMode: 'auto', fpsLimit: null })
+      expect(sanitizeUiSettings(raw)).toEqual({ textMode: 'auto', fpsLimit: 30 })
     }
   })
 
@@ -19,17 +19,20 @@ describe('настройки интерфейса: разбор сохранён
       textMode: 'on',
       fpsLimit: 30,
     })
-    expect(sanitizeUiSettings({ textMode: 'off', fpsLimit: null })).toEqual({
+    expect(sanitizeUiSettings({ textMode: 'off', fpsLimit: 60 })).toEqual({
       textMode: 'off',
-      fpsLimit: null,
+      fpsLimit: 60,
     })
+    // null допустим: так записаны настройки, сохранённые до появления
+    // значения по умолчанию 30. Терять их из-за смены списка нельзя.
+    expect(sanitizeUiSettings({ textMode: 'auto', fpsLimit: null }).fpsLimit).toBeNull()
   })
 
   it('лимит кадров принимается ТОЛЬКО из известного списка', () => {
     // Иначе подправленный руками localStorage мог бы выставить один кадр
     // в секунду — и игра выглядела бы сломанной без единой ошибки.
     for (const bad of [1, 0, -30, 9999, '60', Number.NaN, Infinity]) {
-      expect(sanitizeUiSettings({ fpsLimit: bad }).fpsLimit).toBeNull()
+      expect(sanitizeUiSettings({ fpsLimit: bad }).fpsLimit).toBe(30)
     }
     for (const good of FPS_LIMITS) {
       expect(sanitizeUiSettings({ fpsLimit: good }).fpsLimit).toBe(good)

@@ -29,14 +29,19 @@ export type TextModeSetting = 'auto' | 'on' | 'off'
 /** Ограничение частоты кадров; null — без ограничения. */
 export type FpsLimit = number | null
 
-export const FPS_LIMITS: FpsLimit[] = [30, 60, null]
+// 60 / 30 / 15 и по умолчанию 30. Тридцать — не компромисс, а осознанный
+// выбор: сцена и так рисуется не чаще тридцати кадров (показывать в ней
+// нечего, что требовало бы шестидесяти), а телефон за лишние кадры платит
+// нагревом и батареей. Шестьдесят оставлены для тех, кто хочет плавности,
+// пятнадцать — для слабых машин.
+export const FPS_LIMITS: FpsLimit[] = [60, 30, 15]
 
 export interface UiSettings {
   textMode: TextModeSetting
   fpsLimit: FpsLimit
 }
 
-const DEFAULTS: UiSettings = { textMode: 'auto', fpsLimit: null }
+const DEFAULTS: UiSettings = { textMode: 'auto', fpsLimit: 30 }
 
 // --- Доступность WebGL -------------------------------------------------
 
@@ -65,6 +70,23 @@ export function hasWebgl(): boolean {
     webglOk = false
   }
   return webglOk
+}
+
+// Сцена может не завестись и после успешной проверки выше: контекст WebGL
+// дают не всегда (старый драйвер, политика браузера, исчерпанный лимит
+// контекстов), да и чанк с three может не доехать. Это факт машины
+// текущего запуска, а не настройка, поэтому в localStorage он не пишется:
+// на следующей загрузке игра снова попробует показать сцену.
+const sceneFailed = writable(false)
+export const sceneUnavailable = readonly(sceneFailed)
+
+/**
+ * Слой 3D сообщает, что сцены не будет. ЕДИНСТВЕННАЯ запись, которую он
+ * делает наружу, и та в настройки интерфейса, а не в состояние игры:
+ * без неё игрок остался бы смотреть на чёрный прямоугольник.
+ */
+export function reportSceneFailure(): void {
+  sceneFailed.set(true)
 }
 
 // --- Хранилище ---------------------------------------------------------

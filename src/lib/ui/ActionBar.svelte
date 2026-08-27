@@ -12,9 +12,11 @@
     formatNumber,
     type AbilityDef,
   } from '../game'
+  import { GCD_MS } from '../data/balance'
   import { activateAbility, gameState } from '../stores/game'
   import { ABILITY_REASON_TEXT } from './abilityText'
   import { NumberText, Tooltip } from './kit'
+  import { Icon } from './icons'
 
   // Порядок кнопок = порядок приоритета: слева то, что автокаст жмёт первым.
   const ordered = $derived(abilitiesByPriority($gameState.abilitySettings, false))
@@ -57,6 +59,11 @@
   }
 
   const seconds = (ms: number) => (ms / 1000).toFixed(1)
+
+  // Общая задержка — ОТДЕЛЬНАЯ полоска, а не часть заливки кулдауна:
+  // она короче и общая на все умения, и слитая с кулдауном шкала врала бы
+  // про то, когда именно умение освободится.
+  const gcdFraction = $derived(GCD_MS > 0 ? Math.max(0, $gameState.gcdMsLeft) / GCD_MS : 0)
 </script>
 
 <svelte:window onkeydown={onKey} />
@@ -74,7 +81,11 @@
         onclick={() => activateAbility(ability.id)}
       >
         <span class="fill" style="height: {Math.min(100, status.cooldownFraction * 100)}%"></span>
+        {#if ability.triggersGcd && gcdFraction > 0 && status.cooldownMsLeft <= 0}
+          <span class="gcd" style="width: {gcdFraction * 100}%"></span>
+        {/if}
         <span class="key">{hotkey(i)}</span>
+        <Icon name={ability.icon} size="lg" />
         <span class="name">{ability.name}</span>
         <span class="cost"><NumberText value={ability.manaCost} tone="mana" size="sm" /> маны</span>
         {#if status.cooldownMsLeft > 0}
@@ -134,6 +145,17 @@
   .ability.queued {
     border-color: var(--c-xp);
     box-shadow: inset 0 0 var(--space-2) color-mix(in srgb, var(--c-xp) var(--tint-strong), transparent);
+  }
+  /* Общая задержка: тонкая полоска у нижнего края, отдельным цветом.
+     Показывается, только когда СВОЙ кулдаун уже вышел, — иначе игрок видел
+     бы две шкалы и не понимал, какая из них его держит. */
+  .gcd {
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    height: 2px;
+    background: var(--c-xp);
+    z-index: 1;
   }
   /* Заливка кулдауна: растёт снизу, под текстом. */
   .fill {

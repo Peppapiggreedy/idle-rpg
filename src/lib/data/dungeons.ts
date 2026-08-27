@@ -1,6 +1,7 @@
 // Данж — данные. Цепочка боссов в фиксированном порядке, вход из зоны,
 // требование по уровню. Числа боссов считаются от мобов зоны той же формулой
 // масштаба, что и обычные мобы: своей у боссов нет.
+import type { IconName } from '../ui/icons/manifest'
 import { Decimal } from '../game/numbers'
 import { buildMonster, COMMON, type MonsterRole } from './monsters'
 import type { SlotId } from './slots'
@@ -30,6 +31,8 @@ export interface BossDef {
 export interface DungeonDef {
   id: string
   name: string
+  /** Иконка. Тип выведен из реестра: опечатка — ошибка проверки типов. */
+  icon: IconName
   zoneId: string // из какой зоны вход
   unlockRequirement: number // уровень персонажа
   bosses: BossDef[] // порядок фиксирован: цепочка идёт сверху вниз
@@ -43,6 +46,7 @@ export const ENRAGE_GROWTH = 0.5
 export const DUNGEONS: DungeonDef[] = [
   {
     id: 'sunken-barrow',
+    icon: 'dungeon-sunken-barrow',
     name: 'Затонувший курган',
     zoneId: 'mirefen-hollows',
     unlockRequirement: 12,

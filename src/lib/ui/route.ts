@@ -57,3 +57,18 @@ export function isScreenshotMode(location: Location = window.location): boolean 
 export function isSceneDisabled(location: Location = window.location): boolean {
   return new URLSearchParams(location.search).get('scene') === 'off'
 }
+
+/** Открыт ли отладочный режим (`?debug=1`). */
+export function isDebugMode(location: Location = window.location): boolean {
+  return new URLSearchParams(location.search).get('debug') === '1'
+}
+
+/**
+ * Показывать ли в сцене оси и сетку (`?helpers=1`).
+ * Флаг ОТДЕЛЬНЫЙ от ?debug=1 нарочно: числа отладочного оверлея смотрят
+ * на производительность, а оси и сетка — на раскладку, и включать их
+ * хочется по отдельности. Ни то, ни другое ничего в игре не меняет.
+ */
+export function showsSceneHelpers(location: Location = window.location): boolean {
+  return new URLSearchParams(location.search).get('helpers') === '1'
+}

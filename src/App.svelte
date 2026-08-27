@@ -5,7 +5,7 @@
   import { INVENTORY_SIZE, availablePoints } from './lib/game'
   import { gameState } from './lib/stores/game'
   import { activeSection } from './lib/stores/ui'
-  import { isTextMode, uiSettings } from './lib/stores/ui'
+  import { isTextMode, sceneUnavailable, uiSettings } from './lib/stores/ui'
   import { isSceneDisabled } from './lib/ui/route'
 
   import BattleScene from './lib/ui/BattleScene.svelte'
@@ -15,6 +15,8 @@
   import DungeonHud from './lib/ui/DungeonHud.svelte'
   import HeroPanel from './lib/ui/HeroPanel.svelte'
   import SectionTabs from './lib/ui/SectionTabs.svelte'
+  import SwingIndicator from './lib/ui/SwingIndicator.svelte'
+  import { IconSprite } from './lib/ui/icons'
 
   import StatsPanel from './lib/ui/StatsPanel.svelte'
   import EquipmentPanel from './lib/ui/EquipmentPanel.svelte'
@@ -34,10 +36,17 @@
   // ?scene=off убирает сцену и оставляет только DOM — так снимаются
   // стабильные эталоны интерфейса. Текстовый режим приводит к тому же виду,
   // но по выбору игрока, а не параметра адреса.
+  //
+  // $sceneUnavailable — третья причина, и она не выбор: сцена попробовала
+  // завестись и не смогла. Игра обязана продолжаться текстом, а не чёрным
+  // прямоугольником, поэтому этот случай сильнее настройки «всегда сцена».
   const sceneOff = isSceneDisabled()
-  const textMode = $derived(sceneOff || isTextMode($uiSettings))
+  const textMode = $derived(sceneOff || $sceneUnavailable || isTextMode($uiSettings))
   const points = $derived(availablePoints($gameState))
 </script>
+
+<!-- Спрайт иконок: один раз на страницу, до всего остального. -->
+<IconSprite />
 
 <main>
   <header class="top">
@@ -58,6 +67,7 @@
       {:else}
         <BattleScene />
       {/if}
+      <SwingIndicator />
       <DungeonHud />
       <CombatLog />
     </div>

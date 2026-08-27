@@ -1,6 +1,7 @@
 // Активные умения — чистые данные. Урон выражен ДОЛЕЙ УДАРА ОРУЖИЯ
 // (weaponDamagePercent), а не множителем к силе атаки: иначе умения перестали
 // бы масштабироваться от оружия, и менять оружие было бы незачем.
+import type { IconName } from '../ui/icons/manifest'
 import { Decimal } from '../game/numbers'
 
 // instant       — срабатывает сразу, тратит GCD, таймер автоатаки не трогает.
@@ -21,6 +22,8 @@ export interface AbilityEffect {
 export interface AbilityDef {
   id: string
   name: string
+  /** Иконка. Тип выведен из реестра: опечатка — ошибка проверки типов. */
+  icon: IconName
   type: AbilityType
   manaCost: Decimal
   cooldownSec: number
@@ -32,6 +35,7 @@ export interface AbilityDef {
 export const ABILITIES: AbilityDef[] = [
   {
     id: 'quick-strike',
+    icon: 'ability-quick-strike',
     name: 'Скорый выпад',
     type: 'instant',
     manaCost: new Decimal(9),
@@ -41,6 +45,7 @@ export const ABILITIES: AbilityDef[] = [
   },
   {
     id: 'rending-wound',
+    icon: 'ability-rending-wound',
     name: 'Рваная рана',
     type: 'onNextSwing',
     manaCost: new Decimal(15),
@@ -56,6 +61,7 @@ export const ABILITIES: AbilityDef[] = [
   },
   {
     id: 'shattering-blow',
+    icon: 'ability-shattering-blow',
     name: 'Сокрушение',
     type: 'onNextSwing',
     manaCost: new Decimal(30),

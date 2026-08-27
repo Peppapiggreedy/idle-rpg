@@ -20,6 +20,7 @@
   import { TALENT_FIRST_LEVEL } from '../data/balance'
   import { gameState, investTalentPoint, resetTalentTree } from '../stores/game'
   import { Button, NumberText, Panel, Tag } from './kit'
+  import { Icon } from './icons'
 
   const points = $derived(availablePoints($gameState))
   const cost = $derived(resetCost($gameState))
@@ -88,7 +89,7 @@
           {@const status = talentStatus($gameState, talent)}
           <div class="talent" class:locked={!status.canInvest} class:taken={status.rank > 0}>
             <div class="head">
-              <span class="name">{talent.name}</span>
+              <Icon name={talent.icon} /><span class="name">{talent.name}</span>
               <span class="rank" class:full={status.rank === status.maxRank}>
                 {status.rank}/{status.maxRank}
               </span>

@@ -5,6 +5,7 @@
   // ?scene=off.
   import { activeDungeon, currentBoss, estimateCombatRate, formatNumber, secondsToEnrage, enrageMultiplier } from '../game'
   import { gameState } from '../stores/game'
+  import { sceneUnavailable } from '../stores/ui'
   import { NumberText, StatBar, Tag, Tooltip } from './kit'
 
   // Обе цифры честно: что герой выдаёт сам и что выйдет, если играть руками.
@@ -27,6 +28,14 @@
 </script>
 
 <div class="battle">
+  {#if $sceneUnavailable}
+    <!-- Сцена пыталась завестись и не смогла. Молчать нельзя: игрок выбрал
+         «всегда сцена», а видит текст, и должен понимать почему. -->
+    <p class="fallback">
+      Не удалось запустить 3D-сцену в этом браузере — играем текстом.
+      На игру это не влияет: доступно всё то же самое.
+    </p>
+  {/if}
   <div class="head">
     <span class="name">{$gameState.monster.name}</span>
     <span class="level">{$gameState.monster.level} ур.</span>
@@ -102,6 +111,15 @@
   .level {
     font-size: var(--text-xs);
     color: var(--c-text-faint);
+  }
+  .fallback {
+    margin: 0;
+    padding: var(--space-2);
+    border: 1px solid color-mix(in srgb, var(--c-warning) 45%, transparent);
+    border-radius: var(--radius-md);
+    background: color-mix(in srgb, var(--c-warning) var(--tint-weak), transparent);
+    font-size: var(--text-xs);
+    color: var(--c-text-muted);
   }
   .enrage {
     margin: 0;

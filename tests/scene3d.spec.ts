@@ -1,0 +1,183 @@
+import { expect, test, type Page } from '@playwright/test'
+
+// Поведение боевой сцены в живом браузере. Пиксели здесь не сравниваются
+// (см. screenshots.spec.ts, почему их сравнивать нельзя) — проверяется то,
+// что от сцены требуется по существу: она рисуется, она полностью
+// останавливается в текстовом режиме, освобождает ресурсы
+// и она не роняет игру, когда WebGL не дают.
+
+const SCENE_READY = '[data-scene="ready"]'
+
+/** Число из отладочного оверлея: он показывает то же, что renderer.info. */
+async function probe(page: Page, label: string): Promise<number> {
+  const text = await page.locator(`text=/^${label}: /`).innerText()
+  return Number(text.split(': ')[1])
+}
+
+async function openGame(page: Page, query = ''): Promise<string[]> {
+  const errors: string[] = []
+  page.on('pageerror', (e) => errors.push(String(e)))
+  page.on('console', (m) => {
+    if (m.type() === 'error') errors.push(m.text())
+  })
+  await page.goto(`?debug=1&state=rich${query}`)
+  await expect(page.locator('html')).toHaveAttribute('data-ready', 'preset')
+  return errors
+}
+
+test('сцена рисует первый кадр и молчит в консоли', async ({ page }) => {
+  const errors = await openGame(page)
+  await expect(page.locator(SCENE_READY)).toBeAttached({ timeout: 30_000 })
+  await expect(page.locator('canvas')).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('?helpers=1 добавляет оси и сетку, без него их нет', async ({ page }) => {
+  // Сравниваем ОТНОСИТЕЛЬНО, а не с фиксированным числом: сколько геометрий
+  // в сцене, зависит от обстановки зоны и от того, что попало в кадр.
+  // Проверяемое утверждение — «с флагом их ровно на две больше».
+  await openGame(page)
+  await expect(page.locator(SCENE_READY)).toBeAttached({ timeout: 30_000 })
+  await page.waitForTimeout(1200)
+  const plain = await probe(page, 'geometries')
+
+  await openGame(page, '&helpers=1')
+  await expect(page.locator(SCENE_READY)).toBeAttached({ timeout: 30_000 })
+  await page.waitForTimeout(1200)
+  expect(await probe(page, 'geometries')).toBe(plain + 2)
+})
+
+test('в текстовом режиме сцены нет вовсе, а не «на паузе»', async ({ page }) => {
+  await openGame(page)
+  await expect(page.locator(SCENE_READY)).toBeAttached({ timeout: 30_000 })
+
+  await page.locator('nav[aria-label="Разделы"] button').nth(4).click()
+  await page.getByRole('button', { name: 'Всегда текст' }).click()
+  // Не «остановленный рендерер», а отсутствие холста: контекст WebGL
+  // отдан браузеру целиком.
+  await expect(page.locator('canvas')).toHaveCount(0)
+
+  await page.getByRole('button', { name: 'Всегда сцена' }).click()
+  await expect(page.locator(SCENE_READY)).toBeAttached({ timeout: 30_000 })
+})
+
+test('в текстовом режиме цикл рендера действительно встал', async ({ page }) => {
+  // Проверяем не «нет холста», а что requestAnimationFrame перестал
+  // вызываться: остановка должна быть настоящей, иначе сцена продолжит
+  // жечь батарею телефона из-под текстового режима. В режиме ?state=
+  // игровой цикл не запускается, поэтому единственный, кто здесь просит
+  // кадры, — сцена.
+  await page.addInitScript(() => {
+    const w = window as unknown as { __frames: number }
+    w.__frames = 0
+    const original = window.requestAnimationFrame.bind(window)
+    window.requestAnimationFrame = (cb: FrameRequestCallback) =>
+      original((t) => {
+        w.__frames += 1
+        cb(t)
+      })
+  })
+  await openGame(page)
+  await expect(page.locator(SCENE_READY)).toBeAttached({ timeout: 30_000 })
+
+  const frames = () => page.evaluate(() => (window as unknown as { __frames: number }).__frames)
+  const running = await frames()
+  await page.waitForTimeout(400)
+  expect(await frames(), 'сцена должна просить кадры, пока она на экране').toBeGreaterThan(
+    running,
+  )
+
+  await page.locator('nav[aria-label="Разделы"] button').nth(4).click()
+  await page.getByRole('button', { name: 'Всегда текст' }).click()
+  await expect(page.locator('canvas')).toHaveCount(0)
+  // Даём долететь уже назначенному кадру и замеряем.
+  await page.waitForTimeout(200)
+  const stopped = await frames()
+  await page.waitForTimeout(600)
+  expect(await frames(), 'после выключения сцены кадры не запрашиваются').toBe(stopped)
+})
+
+test('без WebGL игра идёт текстом, а не падает', async ({ page }) => {
+  // Убираем WebGL целиком, ещё до загрузки приложения.
+  await page.addInitScript(() => {
+    const proto = HTMLCanvasElement.prototype as unknown as Record<string, unknown>
+    const original = proto.getContext as (...a: unknown[]) => unknown
+    proto.getContext = function (this: HTMLCanvasElement, id: string, ...rest: unknown[]) {
+      if (String(id).includes('webgl')) return null
+      return original.call(this, id, ...rest)
+    }
+  })
+  const errors = await openGame(page)
+  await expect(page.locator('canvas')).toHaveCount(0)
+  // Игра осталась играбельной: боевая панель на месте сцены.
+  await expect(page.locator('main')).toContainText('Урон в секунду')
+  expect(errors).toEqual([])
+})
+
+test('если контекст не дали в последний момент — понятное сообщение', async ({ page }) => {
+  // Проверка проходит (WebGL «есть»), а рендереру контекст уже не достаётся:
+  // так ведёт себя браузер, у которого кончился лимит живых контекстов.
+  await page.addInitScript(() => {
+    const proto = HTMLCanvasElement.prototype as unknown as Record<string, unknown>
+    const original = proto.getContext as (...a: unknown[]) => unknown
+    let webglRequests = 0
+    proto.getContext = function (this: HTMLCanvasElement, id: string, ...rest: unknown[]) {
+      if (String(id).includes('webgl')) {
+        webglRequests += 1
+        // Первый запрос — проверка доступности из stores/ui.ts, её пропускаем.
+        if (webglRequests > 1) return null
+      }
+      return original.call(this, id, ...rest)
+    }
+  })
+  await openGame(page)
+  await expect(page.locator('main')).toContainText('Не удалось запустить 3D-сцену')
+  // И играть по-прежнему можно.
+  await expect(page.locator('main')).toContainText('Урон в секунду')
+})
+
+test('двадцать смен зоны не растят память видеокарты', async ({ page }) => {
+  // ГЛАВНАЯ проверка обстановки зон. Three.js не освобождает память GPU сам:
+  // забытый dispose() при смене зоны — самая частая и коварная утечка,
+  // на десктопе незаметная, на телефоне роняющая игру.
+  //
+  // Меряем ВОЗВРАТ В ТУ ЖЕ ЗОНУ: у зон разное число пропсов, и сравнивать
+  // «был в лугу — стал в каменоломне» бессмысленно. Одна и та же обстановка
+  // на экране обязана стоить той же памяти, сколько бы раз её ни пересобрали.
+  await openGame(page)
+  await expect(page.locator(SCENE_READY)).toBeAttached({ timeout: 30_000 })
+  await page.locator('nav[aria-label="Разделы"] button').nth(3).click()
+
+  const travel = page.locator('button:has-text("Отправиться")')
+  const names = await page
+    .locator('li:has(button:has-text("Отправиться")) .name')
+    .allInnerTexts()
+  expect(names.length, 'нужно хотя бы две доступные зоны').toBeGreaterThan(1)
+  const [first, second] = names
+
+  async function goTo(zone: string): Promise<void> {
+    const row = page.locator('li').filter({ hasText: zone })
+    const button = row.locator('button:has-text("Отправиться")')
+    if ((await button.count()) > 0) await button.first().click()
+  }
+
+  // Прогрев: побывать в обеих зонах, вернуться в первую и запомнить.
+  await goTo(second)
+  await page.waitForTimeout(200)
+  await goTo(first)
+  await page.waitForTimeout(1500)
+  const before = await probe(page, 'geometries')
+
+  for (let i = 0; i < 20; i += 1) {
+    await goTo(i % 2 === 0 ? second : first)
+    await page.waitForTimeout(90)
+  }
+  // Заканчиваем ровно там же, где начали.
+  await goTo(first)
+  await page.waitForTimeout(1500)
+  const after = await probe(page, 'geometries')
+
+  console.log(`geometries: было ${before}, стало ${after}`)
+  expect(after, `было ${before}, стало ${after}`).toBeLessThanOrEqual(before + 1)
+  void travel
+})

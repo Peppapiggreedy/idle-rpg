@@ -1,6 +1,7 @@
 // Дерево талантов — данные. Ни одного «если талант такой-то» в логике:
 // талант либо выдаёт модификаторы в конвейер статов, либо поднимает флаг,
 // а поведение по флагу описано там же, в данных.
+import type { IconName } from '../ui/icons/manifest'
 import { Decimal } from '../game/numbers'
 import type { StatModifier } from '../game/stats'
 import type { AbilityEffect } from './abilities'
@@ -38,6 +39,8 @@ export type TalentEffect =
 export interface TalentDef {
   id: string
   name: string
+  /** Иконка. Тип выведен из реестра: опечатка — ошибка проверки типов. */
+  icon: IconName
   branch: BranchId
   row: number // ряд в ветке, 1 — верхний
   maxRank: number
@@ -48,6 +51,7 @@ export interface TalentDef {
 export const TALENTS: TalentDef[] = [
   {
     id: 'honed-edge',
+    icon: 'talent-honed-edge',
     name: 'Отточенный клинок',
     branch: 'fury',
     row: 1,
@@ -60,6 +64,7 @@ export const TALENTS: TalentDef[] = [
   },
   {
     id: 'keen-eye',
+    icon: 'talent-keen-eye',
     name: 'Острый глаз',
     branch: 'fury',
     row: 2,
@@ -72,6 +77,7 @@ export const TALENTS: TalentDef[] = [
   },
   {
     id: 'savage-blows',
+    icon: 'talent-savage-blows',
     name: 'Свирепые удары',
     branch: 'fury',
     row: 3,
@@ -84,6 +90,7 @@ export const TALENTS: TalentDef[] = [
   },
   {
     id: 'rupture',
+    icon: 'talent-rupture',
     name: 'Рваный выпад',
     branch: 'fury',
     row: 4,
@@ -104,6 +111,7 @@ export const TALENTS: TalentDef[] = [
   },
   {
     id: 'thick-hide',
+    icon: 'talent-thick-hide',
     name: 'Толстая шкура',
     branch: 'endurance',
     row: 1,
@@ -116,6 +124,7 @@ export const TALENTS: TalentDef[] = [
   },
   {
     id: 'second-wind',
+    icon: 'talent-second-wind',
     name: 'Второе дыхание',
     branch: 'endurance',
     row: 2,
@@ -128,6 +137,7 @@ export const TALENTS: TalentDef[] = [
   },
   {
     id: 'clear-mind',
+    icon: 'talent-clear-mind',
     name: 'Ясный ум',
     branch: 'endurance',
     row: 3,
@@ -143,6 +153,7 @@ export const TALENTS: TalentDef[] = [
   },
   {
     id: 'swift-return',
+    icon: 'talent-swift-return',
     name: 'Скорое возвращение',
     branch: 'endurance',
     row: 4,

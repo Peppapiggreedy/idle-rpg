@@ -1,3 +1,4 @@
+import type { IconName } from '../ui/icons/manifest'
 // TypeScript-типы и интерфейсы игры. Decimal берётся только из game/numbers.
 // Игровые величины — Decimal; служебные (version, lastTimestamp, счётчики) — number.
 import type { Decimal } from '../game/numbers'
@@ -25,6 +26,8 @@ export type MonsterTemplate = Omit<Monster, 'currentHp' | 'swingProgress'>
 export interface UpgradeDef {
   id: string
   name: string
+  /** Иконка. Тип выведен из реестра: опечатка — ошибка проверки типов. */
+  icon: IconName
   baseCost: Decimal
   costGrowth: Decimal
   damageBonus: Decimal // прибавка к урону за удар за одну покупку

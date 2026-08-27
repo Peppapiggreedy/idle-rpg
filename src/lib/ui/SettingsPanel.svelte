@@ -8,6 +8,7 @@
     hasWebgl,
     isTextMode,
     setFpsLimit,
+    sceneUnavailable,
     setTextMode,
     uiSettings,
     type FpsLimit,
@@ -46,7 +47,7 @@
   // игрок видит на экране, а не то, что записано в настройках.
   const sceneOff = isSceneDisabled()
   const webgl = hasWebgl()
-  const textNow = $derived(sceneOff || isTextMode($uiSettings))
+  const textNow = $derived(sceneOff || $sceneUnavailable || isTextMode($uiSettings))
 
   const TEXT_MODE_LABEL: Record<TextModeSetting, string> = {
     auto: 'Как получится',
@@ -81,6 +82,9 @@
       {#if sceneOff}
         Сейчас сцена выключена параметром адреса <code>?scene=off</code>, и он
         сильнее любой настройки.
+      {:else if $sceneUnavailable}
+        Сцена не запустилась в этом браузере, поэтому идёт текст. Перезагрузка
+        страницы попробует ещё раз.
       {:else if webgl}
         WebGL в этом браузере есть.
       {:else}
@@ -105,6 +109,7 @@
     <p class="hint">
       Лимит бережёт батарею и слабые машины. На скорость игры он не влияет:
       игровое время идёт фиксированным шагом и от частоты кадров не зависит.
+      По умолчанию 30 — боевой сцене больше и не нужно.
     </p>
     <div class="row">
       {#each FPS_LIMITS as limit (String(limit))}
