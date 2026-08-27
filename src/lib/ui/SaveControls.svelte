@@ -1,9 +1,12 @@
 <script lang="ts">
   import { exportSaveString, importSaveString } from '../stores/game'
+  import { Button } from './kit'
 
   let copied = $state(false)
+  let copying = $state(false)
 
   async function onExport() {
+    copying = true
     const save = exportSaveString()
     try {
       await navigator.clipboard.writeText(save)
@@ -12,6 +15,8 @@
     } catch {
       // Буфер обмена недоступен (например, без HTTPS) — даём скопировать руками.
       window.prompt('Скопируй строку сейва:', save)
+    } finally {
+      copying = false
     }
   }
 
@@ -22,31 +27,16 @@
 </script>
 
 <div class="controls">
-  <button type="button" onclick={onExport}>
+  <Button loading={copying} onclick={onExport}>
     {copied ? 'Скопировано ✓' : 'Экспорт сейва'}
-  </button>
-  <button type="button" onclick={onImport}>Импорт сейва</button>
+  </Button>
+  <Button onclick={onImport}>Импорт сейва</Button>
 </div>
 
 <style>
   .controls {
     display: flex;
     justify-content: center;
-    gap: 0.75rem;
-  }
-  button {
-    font: inherit;
-    font-size: 0.85rem;
-    padding: 0.4em 1em;
-    border: 1px solid #8886;
-    border-radius: 8px;
-    background: transparent;
-    color: inherit;
-    cursor: pointer;
-    opacity: 0.85;
-  }
-  button:hover {
-    border-color: var(--color-gold);
-    opacity: 1;
+    gap: var(--space-3);
   }
 </style>

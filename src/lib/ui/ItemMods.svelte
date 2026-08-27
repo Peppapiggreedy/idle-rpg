@@ -50,13 +50,14 @@
 <style>
   ul {
     list-style: none;
-    margin: 0.15rem 0 0;
+    margin: 0;
     padding: 0;
-    font-size: 0.75rem;
-    opacity: 0.85;
+    font-size: var(--text-xs);
+    color: var(--c-text-muted);
   }
+  /* База боя (скорость и урон оружия) — не прибавка, а замена: выделяем. */
   li.base {
-    opacity: 1;
-    font-weight: 600;
+    color: var(--c-text);
+    font-weight: var(--weight-bold);
   }
 </style>

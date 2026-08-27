@@ -5,6 +5,15 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Idle RPG</title>
+    <!-- Кириллица — почти весь текст игры, поэтому её подмножество грузим
+         заранее: иначе первый кадр рисуется системным шрифтом и прыгает. -->
+    <link
+      rel="preload"
+      as="font"
+      type="font/woff2"
+      href="/fonts/inter-cyrillic.woff2"
+      crossorigin
+    />
   </head>
   <body>
     <div id="app"></div>

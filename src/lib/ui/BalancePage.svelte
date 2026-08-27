@@ -13,6 +13,7 @@
   import { ZONES } from '../data/zones'
   import { WEAPONS, WEAPON_BY_ID } from '../data/items'
   import { ABILITY_BY_ID } from '../data/abilities'
+  import { Button, NumberText, Panel, Tag } from './kit'
 
   const HOURS = [1, 2, 4, 8]
   let hours = $state(1)
@@ -122,16 +123,20 @@
   <div class="controls">
     <span class="label">Часов игрового времени на строку:</span>
     {#each HOURS as h (h)}
-      <button
-        type="button"
-        class:active={hours === h}
+      <Button
+        variant={hours === h ? 'primary' : 'ghost'}
+        size="sm"
         disabled={running}
-        onclick={() => (hours = h)}>{h}</button
+        onclick={() => (hours = h)}
       >
+        {h}
+      </Button>
     {/each}
-    <button type="button" class="run" disabled={running} onclick={run}>
-      {running ? 'Считаю…' : 'Посчитать'}
-    </button>
+    <span class="run">
+      <Button variant="primary" loading={running} onclick={run}>
+        {running ? 'Считаю…' : 'Посчитать'}
+      </Button>
+    </span>
   </div>
   <p class="warn">
     Счёт идёт в этой же вкладке: {hours} ч на строку — это примерно {(hours * 0.5).toFixed(
@@ -162,10 +167,16 @@
           {#each zoneRows as row (row.name)}
             <tr>
               <td class="name">{row.name}</td>
-              <td>{formatNumber(row.result.killsPerHour)}</td>
-              <td>{formatNumber(row.result.goldPerHour)}</td>
-              <td>{formatNumber(row.result.xpPerHour)}</td>
-              <td class:bad={row.result.deathsPerHour > 0}>{row.result.deathsPerHour.toFixed(1)}</td>
+              <td><NumberText value={row.result.killsPerHour} /></td>
+              <td><NumberText value={row.result.goldPerHour} tone="gold" /></td>
+              <td><NumberText value={row.result.xpPerHour} tone="xp" /></td>
+              <td>
+                <NumberText
+                  value={row.result.deathsPerHour}
+                  decimals={1}
+                  tone={row.result.deathsPerHour > 0 ? 'damage' : 'plain'}
+                />
+              </td>
               <td>{minutes(row.result.secondsToNextLevel)}</td>
               <td>{row.result.finalLevel}</td>
             </tr>
@@ -198,19 +209,23 @@
             <tr>
               <td class="name">{row.name}</td>
               <td>{row.speed} с</td>
-              <td>{formatNumber(row.result.killsPerHour)}</td>
-              <td>{formatNumber(row.result.goldPerHour)}</td>
+              <td><NumberText value={row.result.killsPerHour} /></td>
+              <td><NumberText value={row.result.goldPerHour} tone="gold" /></td>
             </tr>
           {/each}
         </tbody>
       </table>
     </div>
     {#if weaponSpread !== null}
-      <p class="verdict" class:bad={weaponSpread > BALANCE_PRESET.weaponSpreadLimit}>
-        Разброс {percent(weaponSpread)}
+      <p class="verdict">
+        <Tag
+          tone={weaponSpread > BALANCE_PRESET.weaponSpreadLimit ? 'damage' : 'accent'}
+          size="md"
+          label="разброс {percent(weaponSpread)}"
+        />
         {weaponSpread > BALANCE_PRESET.weaponSpreadLimit
-          ? '— выбор оружия схлопнулся, одно строго лучше остальных.'
-          : '— выбор оружия честный.'}
+          ? 'выбор оружия схлопнулся, одно строго лучше остальных.'
+          : 'выбор оружия честный.'}
       </p>
     {/if}
   {/if}
@@ -238,12 +253,14 @@
             <tr>
               <td class="name">{row.name}</td>
               <td>{row.speed} с</td>
-              <td>{formatNumber(row.result.abilityDamage)}</td>
-              <td>{formatNumber(row.result.manaSpent)}</td>
-              <td class="strong">
-                {row.result.damagePerMana
-                  ? formatNumber(row.result.damagePerMana)
-                  : '—'}
+              <td><NumberText value={row.result.abilityDamage} /></td>
+              <td><NumberText value={row.result.manaSpent} tone="mana" /></td>
+              <td>
+                {#if row.result.damagePerMana}
+                  <NumberText value={row.result.damagePerMana} bold tone="accent" />
+                {:else}
+                  —
+                {/if}
               </td>
             </tr>
           {/each}
@@ -262,69 +279,54 @@
     <p class="note">Готово. Поменяй число часов и посчитай ещё раз, если нужна точность.</p>
   {/if}
 
-  <p class="back"><a href="./?debug=1">← вернуться в игру</a></p>
+  <p class="back">
+    <a href="./?debug=1">← вернуться в игру</a> ·
+    <a href="./ui?debug=1">витрина интерфейса →</a>
+  </p>
 </main>
 
 <style>
   main {
-    max-width: 52rem;
+    max-width: 56rem;
     margin: 0 auto;
-    padding: 2.5rem 1.5rem;
+    padding: var(--space-6) var(--space-4);
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--space-3);
     text-align: left;
   }
   h1 {
     margin: 0;
+    font-size: var(--text-2xl);
+    line-height: var(--leading-tight);
   }
   h2 {
-    margin: 1rem 0 0;
-    font-size: 1.05rem;
+    margin: var(--space-4) 0 0;
+    font-size: var(--text-lg);
   }
   .lead,
   .note,
   .warn {
     margin: 0;
-    font-size: 0.85rem;
-    opacity: 0.75;
+    font-size: var(--text-sm);
+    color: var(--c-text-muted);
   }
   .warn {
-    color: #d4a017;
-    opacity: 1;
+    color: var(--c-warning);
   }
   .controls {
     display: flex;
     align-items: center;
-    gap: 0.4rem;
+    gap: var(--space-1);
     flex-wrap: wrap;
-    margin-top: 0.5rem;
+    margin-top: var(--space-2);
   }
   .label {
-    font-size: 0.85rem;
-    opacity: 0.75;
+    font-size: var(--text-sm);
+    color: var(--c-text-muted);
   }
-  button {
-    border: 1px solid #8886;
-    border-radius: 6px;
-    padding: 0.3rem 0.7rem;
-    background: transparent;
-    color: inherit;
-    cursor: pointer;
-    font: inherit;
-    font-size: 0.85rem;
-  }
-  button.active {
-    border-color: #4caf50;
-    background: #4caf5022;
-  }
-  button.run {
+  .run {
     margin-left: auto;
-    border-color: #4caf50;
-  }
-  button:disabled {
-    opacity: 0.5;
-    cursor: default;
   }
   .scroll {
     overflow-x: auto;
@@ -332,40 +334,34 @@
   table {
     border-collapse: collapse;
     width: 100%;
-    font-size: 0.85rem;
-    font-variant-numeric: tabular-nums;
+    font-size: var(--text-sm);
   }
   th,
   td {
-    padding: 0.35rem 0.6rem;
+    padding: var(--space-1) var(--space-3);
     text-align: right;
-    border-bottom: 1px solid #8883;
+    border-bottom: 1px solid var(--c-border);
     white-space: nowrap;
   }
   th {
-    font-weight: 600;
-    opacity: 0.7;
+    font-weight: var(--weight-medium);
+    color: var(--c-text-faint);
+    font-size: var(--text-xs);
   }
   th:first-child,
   td.name {
     text-align: left;
   }
-  td.bad {
-    color: #e57373;
-  }
-  td.strong {
-    font-weight: 600;
-  }
   .verdict {
-    margin: 0.25rem 0 0;
-    font-size: 0.85rem;
-    color: #4caf50;
-  }
-  .verdict.bad {
-    color: #e57373;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--text-sm);
+    color: var(--c-text-muted);
   }
   .back {
-    margin-top: 1.5rem;
-    font-size: 0.85rem;
+    margin-top: var(--space-5);
+    font-size: var(--text-sm);
   }
 </style>

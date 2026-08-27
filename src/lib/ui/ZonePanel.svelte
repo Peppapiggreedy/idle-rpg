@@ -3,6 +3,7 @@
   import { formatNumber, forecastAllZones, type ZoneForecast, type ZoneVerdict } from '../game'
   import { ZONES, ZONE_BY_ID } from '../data/zones'
   import { gameState, travelToZone } from '../stores/game'
+  import { Button, NumberText, Panel, Tag } from './kit'
 
   const forecasts = $derived(forecastAllZones($gameState))
   const byId = $derived(new Map(forecasts.map((f) => [f.zoneId, f])))
@@ -50,27 +51,31 @@
   }
 </script>
 
-<section class="zones">
-  <h2>Зоны</h2>
+<Panel title="Зоны">
   <ul>
     {#each ZONES as zone (zone.id)}
       {@const f = byId.get(zone.id)}
       {#if f}
-        <li class="zone {f.verdict}" class:current={zone.id === $gameState.currentZoneId} class:locked={!f.unlocked}>
+        <li
+          class="zone {f.verdict}"
+          class:current={zone.id === $gameState.currentZoneId}
+          class:locked={!f.unlocked}
+        >
           <div class="head">
             <span class="name">{zone.name}</span>
             <span class="verdict">{VERDICT_LABEL[f.verdict]}</span>
           </div>
           <div class="facts">
-            Мобы {zone.monsterLevelRange.min}–{zone.monsterLevelRange.max} ур. ·
-            награда ×{zone.rewardMultiplier.toFixed(1)} ·
-            {formatNumber(f.goldPerHour)} золота/ч · {formatNumber(f.xpPerHour)} опыта/ч
+            Мобы {zone.monsterLevelRange.min}–{zone.monsterLevelRange.max} ур. · награда ×{zone.rewardMultiplier.toFixed(
+              1,
+            )} · <NumberText value={f.goldPerHour} tone="gold" /> золота/ч ·
+            <NumberText value={f.xpPerHour} tone="xp" /> опыта/ч
           </div>
           <div class="warning">{warning(f)}, {toughness(f)}.</div>
           {#if zone.id === $gameState.currentZoneId}
-            <span class="here">Ты здесь</span>
+            <Tag tone="accent" label="ты здесь" />
           {:else if f.unlocked}
-            <button type="button" onclick={() => travelToZone(zone.id)}>Отправиться</button>
+            <Button size="sm" onclick={() => travelToZone(zone.id)}>Отправиться</Button>
           {:else}
             <span class="lock">Откроется с {zone.unlockRequirement} уровня</span>
           {/if}
@@ -78,54 +83,59 @@
       {/if}
     {/each}
   </ul>
-  <p class="hint">
-    Смерть отбрасывает в последнюю зону, где ты выживал
-    {#if $gameState.lastSurvivedZoneId}
-      — сейчас это «{ZONE_BY_ID[$gameState.lastSurvivedZoneId]?.name}».
-    {:else}
-      ; пока ты нигде никого не убил, так что вернёшься на старт.
-    {/if}
-  </p>
-</section>
+
+  {#snippet footer()}
+    <p class="hint">
+      Смерть отбрасывает в последнюю зону, где ты выживал
+      {#if $gameState.lastSurvivedZoneId}
+        — сейчас это «{ZONE_BY_ID[$gameState.lastSurvivedZoneId]?.name}».
+      {:else}
+        ; пока ты нигде никого не убил, так что вернёшься на старт.
+      {/if}
+    </p>
+  {/snippet}
+</Panel>
 
 <style>
-  h2 {
-    margin: 0 0 0.75rem;
-    font-size: 1.1rem;
-  }
   ul {
     list-style: none;
     margin: 0;
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
+  /* Цвет вердикта — семантика: «по силам» зелёное, «смертельно» красное.
+     Полоска слева красится им же, чтобы список читался одним взглядом. */
   .zone {
-    border: 1px solid #8884;
-    border-left: 4px solid var(--verdict-color);
-    border-radius: 8px;
-    padding: 0.6rem 0.7rem;
-    text-align: left;
-    font-size: 0.85rem;
+    border: 1px solid var(--c-border);
+    border-left: var(--space-1) solid var(--verdict-color);
+    border-radius: var(--radius-md);
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--text-sm);
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    align-items: flex-start;
+    gap: var(--space-1);
   }
   .zone.safe {
-    --verdict-color: #4caf50;
+    --verdict-color: var(--c-heal);
   }
   .zone.risky {
-    --verdict-color: #d4a017;
+    --verdict-color: var(--c-warning);
   }
   .zone.deadly {
-    --verdict-color: #e57373;
+    --verdict-color: var(--c-damage);
   }
+  /* «Не по зубам» — тот же красный, что и «смертельно»: затемнённый красный
+     на тёмном фоне просто не читается. Разница передаётся заливкой всей
+     карточки — зона плохая целиком, а не только её вердикт. */
   .zone.hopeless {
-    --verdict-color: #b71c1c;
+    --verdict-color: var(--c-damage);
+    background: color-mix(in srgb, var(--c-damage) var(--tint-weak), transparent);
   }
   .zone.current {
-    background: color-mix(in srgb, var(--verdict-color) 10%, transparent);
+    background: color-mix(in srgb, var(--verdict-color) var(--tint), transparent);
   }
   .zone.locked {
     opacity: 0.55;
@@ -134,50 +144,30 @@
     display: flex;
     justify-content: space-between;
     align-items: baseline;
-    gap: 0.5rem;
+    gap: var(--space-2);
+    width: 100%;
   }
   .name {
-    font-weight: 600;
-    font-size: 0.95rem;
+    font-weight: var(--weight-bold);
   }
   .verdict {
     color: var(--verdict-color);
-    font-size: 0.78rem;
+    font-size: var(--text-2xs);
     text-transform: uppercase;
-    letter-spacing: 0.04em;
+    letter-spacing: var(--tracking-wide);
   }
   .facts {
-    opacity: 0.75;
-    font-size: 0.78rem;
+    color: var(--c-text-muted);
+    font-size: var(--text-xs);
   }
   .warning {
-    font-size: 0.8rem;
+    font-size: var(--text-sm);
   }
-  .here,
   .lock {
-    font-size: 0.78rem;
-    opacity: 0.7;
-    margin-top: 0.15rem;
+    font-size: var(--text-xs);
+    color: var(--c-text-faint);
   }
   .hint {
-    margin: 0.7rem 0 0;
-    font-size: 0.78rem;
-    opacity: 0.55;
-    text-align: left;
-  }
-  button {
-    font: inherit;
-    font-size: 0.78rem;
-    margin-top: 0.2rem;
-    align-self: flex-start;
-    padding: 0.25em 0.7em;
-    border: 1px solid #8886;
-    border-radius: 6px;
-    background: transparent;
-    color: inherit;
-    cursor: pointer;
-  }
-  button:hover {
-    border-color: var(--verdict-color);
+    margin: 0;
   }
 </style>

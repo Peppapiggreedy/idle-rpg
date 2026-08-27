@@ -1,8 +1,8 @@
 <script lang="ts">
   import { estimateCombatRate, formatNumber } from '../game'
   import { gameState } from '../stores/game'
-  import { RARITY_BY_ID } from '../data/rarity'
   import { ABILITY_BY_ID } from '../data/abilities'
+  import { NumberText, Panel, StatBar, Tooltip, rarityName } from './kit'
   import type { CombatEvent } from '../types'
 
   // Весь текст боевого лога живёт здесь: логика отдаёт только события.
@@ -25,7 +25,7 @@
       case 'levelup':
         return `Новый уровень: ${formatNumber(e.level)}!`
       case 'loot':
-        return `Выпало: ${e.item.name} [${RARITY_BY_ID[e.item.rarity].name}]`
+        return `Выпало: ${e.item.name} [${rarityName(e.item.rarity)}]`
       case 'spawn':
         return `Появился ${e.monsterName}`
       case 'hurt':
@@ -62,52 +62,55 @@
         ),
   )
 
-  const hpPercent = $derived(
-    Math.max(
-      0,
-      Math.min(
-        100,
-        $gameState.monster.currentHp.div($gameState.monster.maxHp).times(100).toNumber(),
-      ),
-    ),
-  )
 </script>
 
-<section class="combat">
-  <div class="stats">
-    <div class="stat">
-      <span class="label">Золото</span>
-      <span class="value gold">{formatNumber($gameState.gold)}</span>
+<Panel title={$gameState.monster.name} subtitle="{$gameState.monster.level} уровень">
+  {#snippet header()}
+    <div class="totals">
+      <div class="stat">
+        <span class="label">Золото</span>
+        <NumberText value={$gameState.gold} tone="gold" size="xl" />
+      </div>
+      <div class="stat">
+        <span class="label">Сила атаки</span>
+        <NumberText value={$gameState.stats.attackPower} size="xl" />
+      </div>
     </div>
-    <div class="stat">
-      <span class="label">Урон за удар</span>
-      <span class="value">{formatNumber($gameState.stats.attackPower)}</span>
-    </div>
-    <div class="stat wide">
-      <span class="label">Урон в секунду</span>
-      <span class="value">
-        <span class="auto" title="Столько герой выдаёт сам, автокастом: он реагирует на полсекунды позже и не придерживает кулдауны">
-          авто {formatNumber(autoRate.damagePerSecond)}
-        </span>
-        <span class="sep">·</span>
-        <span class="manual" title="Столько выходит, если жать умения самому: без задержки реакции и придерживая бурст">
-          сейчас {formatNumber(manualRate.damagePerSecond)}
-        </span>
-      </span>
-      {#if attentionGain > 0}
-        <span class="attention">внимание даёт +{attentionGain}%</span>
-      {/if}
-    </div>
-  </div>
+  {/snippet}
 
-  <div class="monster">
-    <h2>{$gameState.monster.name} <span class="level">{$gameState.monster.level} ур.</span></h2>
-    <div class="hp-bar" role="progressbar" aria-valuenow={hpPercent} aria-valuemin="0" aria-valuemax="100">
-      <div class="hp-fill" style="width: {hpPercent}%"></div>
-    </div>
-    <div class="hp-text">
-      {formatNumber($gameState.monster.currentHp)} / {formatNumber($gameState.monster.maxHp)}
-    </div>
+  <StatBar
+    value={$gameState.monster.currentHp.toNumber()}
+    max={$gameState.monster.maxHp.toNumber()}
+    tone="damage"
+    size="lg"
+    label="Здоровье"
+    valueLabel="{formatNumber($gameState.monster.currentHp)} / {formatNumber(
+      $gameState.monster.maxHp,
+    )}"
+  />
+
+  <div class="dps">
+    <span class="label">Урон в секунду</span>
+    <span class="dps-values">
+      <Tooltip
+        text={'Столько герой выдаёт сам, автокастом: он реагирует на полсекунды позже и не придерживает кулдауны.'}
+        width="wide"
+      >
+        <span class="auto">авто <NumberText value={autoRate.damagePerSecond} /></span>
+      </Tooltip>
+      <span class="sep">·</span>
+      <Tooltip
+        text={'Столько выходит, если жать умения самому: без задержки реакции и придерживая бурст.'}
+        width="wide"
+      >
+        <span class="manual">
+          сейчас <NumberText value={manualRate.damagePerSecond} tone="xp" bold />
+        </span>
+      </Tooltip>
+    </span>
+    {#if attentionGain > 0}
+      <span class="attention">внимание даёт +{attentionGain}%</span>
+    {/if}
   </div>
 
   <ul class="log">
@@ -120,103 +123,66 @@
       </li>
     {/each}
   </ul>
-</section>
+</Panel>
 
 <style>
-  .stat.wide {
-    grid-column: 1 / -1;
-  }
-  .stat .auto {
-    opacity: 0.75;
-  }
-  .stat .sep {
-    opacity: 0.4;
-    margin: 0 0.25em;
-  }
-  .stat .manual {
-    color: var(--color-xp);
-  }
-  .attention {
-    display: block;
-    font-size: 0.7rem;
-    opacity: 0.55;
-  }
-
-  h2 .level {
-    font-size: 0.7em;
-    font-weight: 400;
-    opacity: 0.6;
-  }
-
-  .combat {
+  .totals {
     display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
-  }
-
-  .stats {
-    display: flex;
-    justify-content: center;
-    gap: 2rem;
+    gap: var(--space-5);
     flex-wrap: wrap;
   }
   .stat {
     display: flex;
     flex-direction: column;
-    gap: 0.15rem;
+    gap: var(--space-1);
   }
   .label {
-    font-size: 0.8rem;
-    opacity: 0.7;
-  }
-  .value {
-    font-size: 1.3rem;
-    font-variant-numeric: tabular-nums;
-  }
-  .value.gold {
-    color: var(--color-gold);
+    font-size: var(--text-xs);
+    color: var(--c-text-faint);
   }
 
-  .monster h2 {
-    margin: 0 0 0.5rem;
+  .dps {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+    font-size: var(--text-sm);
   }
-  .hp-bar {
-    height: 1.1rem;
-    border: 1px solid #8886;
-    border-radius: 6px;
-    overflow: hidden;
-    background: rgba(136, 136, 136, 0.15);
+  .dps-values {
+    display: inline-flex;
+    align-items: baseline;
+    gap: var(--space-1);
   }
-  .hp-fill {
-    height: 100%;
-    background: #c0392b;
-    transition: width 0.1s linear;
+  .auto {
+    color: var(--c-text-muted);
   }
-  .hp-text {
-    margin-top: 0.3rem;
-    font-size: 0.9rem;
-    font-variant-numeric: tabular-nums;
-    opacity: 0.85;
+  .sep {
+    color: var(--c-text-faint);
+  }
+  .attention {
+    font-size: var(--text-xs);
+    color: var(--c-text-faint);
   }
 
   .log {
-    margin: 0 auto;
+    margin: 0;
     padding: 0;
     list-style: none;
-    font-size: 0.9rem;
-    min-height: calc(8 * 1.5em);
+    font-size: var(--text-sm);
+    /* Высота под восемь строк лога: без неё панель прыгает, пока лог копится. */
+    min-height: calc(8 * var(--leading-normal) * var(--text-sm));
   }
   .log li {
-    opacity: 0.9;
+    color: var(--c-text-muted);
   }
-  .log li:not(:first-child) {
-    opacity: 0.55;
+  .log li:first-child {
+    color: var(--c-text);
   }
   .log li.crit {
-    color: var(--color-gold);
-    font-weight: 600;
+    color: var(--c-gold);
+    font-weight: var(--weight-bold);
   }
   .log li.hurt {
-    color: #c0392b;
+    color: var(--c-damage);
   }
 </style>

@@ -12,6 +12,7 @@
     setSimulationSpeed,
     simSpeed,
   } from '../stores/game'
+  import { Button } from './kit'
 
   // Панель существует только с ?debug=1 — без него не рендерится вообще.
   const enabled = new URLSearchParams(window.location.search).get('debug') === '1'
@@ -66,13 +67,9 @@
 
     <div class="row speeds">
       {#each SPEEDS as speed (speed)}
-        <button
-          type="button"
-          class:active={$simSpeed === speed}
-          onclick={() => setSimulationSpeed(speed)}
-        >
-          ×{speed}
-        </button>
+        <span class="speed" class:active={$simSpeed === speed}>
+          <Button size="sm" onclick={() => setSimulationSpeed(speed)}>×{speed}</Button>
+        </span>
       {/each}
     </div>
 
@@ -84,88 +81,90 @@
     </div>
 
     <div class="row actions">
-      <button type="button" onclick={debugAddLevel}>+1 уровень</button>
-      <button type="button" onclick={() => debugAddGold(1000)}>+1000 золота</button>
-      <button type="button" onclick={debugKillMonster}>убить моба</button>
-      <button type="button" class="danger" onclick={onReset}>сброс сейва</button>
+      <Button size="sm" onclick={debugAddLevel}>+1 уровень</Button>
+      <Button size="sm" onclick={() => debugAddGold(1000)}>+1000 золота</Button>
+      <Button size="sm" onclick={debugKillMonster}>убить моба</Button>
+      <Button size="sm" variant="danger" onclick={onReset}>сброс сейва</Button>
     </div>
 
     <div class="row offline">
       <input type="number" min="0.1" step="0.5" bind:value={offlineHours} aria-label="Часов оффлайна" />
-      <button type="button" onclick={() => debugSimulateOffline(offlineHours)}>
+      <Button size="sm" onclick={() => debugSimulateOffline(offlineHours)}>
         симулировать {offlineHours} ч оффлайна
-      </button>
+      </Button>
     </div>
 
-    <div class="row">
+    <div class="row links">
       <a href="./balance?debug=1">прогон баланса →</a>
+      <a href="./ui?debug=1">витрина интерфейса →</a>
     </div>
   </aside>
 {/if}
 
 <style>
+  /* Отладочная панель намеренно выглядит как терминал: моноширинный шрифт
+     и акцентный цвет. Все величины — из токенов, своих чисел нет. */
   .panel {
     position: fixed;
-    left: 0.5rem;
-    bottom: 0.5rem;
+    left: var(--space-2);
+    bottom: var(--space-2);
     z-index: 90;
-    width: 15rem;
-    padding: 0.6rem 0.7rem;
+    width: 16rem;
+    padding: var(--space-2) var(--space-3);
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
-    font: 12px/1.5 ui-monospace, Consolas, monospace;
+    gap: var(--space-2);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    line-height: var(--leading-normal);
     text-align: left;
-    color: #cfc;
-    background: rgba(0, 0, 0, 0.8);
-    border: 1px solid #4a4;
-    border-radius: 8px;
-  }
-  a {
-    color: #9f9;
+    color: var(--c-text);
+    background: var(--c-surface-sunken);
+    border: 1px solid color-mix(in srgb, var(--c-accent) 45%, transparent);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-md);
   }
   .title {
-    font-weight: 700;
+    font-weight: var(--weight-bold);
     text-transform: uppercase;
-    letter-spacing: 0.1em;
-    opacity: 0.7;
+    letter-spacing: var(--tracking-wide);
+    color: var(--c-accent);
   }
   .row {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.35rem;
+    gap: var(--space-1);
   }
   .info {
     flex-direction: column;
-    gap: 0.1rem;
+    gap: 0;
+    color: var(--c-text-muted);
   }
-  button {
-    font: inherit;
-    padding: 0.2em 0.6em;
-    border: 1px solid #4a4;
-    border-radius: 5px;
-    background: transparent;
-    color: inherit;
-    cursor: pointer;
+  .links {
+    flex-direction: column;
+    gap: var(--space-1);
   }
-  button:hover {
-    background: rgba(80, 200, 80, 0.15);
-  }
-  button.active {
-    background: rgba(80, 200, 80, 0.3);
-    font-weight: 700;
-  }
-  button.danger {
-    border-color: #a44;
-    color: #fbb;
+  /* Активная скорость подсвечивается вокруг кнопки: сам примитив Button
+     про «выбран» не знает и знать не должен. */
+  .speed.active {
+    border-radius: var(--radius-sm);
+    box-shadow: 0 0 0 1px var(--c-accent);
   }
   input {
     font: inherit;
     width: 4.5rem;
-    padding: 0.2em 0.4em;
-    border: 1px solid #4a4;
-    border-radius: 5px;
+    padding: var(--space-1);
+    border: 1px solid var(--c-border-strong);
+    border-radius: var(--radius-sm);
     background: transparent;
     color: inherit;
+  }
+
+  /* На узком экране панель занимала бы пол-экрана поверх игры. */
+  @media (max-width: 719px) {
+    .panel {
+      right: var(--space-2);
+      width: auto;
+    }
   }
 </style>
