@@ -36,6 +36,10 @@
   import { createFrameGate, SCENE_FPS } from './frameGate'
   import { sceneModel, type SceneModel } from './model'
   import { readScenePalette } from './palette'
+  import { CLEAR_RADIUS, enrageTintAmount, placeProps } from './scenery'
+  import { DUNGEON_SCENE, ENRAGE_TINT, ENRAGE_TINT_MAX, type SceneConfig } from '../data/scenery'
+  import { ZONE_BY_ID } from '../data/zones'
+  import { activeDungeon, currentBoss, enrageMultiplier } from '../game'
 
   // --- Раскладка сцены. Числа здесь — про картинку, не про баланс. ---
 
@@ -70,8 +74,25 @@
   // Модель сцены — снимок состояния. Стор читаем подпиской, а не $gameState:
   // цикл рендера живёт вне реактивности Svelte и ему нужно просто значение.
   let model: SceneModel | null = null
+  // Какой вид сейчас нужен. В данже он свой и всегда перекрывает зону:
+  // под землёй, а не в лощинах, даже если вход был оттуда.
+  let wantedSceneId = 'shepherds-meadow'
+  let wantedConfig: SceneConfig | null = null
+  let enrage = 1
   const unsubscribeState = gameState.subscribe((s) => {
     model = sceneModel(s)
+    const dungeon = activeDungeon(s)
+    if (dungeon) {
+      wantedSceneId = `dungeon:${dungeon.id}`
+      wantedConfig = DUNGEON_SCENE
+      const boss = currentBoss(s)
+      enrage = boss && s.dungeonRun ? enrageMultiplier(boss, s.dungeonRun.fightMs) : 1
+    } else {
+      const zone = ZONE_BY_ID[s.currentZoneId]
+      wantedSceneId = s.currentZoneId
+      wantedConfig = zone?.scene ?? null
+      enrage = 1
+    }
   })
 
   // Множитель скорости симуляции: выше ×1 всплывающих чисел нет вовсе.
@@ -171,31 +192,107 @@
     renderer.setPixelRatio(Math.min(globalThis.devicePixelRatio || 1, cap))
 
     const scene = new THREE.Scene()
-    scene.background = new THREE.Color(palette.fog)
     // Экспоненциальный туман прячет край площадки: без него круг обрывается
-    // в пустоту и сразу видно, что мир кончился.
-    scene.fog = new THREE.FogExp2(palette.fog, 0.07)
+    // в пустоту и сразу видно, что мир кончился. Цвет и плотность
+    // перенастраиваются под зону, сам объект живёт всё время сцены.
+    const fog = new THREE.FogExp2(palette.fog, 0.07)
+    scene.fog = fog
+    scene.background = fog.color
 
     const camera = new THREE.PerspectiveCamera(CAMERA_FOV, 1, 0.1, 100)
 
     // Заливка слабая, направленный свет сильный: на матовых примитивах
     // только разница между ними и рисует объём. При ярком ambient коробки
     // становятся плоскими цветными прямоугольниками.
-    scene.add(new THREE.AmbientLight(palette.light, 0.55))
+    const ambient = new THREE.AmbientLight(palette.light, 0.55)
+    scene.add(ambient)
     const sun = new THREE.DirectionalLight(palette.light, 2.2)
     sun.position.set(4, 9, 5)
     scene.add(sun)
 
-    // Площадка: круг матовым материалом, повёрнутый в горизонт.
-    const ground = new THREE.Mesh(
-      new THREE.CircleGeometry(GROUND_RADIUS, 64),
-      new THREE.MeshLambertMaterial({ color: palette.ground }),
-    )
-    // Чуть ниже нуля: иначе основания коробок и площадка лежат в одной
-    // плоскости и мерцают друг сквозь друга (z-fighting).
-    ground.position.y = -0.01
-    ground.rotation.x = -Math.PI / 2
-    scene.add(ground)
+    // --- Обстановка зоны -------------------------------------------------
+    //
+    // Всё, что зависит от зоны, живёт в ОДНОЙ группе и выгружается целиком.
+    // Это главная ловушка three: при смене зоны браузер не освобождает ни
+    // геометрию, ни материалы — на телефоне игра падает через десяток
+    // переходов. Поэтому загрузка и выгрузка ходят строго парой.
+    let scenery: ThreeNs.Group | null = null
+    let sceneryId = ''
+
+    function unloadScenery(): void {
+      if (!scenery) return
+      scene.remove(scenery)
+      disposeSceneGraph(scenery)
+      scenery = null
+      sceneryId = ''
+    }
+
+    function propMesh(shape: string, color: number): ThreeNs.Mesh {
+      // Геометрия у каждого пропса своя: их десятки, а не тысячи, а общая
+      // геометрия потребовала бы ручного учёта ссылок при выгрузке —
+      // ровно того, на чём здесь и ошибаются.
+      const material = new THREE.MeshLambertMaterial({ color })
+      switch (shape) {
+        case 'tree':
+          return new THREE.Mesh(new THREE.ConeGeometry(0.6, 2.6, 7), material)
+        case 'crystal':
+          return new THREE.Mesh(new THREE.OctahedronGeometry(0.8, 0), material)
+        case 'stump':
+          return new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.45, 0.7, 8), material)
+        default:
+          return new THREE.Mesh(new THREE.DodecahedronGeometry(0.6, 0), material)
+      }
+    }
+
+    function loadScenery(id: string, config: SceneConfig): void {
+      if (sceneryId === id) return
+      unloadScenery()
+      const group = new THREE.Group()
+
+      const ground = new THREE.Mesh(
+        new THREE.CircleGeometry(GROUND_RADIUS, 64),
+        new THREE.MeshLambertMaterial({ color: config.groundColor }),
+      )
+      // Чуть ниже нуля: иначе основания коробок и площадка лежат в одной
+      // плоскости и мерцают друг сквозь друга (z-fighting).
+      ground.position.y = -0.01
+      ground.rotation.x = -Math.PI / 2
+      group.add(ground)
+
+      for (const prop of placeProps(config, GROUND_RADIUS)) {
+        const mesh = propMesh(prop.shape, prop.color)
+        mesh.position.set(prop.x, prop.scale * 0.9, prop.z)
+        mesh.scale.setScalar(prop.scale)
+        mesh.rotation.y = prop.rotation
+        group.add(mesh)
+      }
+
+      scene.add(group)
+      scenery = group
+      sceneryId = id
+
+      // Туман и свет — тоже часть места, но живут на самой сцене и потому
+      // не пересоздаются, а перенастраиваются.
+      fog.color.setHex(config.fogColor)
+      fog.density = config.fogDensity
+      scene.background = fog.color
+      sun.color.setHex(config.lightColor)
+      sun.intensity = config.lightIntensity
+      const rad = (config.lightAngleDeg * Math.PI) / 180
+      sun.position.set(Math.cos(rad) * 6, 9, Math.sin(rad) * 6)
+      ambient.intensity = config.ambientIntensity
+      baseFogColor = config.fogColor
+      baseAmbient = config.ambientIntensity
+    }
+
+    const tintColor = new THREE.Color(ENRAGE_TINT)
+    let fogTinted = false
+
+    // Исходные значения места: подсветка ярости подмешивается К НИМ,
+    // а не поверх уже подмешанного — иначе за минуту боя сцена уплывёт
+    // в один сплошной оранжевый.
+    let baseFogColor = palette.fog
+    let baseAmbient = 0.55
 
     // Единичные коробки: настоящий размер задаётся масштабом из модели,
     // поэтому геометрия одна на всё время жизни сцены и не пересоздаётся,
@@ -331,6 +428,24 @@
       heroFlash *= decay
       monsterFlash *= decay
 
+      // Смена зоны делается ЗДЕСЬ, в кадре, а не в подписке на стор:
+      // подписка срабатывает каждый тик, а пересобирать обстановку надо
+      // ровно тогда, когда место действительно сменилось.
+      if (wantedConfig) loadScenery(wantedSceneId, wantedConfig)
+
+      // Ярость босса заливает сцену тревожным светом. Считается ОТ базовых
+      // значений места: иначе за минуту боя сцена уплыла бы в оранжевый.
+      const tint = enrageTintAmount(enrage, ENRAGE_TINT_MAX)
+      if (tint > 0) {
+        fog.color.setHex(baseFogColor).lerp(tintColor, tint)
+        ambient.intensity = baseAmbient + tint
+      } else if (fogTinted) {
+        fog.color.setHex(baseFogColor)
+        ambient.intensity = baseAmbient
+      }
+      fogTinted = tint > 0
+      scene.background = fog.color
+
       const current = model
       if (current) {
         applyActor(heroMesh, palette.hero, current.hero, HERO_Z, heroKick, heroFlash)
@@ -380,6 +495,7 @@
     return () => {
       running = false
       cancelAnimationFrame(frameId)
+      unloadScenery()
       document.removeEventListener('visibilitychange', onVisibility)
       observer.disconnect()
       // Обход всей сцены: геометрию и материалы браузер сам не соберёт,

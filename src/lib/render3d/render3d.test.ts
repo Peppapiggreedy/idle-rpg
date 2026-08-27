@@ -3,6 +3,15 @@ import { describe, expect, it } from 'vitest'
 import { Decimal } from '../game/numbers'
 import { createInitialState } from '../game/state'
 import { FLOATER_LIMIT } from '../data/render'
+import {
+  ASHEN_SCENE,
+  DUNGEON_SCENE,
+  MEADOW_SCENE,
+  MIREFEN_SCENE,
+  QUARRY_SCENE,
+} from '../data/scenery'
+import { ZONES } from '../data/zones'
+import { CLEAR_RADIUS, enrageTintAmount, placeProps, propCount } from './scenery'
 import { disposeSceneGraph, type DisposableNode, type TraversableNode } from './dispose'
 import { createFloaterQueue, floaterProgress, projectToScreen } from './floaters'
 import { createFrameGate, SCENE_FPS } from './frameGate'
@@ -258,5 +267,62 @@ describe('проекция мира на экран', () => {
   it('улетевшее далеко за край кадра не рисуется', () => {
     expect(projectToScreen({ x: 4, y: 0, z: 0 }, 800, 600).visible).toBe(false)
     expect(projectToScreen({ x: Number.NaN, y: 0, z: 0 }, 800, 600).visible).toBe(false)
+  })
+})
+
+describe('обстановка зоны', () => {
+  it('одна и та же зона всегда расставляется одинаково', () => {
+    // Иначе игрок каждый раз попадал бы в «другое» место с тем же названием.
+    const a = placeProps(MEADOW_SCENE, 12)
+    const b = placeProps(MEADOW_SCENE, 12)
+    expect(a).toEqual(b)
+  })
+
+  it('разные зоны расставляются по-разному', () => {
+    expect(placeProps(MEADOW_SCENE, 12)).not.toEqual(placeProps(ASHEN_SCENE, 12))
+  })
+
+  it('пропсов ровно столько, сколько заказано в данных', () => {
+    for (const config of [MEADOW_SCENE, ASHEN_SCENE, DUNGEON_SCENE]) {
+      expect(placeProps(config, 12).length).toBe(propCount(config.props))
+    }
+  })
+
+  it('в центре площадки пусто — там идёт бой', () => {
+    for (const config of [MEADOW_SCENE, QUARRY_SCENE, MIREFEN_SCENE, ASHEN_SCENE, DUNGEON_SCENE]) {
+      for (const p of placeProps(config, 12)) {
+        expect(Math.hypot(p.x, p.z)).toBeGreaterThanOrEqual(CLEAR_RADIUS)
+      }
+    }
+  })
+
+  it('ничего не выходит за край площадки', () => {
+    for (const p of placeProps(MIREFEN_SCENE, 12)) {
+      expect(Math.hypot(p.x, p.z)).toBeLessThanOrEqual(12)
+    }
+  })
+
+  it('у каждой зоны есть свой вид, и он ни с кем не совпадает', () => {
+    const scenes = ZONES.map((z) => z.scene)
+    expect(scenes.length).toBe(ZONES.length)
+    for (const s of scenes) {
+      expect(s.props.length).toBeGreaterThan(0)
+      expect(s.fogDensity).toBeGreaterThan(0)
+    }
+    // Данж отчётливо темнее и теснее любой зоны — это его опознавательный знак.
+    for (const s of scenes) {
+      expect(DUNGEON_SCENE.ambientIntensity).toBeLessThan(s.ambientIntensity)
+      expect(DUNGEON_SCENE.fogDensity).toBeGreaterThan(s.fogDensity)
+    }
+    // И сиды у всех разные: иначе две зоны совпали бы расстановкой.
+    const seeds = scenes.map((s) => s.seed)
+    expect(new Set(seeds).size).toBe(seeds.length)
+  })
+
+  it('подсветка ярости растёт от множителя и упирается в потолок', () => {
+    expect(enrageTintAmount(1, 0.55)).toBe(0)
+    expect(enrageTintAmount(0.5, 0.55)).toBe(0)
+    expect(enrageTintAmount(1.4, 0.55)).toBeCloseTo(0.2, 5)
+    expect(enrageTintAmount(99, 0.55)).toBe(0.55)
   })
 })

@@ -11,6 +11,13 @@ import {
   type MonsterRole,
 } from './monsters'
 import type { MonsterTemplate } from '../types'
+import {
+  ASHEN_SCENE,
+  MEADOW_SCENE,
+  MIREFEN_SCENE,
+  QUARRY_SCENE,
+  type SceneConfig,
+} from './scenery'
 
 export interface Zone {
   id: string
@@ -23,11 +30,15 @@ export interface Zone {
   rewardMultiplier: Decimal // множитель золота и опыта поверх уровня моба
   unlockRequirement: number // уровень персонажа, с которого зона открыта
   isSafe: boolean // стартовая зона: сюда возвращают, когда возвращаться некуда
+  /** Как выглядит место: туман, свет, площадка и расстановка пропсов.
+   *  Поле ОБЯЗАТЕЛЬНОЕ — новая зона без вида не соберётся. */
+  scene: SceneConfig
 }
 
 export const ZONES: Zone[] = [
   {
     id: 'shepherds-meadow',
+    scene: MEADOW_SCENE,
     icon: 'zone-shepherds-meadow',
     name: 'Пастуший луг',
     monsterLevelRange: { min: 1, max: 2 },
@@ -42,6 +53,7 @@ export const ZONES: Zone[] = [
   },
   {
     id: 'hollow-quarry',
+    scene: QUARRY_SCENE,
     icon: 'zone-hollow-quarry',
     name: 'Полая каменоломня',
     monsterLevelRange: { min: 4, max: 6 },
@@ -56,6 +68,7 @@ export const ZONES: Zone[] = [
   },
   {
     id: 'mirefen-hollows',
+    scene: MIREFEN_SCENE,
     icon: 'zone-mirefen-hollows',
     name: 'Топкие лощины',
     monsterLevelRange: { min: 9, max: 12 },
@@ -70,6 +83,7 @@ export const ZONES: Zone[] = [
   },
   {
     id: 'ashen-ridge',
+    scene: ASHEN_SCENE,
     icon: 'zone-ashen-ridge',
     name: 'Пепельный гребень',
     monsterLevelRange: { min: 16, max: 20 },

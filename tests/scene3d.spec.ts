@@ -8,6 +8,12 @@ import { expect, test, type Page } from '@playwright/test'
 
 const SCENE_READY = '[data-scene="ready"]'
 
+/** Число из отладочного оверлея: он показывает то же, что renderer.info. */
+async function probe(page: Page, label: string): Promise<number> {
+  const text = await page.locator(`text=/^${label}: /`).innerText()
+  return Number(text.split(': ')[1])
+}
+
 async function openGame(page: Page, query = ''): Promise<string[]> {
   const errors: string[] = []
   page.on('pageerror', (e) => errors.push(String(e)))
@@ -27,16 +33,18 @@ test('сцена рисует первый кадр и молчит в конс�
 })
 
 test('?helpers=1 добавляет оси и сетку, без него их нет', async ({ page }) => {
-  // Считаем по отладочному оверлею: он показывает то же, что renderer.info,
-  // и не требует лезть внутрь сцены из теста.
+  // Сравниваем ОТНОСИТЕЛЬНО, а не с фиксированным числом: сколько геометрий
+  // в сцене, зависит от обстановки зоны и от того, что попало в кадр.
+  // Проверяемое утверждение — «с флагом их ровно на две больше».
   await openGame(page)
   await expect(page.locator(SCENE_READY)).toBeAttached({ timeout: 30_000 })
-  const plain = page.locator('text=/^geometries: /')
-  await expect(plain).toHaveText('geometries: 3')
+  await page.waitForTimeout(1200)
+  const plain = await probe(page, 'geometries')
 
   await openGame(page, '&helpers=1')
   await expect(page.locator(SCENE_READY)).toBeAttached({ timeout: 30_000 })
-  await expect(page.locator('text=/^geometries: /')).toHaveText('geometries: 5')
+  await page.waitForTimeout(1200)
+  expect(await probe(page, 'geometries')).toBe(plain + 2)
 })
 
 test('в текстовом режиме сцены нет вовсе, а не «на паузе»', async ({ page }) => {
@@ -126,4 +134,50 @@ test('если контекст не дали в последний момент
   await expect(page.locator('main')).toContainText('Не удалось запустить 3D-сцену')
   // И играть по-прежнему можно.
   await expect(page.locator('main')).toContainText('Урон в секунду')
+})
+
+test('двадцать смен зоны не растят память видеокарты', async ({ page }) => {
+  // ГЛАВНАЯ проверка обстановки зон. Three.js не освобождает память GPU сам:
+  // забытый dispose() при смене зоны — самая частая и коварная утечка,
+  // на десктопе незаметная, на телефоне роняющая игру.
+  //
+  // Меряем ВОЗВРАТ В ТУ ЖЕ ЗОНУ: у зон разное число пропсов, и сравнивать
+  // «был в лугу — стал в каменоломне» бессмысленно. Одна и та же обстановка
+  // на экране обязана стоить той же памяти, сколько бы раз её ни пересобрали.
+  await openGame(page)
+  await expect(page.locator(SCENE_READY)).toBeAttached({ timeout: 30_000 })
+  await page.locator('nav[aria-label="Разделы"] button').nth(3).click()
+
+  const travel = page.locator('button:has-text("Отправиться")')
+  const names = await page
+    .locator('li:has(button:has-text("Отправиться")) .name')
+    .allInnerTexts()
+  expect(names.length, 'нужно хотя бы две доступные зоны').toBeGreaterThan(1)
+  const [first, second] = names
+
+  async function goTo(zone: string): Promise<void> {
+    const row = page.locator('li').filter({ hasText: zone })
+    const button = row.locator('button:has-text("Отправиться")')
+    if ((await button.count()) > 0) await button.first().click()
+  }
+
+  // Прогрев: побывать в обеих зонах, вернуться в первую и запомнить.
+  await goTo(second)
+  await page.waitForTimeout(200)
+  await goTo(first)
+  await page.waitForTimeout(1500)
+  const before = await probe(page, 'geometries')
+
+  for (let i = 0; i < 20; i += 1) {
+    await goTo(i % 2 === 0 ? second : first)
+    await page.waitForTimeout(90)
+  }
+  // Заканчиваем ровно там же, где начали.
+  await goTo(first)
+  await page.waitForTimeout(1500)
+  const after = await probe(page, 'geometries')
+
+  console.log(`geometries: было ${before}, стало ${after}`)
+  expect(after, `было ${before}, стало ${after}`).toBeLessThanOrEqual(before + 1)
+  void travel
 })
