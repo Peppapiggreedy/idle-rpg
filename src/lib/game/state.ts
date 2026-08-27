@@ -3,9 +3,11 @@
 import { Decimal } from './numbers'
 import { xpToNextLevel } from './formulas'
 import { randomSeed } from './rng'
-import { FIRST_MONSTER } from '../data/monsters'
+import { buildMonster } from '../data/monsters'
+import { SAFE_ZONE, type Zone } from '../data/zones'
 import { recomputeStats, type StatBlock } from './stats'
 import { SLOT_IDS, type SlotId } from '../data/slots'
+import { createRng, type Rng } from './rng'
 import type { CombatEvent, Item, Monster, MonsterTemplate } from '../types'
 
 // Сколько последних событий боя храним для лога на экране.
@@ -35,6 +37,10 @@ export interface GameState {
   inventory: Item[]
   itemSeq: number // служебный счётчик для уникальных id предметов
   rngSeed: number // служебный сид потока случайности (в сейв пока не пишется)
+  currentZoneId: string // где герой фармит сейчас
+  // Последняя зона, в которой герой ВЫЖИЛ (убил там хотя бы одного моба).
+  // Смерть отбрасывает сюда; null — выживать ещё негде, значит в безопасную.
+  lastSurvivedZoneId: string | null
   monster: Monster
   // Служебный обратный отсчёт до респауна в мс (как dtMs): 0 — моб жив.
   respawnMsLeft: number
@@ -48,8 +54,18 @@ export function emptyEquipment(): Equipment {
   return Object.fromEntries(SLOT_IDS.map((slot) => [slot, null])) as Equipment
 }
 
-export function spawnMonster(template: MonsterTemplate): Monster {
+export function monsterFromTemplate(template: MonsterTemplate): Monster {
   return { ...template, currentHp: template.maxHp, swingProgress: 0 }
+}
+
+// Спавн из зоны: сперва бросок уровня из диапазона, затем бросок архетипа
+// из пула. Порядок бросков фиксирован — от него зависит воспроизводимость.
+export function spawnMonster(zone: Zone, rng: Rng): Monster {
+  const { min, max } = zone.monsterLevelRange
+  const level = min + Math.min(max - min, Math.floor(rng() * (max - min + 1)))
+  const pool = zone.monsterPool
+  const archetype = pool[Math.min(pool.length - 1, Math.floor(rng() * pool.length))]
+  return monsterFromTemplate(buildMonster(archetype, level, zone.rewardMultiplier))
 }
 
 export function createInitialState(rngSeed: number = randomSeed()): GameState {
@@ -70,10 +86,14 @@ export function createInitialState(rngSeed: number = randomSeed()): GameState {
     equipment: emptyEquipment(),
     autoEquip: true,
     statsDirty: false,
+    currentZoneId: SAFE_ZONE.id,
+    lastSurvivedZoneId: null,
     inventory: [],
     itemSeq: 0,
     rngSeed,
-    monster: spawnMonster(FIRST_MONSTER),
+    // Первый моб — из безопасной зоны; поток случайности берём от того же сида,
+    // что и весь прогон, поэтому старт детерминирован.
+    monster: spawnMonster(SAFE_ZONE, createRng(rngSeed)),
     respawnMsLeft: 0,
     combatLog: [],
     msSinceAutosave: 0,

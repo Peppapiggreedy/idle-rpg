@@ -2,7 +2,15 @@
 export { Decimal, formatNumber } from './numbers'
 export { createGameLoop, STEP_MS, MAX_STEPS_PER_FRAME } from './loop'
 export type { GameLoop, GameLoopOptions, LoopMetrics } from './loop'
-export { createInitialState, spawnMonster, emptyEquipment, tick, RESPAWN_DELAY_MS, COMBAT_LOG_SIZE } from './tick'
+export {
+  createInitialState,
+  spawnMonster,
+  monsterFromTemplate,
+  emptyEquipment,
+  tick,
+  RESPAWN_DELAY_MS,
+  COMBAT_LOG_SIZE,
+} from './tick'
 export type { GameState, Equipment } from './tick'
 export { upgradeCost, xpToNextLevel, applyXp, MAX_LEVELUPS_PER_CALL } from './formulas'
 export type { XpResult } from './formulas'
@@ -48,6 +56,18 @@ export {
   critFactor,
 } from './combat'
 export type { CombatRate, SwingResult } from './combat'
+export {
+  zoneById,
+  currentZone,
+  isZoneUnlocked,
+  forecastZone,
+  forecastAllZones,
+  travelToZone,
+  retreatZone,
+  reviveInZone,
+  stateInZone,
+} from './zones'
+export type { ZoneForecast, ZoneVerdict } from './zones'
 export { subscribe as subscribeAttacks, emit as emitAttack } from './events'
 export type { Rng } from './rng'
 export {
@@ -66,7 +86,7 @@ export {
   OFFLINE_MODAL_MIN_MS,
 } from './save'
 export type {
-  SavePayloadV7,
+  SavePayloadV8,
   SavedItem,
   SavedModifier,
   SaveStorage,

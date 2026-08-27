@@ -4,13 +4,14 @@ import { get, readonly, writable } from 'svelte/store'
 import { createGameLoop, type GameLoop, type LoopMetrics } from '../game/loop'
 import { createInitialState, type GameState } from '../game/state'
 import { tick } from '../game/tick'
-import { createRng } from '../game/rng'
+import { createRng, type Rng } from '../game/rng'
 import { buyUpgrade } from '../game/upgrades'
 import { xpToNextLevel } from '../game/formulas'
 import { Decimal } from '../game/numbers'
 import { applyOfflineProgress } from '../game/save'
 import { sellItem } from '../game/loot'
 import { equipItem, setAutoEquip, unequipItem } from '../game/equipment'
+import { travelToZone as travelAction } from '../game/zones'
 import type { SlotId } from '../data/slots'
 import {
   AUTOSAVE_INTERVAL_MS,
@@ -59,6 +60,14 @@ const sessionStart = writable(0)
 export const sessionStartPlaytimeMs = readonly(sessionStart)
 
 let loop: GameLoop | null = null
+// Тот же поток случайности, что и у цикла: экшены вне тика (переход в зону)
+// берут броски отсюда, а не из Math.random.
+let actionRng: Rng | null = null
+
+function rng(): Rng {
+  if (!actionRng) actionRng = createRng(get(state).rngSeed)
+  return actionRng
+}
 
 /** Сохраняет игру немедленно (автосейв, visibilitychange, экспорт). */
 export function persistNow(): void {
@@ -93,10 +102,10 @@ export function initGame(): void {
 export function startGameLoop(): void {
   if (loop) return
   // Единственный на игру поток случайности; создаётся один раз из сида состояния.
-  const rng = createRng(get(state).rngSeed)
+  const stream = rng()
   loop = createGameLoop({
     step: (dtMs) => {
-      state.update((s) => tick(s, dtMs, rng))
+      state.update((s) => tick(s, dtMs, stream))
       // Счётчик копит applyAutosaveCounter внутри тика; стор сохраняет и сбрасывает.
       if (get(state).msSinceAutosave >= AUTOSAVE_INTERVAL_MS) {
         persistNow()
@@ -143,6 +152,11 @@ export function unequipSlot(slot: SlotId): void {
 /** Галочка «надевать автоматически, если лучше». */
 export function toggleAutoEquip(enabled: boolean): void {
   state.update((s) => setAutoEquip(s, enabled))
+}
+
+/** Переход в зону по клику. В закрытую зону экшен не пустит — состояние как было. */
+export function travelToZone(zoneId: string): void {
+  state.update((s) => travelAction(s, zoneId, rng()))
 }
 
 /** Строка экспорта (base64) текущего состояния; заодно сохраняет игру. */

@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { Decimal } from './numbers'
 import { STEP_MS } from './loop'
-import { createInitialState, spawnMonster, tick, type GameState } from './tick'
+import { createInitialState, monsterFromTemplate, tick, type GameState } from './tick'
 import { estimateCombatRate } from './combat'
 import { applyOfflineProgress } from './save'
+import { zoneRate } from './zones'
+import { ensureStats } from './stats'
+import { COMMON, buildMonster } from '../data/monsters'
+import { WEAPON_SHARPENING } from '../data/upgrades'
+import { SAFE_ZONE, ZONE_BY_ID } from '../data/zones'
 import type { MonsterTemplate } from '../types'
 
 const NO_LUCK = () => 1 // без критов и без дропа
@@ -17,6 +22,7 @@ function run(state: GameState, ms: number): GameState {
 const BRUTE: MonsterTemplate = {
   id: 'test-brute',
   name: 'Свирепый секач',
+  level: 1,
   maxHp: new Decimal(1000),
   goldReward: new Decimal(5),
   xpReward: new Decimal(3),
@@ -26,13 +32,19 @@ const BRUTE: MonsterTemplate = {
 }
 
 function inZone(template: MonsterTemplate): GameState {
-  return { ...createInitialState(1), monster: spawnMonster(template) }
+  return { ...createInitialState(1), monster: monsterFromTemplate(template) }
 }
 
 describe('ответные удары моба', () => {
   it('моб бьёт по своему свинг-таймеру, герой теряет HP', () => {
-    // Хлюпень: 4 урона каждые 1.6 c; реген в бою 1/с.
-    let s = run(createInitialState(1), 1600)
+    // Явный моб: спавн в зоне случаен. Обычный 1 уровня — 4 урона каждые 1.6 c,
+    // реген в бою 1/с.
+    const squelcher = buildMonster(
+      { id: 'test-squelcher', name: 'Хлюпень', role: COMMON },
+      1,
+      new Decimal(1),
+    )
+    let s = run(inZone(squelcher), 1600)
     // До удара HP на капе (реген в потолок не копится); удар на 1.6 c: -4,
     // затем реген того же тика +0.1 -> 96.1.
     expect(s.currentHp.toNumber()).toBeCloseTo(96.1, 6)
@@ -60,36 +72,67 @@ describe('смерть и воскрешение', () => {
     expect(s.heroState).toBe('dead')
   })
 
-  it('через 30 игровых секунд — полный HP и свежий моб стартовой зоны', () => {
+  it('через 30 игровых секунд — полный HP и свежий моб безопасной зоны', () => {
+    // Герой не успел никого убить, lastSurvivedZoneId пуст -> откат в безопасную.
     let s = run(inZone(BRUTE), 2000)
     expect(s.heroState).toBe('dead')
     s = run(s, 30_000)
     expect(s.heroState).toBe('alive')
     expect(s.currentHp.eq(s.stats.maxHp)).toBe(true)
-    expect(s.monster.id).toBe('meadow-squelcher') // «последняя зона» = стартовая
+    expect(s.currentZoneId).toBe(SAFE_ZONE.id)
+    expect(SAFE_ZONE.monsterPool.map((a) => a.id)).toContain(s.monster.id)
     expect(s.monster.currentHp.eq(s.monster.maxHp)).toBe(true)
     expect(s.combatLog.some((e) => e.type === 'revive')).toBe(true)
+  })
+
+  it('смерть возвращает в последнюю зону, где герой выживал', () => {
+    // Герой убил кого-то в каменоломне -> она и становится точкой отката,
+    // даже если умер он позже в другом месте.
+    let s: GameState = {
+      ...inZone(BRUTE),
+      currentZoneId: 'ashen-ridge',
+      lastSurvivedZoneId: 'hollow-quarry',
+    }
+    s = run(s, 2000)
+    expect(s.heroState).toBe('dead')
+    s = run(s, 30_000)
+    expect(s.currentZoneId).toBe('hollow-quarry')
+    expect(ZONE_BY_ID['hollow-quarry'].monsterPool.map((a) => a.id)).toContain(s.monster.id)
   })
 })
 
 describe('оффлайн моделирует цикл фарм -> смерть -> воскрешение', () => {
-  it('в смертельной зоне uptime мал и оффлайн-награда режется пропорционально', () => {
-    const deadly = inZone(BRUTE)
-    const rate = estimateCombatRate(deadly)
+  it('перед одним смертельным мобом uptime мал, время до смерти конечно', () => {
+    const rate = estimateCombatRate(inZone(BRUTE))
     expect(rate.uptime).toBeLessThan(0.15)
     expect(rate.timeToDeathSec).not.toBeNull()
+  })
 
+  it('смертность режет оффлайн-награду в той же зоне', () => {
     const HOURS8 = 8 * 3_600_000
-    const { report } = applyOfflineProgress(deadly, HOURS8)
-    // Идеальный непрерывный фарм: цикл = ceil(1000/20) * 2 c + 0.3 c
-    const idealKills = Math.floor((8 * 3600) / (50 * 2 + 0.3))
-    expect(report!.kills.toNumber()).toBeLessThan(idealKills * 0.2)
-    expect(report!.kills.toNumber()).toBeGreaterThan(0)
+    const RIDGE = ZONE_BY_ID['ashen-ridge']
+    // Одна и та же зона, одни и те же награды за моба — разница только в том,
+    // сколько времени герой в ней жив.
+    const rookie: GameState = { ...createInitialState(1), currentZoneId: RIDGE.id }
+    const veteran: GameState = ensureStats({
+      ...rookie,
+      level: new Decimal(30),
+      upgrades: { [WEAPON_SHARPENING.id]: new Decimal(400) },
+      statsDirty: true,
+    })
+    const rookieUptime = zoneRate(rookie, RIDGE).uptime
+    expect(rookieUptime).toBeLessThan(0.25)
+    expect(zoneRate(veteran, RIDGE).uptime).toBeGreaterThan(0.9)
+
+    const weak = applyOfflineProgress(rookie, HOURS8).report
+    const strong = applyOfflineProgress(veteran, HOURS8).report
+    expect(weak!.kills.toNumber()).toBeGreaterThan(0) // что-то приносит
+    expect(weak!.gold.lt(strong!.gold.times(0.5))).toBe(true)
   })
 
   it('в стартовой зоне герой тоже смертен: uptime < 1 учтён в оффлайне', () => {
-    const rate = estimateCombatRate(createInitialState(1))
-    expect(rate.uptime).toBeGreaterThan(0.8)
+    const rate = zoneRate(createInitialState(1), SAFE_ZONE)
+    expect(rate.uptime).toBeGreaterThan(0.5)
     expect(rate.uptime).toBeLessThan(1)
   })
 

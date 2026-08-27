@@ -66,10 +66,21 @@ export function expectedMonsterDamage(monster: Monster, stats: StatBlock): Decim
 export interface CombatRate {
   damagePerSecond: Decimal // средний урон героя в секунду с матожиданием критов
   killsPerSecond: Decimal // убийств в секунду С УЧЁТОМ смертей героя (uptime)
+  idealKillsPerSecond: Decimal // то же без учёта смертей — герой бессмертен
+  // Чистая потеря HP в секунду: входящий урон минус реген. 0 — герой не тает.
+  hpLossPerSecond: Decimal
   // Доля времени, которую герой жив и фармит: 1 — бессмертен в этой зоне.
   uptime: number
   // Секунд от полного HP до смерти при отрицательном балансе HP; null — не умирает.
   timeToDeathSec: number | null
+}
+
+// Цикл жизни героя: timeToDeath секунд фарма + фиксированный простой на
+// воскрешение. Отсюда доля времени, которую он вообще что-то приносит.
+export function uptimeFromHpLoss(maxHp: Decimal, hpLossPerSecond: Decimal): number {
+  if (hpLossPerSecond.lte(0)) return 1
+  const timeToDeathSec = maxHp.div(hpLossPerSecond)
+  return timeToDeathSec.div(timeToDeathSec.plus(REVIVE_DELAY_MS / 1000)).toNumber()
 }
 
 export function estimateCombatRate(state: GameState): CombatRate {
@@ -97,15 +108,22 @@ export function estimateCombatRate(state: GameState): CombatRate {
   const netLossPerSec = incomingPerCycle.minus(regenPerCycle).div(killCycleSec)
 
   if (netLossPerSec.lte(0)) {
-    return { damagePerSecond, killsPerSecond: idealKillsPerSecond, uptime: 1, timeToDeathSec: null }
+    return {
+      damagePerSecond,
+      killsPerSecond: idealKillsPerSecond,
+      idealKillsPerSecond,
+      hpLossPerSecond: new Decimal(0),
+      uptime: 1,
+      timeToDeathSec: null,
+    }
   }
-  // Жизненный цикл героя: timeToDeath секунд фарма + 30 секунд простоя.
-  const timeToDeathSec = stats.maxHp.div(netLossPerSec)
-  const uptime = timeToDeathSec.div(timeToDeathSec.plus(REVIVE_DELAY_MS / 1000)).toNumber()
+  const uptime = uptimeFromHpLoss(stats.maxHp, netLossPerSec)
   return {
     damagePerSecond,
     killsPerSecond: idealKillsPerSecond.times(uptime),
+    idealKillsPerSecond,
+    hpLossPerSecond: netLossPerSec,
     uptime,
-    timeToDeathSec: timeToDeathSec.toNumber(),
+    timeToDeathSec: stats.maxHp.div(netLossPerSec).toNumber(),
   }
 }

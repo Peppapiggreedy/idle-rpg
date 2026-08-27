@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { Decimal } from './numbers'
 import { STEP_MS } from './loop'
-import { RESPAWN_DELAY_MS, createInitialState, spawnMonster, tick, type GameState } from './tick'
+import { RESPAWN_DELAY_MS, createInitialState, monsterFromTemplate, tick, type GameState } from './tick'
 import { applyModifiers } from './stats'
 import type { MonsterTemplate } from '../types'
 
 const DUMMY: MonsterTemplate = {
   id: 'training-dummy',
   name: 'Тренировочное чучело',
+  level: 1,
   maxHp: new Decimal(100),
   goldReward: new Decimal(5),
   xpReward: new Decimal(3),
@@ -33,7 +34,7 @@ function stateWith(damagePerSwing: number, template: MonsterTemplate): GameState
     ...createInitialState(1),
     stats,
     statsDirty: false,
-    monster: spawnMonster(template),
+    monster: monsterFromTemplate(template),
     combatLog: [],
   }
 }

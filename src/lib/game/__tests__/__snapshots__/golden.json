@@ -1,41 +1,50 @@
 {
   "step-3000": {
-    "gold": "490",
+    "gold": "518.625",
     "level": "6",
-    "currentXp": "14",
-    "attackPower": "161",
-    "avgSwingDamage": "58.3",
+    "currentXp": "21.275",
+    "attackPower": "133",
+    "avgSwingDamage": "53.900000000000006",
     "weaponSpeed": "2.2000",
     "swingTime": "2.2000",
-    "equipped": "weapon,head,chest,hands,legs,trinket",
+    "equipped": "weapon,head,hands,legs,trinket",
+    "zone": "shepherds-meadow",
+    "lastSurvivedZone": "shepherds-meadow",
+    "monster": "meadow-squelcher:2",
     "totalTicks": "3000",
-    "inventoryCount": 12,
-    "inventorySellTotal": "90"
+    "inventoryCount": 9,
+    "inventorySellTotal": "55"
   },
   "step-12000": {
-    "gold": "2290",
+    "gold": "2436",
     "level": "10",
-    "currentXp": "267",
+    "currentXp": "307.875",
     "attackPower": "161",
     "avgSwingDamage": "58.3",
     "weaponSpeed": "2.2000",
     "swingTime": "2.2000",
     "equipped": "weapon,head,chest,hands,legs,trinket",
+    "zone": "shepherds-meadow",
+    "lastSurvivedZone": "shepherds-meadow",
+    "monster": "straw-lumberer:1",
     "totalTicks": "12000",
     "inventoryCount": 12,
-    "inventorySellTotal": "90"
+    "inventorySellTotal": "75"
   },
   "step-36000": {
-    "gold": "7090",
+    "gold": "7534.625",
     "level": "16",
-    "currentXp": "481",
+    "currentXp": "604",
     "attackPower": "161",
     "avgSwingDamage": "58.3",
     "weaponSpeed": "2.2000",
     "swingTime": "2.2000",
     "equipped": "weapon,head,chest,hands,legs,trinket",
+    "zone": "shepherds-meadow",
+    "lastSurvivedZone": "shepherds-meadow",
+    "monster": "meadow-squelcher:2",
     "totalTicks": "36000",
     "inventoryCount": 12,
-    "inventorySellTotal": "90"
+    "inventorySellTotal": "75"
   }
 }

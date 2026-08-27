@@ -6,22 +6,30 @@ import { RARITY_BY_ID } from '../data/rarity'
 import type { Item, Rarity } from '../types'
 import { applyXp, xpToNextLevel } from './formulas'
 import { createInitialState, emptyEquipment, spawnMonster, type Equipment, type GameState } from './state'
+import { createRng } from './rng'
 import { ensureStats, STAT_IDS, type ModifierKind, type StatId, type StatModifier } from './stats'
 import { SLOT_IDS, type SlotId } from '../data/slots'
-import { AUTOSAVE_INTERVAL_S, LEGACY_V3_SWING_TIME_S, OFFLINE_CAP_HOURS } from '../data/balance'
-import { estimateCombatRate } from './combat'
+import {
+  AUTOSAVE_INTERVAL_S,
+  LEGACY_V3_SWING_TIME_S,
+  OFFLINE_CAP_HOURS,
+  OFFLINE_CHUNK_MIN,
+} from '../data/balance'
 import { FALLBACK_ITEM_NAME } from '../data/loot'
-import { FIRST_MONSTER } from '../data/monsters'
+import { SAFE_ZONE, ZONE_BY_ID } from '../data/zones'
+import { currentZone, zoneRate } from './zones'
 
 export const SAVE_KEY = 'idle-rpg-save'
-export const SAVE_VERSION = 7
+export const SAVE_VERSION = 8
 export const AUTOSAVE_INTERVAL_MS = AUTOSAVE_INTERVAL_S * 1000
 // Потолок оффлайн-прогресса: дольше отсутствовать можно, но не оплачивается.
 export const OFFLINE_CAP_MS = OFFLINE_CAP_HOURS * 60 * 60 * 1000
 // Короче минуты отсутствия — награду начисляем, но модалку не показываем.
 export const OFFLINE_MODAL_MIN_MS = 60_000
+// Шаг, которым идёт оффлайн-агрегат.
+export const OFFLINE_CHUNK_MS = OFFLINE_CHUNK_MIN * 60_000
 
-// Актуальный формат сейва (v7). Все Decimal — строки. Прямых полей урона
+// Актуальный формат сейва (v8). Все Decimal — строки. Прямых полей урона
 // и скорости атаки в формате НЕТ: статы — производные от счётчиков покупок
 // и надетой экипировки, пересчитываются конвейером stats.ts.
 export interface SavedModifier {
@@ -39,8 +47,8 @@ export interface SavedItem {
   mods: SavedModifier[]
 }
 
-export interface SavePayloadV7 {
-  version: 7
+export interface SavePayloadV8 {
+  version: 8
   lastTimestamp: number
   gold: string
   level: string
@@ -53,6 +61,8 @@ export interface SavePayloadV7 {
   inventory: SavedItem[]
   equipment: Record<string, SavedItem | null>
   autoEquip: boolean
+  currentZoneId: string
+  lastSurvivedZoneId: string | null
   itemSeq: number
   totalTicks: string
   playtimeMs: string
@@ -98,7 +108,7 @@ function savedFromItem(item: Item): SavedItem {
   }
 }
 
-export function payloadFromState(state: GameState, lastTimestamp: number): SavePayloadV7 {
+export function payloadFromState(state: GameState, lastTimestamp: number): SavePayloadV8 {
   const upgrades: Record<string, string> = {}
   for (const [id, owned] of Object.entries(state.upgrades)) upgrades[id] = owned.toString()
   const equipment: Record<string, SavedItem | null> = {}
@@ -107,11 +117,13 @@ export function payloadFromState(state: GameState, lastTimestamp: number): SaveP
     equipment[slot] = item ? savedFromItem(item) : null
   }
   return {
-    version: 7,
+    version: 8,
     lastTimestamp,
     inventory: state.inventory.map(savedFromItem),
     equipment,
     autoEquip: state.autoEquip,
+    currentZoneId: state.currentZoneId,
+    lastSurvivedZoneId: state.lastSurvivedZoneId,
     itemSeq: state.itemSeq,
     gold: state.gold.toString(),
     level: state.level.toString(),
@@ -176,7 +188,13 @@ function equipmentFromSaved(raw: Record<string, SavedItem | null> | undefined): 
 
 // Восстанавливает состояние поверх дефолтов: новые поля будущих версий
 // автоматически получают значения из createInitialState. Моб и лог — свежие.
-export function stateFromPayload(p: SavePayloadV7): GameState {
+// Зона из сейва: неизвестный id (переименовали, откатили версию) деградирует
+// до безопасной, чтобы герой не застрял в несуществующей зоне.
+function zoneIdFromSaved(raw: unknown, fallback: string): string {
+  return typeof raw === 'string' && raw in ZONE_BY_ID ? raw : fallback
+}
+
+export function stateFromPayload(p: SavePayloadV8): GameState {
   const level = Decimal.max(parseDec(p.level, '1'), new Decimal(1))
   const upgrades: Record<string, Decimal> = {}
   for (const [id, owned] of Object.entries(p.upgrades ?? {})) upgrades[id] = parseDec(owned, '0')
@@ -192,9 +210,16 @@ export function stateFromPayload(p: SavePayloadV7): GameState {
     inventory: Array.isArray(p.inventory) ? p.inventory.map(itemFromSaved) : [],
     equipment: equipmentFromSaved(p.equipment),
     autoEquip: typeof p.autoEquip === 'boolean' ? p.autoEquip : true,
+    currentZoneId: zoneIdFromSaved(p.currentZoneId, SAFE_ZONE.id),
+    lastSurvivedZoneId:
+      p.lastSurvivedZoneId === null || p.lastSurvivedZoneId === undefined
+        ? null
+        : zoneIdFromSaved(p.lastSurvivedZoneId, SAFE_ZONE.id),
     itemSeq: typeof p.itemSeq === 'number' ? p.itemSeq : 0,
-    monster: spawnMonster(FIRST_MONSTER),
   }
+  // Моб не сохраняется: спавним свежего из восстановленной зоны. Поток
+  // случайности берём от сида состояния — загрузка остаётся детерминированной.
+  restored.monster = spawnMonster(currentZone(restored), createRng(restored.rngSeed))
   // Статы — производные: после загрузки источников пересчитываем конвейером.
   const withStats = ensureStats({ ...restored, statsDirty: true })
   // Ресурсы героя: сохранённые значения с капом по пересчитанным статам;
@@ -240,6 +265,14 @@ function itemV6toV7(raw: unknown): RawSave {
 }
 
 const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
+  // 7 -> 8: появились зоны. Старый сейв просыпается в безопасной зоне, где
+  // ещё ничего не доказано: lastSurvivedZoneId пуст, смерть вернёт туда же.
+  7: (raw) => ({
+    ...raw,
+    version: 8,
+    currentZoneId: SAFE_ZONE.id,
+    lastSurvivedZoneId: null,
+  }),
   // 6 -> 7: появилась экипировка. У предметов вместо statBonus теперь slot и
   // mods в формате конвейера статов; сама экипировка пустая — старые предметы
   // остаются в инвентаре, игрок наденет их сам.
@@ -297,7 +330,7 @@ const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
 }
 
 // null = сейв непригоден (не объект или из более новой версии игры).
-export function migrateSave(raw: unknown): SavePayloadV7 | null {
+export function migrateSave(raw: unknown): SavePayloadV8 | null {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null
   let data = raw as RawSave
   let version = typeof data.version === 'number' ? data.version : 0
@@ -308,7 +341,7 @@ export function migrateSave(raw: unknown): SavePayloadV7 | null {
     data = step(data)
     version = typeof data.version === 'number' ? data.version : version + 1
   }
-  return data as unknown as SavePayloadV7
+  return data as unknown as SavePayloadV8
 }
 
 export interface OfflineReport {
@@ -319,8 +352,8 @@ export interface OfflineReport {
 }
 
 // Оффлайн-прогресс одним агрегатом, без проигрывания тиков. Темп боя берётся
-// из estimateCombatRate — той же функции, что и в онлайне, чтобы формула боя
-// не жила в двух местах.
+// из zoneRate, а тот зовёт estimateCombatRate — ту же функцию, что и онлайн,
+// чтобы формула боя не жила в двух местах.
 export function applyOfflineProgress(
   state: GameState,
   elapsedMs: number,
@@ -341,20 +374,46 @@ export function applyOfflineProgress(
     if (state.heroState === 'dead' || cappedMs <= 0)
       return { state, report: null }
   }
-  const { goldReward, xpReward } = state.monster
-  const kills = estimateCombatRate(state).killsPerSecond.times(cappedMs).div(1000).floor()
-  if (kills.lte(0)) return { state, report: null }
-  const gold = goldReward.times(kills)
-  const xp = xpReward.times(kills)
-  const leveled = applyXp(state.level, state.currentXp, xp)
-  return {
-    state: {
-      ...state,
-      gold: state.gold.plus(gold),
+  // Оффлайн считаем по темпу ТЕКУЩЕЙ ЗОНЫ, а не по мобу, который случайно
+  // стоял перед героем в момент выхода: за восемь часов он перебьёт весь пул.
+  // Формула боя та же (zoneRate зовёт estimateCombatRate), своей у оффлайна нет.
+  //
+  // Идём шагами по OFFLINE_CHUNK_MS: набранные уровни повышают живучесть, а
+  // значит и темп следующего шага. Темп пересчитываем только при смене уровня —
+  // внутри одного уровня он неизменен.
+  const zone = currentZone(state)
+  let s = state
+  let rate = zoneRate(s, zone)
+  let rateLevel = s.level
+  let kills = new Decimal(0)
+  let gold = new Decimal(0)
+  let xp = new Decimal(0)
+  for (let left = cappedMs; left > 0; left -= OFFLINE_CHUNK_MS) {
+    const seconds = new Decimal(Math.min(OFFLINE_CHUNK_MS, left)).div(1000)
+    if (!rateLevel.eq(s.level)) {
+      rate = zoneRate(s, zone)
+      rateLevel = s.level
+    }
+    const chunkXp = rate.xpPerSecond.times(seconds)
+    kills = kills.plus(rate.killsPerSecond.times(seconds))
+    gold = gold.plus(rate.goldPerSecond.times(seconds))
+    xp = xp.plus(chunkXp)
+    const leveled = applyXp(s.level, s.currentXp, chunkXp)
+    s = {
+      ...s,
       level: leveled.level,
       currentXp: leveled.currentXp,
       xpToNext: leveled.xpToNext,
-    },
+      // Уровень — источник статов: следующий шаг должен считаться по новым.
+      statsDirty: s.statsDirty || leveled.level.gt(s.level),
+    }
+    if (s.statsDirty) s = ensureStats(s)
+  }
+  // Дробные убийства копим по шагам и округляем один раз, в самом конце.
+  kills = kills.floor()
+  if (kills.lte(0)) return { state, report: null }
+  return {
+    state: { ...s, gold: s.gold.plus(gold) },
     report: { elapsedMs: cappedMs, kills, gold, xp },
   }
 }
@@ -419,7 +478,7 @@ export function encodeSaveString(state: GameState, now: () => number = Date.now)
 }
 
 // Понимает base64 от экспорта и, на всякий случай, голый JSON.
-export function decodeSaveString(input: string): SavePayloadV7 | null {
+export function decodeSaveString(input: string): SavePayloadV8 | null {
   const attempts = [
     () => JSON.parse(fromBase64(input.trim())),
     () => JSON.parse(input.trim()),

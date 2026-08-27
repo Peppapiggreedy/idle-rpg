@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 import { Decimal } from './numbers'
 import { xpToNextLevel } from './formulas'
 import { expectedSwingDamage } from './combat'
-import { emptyEquipment, createInitialState, RESPAWN_DELAY_MS, type GameState } from './tick'
+import { emptyEquipment, createInitialState, type GameState } from './tick'
+import { zoneRate } from './zones'
+import { SAFE_ZONE, zoneMonsterVariants } from '../data/zones'
 import {
   OFFLINE_CAP_MS,
   SAVE_KEY,
@@ -64,6 +66,11 @@ function richState(): GameState {
 }
 
 const HOUR = 60 * 60 * 1000
+
+// Доля времени, которую герой в стартовой зоне жив: потолок роста награды.
+function zoneUptime(state: GameState): number {
+  return zoneRate(state, SAFE_ZONE).uptime
+}
 
 describe('save/load', () => {
   it('сохранение и загрузка не теряют состояние', () => {
@@ -191,21 +198,32 @@ describe('оффлайн-прогресс', () => {
     expect(after100h.report!.kills.eq(after8h.report!.kills)).toBe(true)
     expect(after100h.state.gold.eq(after8h.state.gold)).toBe(true)
     expect(after100h.report!.elapsedMs).toBe(OFFLINE_CAP_MS)
-    // Контроль формулы: идеальный цикл 2 удара * 2 c + 0.3 c = 4.3 c,
-    // умноженный на uptime смертного героя (430 c жизни / 460 c цикла жизни).
-    const cycleSec = 2 * 2 + RESPAWN_DELAY_MS / 1000
-    const uptime = 430 / 460
-    expect(after8h.report!.kills.toNumber()).toBe(
-      Math.floor(((8 * 3600) / cycleSec) * uptime),
-    )
   })
 
-  it('награда считается агрегатом: золото = убийства * награда моба', () => {
+  it('награда растёт со временем отсутствия, но не быстрее линейного', () => {
+    const base = createInitialState()
+    const hour = applyOfflineProgress(base, HOUR).report!
+    const fourHours = applyOfflineProgress(base, 4 * HOUR).report!
+    expect(fourHours.gold.gt(hour.gold)).toBe(true)
+    // Ровно вчетверо не выйдет: за четыре часа герой набирает уровни, а с ними
+    // живучесть — темп фарма растёт. Но и обогнать линейный рост он не может:
+    // потолок — идеальный фарм без единой смерти.
+    expect(fourHours.gold.gte(hour.gold.times(4))).toBe(true)
+    expect(fourHours.gold.lte(hour.gold.times(4).div(zoneUptime(base)))).toBe(true)
+  })
+
+  it('золото и опыт согласованы с наградами мобов зоны', () => {
     const base = createInitialState()
     const { state, report } = applyOfflineProgress(base, HOUR)
     expect(report).not.toBeNull()
-    expect(state.gold.eq(report!.kills.times(base.monster.goldReward))).toBe(true)
-    expect(report!.xp.eq(report!.kills.times(base.monster.xpReward))).toBe(true)
+    // Всё начисленное золото попало в состояние.
+    expect(state.gold.minus(base.gold).eq(report!.gold)).toBe(true)
+    // Золота за убийство — между самым бедным и самым богатым мобом зоны.
+    const rewards = zoneMonsterVariants(SAFE_ZONE).map((m) => m.goldReward)
+    const goldPerKill = report!.gold.div(report!.kills)
+    expect(goldPerKill.gte(rewards.reduce((a, b) => (a.lt(b) ? a : b)))).toBe(true)
+    expect(goldPerKill.lte(rewards.reduce((a, b) => (a.gt(b) ? a : b)))).toBe(true)
+    expect(report!.xp.gt(0)).toBe(true)
   })
 
   it('loadGame начисляет оффлайн-награду за прошедшее время', () => {
