@@ -2,6 +2,7 @@
   import CombatScreen from './lib/ui/CombatScreen.svelte'
   import ZonePanel from './lib/ui/ZonePanel.svelte'
   import AbilityPanel from './lib/ui/AbilityPanel.svelte'
+  import TalentPanel from './lib/ui/TalentPanel.svelte'
   import HeroPanel from './lib/ui/HeroPanel.svelte'
   import UpgradePanel from './lib/ui/UpgradePanel.svelte'
   import InventoryPanel from './lib/ui/InventoryPanel.svelte'
@@ -21,6 +22,7 @@
   <CombatScreen />
   <AbilityPanel />
   <ZonePanel />
+  <TalentPanel />
   <UpgradePanel />
   <StatsPanel />
   <EquipmentPanel />

@@ -29,6 +29,7 @@ import { INVENTORY_SIZE, RESPAWN_DELAY_MS, REVIVE_DELAY_MS } from '../data/balan
 import { ABILITY_BY_ID } from '../data/abilities'
 import { currentZone, reviveInZone } from './zones'
 import { advanceCooldowns, autocastStep, consumeQueuedAbility } from './abilities'
+import { reviveMultiplier } from './talents'
 import type { AttackEvent, Monster } from '../types'
 
 // Погрешность накопления долей замаха: 0.05 и подобные не представимы в double.
@@ -261,7 +262,8 @@ const applyMonsterAttack: TickStep = (s, ctx) => {
   return {
     ...next,
     heroState: 'dead',
-    reviveMsLeft: REVIVE_DELAY_MS,
+    // Талант «Скорое возвращение» режет простой; множитель живёт в данных.
+    reviveMsLeft: REVIVE_DELAY_MS * reviveMultiplier(next.talents),
     queuedAbilityId: null,
     activeEffects: [],
     combatLog: pushEvent(next.combatLog, { type: 'death' }),

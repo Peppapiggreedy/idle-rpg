@@ -14,6 +14,7 @@
     type StatModifier,
   } from '../game'
   import { UPGRADES } from '../data/upgrades'
+  import { TALENT_BY_ID } from '../data/talents'
   import { gameState } from '../stores/game'
 
   // Весь текст панели статов живёт здесь; логика отдаёт только раскладку.
@@ -77,7 +78,7 @@
     const [kind, id] = source.split(':')
     if (kind === 'upgrade') return UPGRADES.find((u) => u.id === id)?.name ?? id
     if (kind === 'equipment') return `экипировка: ${id}`
-    if (kind === 'talent') return `талант: ${id}`
+    if (kind === 'talent') return `талант: ${TALENT_BY_ID[id]?.name ?? id}`
     if (kind === 'zone') return `зона: ${id}`
     return source
   }
