@@ -1,11 +1,37 @@
 <script lang="ts">
   // Боевой лог компактной лентой под сценой. Виден всегда, в любом разделе:
   // это единственное место, где игрок видит, что вообще происходит в бою.
+  import { untrack } from 'svelte'
   import { formatNumber } from '../game'
   import { gameState } from '../stores/game'
   import { ABILITY_BY_ID } from '../data/abilities'
-  import { rarityName } from './kit'
+  import { rarityName, rarityStyle } from './kit'
+  import { Icon } from './icons'
+  import type { IconName } from './icons'
+  import {
+    emptyLogView,
+    filterRows,
+    isAggregated,
+    LOG_FILTERS,
+    pushEvents,
+    type LogFilterId,
+    type LogRow,
+  } from './logView'
   import type { CombatEvent } from '../types'
+
+  // Лента набирает историю САМА из короткого хвоста в состоянии: растить
+  // состояние ради показа нельзя, оно попало бы в golden и в сейв.
+  let view = $state(emptyLogView())
+  let filter = $state<LogFilterId>('all')
+  $effect(() => {
+    // untrack обязателен: без него чтение view внутри эффекта делает его
+    // же зависимостью, эффект переподписывается на собственную запись и
+    // Svelte падает с effect_update_depth_exceeded. Зависимость здесь
+    // ровно одна — хвост лога в состоянии.
+    const tail = $gameState.combatLog
+    view = untrack(() => pushEvents(view, tail))
+  })
+  const rows = $derived(filterRows(view.rows, filter))
 
   // Весь текст боевого лога живёт здесь: логика отдаёт только события.
   function eventText(e: CombatEvent): string {
@@ -52,6 +78,39 @@
           : `«${e.dungeonName}» пройден`
     }
   }
+  // Иконка типа события: строку видно боковым зрением ещё до чтения.
+  const EVENT_ICON: Record<CombatEvent['type'], IconName> = {
+    hit: 'stat-attackPower',
+    ability: 'ability-quick-strike',
+    effect: 'ability-rending-wound',
+    kill: 'xp',
+    levelup: 'xp',
+    loot: 'slot-trinket',
+    spawn: 'zone-mirefen-hollows',
+    hurt: 'stat-maxHp',
+    death: 'stat-maxHp',
+    revive: 'talent-swift-return',
+    zone: 'zone-shepherds-meadow',
+    boss: 'dungeon-sunken-barrow',
+    'dungeon-exit': 'dungeon-sunken-barrow',
+    'dungeon-clear': 'dungeon-sunken-barrow',
+    enrage: 'stat-critMultiplier',
+  }
+
+  /** Свёрнутая строка: «12 ударов, 1.2K урона» вместо двенадцати строк. */
+  function rowText(row: LogRow): string {
+    if (!isAggregated(row)) return eventText(row.event)
+    const total = row.total ? `, ${formatNumber(row.total)} урона` : ''
+    switch (row.event.type) {
+      case 'hurt':
+        return `${row.count} ударов по тебе${total}`
+      case 'effect':
+        return `${row.count} тиков эффекта${total}`
+      default:
+        return `${row.count} ударов${total}`
+    }
+  }
+
   // Тон строки: лог должен читаться боковым зрением, поэтому важное — цветом.
   function tone(e: CombatEvent): string {
     if (e.type === 'hit' && e.isCrit) return 'crit'
@@ -63,13 +122,61 @@
   }
 </script>
 
-<ul class="log" aria-label="Боевой лог" aria-live="polite">
-  {#each $gameState.combatLog as event}
-    <li class={tone(event)}>{eventText(event)}</li>
-  {/each}
-</ul>
+<div class="wrap">
+  <div class="filters" role="group" aria-label="Фильтр лога">
+    {#each Object.entries(LOG_FILTERS) as [id, f] (id)}
+      <button
+        type="button"
+        class:active={filter === id}
+        onclick={() => (filter = id as LogFilterId)}
+      >
+        {f.label}
+      </button>
+    {/each}
+  </div>
+  <ul class="log" aria-label="Боевой лог" aria-live="polite">
+    {#each rows as row (row.id)}
+      <li
+        class={tone(row.event)}
+        style={row.event.type === 'loot' ? rarityStyle(row.event.item.rarity) : undefined}
+        class:rarity={row.event.type === 'loot'}
+      >
+        <Icon name={EVENT_ICON[row.event.type]} size="sm" />
+        <span class="text">{rowText(row)}</span>
+      </li>
+    {:else}
+      <li class="empty">Бой ещё не начался — подожди пару секунд.</li>
+    {/each}
+  </ul>
+</div>
 
 <style>
+  .wrap {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+  .filters {
+    display: flex;
+    gap: var(--space-1);
+  }
+  .filters button {
+    font: inherit;
+    font-size: var(--text-2xs);
+    color: var(--c-text-faint);
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    padding: var(--space-1) var(--space-2);
+    cursor: pointer;
+  }
+  .filters button:hover {
+    color: var(--c-text);
+  }
+  .filters button.active {
+    color: var(--c-bg);
+    background: var(--c-accent);
+  }
   .log {
     list-style: none;
     margin: 0;
@@ -85,10 +192,26 @@
     overflow: hidden;
   }
   .log li {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
     color: var(--c-text-muted);
+  }
+  .log .text {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  /* Лента прокручивается: держит 50 строк, показывает восемь. */
+  .log {
+    overflow-y: auto;
+    max-height: calc(8 * var(--leading-normal) * var(--text-md) + 2 * var(--space-2));
+  }
+  .log li.rarity {
+    color: var(--rarity-color);
+  }
+  .log li.empty {
+    color: var(--c-text-faint);
   }
   .log li:first-child {
     color: var(--c-text);
