@@ -16,6 +16,7 @@
   import { UPGRADES } from '../data/upgrades'
   import { TALENT_BY_ID } from '../data/talents'
   import { gameState } from '../stores/game'
+  import { Panel } from './kit'
 
   // Весь текст панели статов живёт здесь; логика отдаёт только раскладку.
   const STAT_NAMES: Record<StatId, string> = {
@@ -84,8 +85,7 @@
   }
 </script>
 
-<section class="stats-panel">
-  <h2>Статы</h2>
+<Panel title="Статы" subtitle="нажми строку — покажу, из чего сложилось">
   <ul>
     <li>
       <button type="button" class="stat-row" onclick={() => toggle('swingDamage')}>
@@ -165,56 +165,53 @@
       </li>
     {/each}
   </ul>
-</section>
+</Panel>
 
 <style>
-  .stats-panel h2 {
-    margin: 0 0 0.5rem;
-    font-size: 1.1rem;
-  }
   ul {
     list-style: none;
     margin: 0;
     padding: 0;
     display: flex;
     flex-direction: column;
-    border: 1px solid #8884;
-    border-radius: 8px;
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius-md);
     overflow: hidden;
   }
   li + li {
-    border-top: 1px solid #8883;
+    border-top: 1px solid var(--c-border);
   }
   .stat-row {
     font: inherit;
     width: 100%;
     display: flex;
     justify-content: space-between;
-    gap: 1rem;
-    padding: 0.35em 0.8em;
+    gap: var(--space-4);
+    padding: var(--space-1) var(--space-3);
     border: none;
     background: transparent;
     color: inherit;
     cursor: pointer;
+    text-align: left;
   }
   .stat-row:hover {
-    background: rgba(136, 136, 136, 0.1);
+    background: var(--c-surface-raised);
   }
   .name {
-    opacity: 0.85;
+    color: var(--c-text-muted);
+    font-size: var(--text-sm);
   }
   .value {
-    font-variant-numeric: tabular-nums;
-    font-weight: 600;
+    font-weight: var(--weight-bold);
+    font-size: var(--text-sm);
   }
   .breakdown {
-    padding: 0.3em 0.9em 0.6em;
+    padding: var(--space-1) var(--space-3) var(--space-2);
     display: flex;
     flex-wrap: wrap;
-    gap: 0.35em;
-    font-size: 0.85rem;
-    text-align: left;
-    opacity: 0.85;
-    background: rgba(136, 136, 136, 0.07);
+    gap: var(--space-1);
+    font-size: var(--text-xs);
+    color: var(--c-text-muted);
+    background: var(--c-surface-sunken);
   }
 </style>

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { dismissNotice, saveNotice, type NoticeCode } from '../stores/game'
+  import { Button } from './kit'
 
   // Весь текст уведомлений живёт здесь: стор и логика оперируют кодами.
   const MESSAGES: Record<NoticeCode, string> = {
@@ -15,7 +16,7 @@
 {#if $saveNotice}
   <div class="notice" role="status">
     <span>{MESSAGES[$saveNotice]}</span>
-    <button type="button" aria-label="Закрыть" onclick={dismissNotice}>×</button>
+    <Button size="sm" title="Закрыть" onclick={dismissNotice}>×</Button>
   </div>
 {/if}
 
@@ -24,22 +25,12 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 1rem;
-    padding: 0.5em 0.9em;
-    border: 1px solid color-mix(in srgb, var(--color-gold) 40%, transparent);
-    border-radius: 8px;
-    background: color-mix(in srgb, var(--color-gold) 12%, transparent);
-    font-size: 0.9rem;
+    gap: var(--space-4);
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid color-mix(in srgb, var(--c-warning) 45%, transparent);
+    border-radius: var(--radius-md);
+    background: color-mix(in srgb, var(--c-warning) var(--tint-weak), var(--c-surface));
+    font-size: var(--text-sm);
     text-align: left;
-  }
-  button {
-    font: inherit;
-    border: none;
-    background: none;
-    color: inherit;
-    cursor: pointer;
-    font-size: 1.1rem;
-    line-height: 1;
-    padding: 0 0.2em;
   }
 </style>

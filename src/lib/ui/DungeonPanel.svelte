@@ -15,6 +15,7 @@
   import { DUNGEONS } from '../data/dungeons'
   import { ZONE_BY_ID } from '../data/zones'
   import { enterDungeonRun, gameState, leaveDungeonRun } from '../stores/game'
+  import { Button, Panel, StatBar, Tag } from './kit'
 
   const statuses = $derived(new Map(allDungeonStatuses($gameState).map((s) => [s.dungeonId, s])))
   const dungeon = $derived(activeDungeon($gameState))
@@ -41,18 +42,21 @@
   const toEnrage = $derived(boss && run ? secondsToEnrage(boss, run.fightMs) : 0)
 </script>
 
-<section class="dungeon">
-  {#if dungeon && boss && run}
-    <h2>{dungeon.name}</h2>
-    <p class="chain">
-      Босс {run.bossIndex + 1} из {dungeon.bosses.length}: <strong>{boss.name}</strong>
-    </p>
-    <div class="hp-bar" role="progressbar" aria-valuenow={bossHpPercent} aria-valuemin="0" aria-valuemax="100">
-      <div class="hp-fill" style="width: {bossHpPercent}%"></div>
-    </div>
-    <div class="hp-text">
-      {formatNumber($gameState.monster.currentHp)} / {formatNumber($gameState.monster.maxHp)}
-    </div>
+{#if dungeon && boss && run}
+  <Panel
+    title={dungeon.name}
+    subtitle="Босс {run.bossIndex + 1} из {dungeon.bosses.length}: {boss.name}"
+  >
+    <StatBar
+      value={$gameState.monster.currentHp.toNumber()}
+      max={$gameState.monster.maxHp.toNumber()}
+      tone="damage"
+      size="lg"
+      label="Здоровье босса"
+      valueLabel="{formatNumber($gameState.monster.currentHp)} / {formatNumber(
+        $gameState.monster.maxHp,
+      )}"
+    />
 
     <p class="enrage" class:angry={enrage > 1}>
       {#if enrage > 1}
@@ -62,10 +66,16 @@
       {/if}
     </p>
 
-    <button type="button" onclick={() => leaveDungeonRun()}>Выйти из данжа</button>
-    <p class="hint">Выход и смерть одинаково сбрасывают цепочку — лут остаётся.</p>
-  {:else}
-    <h2>Данжи</h2>
+    <div>
+      <Button variant="danger" onclick={() => leaveDungeonRun()}>Выйти из данжа</Button>
+    </div>
+
+    {#snippet footer()}
+      <p class="hint">Выход и смерть одинаково сбрасывают цепочку — лут остаётся.</p>
+    {/snippet}
+  </Panel>
+{:else}
+  <Panel title="Данжи">
     <ul>
       {#each DUNGEONS as d (d.id)}
         {@const status = statuses.get(d.id)}
@@ -73,13 +83,15 @@
           <li class="entry" class:locked={!status.canEnter}>
             <div class="head">
               <span class="name">{d.name}</span>
-              {#if status.cleared}<span class="badge">пройден</span>{/if}
+              {#if status.cleared}<Tag tone="gold" label="пройден" />{/if}
             </div>
             <div class="facts">
               {d.bosses.length} босса подряд · вход из зоны «{ZONE_BY_ID[d.zoneId]?.name ?? d.zoneId}»
             </div>
             {#if status.canEnter}
-              <button type="button" onclick={() => enterDungeonRun(d.id)}>Войти</button>
+              <Button size="sm" variant="primary" onclick={() => enterDungeonRun(d.id)}>
+                Войти
+              </Button>
             {:else}
               <span class="reason">{REASON_TEXT[status.reason ?? 'level'](d)}</span>
             {/if}
@@ -90,43 +102,18 @@
         {/if}
       {/each}
     </ul>
-  {/if}
-</section>
+  </Panel>
+{/if}
 
 <style>
-  h2 {
-    margin: 0 0 0.5rem;
-    font-size: 1.1rem;
-  }
-  .chain {
-    margin: 0 0 0.4rem;
-    font-size: 0.9rem;
-  }
-  .hp-bar {
-    height: 0.9rem;
-    border-radius: 999px;
-    background: #8883;
-    overflow: hidden;
-  }
-  .hp-fill {
-    height: 100%;
-    background: #b71c1c;
-    transition: width 100ms linear;
-  }
-  .hp-text {
-    font-size: 0.78rem;
-    opacity: 0.75;
-    margin-top: 0.2rem;
-  }
   .enrage {
-    margin: 0.5rem 0;
-    font-size: 0.85rem;
-    opacity: 0.75;
+    margin: 0;
+    font-size: var(--text-sm);
+    color: var(--c-text-muted);
   }
   .enrage.angry {
-    color: #e57373;
-    opacity: 1;
-    font-weight: 600;
+    color: var(--c-damage);
+    font-weight: var(--weight-bold);
   }
   ul {
     list-style: none;
@@ -134,17 +121,17 @@
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
   .entry {
-    border: 1px solid #8884;
-    border-radius: 8px;
-    padding: 0.6rem 0.7rem;
-    text-align: left;
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius-md);
+    padding: var(--space-2) var(--space-3);
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
-    font-size: 0.85rem;
+    align-items: flex-start;
+    gap: var(--space-1);
+    font-size: var(--text-sm);
   }
   .entry.locked {
     opacity: 0.55;
@@ -152,46 +139,21 @@
   .head {
     display: flex;
     align-items: baseline;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
   .name {
-    font-weight: 600;
-    font-size: 0.95rem;
-  }
-  .badge {
-    font-size: 0.72rem;
-    color: var(--color-gold);
-    border: 1px solid currentColor;
-    border-radius: 4px;
-    padding: 0 0.3em;
+    font-weight: var(--weight-bold);
   }
   .facts,
-  .reason,
-  .reward {
-    font-size: 0.78rem;
-    opacity: 0.7;
+  .reason {
+    font-size: var(--text-xs);
+    color: var(--c-text-muted);
   }
   .reward {
-    opacity: 0.55;
+    font-size: var(--text-xs);
+    color: var(--c-text-faint);
   }
   .hint {
-    margin: 0.4rem 0 0;
-    font-size: 0.75rem;
-    opacity: 0.55;
-  }
-  button {
-    font: inherit;
-    font-size: 0.78rem;
-    align-self: flex-start;
-    margin-top: 0.2rem;
-    padding: 0.25em 0.7em;
-    border: 1px solid #8886;
-    border-radius: 6px;
-    background: transparent;
-    color: inherit;
-    cursor: pointer;
-  }
-  button:hover {
-    border-color: var(--color-gold);
+    margin: 0;
   }
 </style>

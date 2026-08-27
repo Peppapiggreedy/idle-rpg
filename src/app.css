@@ -1,21 +1,43 @@
-:root {
-  color-scheme: light dark;
-  /* Декоративные цвета валют — единственное место определения. */
-  --color-gold: #d4a017;
-  --color-xp: #7e6fff;
-  font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
+/* Глобальная основа. Все величины — из токенов; собственных чисел здесь нет. */
+@import './lib/ui/fonts.css';
+@import './lib/ui/tokens.css';
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
   font-size: 16px;
-  line-height: 1.5;
 }
 
 body {
   margin: 0;
   min-height: 100vh;
+  background: var(--c-bg);
+  color: var(--c-text);
+  font-family: var(--font-ui);
+  font-size: var(--text-md);
+  line-height: var(--leading-normal);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Одно кольцо фокуса на всю игру: клавиатурная навигация должна быть видна. */
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--radius-sm);
 }
 
 code {
-  font-family: ui-monospace, Consolas, monospace;
-  background: rgba(136, 136, 136, 0.15);
-  padding: 0.1em 0.3em;
-  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: var(--c-surface-raised);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+}
+
+a {
+  color: var(--c-accent);
 }

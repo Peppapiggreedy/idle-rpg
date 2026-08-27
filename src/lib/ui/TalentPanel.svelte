@@ -19,6 +19,7 @@
   } from '../data/talents'
   import { TALENT_FIRST_LEVEL } from '../data/balance'
   import { gameState, investTalentPoint, resetTalentTree } from '../stores/game'
+  import { Button, NumberText, Panel, Tag } from './kit'
 
   const points = $derived(availablePoints($gameState))
   const cost = $derived(resetCost($gameState))
@@ -68,17 +69,16 @@
   }
 </script>
 
-<section class="talents">
-  <h2>Таланты</h2>
-  <p class="points">
+<Panel title="Таланты">
+  {#snippet header()}
     {#if points > 0}
-      Свободных очков: <strong>{points}</strong>
+      <Tag tone="xp" size="md" label="свободных очков: {points}" />
     {:else if $gameState.level.lt(TALENT_FIRST_LEVEL)}
-      Первое очко таланта — на {TALENT_FIRST_LEVEL} уровне
+      <Tag size="md" label="первое очко — на {TALENT_FIRST_LEVEL} уровне" />
     {:else}
-      Свободных очков нет — следующее придёт с уровнем
+      <Tag size="md" label="очков нет — следующее с уровнем" />
     {/if}
-  </p>
+  {/snippet}
 
   <div class="branches">
     {#each BRANCHES as branch (branch.id)}
@@ -95,9 +95,9 @@
             </div>
             <div class="effect">{effectText(talent)}</div>
             {#if status.canInvest}
-              <button type="button" onclick={() => investTalentPoint(talent.id)}>
+              <Button size="sm" variant="primary" onclick={() => investTalentPoint(talent.id)}>
                 Вложить очко
-              </button>
+              </Button>
             {:else}
               <span class="reason">
                 {REASON_TEXT[status.reason ?? 'no-points'](talent)}
@@ -114,10 +114,10 @@
     {/each}
   </div>
 
-  <div class="reset">
-    <button type="button" disabled={!canReset} onclick={() => resetTalentTree()}>
-      Сбросить таланты за {formatNumber(cost)}
-    </button>
+  {#snippet footer()}
+    <Button disabled={!canReset} onclick={() => resetTalentTree()}>
+      Сбросить таланты за <NumberText value={cost} tone="gold" />
+    </Button>
     <span class="hint">
       {#if $gameState.talentResets > 0}
         Сбросов было {$gameState.talentResets} — каждый следующий дороже.
@@ -125,109 +125,76 @@
         Первый сброс по базовой цене; каждый следующий дороже.
       {/if}
     </span>
-  </div>
-</section>
+  {/snippet}
+</Panel>
 
 <style>
-  h2 {
-    margin: 0 0 0.5rem;
-    font-size: 1.1rem;
-  }
   h3 {
-    margin: 0 0 0.4rem;
-    font-size: 0.9rem;
-    letter-spacing: 0.04em;
+    margin: 0;
+    font-size: var(--text-xs);
+    letter-spacing: var(--tracking-wide);
     text-transform: uppercase;
-    opacity: 0.7;
-  }
-  .points {
-    margin: 0 0 0.75rem;
-    font-size: 0.85rem;
+    color: var(--c-text-faint);
   }
   .branches {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0.75rem;
+    grid-template-columns: 1fr;
+    gap: var(--space-3);
   }
   .branch {
     display: flex;
     flex-direction: column;
-    gap: 0.4rem;
+    gap: var(--space-2);
   }
   .talent {
-    border: 1px solid #8884;
-    border-radius: 8px;
-    padding: 0.45rem 0.55rem;
-    text-align: left;
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius-md);
+    padding: var(--space-2);
     display: flex;
     flex-direction: column;
-    gap: 0.2rem;
-    font-size: 0.82rem;
+    align-items: flex-start;
+    gap: var(--space-1);
+    font-size: var(--text-sm);
   }
   .talent.taken {
-    border-color: var(--color-xp);
-    background: color-mix(in srgb, var(--color-xp) 8%, transparent);
+    border-color: color-mix(in srgb, var(--c-xp) 60%, transparent);
+    background: color-mix(in srgb, var(--c-xp) var(--tint-weak), transparent);
   }
   .talent.locked {
-    opacity: 0.5;
+    opacity: 0.55;
   }
   .head {
     display: flex;
     justify-content: space-between;
     align-items: baseline;
-    gap: 0.4rem;
+    gap: var(--space-2);
+    width: 100%;
   }
   .name {
-    font-weight: 600;
+    font-weight: var(--weight-bold);
   }
   .rank {
-    font-size: 0.78rem;
-    opacity: 0.7;
-    font-variant-numeric: tabular-nums;
+    font-size: var(--text-xs);
+    color: var(--c-text-muted);
   }
   .rank.full {
-    color: var(--color-gold);
-    opacity: 1;
+    color: var(--c-gold);
   }
   .effect {
-    font-size: 0.75rem;
-    opacity: 0.8;
+    font-size: var(--text-xs);
+    color: var(--c-text-muted);
   }
   .reason {
-    font-size: 0.72rem;
-    opacity: 0.75;
-  }
-  .progress {
-    opacity: 0.7;
-  }
-  .reset {
-    margin-top: 0.8rem;
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.5rem;
+    font-size: var(--text-xs);
+    color: var(--c-text-faint);
   }
   .hint {
-    font-size: 0.75rem;
-    opacity: 0.55;
+    color: var(--c-text-faint);
   }
-  button {
-    font: inherit;
-    font-size: 0.78rem;
-    align-self: flex-start;
-    margin-top: 0.15rem;
-    padding: 0.25em 0.7em;
-    border: 1px solid #8886;
-    border-radius: 6px;
-    background: transparent;
-    color: inherit;
-    cursor: pointer;
-  }
-  button:hover:not(:disabled) {
-    border-color: var(--color-xp);
-  }
-  button:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
+
+  @media (min-width: 720px) {
+    .branches {
+      grid-template-columns: 1fr 1fr;
+    }
   }
 </style>

@@ -16,6 +16,7 @@
     moveAbilityPriority,
     setAbilityAutocast,
   } from '../stores/game'
+  import { Button, NumberText, Panel, Tooltip } from './kit'
 
   // Порядок в панели = порядок приоритета: сверху то, что автокаст жмёт первым.
   const ordered = $derived(abilitiesByPriority($gameState.abilitySettings, false))
@@ -70,32 +71,32 @@
 
 <svelte:window onkeydown={onKey} />
 
-<section class="abilities">
-  <h2>Умения</h2>
+<Panel title="Умения" subtitle="порядок в списке — это и есть приоритет автокаста">
   <div class="row">
     {#each ordered as ability, i (ability.id)}
       {@const status = statuses[i]}
-      <button
-        type="button"
-        class="ability"
-        class:queued={status.queued}
-        class:blocked={!status.usable}
-        disabled={!status.usable}
-        title={tooltip(ability, i)}
-        onclick={() => activateAbility(ability.id)}
-      >
-        <span class="fill" style="height: {Math.min(100, status.cooldownFraction * 100)}%"></span>
-        <span class="key">{hotkey(i)}</span>
-        <span class="name">{ability.name}</span>
-        <span class="cost">{formatNumber(ability.manaCost)} маны</span>
-        {#if status.cooldownMsLeft > 0}
-          <span class="timer">{seconds(status.cooldownMsLeft)}с</span>
-        {:else if status.queued}
-          <span class="timer">в очереди</span>
-        {:else if status.reason}
-          <span class="timer reason">{REASON_TEXT[status.reason]}</span>
-        {/if}
-      </button>
+      <Tooltip text={tooltip(ability, i)} block width="wide">
+        <button
+          type="button"
+          class="ability"
+          class:queued={status.queued}
+          class:blocked={!status.usable}
+          disabled={!status.usable}
+          onclick={() => activateAbility(ability.id)}
+        >
+          <span class="fill" style="height: {Math.min(100, status.cooldownFraction * 100)}%"></span>
+          <span class="key">{hotkey(i)}</span>
+          <span class="name">{ability.name}</span>
+          <span class="cost"><NumberText value={ability.manaCost} tone="mana" size="sm" /> маны</span>
+          {#if status.cooldownMsLeft > 0}
+            <span class="timer">{seconds(status.cooldownMsLeft)}с</span>
+          {:else if status.queued}
+            <span class="timer">в очереди</span>
+          {:else if status.reason}
+            <span class="timer reason">{REASON_TEXT[status.reason]}</span>
+          {/if}
+        </button>
+      </Tooltip>
     {/each}
   </div>
 
@@ -112,64 +113,73 @@
           {ability.name} — использовать автоматически
         </label>
         <span class="arrows">
-          <button
-            type="button"
+          <Button
+            size="sm"
             title="Выше по приоритету"
             disabled={i === 0}
-            onclick={() => moveAbilityPriority(ability.id, -1)}>▲</button
+            onclick={() => moveAbilityPriority(ability.id, -1)}
           >
-          <button
-            type="button"
+            ▲
+          </Button>
+          <Button
+            size="sm"
             title="Ниже по приоритету"
             disabled={i === ordered.length - 1}
-            onclick={() => moveAbilityPriority(ability.id, 1)}>▼</button
+            onclick={() => moveAbilityPriority(ability.id, 1)}
           >
+            ▼
+          </Button>
         </span>
       </li>
     {/each}
   </ul>
-  <p class="gcd idle">
-    Автокаст жмёт первое доступное сверху вниз, но реагирует на
-    {(AUTOCAST_DELAY_MS / 1000).toFixed(1)}с медленнее тебя и не придерживает кулдауны.
-  </p>
-  {#if $gameState.gcdMsLeft > 0}
-    <p class="gcd">Общая задержка: {seconds($gameState.gcdMsLeft)}с</p>
-  {:else}
-    <p class="gcd idle">Общая задержка свободна</p>
-  {/if}
-</section>
+
+  {#snippet footer()}
+    <p class="gcd">
+      Автокаст жмёт первое доступное сверху вниз, но реагирует на
+      {(AUTOCAST_DELAY_MS / 1000).toFixed(1)}с медленнее тебя и не придерживает кулдауны.
+    </p>
+    <p class="gcd" class:idle={$gameState.gcdMsLeft <= 0}>
+      {#if $gameState.gcdMsLeft > 0}
+        Общая задержка: {seconds($gameState.gcdMsLeft)}с
+      {:else}
+        Общая задержка свободна
+      {/if}
+    </p>
+  {/snippet}
+</Panel>
 
 <style>
-  h2 {
-    margin: 0 0 0.75rem;
-    font-size: 1.1rem;
-  }
   .row {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
+  /* Кнопка умения — не примитив Button: у неё заливка кулдауна под текстом
+     и четыре строки внутри. Цвета и отступы всё равно из токенов. */
   .ability {
     position: relative;
     overflow: hidden;
     isolation: isolate;
+    width: 100%;
     font: inherit;
     color: inherit;
-    background: transparent;
-    border: 1px solid #8886;
-    border-radius: 8px;
-    padding: 0.55rem 0.5rem;
+    background: var(--c-surface-sunken);
+    border: 1px solid var(--c-border-strong);
+    border-radius: var(--radius-md);
+    padding: var(--space-2);
     min-height: 5rem;
     cursor: pointer;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 0.15rem;
+    gap: var(--space-1);
     text-align: center;
+    transition: border-color var(--dur-fast) ease;
   }
   .ability:hover:not(:disabled) {
-    border-color: var(--color-xp);
+    border-color: var(--c-xp);
   }
   .ability:disabled {
     cursor: not-allowed;
@@ -178,90 +188,79 @@
     opacity: 0.55;
   }
   .ability.queued {
-    border-color: var(--color-xp);
-    box-shadow: inset 0 0 0.6rem color-mix(in srgb, var(--color-xp) 35%, transparent);
+    border-color: var(--c-xp);
+    box-shadow: inset 0 0 var(--space-2) color-mix(in srgb, var(--c-xp) var(--tint-strong), transparent);
   }
   /* Заливка кулдауна: растёт снизу, под текстом. */
   .fill {
     position: absolute;
     inset: auto 0 0 0;
-    background: color-mix(in srgb, var(--color-xp) 22%, transparent);
+    background: color-mix(in srgb, var(--c-xp) var(--tint), transparent);
     z-index: -1;
-    transition: height 100ms linear;
+    transition: height var(--dur-tick) linear;
   }
   .key {
     position: absolute;
-    top: 0.25rem;
-    left: 0.4rem;
-    font-size: 0.7rem;
-    opacity: 0.5;
+    top: var(--space-1);
+    left: var(--space-1);
+    font-size: var(--text-2xs);
+    color: var(--c-text-faint);
   }
   .name {
-    font-weight: 600;
-    font-size: 0.85rem;
+    font-weight: var(--weight-bold);
+    font-size: var(--text-sm);
   }
   .cost {
-    font-size: 0.75rem;
-    color: var(--color-xp);
+    font-size: var(--text-xs);
+    color: var(--c-mana);
   }
   .timer {
-    font-size: 0.72rem;
-    opacity: 0.75;
+    font-size: var(--text-2xs);
+    color: var(--c-text-muted);
   }
   .timer.reason {
-    opacity: 0.6;
+    color: var(--c-text-faint);
   }
+
   .settings {
     list-style: none;
-    margin: 0.6rem 0 0;
+    margin: 0;
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
-    font-size: 0.78rem;
-    text-align: left;
+    gap: var(--space-1);
+    font-size: var(--text-xs);
   }
   .settings li {
     display: flex;
     align-items: center;
-    gap: 0.4rem;
+    gap: var(--space-2);
   }
   .settings label {
     display: flex;
     align-items: center;
-    gap: 0.35rem;
+    gap: var(--space-1);
     cursor: pointer;
     flex: 1;
   }
   .settings .order {
-    opacity: 0.45;
+    color: var(--c-text-faint);
     min-width: 1.2em;
   }
   .arrows {
     display: flex;
-    gap: 0.15rem;
-  }
-  .arrows button {
-    font: inherit;
-    font-size: 0.7rem;
-    line-height: 1;
-    padding: 0.2em 0.4em;
-    border: 1px solid #8886;
-    border-radius: 4px;
-    background: transparent;
-    color: inherit;
-    cursor: pointer;
-  }
-  .arrows button:disabled {
-    opacity: 0.3;
-    cursor: not-allowed;
+    gap: var(--space-1);
   }
   .gcd {
-    margin: 0.5rem 0 0;
-    font-size: 0.75rem;
-    opacity: 0.6;
+    margin: 0;
   }
   .gcd.idle {
-    opacity: 0.35;
+    opacity: 0.6;
+  }
+
+  @media (max-width: 719px) {
+    .row {
+      grid-template-columns: 1fr;
+    }
   }
 </style>

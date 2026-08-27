@@ -1,96 +1,67 @@
 <script lang="ts">
   import { formatNumber } from '../game'
+  import { REVIVE_DELAY_MS } from '../data/balance'
   import { gameState } from '../stores/game'
+  import { Panel, StatBar } from './kit'
 
-  const hpPercent = $derived(
-    Math.max(0, Math.min(100, $gameState.currentHp.div($gameState.stats.maxHp).times(100).toNumber())),
-  )
-  const manaPercent = $derived(
-    Math.max(
-      0,
-      Math.min(100, $gameState.currentMana.div($gameState.stats.maxMana).times(100).toNumber()),
-    ),
-  )
-  const revivePercent = $derived(
-    Math.max(0, Math.min(100, (1 - $gameState.reviveMsLeft / 30_000) * 100)),
-  )
+  const hp = $derived($gameState.currentHp.toNumber())
+  const maxHp = $derived($gameState.stats.maxHp.toNumber())
+  const mana = $derived($gameState.currentMana.toNumber())
+  const maxMana = $derived($gameState.stats.maxMana.toNumber())
+  const xp = $derived($gameState.currentXp.toNumber())
+  const xpToNext = $derived($gameState.xpToNext.toNumber())
+  // Отсчёт воскрешения идёт вниз, полоска — вверх: видно, сколько осталось.
+  const revive = $derived(REVIVE_DELAY_MS - $gameState.reviveMsLeft)
 
-  const xpPercent = $derived(
-    Math.max(
-      0,
-      Math.min(100, $gameState.currentXp.div($gameState.xpToNext).times(100).toNumber()),
-    ),
-  )
+  const pair = (a: unknown, b: unknown) => `${a} / ${b}`
 </script>
 
-<section class="hero">
-  <h2>Воин · Уровень {formatNumber($gameState.level)}</h2>
+<Panel title="Воин · Уровень {formatNumber($gameState.level)}">
   {#if $gameState.heroState === 'dead'}
-    <div class="bar revive-bar" role="progressbar" aria-valuenow={revivePercent} aria-valuemin="0" aria-valuemax="100">
-      <div class="fill revive-fill" style="width: {revivePercent}%"></div>
-    </div>
-    <div class="bar-text dead-text">
-      Ты пал… воскрешение через {Math.ceil($gameState.reviveMsLeft / 1000)} с
-    </div>
+    <StatBar
+      value={revive}
+      max={REVIVE_DELAY_MS}
+      tone="neutral"
+      size="lg"
+      label="Воскрешение"
+      valueLabel="{Math.ceil($gameState.reviveMsLeft / 1000)} с"
+    />
+    <p class="dead">Ты пал…</p>
   {:else}
-    <div class="bar hp-bar" role="progressbar" aria-valuenow={hpPercent} aria-valuemin="0" aria-valuemax="100">
-      <div class="fill hp-fill" style="width: {hpPercent}%"></div>
-    </div>
-    <div class="bar-text">
-      Здоровье: {formatNumber($gameState.currentHp)} / {formatNumber($gameState.stats.maxHp)}
-    </div>
-    <div class="bar mana-bar" role="progressbar" aria-valuenow={manaPercent} aria-valuemin="0" aria-valuemax="100">
-      <div class="fill mana-fill" style="width: {manaPercent}%"></div>
-    </div>
-    <div class="bar-text">
-      Мана: {formatNumber($gameState.currentMana)} / {formatNumber($gameState.stats.maxMana)}
-    </div>
+    <StatBar
+      value={hp}
+      max={maxHp}
+      tone="hp"
+      size="lg"
+      label="Здоровье"
+      valueLabel={pair(formatNumber($gameState.currentHp), formatNumber($gameState.stats.maxHp))}
+    />
+    <StatBar
+      value={mana}
+      max={maxMana}
+      tone="mana"
+      label="Мана"
+      valueLabel={pair(
+        formatNumber($gameState.currentMana),
+        formatNumber($gameState.stats.maxMana),
+      )}
+    />
   {/if}
-  <div class="bar xp-bar" role="progressbar" aria-valuenow={xpPercent} aria-valuemin="0" aria-valuemax="100">
-    <div class="fill xp-fill" style="width: {xpPercent}%"></div>
-  </div>
-  <div class="bar-text">
-    Опыт: {formatNumber($gameState.currentXp)} / {formatNumber($gameState.xpToNext)}
-  </div>
-</section>
+  <StatBar
+    value={xp}
+    max={xpToNext}
+    tone="xp"
+    size="sm"
+    label="Опыт"
+    valueLabel={pair(formatNumber($gameState.currentXp), formatNumber($gameState.xpToNext))}
+  />
+</Panel>
 
 <style>
-  .hero h2 {
-    margin: 0 0 0.5rem;
-    font-size: 1.1rem;
-  }
-  .bar {
-    height: 0.7rem;
-    border: 1px solid #8886;
-    border-radius: 6px;
-    overflow: hidden;
-    background: rgba(136, 136, 136, 0.15);
-    margin-top: 0.4rem;
-  }
-  .fill {
-    height: 100%;
-    transition: width 0.1s linear;
-  }
-  .hp-fill {
-    background: #3fa34d;
-  }
-  .mana-fill {
-    background: #2f6fd6;
-  }
-  .xp-fill {
-    background: var(--color-xp);
-  }
-  .revive-fill {
-    background: #777;
-  }
-  .bar-text {
-    margin-top: 0.2rem;
-    font-size: 0.85rem;
-    font-variant-numeric: tabular-nums;
-    opacity: 0.85;
-  }
-  .dead-text {
-    color: #c0392b;
-    font-weight: 600;
+  .dead {
+    margin: 0;
+    color: var(--c-damage);
+    font-weight: var(--weight-bold);
+    font-size: var(--text-sm);
   }
 </style>

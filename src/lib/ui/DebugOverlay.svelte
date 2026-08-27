@@ -48,19 +48,22 @@
 <style>
   .overlay {
     position: fixed;
-    right: 0.5rem;
-    bottom: 0.5rem;
+    right: var(--space-2);
+    bottom: var(--space-2);
     z-index: 9999;
-    padding: 0.4em 0.6em;
-    font: 12px/1.5 ui-monospace, Consolas, monospace;
+    padding: var(--space-1) var(--space-2);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    line-height: var(--leading-normal);
     text-align: right;
-    color: #9f9;
-    background: rgba(0, 0, 0, 0.7);
-    border-radius: 6px;
+    color: var(--c-accent);
+    background: var(--c-surface-sunken);
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius-sm);
     pointer-events: none;
   }
   .error {
-    color: #f77;
+    color: var(--c-damage);
     max-width: 22rem;
     word-break: break-word;
   }

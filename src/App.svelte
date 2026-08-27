@@ -19,16 +19,24 @@
 <main>
   <h1>Idle RPG</h1>
   <NoticeBar />
-  <HeroPanel />
-  <CombatScreen />
-  <AbilityPanel />
-  <DungeonPanel />
-  <ZonePanel />
-  <TalentPanel />
-  <UpgradePanel />
-  <StatsPanel />
-  <EquipmentPanel />
-  <InventoryPanel />
+  <!-- Две колонки на десктопе: слева бой и то, чем в бою управляют,
+       справа — всё, что копится. На мобильном одна колонка сверху вниз. -->
+  <div class="layout">
+    <div class="column">
+      <HeroPanel />
+      <CombatScreen />
+      <AbilityPanel />
+      <DungeonPanel />
+      <ZonePanel />
+      <StatsPanel />
+    </div>
+    <div class="column">
+      <TalentPanel />
+      <UpgradePanel />
+      <EquipmentPanel />
+      <InventoryPanel />
+    </div>
+  </div>
   <SaveControls />
 </main>
 
@@ -40,15 +48,38 @@
 
 <style>
   main {
-    max-width: 40rem;
+    max-width: 68rem;
     margin: 0 auto;
-    padding: 3rem 1.5rem;
-    text-align: center;
+    padding: var(--space-5) var(--space-3);
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: var(--space-4);
   }
-  main h1 {
+  h1 {
     margin: 0;
+    font-size: var(--text-2xl);
+    line-height: var(--leading-tight);
+    text-align: center;
+  }
+  .layout {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: var(--space-4);
+    align-items: start;
+  }
+  .column {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    min-width: 0;
+  }
+
+  @media (min-width: 720px) {
+    main {
+      padding: var(--space-6) var(--space-4);
+    }
+    .layout {
+      grid-template-columns: 1fr 1fr;
+    }
   }
 </style>

@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { formatNumber } from '../game'
   import { dismissOfflineReport, offlineReport } from '../stores/game'
+  import { Button, NumberText, Panel } from './kit'
 
   function formatElapsed(ms: number): string {
     const totalMinutes = Math.floor(ms / 60_000)
@@ -14,14 +14,20 @@
 {#if $offlineReport}
   <div class="backdrop">
     <div class="modal" role="dialog" aria-labelledby="offline-title">
-      <h2 id="offline-title">Пока тебя не было…</h2>
-      <p class="elapsed">({formatElapsed($offlineReport.elapsedMs)})</p>
-      <ul>
-        <li>Убито врагов: <b>{formatNumber($offlineReport.kills)}</b></li>
-        <li>Золото: <b class="gold">+{formatNumber($offlineReport.gold)}</b></li>
-        <li>Опыт: <b class="xp">+{formatNumber($offlineReport.xp)}</b></li>
-      </ul>
-      <button type="button" onclick={dismissOfflineReport}>Продолжить</button>
+      <Panel tone="raised" align="center">
+        {#snippet children()}
+          <h2 id="offline-title">Пока тебя не было…</h2>
+          <p class="elapsed">({formatElapsed($offlineReport.elapsedMs)})</p>
+          <ul>
+            <li>Убито врагов: <NumberText value={$offlineReport.kills} bold /></li>
+            <li>Золото: <NumberText value={$offlineReport.gold} tone="gold" sign="plus" bold /></li>
+            <li>Опыт: <NumberText value={$offlineReport.xp} tone="xp" sign="plus" bold /></li>
+          </ul>
+          <div class="actions">
+            <Button variant="primary" onclick={dismissOfflineReport}>Продолжить</Button>
+          </div>
+        {/snippet}
+      </Panel>
     </div>
   </div>
 {/if}
@@ -34,49 +40,34 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(0, 0, 0, 0.55);
+    padding: var(--space-4);
+    background: color-mix(in srgb, var(--c-bg) 80%, transparent);
   }
   .modal {
-    min-width: 16rem;
+    min-width: 18rem;
     max-width: 90vw;
-    padding: 1.5rem 2rem;
-    border: 1px solid #8886;
-    border-radius: 12px;
-    background: canvas;
-    text-align: center;
+    box-shadow: var(--shadow-lg);
+    border-radius: var(--radius-lg);
   }
-  .modal h2 {
+  h2 {
     margin: 0;
+    font-size: var(--text-lg);
   }
   .elapsed {
-    margin: 0.25rem 0 1rem;
-    opacity: 0.7;
-    font-size: 0.9rem;
+    margin: 0;
+    color: var(--c-text-faint);
+    font-size: var(--text-sm);
   }
   ul {
     list-style: none;
-    margin: 0 0 1.25rem;
+    margin: 0;
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 0.4rem;
+    gap: var(--space-1);
   }
-  .gold {
-    color: var(--color-gold);
-  }
-  .xp {
-    color: var(--color-xp);
-  }
-  button {
-    font: inherit;
-    padding: 0.5em 1.5em;
-    border: 1px solid #8886;
-    border-radius: 8px;
-    background: transparent;
-    color: inherit;
-    cursor: pointer;
-  }
-  button:hover {
-    border-color: var(--color-gold);
+  .actions {
+    display: flex;
+    justify-content: center;
   }
 </style>

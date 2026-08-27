@@ -2,15 +2,20 @@ import { mount } from 'svelte'
 import './app.css'
 import App from './App.svelte'
 import BalancePage from './lib/ui/BalancePage.svelte'
-import { isBalanceRoute } from './lib/ui/route'
+import ShowcasePage from './lib/ui/ShowcasePage.svelte'
+import { debugRoute } from './lib/ui/route'
 import { initGame, persistNow, startGameLoop } from './lib/stores/game'
 
 const target = document.getElementById('app')!
+const route = debugRoute()
 
-// Прогон баланса — отдельная страница под ?debug=1. Игровой цикл на ней не
-// запускается вовсе: прибор не должен фармить за игрока и трогать его сейв.
-if (isBalanceRoute()) {
+// Отладочные страницы под ?debug=1 монтируются вместо игры, и игровой цикл
+// на них не запускается вовсе: ни прибор, ни витрина не должны фармить
+// за игрока и трогать его сейв.
+if (route === 'balance') {
   mount(BalancePage, { target })
+} else if (route === 'ui') {
+  mount(ShowcasePage, { target })
 } else {
   initGame()
   mount(App, { target })
