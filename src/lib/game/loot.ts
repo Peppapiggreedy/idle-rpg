@@ -15,6 +15,7 @@ import {
 } from '../data/items'
 import type { StatModifier } from './stats'
 import { isEquipped } from './equipment'
+import type { BossLoot } from '../data/dungeons'
 
 // Реэкспорт для обратной совместимости импортов.
 export { INVENTORY_SIZE } from '../data/balance'
@@ -92,6 +93,35 @@ export function rollLoot(rng: Rng, itemSeq: number): Item | null {
     slot,
     mods: armorMods(slot, rarity),
   }
+}
+
+// Лут босса: слоты заданы данными, а редкость — обычная рулетка, но не ниже
+// порога босса. Отсюда и растущее качество по цепочке: порог поднимается.
+export function rollBossLoot(loot: BossLoot, rng: Rng, itemSeq: number): Item[] {
+  const floor = RARITIES.findIndex((r) => r.id === loot.minRarity)
+  return loot.slots.map((slot, index) => {
+    const rolled = rollRarity(rng)
+    const rolledIndex = RARITIES.findIndex((r) => r.id === rolled.id)
+    const rarity = RARITIES[Math.max(rolledIndex, floor)]
+    const adjective = pick(LOOT_ADJECTIVES, rng)
+    if (slot === 'weapon') {
+      const template = pick(WEAPONS, rng)
+      return {
+        id: `item-${itemSeq + index}`,
+        name: `${adjective} ${template.noun}`,
+        rarity: rarity.id,
+        slot,
+        mods: weaponMods(template, rarity),
+      }
+    }
+    return {
+      id: `item-${itemSeq + index}`,
+      name: `${adjective} ${pick(ARMOR_NOUNS[slot], rng)}`,
+      rarity: rarity.id,
+      slot,
+      mods: armorMods(slot, rarity),
+    }
+  })
 }
 
 export function sellPrice(item: Item): Decimal {

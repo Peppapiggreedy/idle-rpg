@@ -73,9 +73,15 @@ export function expectedAbilityDamage(stats: StatBlock, weaponDamagePercent: Dec
 }
 
 // Урон моба по герою: бросок из диапазона, затем срез на damageReduction.
-export function rollMonsterDamage(monster: Monster, stats: StatBlock, rng: Rng): Decimal {
+// damageMultiplier — ярость босса: до неё единица, дальше растёт (см. dungeons.ts).
+export function rollMonsterDamage(
+  monster: Monster,
+  stats: StatBlock,
+  rng: Rng,
+  damageMultiplier = 1,
+): Decimal {
   const raw = randRange(rng, monster.damageMin, monster.damageMax)
-  return raw.times(1 - stats.damageReduction)
+  return raw.times(damageMultiplier).times(1 - stats.damageReduction)
 }
 
 export function expectedMonsterDamage(monster: Monster, stats: StatBlock): Decimal {

@@ -15,6 +15,10 @@ import { travelToZone as travelAction } from '../game/zones'
 import { useAbility as useAbilityAction } from '../game/abilities'
 import { abilitiesByPriority } from '../game/rotation'
 import { investTalent as investTalentAction, resetTalents as resetTalentsAction } from '../game/talents'
+import {
+  enterDungeon as enterDungeonAction,
+  leaveDungeon as leaveDungeonAction,
+} from '../game/dungeons'
 import { emit as emitAttack } from '../game/events'
 import type { SlotId } from '../data/slots'
 import {
@@ -161,6 +165,16 @@ export function toggleAutoEquip(enabled: boolean): void {
 /** Переход в зону по клику. В закрытую зону экшен не пустит — состояние как было. */
 export function travelToZone(zoneId: string): void {
   state.update((s) => travelAction(s, zoneId, rng()))
+}
+
+/** Вход в данж по кнопке. Недоступный данж состояние не меняет. */
+export function enterDungeonRun(dungeonId: string): void {
+  state.update((s) => enterDungeonAction(s, dungeonId))
+}
+
+/** Добровольный выход из данжа: цепочка сбрасывается. */
+export function leaveDungeonRun(): void {
+  state.update((s) => leaveDungeonAction(s, rng(), false))
 }
 
 /** Вложить очко в талант. Недоступный талант состояние не меняет. */
