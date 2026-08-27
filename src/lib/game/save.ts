@@ -26,12 +26,14 @@ import {
   OFFLINE_EFFICIENCY,
 } from '../data/balance'
 import { ABILITIES, ABILITY_BY_ID } from '../data/abilities'
+import { TALENTS } from '../data/talents'
+import { rankOf } from './talents'
 import { FALLBACK_ITEM_NAME } from '../data/loot'
 import { SAFE_ZONE, ZONE_BY_ID } from '../data/zones'
 import { currentZone, zoneRate } from './zones'
 
 export const SAVE_KEY = 'idle-rpg-save'
-export const SAVE_VERSION = 10
+export const SAVE_VERSION = 11
 export const AUTOSAVE_INTERVAL_MS = AUTOSAVE_INTERVAL_S * 1000
 // Потолок оффлайн-прогресса: дольше отсутствовать можно, но не оплачивается.
 export const OFFLINE_CAP_MS = OFFLINE_CAP_HOURS * 60 * 60 * 1000
@@ -40,7 +42,7 @@ export const OFFLINE_MODAL_MIN_MS = 60_000
 // Шаг, которым идёт оффлайн-агрегат.
 export const OFFLINE_CHUNK_MS = OFFLINE_CHUNK_MIN * 60_000
 
-// Актуальный формат сейва (v10). Все Decimal — строки. Прямых полей урона
+// Актуальный формат сейва (v11). Все Decimal — строки. Прямых полей урона
 // и скорости атаки в формате НЕТ: статы — производные от счётчиков покупок
 // и надетой экипировки, пересчитываются конвейером stats.ts.
 export interface SavedModifier {
@@ -63,8 +65,8 @@ export interface SavedAbilitySetting {
   priority: number
 }
 
-export interface SavePayloadV10 {
-  version: 10
+export interface SavePayloadV11 {
+  version: 11
   lastTimestamp: number
   gold: string
   level: string
@@ -74,6 +76,9 @@ export interface SavePayloadV10 {
   heroState: 'alive' | 'dead'
   reviveMsLeft: number
   upgrades: Record<string, string>
+  // Таланты: id -> ранг (обычные числа, не Decimal — рангов единицы).
+  talents: Record<string, number>
+  talentResets: number
   inventory: SavedItem[]
   equipment: Record<string, SavedItem | null>
   autoEquip: boolean
@@ -131,7 +136,7 @@ function savedFromItem(item: Item): SavedItem {
   }
 }
 
-export function payloadFromState(state: GameState, lastTimestamp: number): SavePayloadV10 {
+export function payloadFromState(state: GameState, lastTimestamp: number): SavePayloadV11 {
   const upgrades: Record<string, string> = {}
   for (const [id, owned] of Object.entries(state.upgrades)) upgrades[id] = owned.toString()
   const equipment: Record<string, SavedItem | null> = {}
@@ -149,8 +154,14 @@ export function payloadFromState(state: GameState, lastTimestamp: number): SaveP
     const setting = state.abilitySettings[ability.id]
     if (setting) abilitySettings[ability.id] = { ...setting }
   }
+  // Нулевые ранги в сейв не пишем — это мусор, а не прогресс.
+  const talents: Record<string, number> = {}
+  for (const talent of TALENTS) {
+    const rank = rankOf(state.talents, talent.id)
+    if (rank > 0) talents[talent.id] = rank
+  }
   return {
-    version: 10,
+    version: 11,
     lastTimestamp,
     inventory: state.inventory.map(savedFromItem),
     equipment,
@@ -169,6 +180,8 @@ export function payloadFromState(state: GameState, lastTimestamp: number): SaveP
     heroState: state.heroState,
     reviveMsLeft: state.reviveMsLeft,
     upgrades,
+    talents,
+    talentResets: Math.max(0, Math.floor(state.talentResets)),
     totalTicks: state.totalTicks.toString(),
     playtimeMs: state.playtimeMs.toString(),
   }
@@ -270,7 +283,20 @@ function abilitySettingsFromSaved(raw: unknown): AbilitySettings {
   return settings
 }
 
-export function stateFromPayload(p: SavePayloadV10): GameState {
+// Ранги из сейва: чужие id отбрасываем, свои режем по maxRank — иначе
+// подправленный сейв дал бы талант выше потолка.
+function talentsFromSaved(raw: unknown): Record<string, number> {
+  const ranks: Record<string, number> = {}
+  if (typeof raw !== 'object' || raw === null) return ranks
+  const saved = raw as Record<string, unknown>
+  for (const talent of TALENTS) {
+    const rank = rankOf({ [talent.id]: Number(saved[talent.id]) }, talent.id)
+    if (rank > 0) ranks[talent.id] = rank
+  }
+  return ranks
+}
+
+export function stateFromPayload(p: SavePayloadV11): GameState {
   const level = Decimal.max(parseDec(p.level, '1'), new Decimal(1))
   const upgrades: Record<string, Decimal> = {}
   for (const [id, owned] of Object.entries(p.upgrades ?? {})) upgrades[id] = parseDec(owned, '0')
@@ -281,6 +307,11 @@ export function stateFromPayload(p: SavePayloadV10): GameState {
     currentXp: parseDec(p.currentXp, '0'),
     xpToNext: xpToNextLevel(level),
     upgrades,
+    talents: talentsFromSaved(p.talents),
+    talentResets:
+      typeof p.talentResets === 'number' && Number.isFinite(p.talentResets) && p.talentResets > 0
+        ? Math.floor(p.talentResets)
+        : 0,
     totalTicks: parseDec(p.totalTicks, '0'),
     playtimeMs: parseDec(p.playtimeMs, '0'),
     inventory: Array.isArray(p.inventory) ? p.inventory.map(itemFromSaved) : [],
@@ -348,6 +379,9 @@ function itemV6toV7(raw: unknown): RawSave {
 }
 
 const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
+  // 10 -> 11: появилось дерево талантов. Очки начисляются от уровня, так что
+  // старый герой сразу получит все заработанные — вкладывать их ему самому.
+  10: (raw) => ({ ...raw, version: 11, talents: {}, talentResets: 0 }),
   // 9 -> 10: появился автокаст. Старый сейв получает настройки по умолчанию:
   // все умения включены, приоритет — порядок из данных.
   9: (raw) => ({ ...raw, version: 10, abilitySettings: defaultAbilitySettings() }),
@@ -419,7 +453,7 @@ const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
 }
 
 // null = сейв непригоден (не объект или из более новой версии игры).
-export function migrateSave(raw: unknown): SavePayloadV10 | null {
+export function migrateSave(raw: unknown): SavePayloadV11 | null {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null
   let data = raw as RawSave
   let version = typeof data.version === 'number' ? data.version : 0
@@ -430,7 +464,7 @@ export function migrateSave(raw: unknown): SavePayloadV10 | null {
     data = step(data)
     version = typeof data.version === 'number' ? data.version : version + 1
   }
-  return data as unknown as SavePayloadV10
+  return data as unknown as SavePayloadV11
 }
 
 export interface OfflineReport {
@@ -572,7 +606,7 @@ export function encodeSaveString(state: GameState, now: () => number = Date.now)
 }
 
 // Понимает base64 от экспорта и, на всякий случай, голый JSON.
-export function decodeSaveString(input: string): SavePayloadV10 | null {
+export function decodeSaveString(input: string): SavePayloadV11 | null {
   const attempts = [
     () => JSON.parse(fromBase64(input.trim())),
     () => JSON.parse(input.trim()),

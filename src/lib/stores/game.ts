@@ -14,6 +14,7 @@ import { equipItem, setAutoEquip, unequipItem } from '../game/equipment'
 import { travelToZone as travelAction } from '../game/zones'
 import { useAbility as useAbilityAction } from '../game/abilities'
 import { abilitiesByPriority } from '../game/rotation'
+import { investTalent as investTalentAction, resetTalents as resetTalentsAction } from '../game/talents'
 import { emit as emitAttack } from '../game/events'
 import type { SlotId } from '../data/slots'
 import {
@@ -160,6 +161,16 @@ export function toggleAutoEquip(enabled: boolean): void {
 /** Переход в зону по клику. В закрытую зону экшен не пустит — состояние как было. */
 export function travelToZone(zoneId: string): void {
   state.update((s) => travelAction(s, zoneId, rng()))
+}
+
+/** Вложить очко в талант. Недоступный талант состояние не меняет. */
+export function investTalentPoint(talentId: string): void {
+  state.update((s) => investTalentAction(s, talentId))
+}
+
+/** Сброс талантов за золото; при нехватке золота ничего не делает. */
+export function resetTalentTree(): void {
+  state.update((s) => resetTalentsAction(s))
 }
 
 /** Галка «использовать автоматически» у умения. */

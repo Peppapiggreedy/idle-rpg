@@ -11,6 +11,8 @@ import { WEAPON_SHARPENING } from '../../data/upgrades'
 import { SAFE_ZONE, ZONE_BY_ID } from '../../data/zones'
 import { ABILITY_BY_ID } from '../../data/abilities'
 import { GCD_MS } from '../../data/balance'
+import { TALENT_BY_ID } from '../../data/talents'
+import { availablePoints, earnedPoints, spentPoints } from '../talents'
 import {
   SAVE_KEY,
   SAVE_VERSION,
@@ -51,6 +53,7 @@ describe('фикстуры сейвов', () => {
     ['save-v8.json'],
     ['save-v9.json'],
     ['save-v10.json'],
+    ['save-v11.json'],
   ])('%s мигрирует до текущей версии', (name) => {
     const payload = migrateSave(JSON.parse(fixture(name)))
     expect(payload).not.toBeNull()
@@ -222,6 +225,46 @@ describe('фикстуры сейвов', () => {
     // Остальные умения получили дефолтные настройки, а не исчезли.
     expect(s.abilitySettings['rending-wound']).toBeDefined()
     expect(s.abilitySettings['shattering-blow']).toBeDefined()
+  })
+
+  it('save-v10 -> v11: старый сейв получает пустое дерево и заработанные очки', () => {
+    const s = loadFixture('save-v10.json')
+    expect(s.talents).toEqual({})
+    expect(s.talentResets).toBe(0)
+    // Уровень 19 -> очки за уровни с десятого никуда не делись, их 10.
+    expect(availablePoints(s)).toBe(earnedPoints(s.level))
+    expect(availablePoints(s)).toBe(10)
+    expect(s.gold.toNumber()).toBe(140000) // прогресс не потерян
+  })
+
+  it('save-v11: ранги и счётчик сбросов переживают загрузку', () => {
+    const s = loadFixture('save-v11.json')
+    expect(s.talents).toEqual({ 'honed-edge': 5, 'keen-eye': 2, 'thick-hide': 3 })
+    expect(s.talentResets).toBe(2)
+    expect(spentPoints(s.talents)).toBe(10)
+    expect(availablePoints(s)).toBe(earnedPoints(s.level) - 10)
+    // Таланты пересчитаны в статы при загрузке, а не забыты.
+    expect(s.statsDirty).toBe(false)
+    expect(s.stats.critChance).toBeCloseTo(0.05 + 2 * 0.03, 9)
+  })
+
+  it('мусорные ранги из сейва режутся по maxRank и по списку талантов', () => {
+    const raw = JSON.parse(fixture('save-v11.json'))
+    const s = stateFromPayload(
+      migrateSave({
+        ...raw,
+        talents: {
+          'honed-edge': 999, // выше maxRank
+          'talent-from-the-future': 3, // такого таланта нет
+          'keen-eye': -5, // мусор
+        },
+        talentResets: -7,
+      })!,
+    )
+    expect(s.talents['honed-edge']).toBe(TALENT_BY_ID['honed-edge'].maxRank)
+    expect(s.talents['talent-from-the-future']).toBeUndefined()
+    expect(s.talents['keen-eye']).toBeUndefined()
+    expect(s.talentResets).toBe(0)
   })
 
   it('сейв с неизвестной зоной деградирует до безопасной, а не ломается', () => {

@@ -45,6 +45,10 @@ export interface GameState {
   heroState: 'alive' | 'dead'
   reviveMsLeft: number // обратный отсчёт воскрешения; > 0 только при heroState 'dead'
   upgrades: Record<string, Decimal> // id апгрейда -> сколько куплено (источник статов)
+  // Таланты: id -> вложенный ранг. Тоже источник статов, а часть талантов
+  // ещё и поднимает флаги, меняющие поведение (см. data/talents.ts).
+  talents: Record<string, number>
+  talentResets: number // сколько раз игрок сбрасывал таланты; от этого цена
   equipment: Equipment // надетые предметы по слотам (источник статов)
   autoEquip: boolean // автонадевание, если предмет лучше по урону в секунду
   // Производные статы из конвейера stats.ts. Прямых полей урона/скорости/критов
@@ -137,6 +141,8 @@ export function createInitialState(rngSeed: number = randomSeed()): GameState {
     heroState: 'alive',
     reviveMsLeft: 0,
     upgrades: {},
+    talents: {},
+    talentResets: 0,
     equipment: emptyEquipment(),
     autoEquip: true,
     statsDirty: false,

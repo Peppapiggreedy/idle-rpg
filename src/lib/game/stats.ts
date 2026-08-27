@@ -16,6 +16,7 @@ import type { GameState } from './state'
 import { BASE_STATS, PER_LEVEL } from '../data/balance'
 import { UPGRADES } from '../data/upgrades'
 import { SLOT_IDS } from '../data/slots'
+import { talentModifiers } from '../data/talents'
 
 // Модифицируемые статы. swingTime сюда НЕ входит намеренно: это производная
 // величина, её нельзя модифицировать напрямую — только через weaponSpeed/haste.
@@ -108,6 +109,9 @@ export function collectModifiers(state: GameState): StatModifier[] {
     const item = state.equipment?.[slot]
     if (item) mods.push(...item.mods)
   }
+  // Таланты: значение модификатора множится на вложенный ранг, source —
+  // 'talent:<id>', поэтому раскладка на панели статов показывает их построчно.
+  mods.push(...talentModifiers(state.talents))
   // Апгрейды: урон пересчитывается из СЧЁТЧИКА покупок, а не хранится суммой.
   for (const def of UPGRADES) {
     const owned = state.upgrades[def.id]

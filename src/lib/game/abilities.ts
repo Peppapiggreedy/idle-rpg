@@ -6,6 +6,7 @@ import { rollSwing } from './combat'
 import { AUTOCAST_DELAY_MS, GCD_MS } from '../data/balance'
 import { ABILITIES, ABILITY_BY_ID, type AbilityDef } from '../data/abilities'
 import { abilitiesByPriority } from './rotation'
+import { talentAbilityEffect } from './talents'
 import { pushEvent, type ActiveEffect, type GameState } from './state'
 import type { Rng } from './rng'
 import type { AttackEvent } from '../types'
@@ -74,8 +75,14 @@ function payFor(state: GameState, ability: AbilityDef): GameState {
   }
 }
 
-function effectFrom(ability: AbilityDef, swingDamage: Decimal): ActiveEffect | null {
-  const effect = ability.effect
+// Эффект удара умения: свой из данных умения либо тот, которому научил талант
+// (у Скорого выпада своего эффекта нет — его даёт «Рваный выпад»).
+function effectFrom(
+  state: GameState,
+  ability: AbilityDef,
+  swingDamage: Decimal,
+): ActiveEffect | null {
+  const effect = ability.effect ?? talentAbilityEffect(state.talents, ability.id)
   if (!effect) return null
   return {
     abilityId: ability.id,
@@ -114,7 +121,7 @@ export function strikeWithAbility(
     abilityId: ability.id,
     timestamp: state.playtimeMs.toNumber(),
   })
-  const effect = effectFrom(ability, amount)
+  const effect = effectFrom(state, ability, amount)
   return {
     ...state,
     monster,
