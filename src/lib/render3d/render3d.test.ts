@@ -2,7 +2,9 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { Decimal } from '../game/numbers'
 import { createInitialState } from '../game/state'
+import { FAST_KILL_THRESHOLD_PER_SEC } from '../data/balance'
 import { FLOATER_LIMIT } from '../data/render'
+import { createKillRateMeter, deathMode, deathProgress } from './deaths'
 import {
   ASHEN_SCENE,
   DUNGEON_SCENE,
@@ -324,5 +326,52 @@ describe('обстановка зоны', () => {
     expect(enrageTintAmount(0.5, 0.55)).toBe(0)
     expect(enrageTintAmount(1.4, 0.55)).toBeCloseTo(0.2, 5)
     expect(enrageTintAmount(99, 0.55)).toBe(0.55)
+  })
+})
+
+describe('смерть моба в сцене', () => {
+  it('редкие убийства играют анимацию, частые — вспышку', () => {
+    expect(deathMode(0.5, { threshold: 2 })).toBe('animate')
+    expect(deathMode(2, { threshold: 2 })).toBe('animate')
+    expect(deathMode(2.1, { threshold: 2 })).toBe('flash')
+    expect(deathMode(50, { threshold: 2 })).toBe('flash')
+  })
+
+  it('возврат из оффлайна не играет ничего', () => {
+    // За восемь часов мобов накопилось столько, что любая анимация — ложь.
+    expect(deathMode(0.1, { offline: true })).toBe('none')
+    expect(deathMode(99, { offline: true })).toBe('none')
+  })
+
+  it('счётчик частоты считает по окну, а не по последней паузе', () => {
+    const meter = createKillRateMeter(2000)
+    for (let i = 0; i < 10; i += 1) meter.record(i * 100)
+    // Десять убийств за две секунды окна — пять в секунду.
+    expect(meter.perSecond(900)).toBeCloseTo(5, 5)
+    // Через окно всё забылось.
+    expect(meter.perSecond(5000)).toBe(0)
+  })
+
+  it('тысяча убийств не растит счётчик без предела', () => {
+    // Массив отметок обязан чиститься на ходу: бой идёт часами, и хранить
+    // все убийства за сессию значит копить мусор до конца вкладки.
+    const meter = createKillRateMeter(1000)
+    for (let i = 0; i < 1000; i += 1) meter.record(i * 50)
+    // Внутри окна частота честная: двадцать убийств за последнюю секунду.
+    expect(meter.perSecond(50_000)).toBe(20)
+    // За окном не осталось ничего — старые отметки не копятся.
+    expect(meter.perSecond(60_000)).toBe(0)
+  })
+
+  it('доля анимации идёт от нуля к единице и не выходит за края', () => {
+    expect(deathProgress(0, 0, 400)).toBe(0)
+    expect(deathProgress(0, 200, 400)).toBe(0.5)
+    expect(deathProgress(0, 10_000, 400)).toBe(1)
+    expect(deathProgress(0, -50, 400)).toBe(0)
+  })
+
+  it('порог живёт в data, а не в компоненте', () => {
+    expect(FAST_KILL_THRESHOLD_PER_SEC).toBeGreaterThan(0)
+    expect(deathMode(FAST_KILL_THRESHOLD_PER_SEC + 0.01)).toBe('flash')
   })
 })

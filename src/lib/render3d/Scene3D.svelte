@@ -37,6 +37,14 @@
   import { sceneModel, type SceneModel } from './model'
   import { readScenePalette } from './palette'
   import { CLEAR_RADIUS, enrageTintAmount, placeProps } from './scenery'
+  import {
+    createKillRateMeter,
+    deathMode,
+    deathProgress,
+    DEATH_ANIM_MS,
+    type DeathMode,
+  } from './deaths'
+  import { offlineReport } from '../stores/game'
   import { DUNGEON_SCENE, ENRAGE_TINT, ENRAGE_TINT_MAX, type SceneConfig } from '../data/scenery'
   import { ZONE_BY_ID } from '../data/zones'
   import { activeDungeon, currentBoss, enrageMultiplier } from '../game'
@@ -79,8 +87,41 @@
   let wantedSceneId = 'shepherds-meadow'
   let wantedConfig: SceneConfig | null = null
   let enrage = 1
+
+  // Смерть моба ловим по НАБЛЮДАЕМОМУ переходу «был жив → исчез», как это
+  // делает и прогон баланса: ради сцены в тик не добавлено ни одного поля.
+  const killRate = createKillRateMeter()
+  let monsterWasAlive = false
+  let dying: { startedAt: number; mode: DeathMode } | null = null
+  // Пока показывается отчёт возврата, сцена не разыгрывает бой: за восемь
+  // часов мобов накопилось столько, что любая анимация была бы ложью.
+  let offlineOpen = false
+  const unsubscribeOffline = offlineReport.subscribe((r) => {
+    offlineOpen = r !== null
+    if (offlineOpen) {
+      killRate.reset()
+      dying = null
+    }
+  })
+
   const unsubscribeState = gameState.subscribe((s) => {
     model = sceneModel(s)
+    const aliveNow = s.respawnMsLeft <= 0 && s.monster.currentHp.gt(0)
+    if (monsterWasAlive && !aliveNow) {
+      const now = performance.now()
+      killRate.record(now)
+      const mode = deathMode(killRate.perSecond(now), {
+        offline: offlineOpen,
+        // Скорость симуляции умножает темп убийств так же, как и всё
+        // остальное: на ×100 анимации смерти показывать нечего.
+        threshold: undefined,
+      })
+      // Очередь НЕ строим: новая смерть заменяет предыдущую. Иначе при
+      // частых убийствах анимации копятся и не кончаются никогда.
+      dying = mode === 'none' ? null : { startedAt: now, mode }
+    }
+    monsterWasAlive = aliveNow
+
     const dungeon = activeDungeon(s)
     if (dungeon) {
       wantedSceneId = `dungeon:${dungeon.id}`
@@ -378,6 +419,22 @@
       bars = next
     }
 
+    /** Меш умирающего моба: оседает, кренится и гаснет. */
+    function applyDeath(mesh: ThreeNs.Mesh, mode: DeathMode, progress: number): void {
+      mesh.visible = true
+      const material = mesh.material as ThreeNs.MeshLambertMaterial
+      if (mode === 'flash') {
+        // Короткая вспышка вместо анимации: убийства идут чаще, чем она
+        // длится, и полноценное падение превратило бы сцену в мигалку.
+        material.emissive.setScalar(1 - progress)
+        return
+      }
+      mesh.scale.y = Math.max(0.05, mesh.scale.y * (1 - progress))
+      mesh.position.y = mesh.scale.y / 2
+      mesh.rotation.z = progress * 0.9
+      material.emissive.setScalar(0)
+    }
+
     function applyActor(
       mesh: ThreeNs.Mesh,
       baseColor: number,
@@ -387,8 +444,13 @@
       flash: number,
       flashColor: number | null = null,
     ): void {
+      // Пока идёт анимация смерти, живым мешем не распоряжаемся.
+      if (dying && mesh === monsterMesh) return
       mesh.visible = actor !== null
       if (!actor) return
+      // Сбрасываем то, что могла оставить анимация смерти: один и тот же
+      // меш переиспользуется под всех мобов подряд — своего у каждого нет.
+      mesh.rotation.z = 0
       mesh.scale.set(actor.width, actor.height, actor.depth)
       // Меш стоит НА площадке: центр коробки на половине роста.
       mesh.position.set(0, actor.height / 2, z)
@@ -445,6 +507,14 @@
       }
       fogTinted = tint > 0
       scene.background = fog.color
+
+      // Смерть моба: он оседает и гаснет, пока идёт анимация, и лишь потом
+      // уступает место следующему. В быстром режиме — только вспышка.
+      if (dying) {
+        const p = deathProgress(dying.startedAt, now, dying.mode === 'flash' ? 90 : DEATH_ANIM_MS)
+        if (p >= 1) dying = null
+        else applyDeath(monsterMesh, dying.mode, p)
+      }
 
       const current = model
       if (current) {
@@ -511,6 +581,7 @@
     unsubscribeState()
     unsubscribeAttacks()
     unsubscribeSpeed()
+    unsubscribeOffline()
     floaters.clear()
     dispose?.()
     dispose = null
