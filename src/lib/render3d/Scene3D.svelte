@@ -34,6 +34,15 @@
     type FloaterKind,
     type ScreenPoint,
   } from './floaters'
+  import { actorState, attackTimeScale, clipFor, CROSSFADE_SEC } from './animator'
+  import {
+    createModelCache,
+    fitScale,
+    type LoadedModel,
+    type ModelCache,
+    type ModelDeps,
+  } from './models'
+  import { HERO_MODEL, MONSTER_MODEL, type ActorState, type ModelAsset } from '../data/assets'
   import { createFrameGate, SCENE_FPS } from './frameGate'
   import { sceneModel, type SceneModel } from './model'
   import { readScenePalette } from './palette'
@@ -54,9 +63,13 @@
 
   /** Радиус площадки, м. */
   const GROUND_RADIUS = 12
-  /** Где стоят бойцы: герой ближе к камере, моб напротив. */
-  const HERO_Z = 1.6
-  const MONSTER_Z = -1.6
+  /** Где стоят бойцы: герой ближе к камере, моб напротив. Разведены и по X:
+   *  строго в линию по оси Z герой закрывал бы моба собой при взгляде
+   *  из-за плеча. */
+  const HERO_Z = 1.5
+  const MONSTER_Z = -1.5
+  const HERO_X = -0.7
+  const MONSTER_X = 0.7
   /** Камера как в MMO: сверху и чуть из-за плеча героя.
    *  Задана НАПРАВЛЕНИЕМ и расстоянием, а не точкой: расстояние зависит
    *  от пропорций холста (см. resize). */
@@ -69,6 +82,8 @@
   /** Отдача от удара: на сколько метров дёргается меш и как быстро гаснет. */
   const HIT_KICK = 0.22
   const HIT_DECAY_MS = 220
+  /** Сколько мс держится состояние «ударил» или «получил» для анимации. */
+  const HIT_ANIM_MS = 350
 
   let host: HTMLDivElement
   let canvas: HTMLCanvasElement
@@ -79,6 +94,11 @@
   // Показания для отладочного оверлея. Обновляются раз в секунду: строка,
   // которая скачет каждый кадр, нечитаема.
   let stats = $state({ fps: 0, calls: 0, geometries: 0, textures: 0, camera: '' })
+  // Что реально лежит в файлах моделей и что при загрузке пошло не так.
+  // Показывается в отладочном оверлее: имена клипов придумал не я, и
+  // увидеть их глазами — единственный способ убедиться, что маппинг верный.
+  let modelInfo = $state<{ id: string; clips: string[]; mapped: string }[]>([])
+  let modelErrors = $state<string[]>([])
 
   // Модель сцены — снимок состояния. Стор читаем подпиской, а не $gameState:
   // цикл рендера живёт вне реактивности Svelte и ему нужно просто значение.
@@ -88,6 +108,8 @@
   let wantedSceneId = 'shepherds-meadow'
   let wantedConfig: SceneConfig | null = null
   let enrage = 1
+  // Время замаха: под него подгоняется длина анимации атаки.
+  let swingTimeSec = 2
 
   // Смерть моба ловим по НАБЛЮДАЕМОМУ переходу «был жив → исчез», как это
   // делает и прогон баланса: ради сцены в тик не добавлено ни одного поля.
@@ -107,6 +129,7 @@
 
   const unsubscribeState = gameState.subscribe((s) => {
     model = sceneModel(s)
+    swingTimeSec = s.stats.swingTime
     const aliveNow = s.respawnMsLeft <= 0 && s.monster.currentHp.gt(0)
     if (monsterWasAlive && !aliveNow) {
       const now = performance.now()
@@ -167,7 +190,18 @@
     return ability ? 'ability' : 'damage'
   }
 
+  // Когда боец бил и когда получал — по ним машина анимаций выбирает клип.
+  let heroAttackedAt = -Infinity
+  let heroHurtAt = -Infinity
+  let monsterHurtAt = -Infinity
+  let monsterAttackedAt = -Infinity
+
   const unsubscribeAttacks = subscribeAttacks((event) => {
+    const now = performance.now()
+    if (event.sourceId === 'hero') heroAttackedAt = now
+    else monsterAttackedAt = now
+    if (event.targetId === 'hero') heroHurtAt = now
+    else monsterHurtAt = now
     const targetIsHero = event.targetId === 'hero'
     if (targetIsHero) {
       heroKick = 1
@@ -204,8 +238,18 @@
 
   async function start(): Promise<void> {
     let THREE: typeof ThreeNs
+    let GLTFLoader: ModelDeps['GLTFLoader']
+    let cloneSkinned: ModelDeps['clone']
     try {
-      THREE = await import('three')
+      // Загрузчик и клонирование скинов — тоже из three, тем же чанком.
+      const [core, loaders, utils] = await Promise.all([
+        import('three'),
+        import('three/examples/jsm/loaders/GLTFLoader.js'),
+        import('three/examples/jsm/utils/SkeletonUtils.js'),
+      ])
+      THREE = core
+      GLTFLoader = loaders.GLTFLoader as unknown as ModelDeps['GLTFLoader']
+      cloneSkinned = utils.clone
     } catch {
       // Чанк не доехал — обычно из-за сети. Это не повод показать пустоту.
       reportSceneFailure()
@@ -215,7 +259,7 @@
     if (!canvas) return
 
     try {
-      dispose = build(THREE)
+      dispose = build(THREE, GLTFLoader, cloneSkinned)
     } catch {
       // Контекст WebGL могли не дать: старый драйвер, политика браузера,
       // исчерпанные контексты. Игра обязана продолжаться текстом.
@@ -223,7 +267,11 @@
     }
   }
 
-  function build(THREE: typeof ThreeNs): () => void {
+  function build(
+    THREE: typeof ThreeNs,
+    GLTFLoader: ModelDeps['GLTFLoader'],
+    cloneSkinned: ModelDeps['clone'],
+  ): () => void {
     const palette = readScenePalette()
 
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true })
@@ -336,18 +384,145 @@
     let baseFogColor = palette.fog
     let baseAmbient = 0.55
 
-    // Единичные коробки: настоящий размер задаётся масштабом из модели,
-    // поэтому геометрия одна на всё время жизни сцены и не пересоздаётся,
-    // когда моб сменился на более крупного.
-    const heroMesh = new THREE.Mesh(
-      new THREE.BoxGeometry(1, 1, 1),
-      new THREE.MeshLambertMaterial({ color: palette.hero }),
-    )
-    const monsterMesh = new THREE.Mesh(
-      new THREE.BoxGeometry(1, 1, 1),
-      new THREE.MeshLambertMaterial({ color: palette.monster }),
-    )
-    scene.add(heroMesh, monsterMesh)
+    // --- Бойцы ------------------------------------------------------------
+    //
+    // Каждый боец — группа, в которой лежит либо КОРОБКА, либо загруженная
+    // модель. Коробка не «времянка на всякий случай»: пока летит мегабайтный
+    // GLB, на площадке должно что-то стоять, иначе первые секунды игрок
+    // смотрит в пустоту. Она же остаётся навсегда, если файл не доехал.
+    interface Actor {
+      root: ThreeNs.Group
+      cube: ThreeNs.Mesh
+      baseColor: number
+      model: ThreeNs.Object3D | null
+      mixer: ThreeNs.AnimationMixer | null
+      clips: Map<string, ThreeNs.AnimationClip>
+      actions: Map<string, ThreeNs.AnimationAction>
+      current: string | null
+      /** Материалы модели — СВОИ у каждого бойца, чтобы вспышка попадания
+       *  на одном не подсвечивала другого. */
+      materials: ThreeNs.MeshStandardMaterial[]
+      /** Высота модели в её собственных единицах: по ней считается масштаб. */
+      measuredHeight: number
+      asset: ModelAsset
+    }
+
+    function makeActor(color: number, asset: ModelAsset): Actor {
+      const cube = new THREE.Mesh(
+        new THREE.BoxGeometry(1, 1, 1),
+        new THREE.MeshLambertMaterial({ color }),
+      )
+      const root = new THREE.Group()
+      root.add(cube)
+      scene.add(root)
+      return {
+        root,
+        cube,
+        baseColor: color,
+        model: null,
+        mixer: null,
+        clips: new Map(),
+        actions: new Map(),
+        current: null,
+        materials: [],
+        measuredHeight: 1,
+        asset,
+      }
+    }
+
+    const hero = makeActor(palette.hero, HERO_MODEL)
+    const monster = makeActor(palette.monster, MONSTER_MODEL)
+
+    /** Ставит загруженную модель на место коробки. */
+    function attachModel(actor: Actor, loaded: LoadedModel): void {
+      // Материалы клонируем: SkeletonUtils.clone делит их с оригиналом,
+      // и вспышка попадания на герое подсветила бы моба, будь у них
+      // общий файл. Заодно нам есть что освободить при выгрузке.
+      loaded.scene.traverse((node) => {
+        const mesh = node as ThreeNs.Mesh
+        if (!mesh.isMesh) return
+        const material = mesh.material
+        const own = Array.isArray(material)
+          ? material.map((m) => m.clone())
+          : (material as ThreeNs.Material).clone()
+        mesh.material = own
+        for (const m of Array.isArray(own) ? own : [own]) {
+          actor.materials.push(m as ThreeNs.MeshStandardMaterial)
+        }
+      })
+
+      const box = new THREE.Box3().setFromObject(loaded.scene)
+      actor.measuredHeight = Math.max(0.001, box.max.y - box.min.y)
+
+      actor.model = loaded.scene
+      actor.root.add(loaded.scene)
+      actor.cube.visible = false
+
+      actor.mixer = new THREE.AnimationMixer(loaded.scene)
+      for (const clip of loaded.animations) actor.clips.set(clip.name, clip)
+
+      const mapped = (['idle', 'attack', 'hit', 'death'] as ActorState[])
+        .map((st) => `${st}=${clipFor(actor.asset.clips, st) ?? '—'}`)
+        .join(' ')
+      modelInfo = [...modelInfo, { id: actor.asset.id, clips: loaded.clipNames, mapped }]
+    }
+
+    /** Включает клип под игровое состояние, переходя от текущего плавно. */
+    function playState(actor: Actor, state: ActorState, swingTimeSec: number): void {
+      if (!actor.mixer) return
+      const name = clipFor(actor.asset.clips, state)
+      if (!name || name === actor.current) {
+        // Клипа под состояние нет — сцена деградирует осмысленно: остаётся
+        // то, что уже играет, а смерть покажет вспышка.
+        if (name && name === actor.current && state === 'attack') {
+          // Повторный удар тем же клипом: перезапускаем с нуля, иначе
+          // второй замах не видно вовсе.
+          actor.actions.get(name)?.reset().play()
+        }
+        return
+      }
+      const clip = actor.clips.get(name)
+      if (!clip) return
+
+      let action = actor.actions.get(name)
+      if (!action) {
+        action = actor.mixer.clipAction(clip)
+        actor.actions.set(name, action)
+      }
+      // Атака должна укладываться в замах: длину подгоняем timeScale,
+      // а момент попадания приходит из шины событий и здесь не участвует.
+      action.timeScale = state === 'attack' ? attackTimeScale(clip.duration, swingTimeSec) : 1
+      if (state === 'death') {
+        action.setLoop(THREE.LoopOnce, 1)
+        action.clampWhenFinished = true
+      } else {
+        action.setLoop(THREE.LoopRepeat, Infinity)
+        action.clampWhenFinished = false
+      }
+
+      const previous = actor.current ? actor.actions.get(actor.current) : undefined
+      action.reset().play()
+      if (previous && previous !== action) previous.crossFadeTo(action, CROSSFADE_SEC, false)
+      actor.current = name
+    }
+
+    // Загрузка асинхронная и не блокирует ни кадр, ни игру: пока файл летит,
+    // на площадке стоит коробка. Ошибка уходит в оверлей и не роняет сцену.
+    const models: ModelCache = createModelCache({
+      GLTFLoader,
+      clone: cloneSkinned,
+      baseUrl: import.meta.env.BASE_URL,
+    })
+    for (const actor of [hero, monster]) {
+      models
+        .load(actor.asset)
+        .then((loaded) => {
+          if (running) attachModel(actor, loaded)
+        })
+        .catch((error: unknown) => {
+          modelErrors = [...modelErrors, `${actor.asset.id}: ${String(error)}`]
+        })
+    }
 
     if (helpers) {
       scene.add(new THREE.AxesHelper(3))
@@ -399,16 +574,19 @@
     // и на каждое число — это мусор в куче тридцать раз в секунду.
     const anchorVec = new THREE.Vector3()
 
-    function anchorOf(mesh: ThreeNs.Mesh, headroom: number): ScreenPoint {
-      anchorVec.set(mesh.position.x, mesh.scale.y + headroom, mesh.position.z)
+    function anchorOf(actor: Actor, height: number, headroom: number): ScreenPoint {
+      anchorVec.set(actor.root.position.x, height + headroom, actor.root.position.z)
       anchorVec.project(camera)
       return projectToScreen(anchorVec, host.clientWidth, host.clientHeight)
     }
 
     function updateOverlay(now: number, current: SceneModel | null): void {
       const live = floaters.alive(now)
-      const heroAt = anchorOf(heroMesh, 0.35)
-      const monsterAt = monsterMesh.visible ? anchorOf(monsterMesh, 0.35) : null
+      const heroAt = anchorOf(hero, current?.hero.height ?? 1.8, 0.35)
+      const monsterAt =
+        current?.monster || dying
+          ? anchorOf(monster, current?.monster?.height ?? 1.5, 0.35)
+          : null
       painted = live.map((f) => ({
         f,
         at: f.anchor === 'hero' ? heroAt : (monsterAt ?? heroAt),
@@ -425,57 +603,79 @@
       bars = next
     }
 
-    /** Меш умирающего моба: оседает, кренится и гаснет. */
-    function applyDeath(mesh: ThreeNs.Mesh, mode: DeathMode, progress: number): void {
-      mesh.visible = true
-      const material = mesh.material as ThreeNs.MeshLambertMaterial
+    /** Умирающий моб: модель играет клип смерти, коробка оседает. */
+    function applyDeath(actor: Actor, mode: DeathMode, progress: number): void {
+      actor.root.visible = true
       if (mode === 'flash') {
         // Короткая вспышка вместо анимации: убийства идут чаще, чем она
         // длится, и полноценное падение превратило бы сцену в мигалку.
-        material.emissive.setScalar(1 - progress)
+        setEmissive(actor, 1 - progress, null)
         return
       }
-      mesh.scale.y = Math.max(0.05, mesh.scale.y * (1 - progress))
-      mesh.position.y = mesh.scale.y / 2
-      mesh.rotation.z = progress * 0.9
-      material.emissive.setScalar(0)
+      setEmissive(actor, 0, null)
+      if (actor.model) {
+        // У модели за падение отвечает клип; группу не трогаем, иначе
+        // анимация и ручной наклон подерутся.
+        return
+      }
+      actor.cube.scale.y = Math.max(0.05, actor.cube.scale.y * (1 - progress))
+      actor.cube.position.y = actor.cube.scale.y / 2
+      actor.cube.rotation.z = progress * 0.9
+    }
+
+    /** Вспышка попадания: у коробки — свой материал, у модели — её. */
+    function setEmissive(actor: Actor, amount: number, color: number | null): void {
+      const apply = (m: { emissive?: ThreeNs.Color }) => {
+        if (!m.emissive) return
+        if (amount <= 0.01) m.emissive.setScalar(0)
+        else if (color === null) m.emissive.setScalar(amount * 0.5)
+        else m.emissive.setHex(color).multiplyScalar(amount * 0.8)
+      }
+      if (actor.model) for (const m of actor.materials) apply(m)
+      else apply(actor.cube.material as ThreeNs.MeshLambertMaterial)
     }
 
     function applyActor(
-      mesh: ThreeNs.Mesh,
-      baseColor: number,
-      actor: { height: number; width: number; depth: number; health: number } | null,
+      actor: Actor,
+      model: { height: number; width: number; depth: number; health: number } | null,
       z: number,
       kick: number,
       flash: number,
       flashColor: number | null = null,
     ): void {
-      // Пока идёт анимация смерти, живым мешем не распоряжаемся.
-      if (dying && mesh === monsterMesh) return
-      mesh.visible = actor !== null
-      if (!actor) return
-      // Сбрасываем то, что могла оставить анимация смерти: один и тот же
-      // меш переиспользуется под всех мобов подряд — своего у каждого нет.
-      mesh.rotation.z = 0
-      mesh.scale.set(actor.width, actor.height, actor.depth)
-      // Меш стоит НА площадке: центр коробки на половине роста.
-      mesh.position.set(0, actor.height / 2, z)
-      // Раненый заметно темнеет — здоровье читается прямо с силуэта.
-      // Считаем ОТ базового цвета, а не от текущего: иначе каждый кадр
-      // умножал бы уже потускневший цвет и боец за секунду ушёл бы в чёрный.
-      const material = mesh.material as ThreeNs.MeshLambertMaterial
-      material.color.setHex(baseColor)
-      material.color.multiplyScalar(0.4 + 0.6 * actor.health)
-      // Вспышка попадания: подмешиваем свет к текущему цвету, а не меняем
-      // материал — смена материала на каждом ударе пересобирает шейдер.
-      if (flash > 0.01) {
-        if (flashColor === null) material.emissive.setScalar(flash * 0.5)
-        else material.emissive.setHex(flashColor).multiplyScalar(flash * 0.8)
+      // Пока идёт анимация смерти, живым бойцом не распоряжаемся.
+      if (dying && actor === monster) return
+      actor.root.visible = model !== null
+      if (!model) return
+
+      // Отдача от удара: боец отъезжает от противника и возвращается.
+      const x = actor === hero ? HERO_X : MONSTER_X
+      actor.root.position.set(x, 0, z + kick * HIT_KICK * Math.sign(z || 1))
+
+      if (actor.model) {
+        // Масштаб считаем от ИЗМЕРЕННОЙ высоты модели, а не берём на глаз:
+        // у разных паков разные единицы, и одно число на всех дало бы
+        // великана рядом с карликом. Заодно моб растёт с уровнем.
+        const k = fitScale(actor.measuredHeight, model.height) * actor.asset.scale
+        actor.model.scale.setScalar(k)
+        actor.model.position.y = actor.asset.yOffset
+        // Разворачиваем ЛИЦОМ К ПРОТИВНИКУ. Модели KayKit смотрят в +Z,
+        // поэтому тот, кто стоит ближе к камере, должен развернуться.
+        actor.model.rotation.y = z > 0 ? Math.PI : 0
       } else {
-        material.emissive.setScalar(0)
+        // Коробка: сбрасываем то, что могла оставить анимация смерти —
+        // один и тот же меш переиспользуется под всех мобов подряд.
+        actor.cube.rotation.z = 0
+        actor.cube.scale.set(model.width, model.height, model.depth)
+        // Стоит НА площадке: центр коробки на половине роста.
+        actor.cube.position.set(0, model.height / 2, 0)
+        // Раненый темнеет — здоровье читается прямо с силуэта. Считаем ОТ
+        // базового цвета: иначе каждый кадр умножал бы уже потускневший.
+        const material = actor.cube.material as ThreeNs.MeshLambertMaterial
+        material.color.setHex(actor.baseColor)
+        material.color.multiplyScalar(0.4 + 0.6 * model.health)
       }
-      // Отдача от удара: меш отъезжает от противника и возвращается.
-      mesh.position.z += kick * HIT_KICK * Math.sign(z || 1)
+      setEmissive(actor, flash, flashColor)
     }
 
     function frame(now: number): void {
@@ -519,22 +719,51 @@
       if (dying) {
         const p = deathProgress(dying.startedAt, now, dying.mode === 'flash' ? 90 : DEATH_ANIM_MS)
         if (p >= 1) dying = null
-        else applyDeath(monsterMesh, dying.mode, p)
+        else applyDeath(monster, dying.mode, p)
       }
 
       const current = model
       if (current) {
-        applyActor(heroMesh, palette.hero, current.hero, HERO_Z, heroKick, heroFlash)
+        applyActor(hero, current.hero, HERO_Z, heroKick, heroFlash)
         applyActor(
-          monsterMesh,
-          palette.monster,
+          monster,
           current.monster,
           MONSTER_Z,
           monsterKick,
           monsterFlash,
           monsterFlashIsAbility ? palette.hero : null,
         )
+
+        // Машина анимаций. Состояние выбирается чистой функцией, имя клипа
+        // берётся из реестра: строковых имён анимаций здесь нет.
+        const swing = swingTimeSec
+        playState(
+          hero,
+          actorState({
+            alive: current.hero.alive,
+            dying: false,
+            hurt: now - heroHurtAt < HIT_ANIM_MS,
+            attacking: now - heroAttackedAt < HIT_ANIM_MS,
+          }),
+          swing,
+        )
+        playState(
+          monster,
+          actorState({
+            alive: current.monster !== null,
+            dying: dying?.mode === 'animate',
+            hurt: now - monsterHurtAt < HIT_ANIM_MS,
+            attacking: now - monsterAttackedAt < HIT_ANIM_MS,
+          }),
+          swing,
+        )
       }
+
+      // Микшеры двигаем РЕАЛЬНЫМ временем кадра: анимация — украшение,
+      // и игровое время, которое умеет ускоряться отладкой, ей не указ.
+      const dtSec = dt / 1000
+      hero.mixer?.update(dtSec)
+      monster.mixer?.update(dtSec)
 
       renderer.render(scene, camera)
       updateOverlay(now, current)
@@ -586,6 +815,16 @@
       // Обход всей сцены: геометрию и материалы браузер сам не соберёт,
       // они живут в памяти видеокарты. Сам обход — в dispose.ts, там его
       // проверяет тест: снаружи «освободилось ли» не видно.
+      // Клонированные материалы моделей живут отдельно от графа сцены
+      // (их держат сами бойцы), поэтому освобождаем явно.
+      for (const actor of [hero, monster]) {
+        actor.mixer?.stopAllAction()
+        for (const material of actor.materials) material.dispose()
+        actor.materials.length = 0
+        actor.actions.clear()
+        actor.clips.clear()
+      }
+      models.dispose()
       disposeSceneGraph(scene)
       scene.clear()
       renderer.dispose()
@@ -638,6 +877,21 @@
       <div>geometries: {stats.geometries}</div>
       <div>textures: {stats.textures}</div>
       <div>camera: {stats.camera}</div>
+      <!-- Имена клипов ИЗ ФАЙЛА. Маппинг состояний на них живёт
+           в data/assets.ts, и увидеть глазами, что там на самом деле,
+           можно только здесь. -->
+      {#each modelInfo as info (info.id)}
+        <div class="model">
+          <div>{info.id}: {info.clips.length} клипов в файле</div>
+          <!-- Что из них реально играет: проверить маппинг из data/assets.ts
+               можно только сверив эти две строки. -->
+          <div class="map">{info.mapped}</div>
+          <div class="clips dim">{info.clips.join(', ')}</div>
+        </div>
+      {/each}
+      {#each modelErrors as error (error)}
+        <div class="error">модель не загрузилась — {error}</div>
+      {/each}
     </div>
   {/if}
 </div>
@@ -743,5 +997,27 @@
     line-height: var(--leading-normal);
     color: var(--c-text-muted);
     pointer-events: none;
+    max-width: min(22rem, 45vw);
+  }
+  /* Список клипов длинный: он и должен быть длинным, но не должен
+     закрывать сцену. */
+  .probe .model {
+    margin-top: var(--space-1);
+  }
+  .probe .map {
+    color: var(--c-accent);
+  }
+  /* Полный список длинный — он и должен быть полным, но не должен
+     закрывать сцену: две строки с прокруткой. */
+  .probe .clips {
+    max-height: 2.4em;
+    overflow-y: auto;
+  }
+  .probe .dim {
+    color: var(--c-text-faint);
+    word-break: break-all;
+  }
+  .probe .error {
+    color: var(--c-damage);
   }
 </style>
