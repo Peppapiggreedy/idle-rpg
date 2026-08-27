@@ -52,14 +52,20 @@ export default defineConfig({
     video: 'off',
   },
   webServer: {
-    command: `npm run build && npm run preview -- --port ${PORT} --strictPort`,
+    // --host 127.0.0.1 обязателен: без него vite preview слушает `localhost`,
+    // а на раннере GitHub это имя резолвится сначала в ::1. Playwright стучится
+    // по 127.0.0.1 — и ждёт ответа до самого таймаута. Привязываем явно.
+    command: `npm run build && npm run preview -- --host 127.0.0.1 --port ${PORT} --strictPort`,
     url: BASE,
     // Сервер поднимаем свой всегда. Переиспользование чужого экономит
     // секунду и стоит доверия к прогону: оставшийся с прошлого раза preview
     // отдаёт СТАРУЮ сборку, и тест молча сравнивает эталон сам с собой.
     reuseExistingServer: false,
     timeout: 180_000,
-    stdout: 'ignore',
+    // Вывод сервера показываем весь. Спрятанный stdout уже стоил одного
+    // прогона вслепую: сборка и preview молчали три минуты, и в логе CI была
+    // одна строка «timed out» без единой подсказки, что пошло не так.
+    stdout: 'pipe',
     stderr: 'pipe',
   },
 })
