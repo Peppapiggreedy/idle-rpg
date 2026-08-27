@@ -1,0 +1,47 @@
+{
+  "version": 12,
+  "lastTimestamp": 1700000000000,
+  "inventory": [],
+  "equipment": {
+    "weapon": null,
+    "head": null,
+    "chest": null,
+    "hands": null,
+    "legs": null,
+    "trinket": null
+  },
+  "autoEquip": true,
+  "currentZoneId": "shepherds-meadow",
+  "lastSurvivedZoneId": null,
+  "dungeonRun": null,
+  "dungeonsCleared": {},
+  "gcdMsLeft": 0,
+  "abilityCooldownsMs": {},
+  "abilitySettings": {
+    "quick-strike": {
+      "autocast": true,
+      "priority": 0
+    },
+    "rending-wound": {
+      "autocast": true,
+      "priority": 1
+    },
+    "shattering-blow": {
+      "autocast": true,
+      "priority": 2
+    }
+  },
+  "itemSeq": 0,
+  "gold": "0",
+  "level": "1",
+  "currentXp": "0",
+  "currentHp": "100",
+  "currentMana": "50",
+  "heroState": "alive",
+  "reviveMsLeft": 0,
+  "upgrades": {},
+  "talents": {},
+  "talentResets": 0,
+  "totalTicks": "0",
+  "playtimeMs": "0"
+}

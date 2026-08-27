@@ -1,0 +1,60 @@
+--bar-lg: 18px
+--bar-md: 12px
+--bar-sm: 8px
+--bp-desktop: 720px
+--c-accent: #2fcfe0
+--c-accent-strong: #6ae3ef
+--c-bg: #14161a
+--c-border: #2f3542
+--c-border-strong: #454d5e
+--c-damage: #e05555
+--c-gold: #d4a017
+--c-heal: #3fa34d
+--c-mana: #5a94e8
+--c-surface: #1c1f26
+--c-surface-raised: #232833
+--c-surface-sunken: #101216
+--c-text: #e8eaf0
+--c-text-faint: #7d8595
+--c-text-muted: #9aa1b1
+--c-warning: #e0912f
+--c-xp: #7e6fff
+--dur-fast: .12s
+--dur-slow: .24s
+--dur-tick: .1s
+--focus-ring: 0 0 0 2px color-mix(in srgb, #2fcfe0 60%, transparent)
+--font-mono: ui-monospace, "SF Mono", Consolas, "Liberation Mono", monospace
+--font-ui: "Inter", system-ui, "Segoe UI", Roboto, "Helvetica Neue", sans-serif
+--leading-normal: 1.5
+--leading-tight: 1.25
+--lightningcss-dark: 
+--lightningcss-light: 
+--radius-lg: 12px
+--radius-md: 8px
+--radius-pill: 999px
+--radius-sm: 4px
+--shadow-lg: 0 12px 32px #00000080
+--shadow-md: 0 4px 12px #00000059
+--shadow-sm: 0 1px 2px #0000004d
+--space-1: 4px
+--space-2: 8px
+--space-3: 12px
+--space-4: 16px
+--space-5: 24px
+--space-6: 32px
+--tabbar-height: 56px
+--tap-min: 44px
+--text-2xl: 2rem
+--text-2xs: .6875rem
+--text-lg: 1.125rem
+--text-md: 1rem
+--text-sm: .875rem
+--text-xl: 1.5rem
+--text-xs: .75rem
+--tint: 18%
+--tint-strong: 32%
+--tint-weak: 10%
+--tracking-wide: .06em
+--weight-bold: 600
+--weight-medium: 500
+--weight-regular: 400

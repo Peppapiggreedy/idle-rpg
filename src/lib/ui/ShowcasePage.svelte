@@ -67,8 +67,11 @@
   const RARITY_IDS = RARITIES.map((r) => r.id) as Rarity[]
 
   // Живая полоска: витрина должна показывать плавность, а не статичную заливку.
+  // При системной настройке «меньше движения» полоска замирает — это и
+  // правильная реакция на настройку, и условие воспроизводимости снимков.
   let pulse = $state(72)
   $effect(() => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
     const id = setInterval(() => {
       pulse = pulse <= 4 ? 100 : pulse - 6
     }, 400)
@@ -231,6 +234,7 @@
           <Button {variant} loading>Идёт работа</Button>
           <Button {variant} size="sm">Мелкая</Button>
           <Button {variant} size="sm" disabled>Мелкая недоступна</Button>
+          <Button {variant} size="sm" loading>Мелкая в работе</Button>
         </div>
       {/each}
     </div>
@@ -259,13 +263,25 @@
       <StatBar value={pulse} tone="neutral" label="Нейтральная (воскрешение)" />
       <StatBar value={100} tone="hp" label="Полная" valueLabel="100%" />
       <StatBar value={0} tone="damage" label="Пустая" valueLabel="0%" />
+      <StatBar
+        value={pulse}
+        tone="xp"
+        smooth={false}
+        label="Без сглаживания (smooth=false)"
+        valueLabel="{pulse}%"
+      />
     </div>
   </Panel>
 
   <!-- ================= ЯЧЕЙКИ И ЯРЛЫКИ ================= -->
-  <Panel title="IconSlot" subtitle="пустая ячейка и все пять редкостей">
+  <Panel title="IconSlot" subtitle="пустая ячейка, своя подпись пустоты, наводимая — и все пять редкостей">
     <div class="slots">
       <IconSlot slotLabel="Оружие" />
+      <IconSlot slotLabel="Голова" emptyText="слот закрыт" />
+      <IconSlot slotLabel="Кольцо" interactive active>
+        <span class="item-name">Наводимая ячейка</span>
+        <p class="note">interactive: реагирует на наведение и получает фокус с клавиатуры.</p>
+      </IconSlot>
       {#each RARITY_IDS as rarity (rarity)}
         <IconSlot slotLabel="Оружие" {rarity} active={rarity === 'legendary'}>
           <span class="item-name">Щербатый Крушитель</span>
@@ -335,6 +351,14 @@
       <NumberText value={3.4} decimals={2} suffix="с" tone="muted" />
       <NumberText value={0.05} decimals={0} prefix="крит " suffix="%" tone="accent" />
       <NumberText value={new Decimal(1250)} tone="gold" bold prefix="цена " />
+      <NumberText value={new Decimal(180)} tone="mana" suffix=" маны" />
+    </div>
+    <!-- Вся шкала размеров подряд: так видно, что sm и md различимы. -->
+    <div class="tags">
+      <NumberText value={new Decimal(12_345)} size="sm" tone="muted" prefix="sm " />
+      <NumberText value={new Decimal(12_345)} size="md" prefix="md " />
+      <NumberText value={new Decimal(12_345)} size="lg" tone="xp" bold prefix="lg " />
+      <NumberText value={new Decimal(12_345)} size="xl" tone="accent" prefix="xl " />
     </div>
   </Panel>
 
@@ -362,6 +386,10 @@
         <Button variant="ghost">Открыта снизу</Button>
       </Tooltip>
     </div>
+    <!-- block: хост во всю ширину — так подсказку вешают на строку или ячейку. -->
+    <Tooltip text="block: хост занимает всю ширину, пузырь центрируется по нему." block>
+      <Button variant="primary" block>Подсказка на элементе во всю ширину</Button>
+    </Tooltip>
   </Panel>
 
   <!-- ================= ПАНЕЛИ ================= -->
@@ -384,6 +412,12 @@
         {#snippet footer()}
           <span>подвал панели</span>
           <Button size="sm">действие</Button>
+        {/snippet}
+      </Panel>
+      <Panel title="align=center" align="center" subtitle="содержимое по центру">
+        Так выглядят пустые состояния и модалки.
+        {#snippet footer()}
+          <Button size="sm" variant="primary">по центру</Button>
         {/snippet}
       </Panel>
     </div>

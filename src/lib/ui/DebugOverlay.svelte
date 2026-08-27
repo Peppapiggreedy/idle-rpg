@@ -2,11 +2,14 @@
   import { onMount } from 'svelte'
   import { formatNumber, subscribeAttacks } from '../game'
   import { gameState, loopMetrics } from '../stores/game'
+  import { isScreenshotMode } from './route'
   import type { AttackEvent } from '../types'
 
   // Оверлей нужен для отладки вслепую на живой странице; прячется через ?debug=0.
+  // В режиме съёмки скрыт всегда: в нём время сборки и счётчик кадров —
+  // от снимка к снимку они разные, и эталон не сойдётся никогда.
   const visible =
-    new URLSearchParams(window.location.search).get('debug') !== '0'
+    new URLSearchParams(window.location.search).get('debug') !== '0' && !isScreenshotMode()
 
   let lastError = $state('')
   let lastAttack = $state<AttackEvent | null>(null)

@@ -1,0 +1,172 @@
+{
+  "version": 12,
+  "lastTimestamp": 1700000000000,
+  "inventory": [
+    {
+      "id": "item-3",
+      "name": "Гремящий Нагрудник",
+      "rarity": "common",
+      "slot": "chest",
+      "mods": [
+        {
+          "stat": "attackPower",
+          "kind": "flat",
+          "value": "7",
+          "source": "equipment:chest"
+        },
+        {
+          "stat": "maxHp",
+          "kind": "flat",
+          "value": "10",
+          "source": "equipment:chest"
+        }
+      ]
+    },
+    {
+      "id": "item-4",
+      "name": "Сумрачный Наруч",
+      "rarity": "uncommon",
+      "slot": "hands",
+      "mods": [
+        {
+          "stat": "attackPower",
+          "kind": "flat",
+          "value": "14",
+          "source": "equipment:hands"
+        },
+        {
+          "stat": "maxHp",
+          "kind": "flat",
+          "value": "20",
+          "source": "equipment:hands"
+        }
+      ]
+    },
+    {
+      "id": "item-5",
+      "name": "Сумрачный Нагрудник",
+      "rarity": "common",
+      "slot": "chest",
+      "mods": [
+        {
+          "stat": "attackPower",
+          "kind": "flat",
+          "value": "7",
+          "source": "equipment:chest"
+        },
+        {
+          "stat": "maxHp",
+          "kind": "flat",
+          "value": "10",
+          "source": "equipment:chest"
+        }
+      ]
+    }
+  ],
+  "equipment": {
+    "weapon": null,
+    "head": null,
+    "chest": {
+      "id": "item-1",
+      "name": "Верный Панцирь",
+      "rarity": "common",
+      "slot": "chest",
+      "mods": [
+        {
+          "stat": "attackPower",
+          "kind": "flat",
+          "value": "7",
+          "source": "equipment:chest"
+        },
+        {
+          "stat": "maxHp",
+          "kind": "flat",
+          "value": "10",
+          "source": "equipment:chest"
+        }
+      ]
+    },
+    "hands": null,
+    "legs": {
+      "id": "item-0",
+      "name": "Сумрачный Сапог",
+      "rarity": "common",
+      "slot": "legs",
+      "mods": [
+        {
+          "stat": "attackPower",
+          "kind": "flat",
+          "value": "7",
+          "source": "equipment:legs"
+        },
+        {
+          "stat": "maxHp",
+          "kind": "flat",
+          "value": "10",
+          "source": "equipment:legs"
+        }
+      ]
+    },
+    "trinket": {
+      "id": "item-2",
+      "name": "Верный Амулет",
+      "rarity": "common",
+      "slot": "trinket",
+      "mods": [
+        {
+          "stat": "attackPower",
+          "kind": "flat",
+          "value": "7",
+          "source": "equipment:trinket"
+        },
+        {
+          "stat": "maxHp",
+          "kind": "flat",
+          "value": "10",
+          "source": "equipment:trinket"
+        }
+      ]
+    }
+  },
+  "autoEquip": true,
+  "currentZoneId": "hollow-quarry",
+  "lastSurvivedZoneId": null,
+  "dungeonRun": null,
+  "dungeonsCleared": {},
+  "gcdMsLeft": 600,
+  "abilityCooldownsMs": {
+    "rending-wound": 2400,
+    "shattering-blow": 9100
+  },
+  "abilitySettings": {
+    "quick-strike": {
+      "autocast": true,
+      "priority": 0
+    },
+    "rending-wound": {
+      "autocast": true,
+      "priority": 1
+    },
+    "shattering-blow": {
+      "autocast": true,
+      "priority": 2
+    }
+  },
+  "itemSeq": 6,
+  "gold": "4820",
+  "level": "10",
+  "currentXp": "483",
+  "currentHp": "158",
+  "currentMana": "42",
+  "heroState": "alive",
+  "reviveMsLeft": 0,
+  "upgrades": {
+    "weapon-sharpening": "24"
+  },
+  "talents": {
+    "honed-edge": 1
+  },
+  "talentResets": 0,
+  "totalTicks": "0",
+  "playtimeMs": "0"
+}

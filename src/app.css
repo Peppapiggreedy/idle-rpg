@@ -41,3 +41,17 @@ code {
 a {
   color: var(--c-accent);
 }
+
+/* Системная настройка «меньше движения» — и она же режим съёмки скриншотов:
+   Playwright открывает страницу с reducedMotion: 'reduce', и все переходы
+   замирают. Без этого снимки мигали бы на полпути анимации. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -22,3 +22,68 @@ jobs:
         run: npm run check
       - name: Tests
         run: npm run test
+
+  # Визуальная регрессия: собирает игру и снимает заранее заданные состояния
+  # в двух режимах — интерфейс без сцены (он сравнивается с эталонами) и
+  # экран со сценой (он только на посмотреть). ОБА комплекта уходят
+  # артефактом при любом исходе: смысл этой работы в том, чтобы посмотреть
+  # игру ДО merge, а не после.
+  screenshots:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: lts/*
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      # Браузер кладём в кеш и переиспользуем: качается он один раз на
+      # версию @playwright/test, а не на каждый прогон. Версия закреплена
+      # точно — от неё зависит отрисовка, а значит и эталоны.
+      #
+      # Почему не системный chromium раннера (он на ubuntu-latest есть):
+      # эталоны сняты сборкой Chromium 1194 из @playwright/test, и другая
+      # сборка рисует шрифт иначе — снимки разойдутся не потому, что игра
+      # изменилась. Кеш даёт то же «не качать лишний раз», но с ТОЙ ЖЕ
+      # сборкой, что и локально.
+      - name: Cache Playwright browser
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - name: Install Chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+      - name: System libraries for cached Chromium
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+      - name: Screenshots
+        run: npm run screenshots
+      # test-results/current — всё, что снято в этом прогоне: и интерфейс,
+      # и сцена. tests/screenshots — эталоны, чтобы было с чем сравнить
+      # глазами, не открывая репозиторий.
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: |
+            test-results/current
+            tests/screenshots
+          if-no-files-found: warn
+          retention-days: 14
+      # Отчёт с картинками «эталон / получилось / разница» — нужен, только
+      # когда что-то разошлось.
+      - name: Upload diff report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-diff-report
+          path: |
+            playwright-report
+            test-results
+          retention-days: 14
