@@ -31,6 +31,13 @@ export interface GameLoop {
    * сохраняется, поэтому реальный потолок ~ MAX_STEPS_PER_FRAME * fps шагов/с;
    * невыполнимый излишек аккуратно сбрасывается, вкладка не виснет. */
   setSpeed(multiplier: number): void
+  /**
+   * Потолок частоты кадров; null — без ограничения.
+   * ИГРОВОЕ ВРЕМЯ ЭТО НЕ МЕНЯЕТ: пропущенный кадр не двигает точку отсчёта,
+   * поэтому накопленное время придёт следующим кадром целиком. Меняется
+   * только то, как часто мы просыпаемся, — ради батареи и слабых машин.
+   */
+  setFpsLimit(fps: number | null): void
 }
 
 export function createGameLoop(opts: GameLoopOptions): GameLoop {
@@ -43,6 +50,8 @@ export function createGameLoop(opts: GameLoopOptions): GameLoop {
   let last = 0
   let accumulator = 0
   let speed = 1
+  // Минимальный промежуток между кадрами, мс; 0 — без ограничения.
+  let minFrameMs = 0
 
   // Счётчики метрик за текущее односекундное окно.
   let frames = 0
@@ -52,6 +61,13 @@ export function createGameLoop(opts: GameLoopOptions): GameLoop {
   function frame(): void {
     if (!running) return
     const t = now()
+    // Потолок кадров: кадр пропускаем целиком и НЕ двигаем last — прошедшее
+    // время придёт следующим кадром, поэтому игра не замедляется, а только
+    // реже просыпается.
+    if (minFrameMs > 0 && t - last < minFrameMs) {
+      rafId = raf(frame)
+      return
+    }
     // Игровое время течёт в speed раз быстрее реального (дебаг-ускорение).
     accumulator += (t - last) * speed
     last = t
@@ -99,6 +115,9 @@ export function createGameLoop(opts: GameLoopOptions): GameLoop {
     },
     setSpeed(multiplier: number) {
       speed = Number.isFinite(multiplier) && multiplier > 0 ? multiplier : 1
+    },
+    setFpsLimit(fps: number | null) {
+      minFrameMs = fps !== null && Number.isFinite(fps) && fps > 0 ? 1000 / fps : 0
     },
   }
 }

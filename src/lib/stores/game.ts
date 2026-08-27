@@ -123,6 +123,7 @@ export function startGameLoop(): void {
     onMetrics: (m) => metrics.set(m),
   })
   loop.setSpeed(get(simSpeedStore))
+  loop.setFpsLimit(fpsLimit)
   loop.start()
 }
 
@@ -130,6 +131,19 @@ export function startGameLoop(): void {
 export function setSimulationSpeed(multiplier: number): void {
   simSpeedStore.set(multiplier)
   loop?.setSpeed(multiplier)
+}
+
+/**
+ * Потолок частоты кадров из настроек. Игровое время не трогает: цикл
+ * пропускает кадр, не сдвигая точку отсчёта, и накопленное приходит
+ * следующим кадром (см. loop.ts). Запоминаем и на случай, если цикл ещё
+ * не запущен, — применим при старте.
+ */
+let fpsLimit: number | null = null
+
+export function applyFpsLimit(limit: number | null): void {
+  fpsLimit = limit
+  loop?.setFpsLimit(limit)
 }
 
 export function stopGameLoop(): void {

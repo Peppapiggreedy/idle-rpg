@@ -5,7 +5,8 @@ import BalancePage from './lib/ui/BalancePage.svelte'
 import ShowcasePage from './lib/ui/ShowcasePage.svelte'
 import { debugRoute, presetName } from './lib/ui/route'
 import { loadPreset } from './lib/ui/preset'
-import { initGame, persistNow, startGameLoop } from './lib/stores/game'
+import { applyFpsLimit, initGame, persistNow, startGameLoop } from './lib/stores/game'
+import { uiSettings } from './lib/stores/ui'
 
 const target = document.getElementById('app')!
 const route = debugRoute()
@@ -17,6 +18,9 @@ const markReady = (kind: string) => document.documentElement.setAttribute('data-
 function startGame(): void {
   initGame()
   mount(App, { target })
+  // Настройки экрана и игровой цикл сводятся здесь, в точке входа: сам
+  // стор настроек про цикл не знает, а цикл — про настройки.
+  uiSettings.subscribe((s) => applyFpsLimit(s.fpsLimit))
   startGameLoop()
   // Сохраняемся, когда вкладка уходит в фон: на мобильных это надёжнее beforeunload.
   document.addEventListener('visibilitychange', () => {
