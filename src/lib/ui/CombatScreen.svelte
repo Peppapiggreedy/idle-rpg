@@ -41,7 +41,16 @@
     }
   }
 
-  const combatRate = $derived(estimateCombatRate($gameState))
+  // Обе цифры честно: что герой выдаёт сам и что выйдет, если играть руками.
+  const autoRate = $derived(estimateCombatRate($gameState, 'auto'))
+  const manualRate = $derived(estimateCombatRate($gameState, 'manual'))
+  const attentionGain = $derived(
+    autoRate.damagePerSecond.lte(0)
+      ? 0
+      : Math.round(
+          manualRate.damagePerSecond.div(autoRate.damagePerSecond).minus(1).times(100).toNumber(),
+        ),
+  )
 
   const hpPercent = $derived(
     Math.max(
@@ -64,9 +73,20 @@
       <span class="label">Урон за удар</span>
       <span class="value">{formatNumber($gameState.stats.attackPower)}</span>
     </div>
-    <div class="stat">
+    <div class="stat wide">
       <span class="label">Урон в секунду</span>
-      <span class="value">{formatNumber(combatRate.damagePerSecond)}</span>
+      <span class="value">
+        <span class="auto" title="Столько герой выдаёт сам, автокастом: он реагирует на полсекунды позже и не придерживает кулдауны">
+          авто {formatNumber(autoRate.damagePerSecond)}
+        </span>
+        <span class="sep">·</span>
+        <span class="manual" title="Столько выходит, если жать умения самому: без задержки реакции и придерживая бурст">
+          сейчас {formatNumber(manualRate.damagePerSecond)}
+        </span>
+      </span>
+      {#if attentionGain > 0}
+        <span class="attention">внимание даёт +{attentionGain}%</span>
+      {/if}
     </div>
   </div>
 
@@ -93,6 +113,25 @@
 </section>
 
 <style>
+  .stat.wide {
+    grid-column: 1 / -1;
+  }
+  .stat .auto {
+    opacity: 0.75;
+  }
+  .stat .sep {
+    opacity: 0.4;
+    margin: 0 0.25em;
+  }
+  .stat .manual {
+    color: var(--color-xp);
+  }
+  .attention {
+    display: block;
+    font-size: 0.7rem;
+    opacity: 0.55;
+  }
+
   h2 .level {
     font-size: 0.7em;
     font-weight: 400;

@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { Decimal } from './numbers'
 import { STEP_MS } from './loop'
-import { createInitialState, monsterFromTemplate, tick, type GameState } from './tick'
+import {
+  createInitialState,
+  manualOnlySettings,
+  monsterFromTemplate,
+  tick,
+  type GameState,
+} from './tick'
 import { estimateCombatRate } from './combat'
 import { applyOfflineProgress } from './save'
 import { zoneRate } from './zones'
@@ -31,8 +37,13 @@ const BRUTE: MonsterTemplate = {
   swingTime: 1,
 }
 
+// Автокаст выключен: тесты про смертность героя, а не про умения.
 function inZone(template: MonsterTemplate): GameState {
-  return { ...createInitialState(1), monster: monsterFromTemplate(template) }
+  return {
+    ...createInitialState(1),
+    abilitySettings: manualOnlySettings(),
+    monster: monsterFromTemplate(template),
+  }
 }
 
 describe('ответные удары моба', () => {
@@ -52,9 +63,18 @@ describe('ответные удары моба', () => {
   })
 
   it('мана постоянно регенерирует до капа', () => {
-    let s = { ...createInitialState(1), currentMana: new Decimal(0) }
+    // Автокаст выключен: тест про реген маны, а не про её трату.
+    let s = {
+      ...createInitialState(1),
+      abilitySettings: manualOnlySettings(),
+      currentMana: new Decimal(0),
+    }
     s = run(s, 10_000)
-    expect(s.currentMana.toNumber()).toBeCloseTo(20, 6) // 2/с * 10 c
+    // Реген упирается в кап: за 10 c набегает min(реген * 10, maxMana).
+    expect(s.currentMana.toNumber()).toBeCloseTo(
+      Math.min(s.stats.manaRegen.times(10).toNumber(), s.stats.maxMana.toNumber()),
+      6,
+    )
     s = run(s, 60_000)
     expect(s.currentMana.eq(s.stats.maxMana)).toBe(true) // кап
   })
@@ -131,7 +151,11 @@ describe('оффлайн моделирует цикл фарм -> смерть 
   })
 
   it('в стартовой зоне герой тоже смертен: uptime < 1 учтён в оффлайне', () => {
-    const rate = zoneRate(createInitialState(1), SAFE_ZONE)
+    // Без умений герой в стартовой зоне тает: uptime строго между 0 и 1.
+    const rate = zoneRate(
+      { ...createInitialState(1), abilitySettings: manualOnlySettings() },
+      SAFE_ZONE,
+    )
     expect(rate.uptime).toBeGreaterThan(0.5)
     expect(rate.uptime).toBeLessThan(1)
   })

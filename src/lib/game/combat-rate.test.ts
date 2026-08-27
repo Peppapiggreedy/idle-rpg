@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { estimateCombatRate } from './combat'
-import { createInitialState, monsterFromTemplate } from './state'
+import { createInitialState, manualOnlySettings, monsterFromTemplate } from './state'
 import { COMMON, buildMonster } from '../data/monsters'
 import { Decimal } from './numbers'
 import { tick } from './tick'
 import { STEP_MS } from './loop'
 import { createRng } from './rng'
 import { applyOfflineProgress } from './save'
+import { OFFLINE_EFFICIENCY } from '../data/balance'
 
 describe('estimateCombatRate', () => {
   it('считает урон в секунду с матожиданием критов', () => {
@@ -18,11 +19,13 @@ describe('estimateCombatRate', () => {
       new Decimal(1),
     )
     const rate = estimateCombatRate({
+      // Автокаст выключен: тест про формулу автоатаки и uptime.
       ...createInitialState(1),
+      abilitySettings: manualOnlySettings(),
       monster: monsterFromTemplate(squelcher),
     })
     // 20 за удар * (1 + 0.05 * (2 - 1)) / 2 c = 10.5
-    expect(rate.damagePerSecond.toNumber()).toBeCloseTo(10.5, 10)
+    expect(rate.autoDamagePerSecond.toNumber()).toBeCloseTo(10.5, 10)
     // Идеальный цикл: 2 удара * 2 c + 0.3 c респаун = 4.3 c на моба.
     // Хлюпень бьёт в ответ: 2 удара по 4 за бой против 7 регена за цикл ->
     // теряем 1 hp за 4.3 c, смерть через 430 c, uptime = 430/(430+30).
@@ -53,7 +56,11 @@ describe('estimateCombatRate', () => {
     const { report } = applyOfflineProgress({ ...createInitialState(777), autoEquip: false }, HOUR_MS)
     const offlineGold = report!.gold.toNumber()
 
-    const relDiff = Math.abs(offlineGold - simGold) / simGold
+    // Оффлайн намеренно режется на OFFLINE_EFFICIENCY (железное правило
+    // оффлайн <= автокаст), поэтому сравниваем с уже применённой поправкой.
+    const expectedGold = simGold * OFFLINE_EFFICIENCY
+    const relDiff = Math.abs(offlineGold - expectedGold) / expectedGold
     expect(relDiff).toBeLessThanOrEqual(0.08)
+    expect(offlineGold).toBeLessThan(simGold) // оффлайн НИКОГДА не выгоднее игры
   })
 })

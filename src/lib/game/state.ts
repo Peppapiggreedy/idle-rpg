@@ -5,6 +5,8 @@ import { xpToNextLevel } from './formulas'
 import { randomSeed } from './rng'
 import { buildMonster } from '../data/monsters'
 import { SAFE_ZONE, type Zone } from '../data/zones'
+import { ABILITIES } from '../data/abilities'
+import { AUTOCAST_DELAY_MS } from '../data/balance'
 import { recomputeStats, type StatBlock } from './stats'
 import { SLOT_IDS, type SlotId } from '../data/slots'
 import { createRng, type Rng } from './rng'
@@ -33,6 +35,13 @@ export interface GameState {
   // автоатаку. Одновременно только одно; null — очередь пуста.
   queuedAbilityId: string | null
   activeEffects: ActiveEffect[] // эффекты на текущем мобе (урон по времени)
+  // Настройки автокаста по умениям: включено ли и в каком порядке применять.
+  abilitySettings: AbilitySettings
+  // Задержка реакции автокаста ПО КАЖДОМУ умению, мс. Пока умение недоступно,
+  // его таймер взведён; как только стало доступно — тикает, и по нулю умение
+  // применяется. Из-за этого автокаст всегда бьёт на autocastDelay позже
+  // идеальной игры. В сейв не пишется: перевзводится за полсекунды.
+  autocastReadyMs: Record<string, number>
   heroState: 'alive' | 'dead'
   reviveMsLeft: number // обратный отсчёт воскрешения; > 0 только при heroState 'dead'
   upgrades: Record<string, Decimal> // id апгрейда -> сколько куплено (источник статов)
@@ -63,6 +72,28 @@ export interface ActiveEffect {
   damagePerTick: Decimal
   ticksLeft: number
   msToNextTick: number
+}
+
+// Настройка автокаста одного умения. priority: меньше число — выше в списке.
+export interface AbilitySetting {
+  autocast: boolean
+  priority: number
+}
+
+export type AbilitySettings = Record<string, AbilitySetting>
+
+/** Настройки по умолчанию: автокаст включён, приоритет — порядок из данных. */
+export function defaultAbilitySettings(): AbilitySettings {
+  return Object.fromEntries(
+    ABILITIES.map((a, index) => [a.id, { autocast: true, priority: index }]),
+  )
+}
+
+/** Все галки автокаста сняты — герой бьёт только автоатакой. */
+export function manualOnlySettings(): AbilitySettings {
+  return Object.fromEntries(
+    ABILITIES.map((a, index) => [a.id, { autocast: false, priority: index }]),
+  )
 }
 
 export type Equipment = Record<SlotId, Item | null>
@@ -101,6 +132,8 @@ export function createInitialState(rngSeed: number = randomSeed()): GameState {
     abilityCooldownsMs: {},
     queuedAbilityId: null,
     activeEffects: [],
+    abilitySettings: defaultAbilitySettings(),
+    autocastReadyMs: {},
     heroState: 'alive',
     reviveMsLeft: 0,
     upgrades: {},

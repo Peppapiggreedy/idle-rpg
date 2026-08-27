@@ -36,6 +36,10 @@ function fingerprint(s: GameState) {
     zone: s.currentZoneId,
     lastSurvivedZone: s.lastSurvivedZoneId ?? '-',
     monster: `${s.monster.id}:${s.monster.level}`,
+    // Автокаст — источник урона: смена задержки реакции, приоритетов или
+    // самих умений обязана ронять golden.
+    mana: s.currentMana.toFixed(1),
+    abilityCasts: s.combatLog.filter((e) => e.type === 'ability').length,
     totalTicks: s.totalTicks.toString(),
     inventoryCount: s.inventory.length,
     inventorySellTotal: s.inventory

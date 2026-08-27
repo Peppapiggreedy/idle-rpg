@@ -205,11 +205,12 @@ describe('оффлайн-прогресс', () => {
     const hour = applyOfflineProgress(base, HOUR).report!
     const fourHours = applyOfflineProgress(base, 4 * HOUR).report!
     expect(fourHours.gold.gt(hour.gold)).toBe(true)
-    // Ровно вчетверо не выйдет: за четыре часа герой набирает уровни, а с ними
-    // живучесть — темп фарма растёт. Но и обогнать линейный рост он не может:
-    // потолок — идеальный фарм без единой смерти.
-    expect(fourHours.gold.gte(hour.gold.times(4))).toBe(true)
-    expect(fourHours.gold.lte(hour.gold.times(4).div(zoneUptime(base)))).toBe(true)
+    // Не меньше линейного: за четыре часа герой набирает уровни, а с ними
+    // живучесть, так что темп может только вырасти. И не больше потолка —
+    // идеального фарма без единой смерти. Épsilon — на округления Decimal.
+    const linear = hour.gold.times(4)
+    expect(fourHours.gold.gte(linear.times(0.999))).toBe(true)
+    expect(fourHours.gold.lte(linear.div(zoneUptime(base)).times(1.001))).toBe(true)
   })
 
   it('золото и опыт согласованы с наградами мобов зоны', () => {

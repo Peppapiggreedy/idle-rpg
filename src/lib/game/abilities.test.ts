@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { Decimal } from './numbers'
 import { STEP_MS, createGameLoop } from './loop'
-import { createInitialState, monsterFromTemplate, tick, type GameState } from './tick'
+import {
+  createInitialState,
+  manualOnlySettings,
+  monsterFromTemplate,
+  tick,
+  type GameState,
+} from './tick'
 import { applyModifiers, ensureStats } from './stats'
 import {
   abilityStatus,
@@ -41,8 +47,10 @@ const MANA_TRINKET: Item = {
   ],
 }
 
+// Автокаст выключен: эти тесты про РУЧНОЕ применение умений. Автокасту
+// посвящён отдельный блок в autocast.test.ts.
 function hero(patch: Partial<GameState> = {}): GameState {
-  const base = createInitialState(1)
+  const base = { ...createInitialState(1), abilitySettings: manualOnlySettings() }
   const withMana = ensureStats({
     ...base,
     equipment: { ...base.equipment, trinket: MANA_TRINKET },
@@ -173,10 +181,13 @@ describe('умение на следующий замах', () => {
     expect(after.queuedAbilityId).toBeNull()
     // Мана ушла именно на умение. Точного равенства нет: за те же тики капнул
     // реген маны, поэтому проверяем, что списано почти ровно manaCost.
+    // Реген за прошедшее время часть маны вернул, поэтому сравниваем с ним.
+    const elapsedSec = (start.stats.swingTime * 1000 + STEP_MS) / 1000
+    const regened = start.stats.manaRegen.times(elapsedSec)
     const spent = start.currentMana.minus(after.currentMana)
     expect(spent.gt(0)).toBe(true)
     expect(spent.lte(BLOW.manaCost)).toBe(true)
-    expect(spent.gt(BLOW.manaCost.minus(1))).toBe(true)
+    expect(spent.gte(BLOW.manaCost.minus(regened))).toBe(true)
     expect(after.abilityCooldownsMs[BLOW.id]).toBeGreaterThan(0)
     expect(after.combatLog.some((e) => e.type === 'ability')).toBe(true)
     // Автоатаки в этот замах не было — умение её ЗАМЕНИЛО.
@@ -231,10 +242,12 @@ describe('кулдауны и глобальная задержка', () => {
   })
 
   it('у каждого умения свой кулдаун, они не мешают друг другу', () => {
+    // Ждём столько, чтобы GCD уже отпустил, а кулдаун выпада ещё шёл.
+    const wait = (GCD_MS + QUICK.cooldownSec * 1000) / 2
     let s = useAbility(hero(), QUICK.id, NO_LUCK, () => {})
-    s = advanceCooldowns(s, 2000) // GCD отпустил, кулдаун выпада ещё идёт
+    s = advanceCooldowns(s, wait)
     expect(s.gcdMsLeft).toBe(0)
-    expect(s.abilityCooldownsMs[QUICK.id]).toBe(QUICK.cooldownSec * 1000 - 2000)
+    expect(s.abilityCooldownsMs[QUICK.id]).toBe(QUICK.cooldownSec * 1000 - wait)
     // Другое умение при этом свободно.
     expect(abilityStatus(s, BLOW).usable).toBe(true)
   })

@@ -1,8 +1,8 @@
 {
-  "version": 9,
+  "version": 10,
   "lastTimestamp": 0,
-  "gold": "51000",
-  "level": "14",
+  "gold": "140000",
+  "level": "19",
   "currentXp": "40",
   "currentHp": "150",
   "currentMana": "42",
@@ -93,13 +93,27 @@
   },
   "autoEquip": true,
   "itemSeq": 4,
-  "totalTicks": "180000",
-  "playtimeMs": "18000000",
+  "totalTicks": "260000",
+  "playtimeMs": "26000000",
   "currentZoneId": "hollow-quarry",
   "lastSurvivedZoneId": "hollow-quarry",
   "gcdMsLeft": 900,
   "abilityCooldownsMs": {
     "quick-strike": 1200,
     "shattering-blow": 9000
+  },
+  "abilitySettings": {
+    "quick-strike": {
+      "autocast": true,
+      "priority": 2
+    },
+    "rending-wound": {
+      "autocast": false,
+      "priority": 0
+    },
+    "shattering-blow": {
+      "autocast": true,
+      "priority": 1
+    }
   }
 }

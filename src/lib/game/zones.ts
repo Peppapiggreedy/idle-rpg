@@ -3,6 +3,7 @@
 // в данных зоны нет ни слова про «тут опасно». Текст рендерит UI по вердикту.
 import { Decimal } from './numbers'
 import { estimateCombatRate, expectedMonsterDamage, uptimeFromHpLoss } from './combat'
+import type { PlayMode } from './rotation'
 import { monsterFromTemplate, pushEvent, spawnMonster, type GameState } from './state'
 import { ZONE_VERDICT_UPTIME } from '../data/balance'
 import {
@@ -55,7 +56,7 @@ export interface ZoneRate {
  * боёв, поэтому частоту смертей задаёт СРЕДНЯЯ потеря HP в секунду, а не
  * отдельная потеря против каждого моба.
  */
-export function zoneRate(state: GameState, zone: Zone): ZoneRate {
+export function zoneRate(state: GameState, zone: Zone, mode: PlayMode = 'auto'): ZoneRate {
   const variants = zoneMonsterVariants(zone)
   const n = new Decimal(variants.length)
   let kills = new Decimal(0)
@@ -63,7 +64,7 @@ export function zoneRate(state: GameState, zone: Zone): ZoneRate {
   let xp = new Decimal(0)
   let hpLoss = new Decimal(0)
   for (const template of variants) {
-    const rate = estimateCombatRate(facing(state, template))
+    const rate = estimateCombatRate(facing(state, template), mode)
     kills = kills.plus(rate.idealKillsPerSecond)
     gold = gold.plus(rate.idealKillsPerSecond.times(template.goldReward))
     xp = xp.plus(rate.idealKillsPerSecond.times(template.xpReward))
