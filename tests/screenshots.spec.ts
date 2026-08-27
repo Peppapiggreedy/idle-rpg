@@ -42,10 +42,21 @@ async function capture(page: Page, name: string): Promise<Buffer> {
   // экране, — то есть поперёк содержимого в середине снимка. Снимок остаётся
   // воспроизводимым, но выглядит как сломанная вёрстка, а смотрят на него
   // именно затем, чтобы поймать сломанную вёрстку.
+  //
+  // Подгоняем в цикле, а не одним замером: как только окно стало выше
+  // страницы, пропадает вертикальная полоса прокрутки, содержимое
+  // становится на её ширину шире, текст переносится иначе — и высота
+  // страницы меняется. Один замер оставлял бы снимок зависящим от того,
+  // какой ширины полосу рисует конкретный браузер: у себя сходилось,
+  // на раннере GitHub высота уезжала на сотню пикселей.
   const size = page.viewportSize()
   if (size) {
-    const full = await page.evaluate(() => document.documentElement.scrollHeight)
-    if (full > size.height) await page.setViewportSize({ width: size.width, height: full })
+    for (let i = 0; i < 4; i += 1) {
+      const full = await page.evaluate(() => document.documentElement.scrollHeight)
+      const current = page.viewportSize()
+      if (!current || full === current.height) break
+      await page.setViewportSize({ width: size.width, height: full })
+    }
   }
   const shot = await page.screenshot({ fullPage: true, animations: 'disabled', caret: 'hide' })
   if (size) await page.setViewportSize(size)
