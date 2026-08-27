@@ -1,14 +1,18 @@
 // Тик — конвейер чистых шагов (state, ctx) => state. Порядок фиксирован и важен:
 //   1. applyRevive          — мёртвый герой: отсчёт воскрешения; по нулю — полный HP
 //                             и откат в последнюю зону, где он выживал
-//   2. applyCombat          — удары героя по свинг-таймеру; смерть моба в ctx.killedMonster
-//   3. applyKillRewards     — золото за убитого + событие kill
-//   4. applyLevelUps        — опыт за убитого, перенос остатка + событие levelup
-//   5. applyLootDrop        — бросок дропа + событие loot
-//   6. applyMonsterAttack   — ответный удар моба по своему свинг-таймеру; может убить героя
-//   7. applyRegen           — реген HP (в бою медленный, вне боя быстрый) и маны
-//   8. applyRespawn         — взводит таймер после смерти моба ИЛИ ведёт отсчёт и спавнит
-//   9. applyAutosaveCounter — копит игровое время для автосейва (сохраняет стор)
+//   2. applyCooldowns       — кулдауны умений и GCD идут игровым временем
+//   3. applyPendingKill     — моб, добитый мгновенным умением вне тика
+//   4. applyCombat          — удары героя по свинг-таймеру; умение из очереди
+//                             ЗАМЕНЯЕТ автоатаку; смерть моба в ctx.killedMonster
+//   5. applyEffects         — тики урона по времени; тоже могут убить моба
+//   6. applyKillRewards     — золото за убитого + событие kill
+//   7. applyLevelUps        — опыт за убитого, перенос остатка + событие levelup
+//   8. applyLootDrop        — бросок дропа + событие loot
+//   9. applyMonsterAttack   — ответный удар моба по своему свинг-таймеру; может убить героя
+//  10. applyRegen           — реген HP (в бою медленный, вне боя быстрый) и маны
+//  11. applyRespawn         — взводит таймер после смерти моба ИЛИ ведёт отсчёт и спавнит
+//  12. applyAutosaveCounter — копит игровое время для автосейва (сохраняет стор)
 // Шаги не знают ни про UI, ни про Svelte; текст для игрока рендерится из событий в UI.
 // rng потребляют: удар героя (урон + крит), дроп, удар моба и спавн (уровень + архетип).
 import { Decimal } from './numbers'
@@ -17,11 +21,13 @@ import { rollLoot } from './loot'
 import { rollMonsterDamage, rollSwing } from './combat'
 import { autoEquipIfBetter } from './equipment'
 import type { Rng } from './rng'
-import { pushEvent, spawnMonster, type GameState } from './state'
+import { pushEvent, spawnMonster, type ActiveEffect, type GameState } from './state'
 import { ensureStats } from './stats'
 import { emit as busEmit } from './events'
 import { INVENTORY_SIZE, RESPAWN_DELAY_MS, REVIVE_DELAY_MS } from '../data/balance'
+import { ABILITY_BY_ID } from '../data/abilities'
 import { currentZone, reviveInZone } from './zones'
+import { advanceCooldowns, consumeQueuedAbility } from './abilities'
 import type { AttackEvent, Monster } from '../types'
 
 // Погрешность накопления долей замаха: 0.05 и подобные не представимы в double.
@@ -47,7 +53,28 @@ const applyRevive: TickStep = (s, ctx) => {
     { ...s, combatLog: pushEvent(s.combatLog, { type: 'revive' }) },
     ctx.rng,
   )
-  return { ...revived, heroState: 'alive', reviveMsLeft: 0, currentHp: s.stats.maxHp }
+  return {
+    ...revived,
+    heroState: 'alive',
+    reviveMsLeft: 0,
+    currentHp: s.stats.maxHp,
+    // Умения не переживают смерть: очередь и эффекты были на прежнем мобе.
+    queuedAbilityId: null,
+    activeEffects: [],
+  }
+}
+
+// Кулдауны умений и GCD идут ИГРОВЫМ временем: множитель скорости из
+// отладочной панели ускоряет их ровно так же, как бой.
+const applyCooldowns: TickStep = (s, ctx) => advanceCooldowns(s, ctx.dtMs)
+
+// Мгновенное умение бьёт вне тика и может добить моба. Смерть оформляет
+// конвейер — награды, лут и респаун идут обычным путём.
+const applyPendingKill: TickStep = (s, ctx) => {
+  if (s.respawnMsLeft > 0 || s.heroState === 'dead') return s
+  if (s.monster.currentHp.gt(0)) return s
+  ctx.killedMonster = s.monster
+  return s
 }
 
 const applyCombat: TickStep = (s, ctx) => {
@@ -63,10 +90,27 @@ const applyCombat: TickStep = (s, ctx) => {
   // Удар при каждом полном замахе; остаток доли переносится, иначе на
   // медленном тике теряется время между ударами. EPS гасит накопленную
   // погрешность дробей (0.05 не представима в double).
+  // Всё, что замах может изменить, ведём локально и собираем в конце.
+  let swung: GameState = s
   while (swingProgress >= 1 - SWING_EPS && ctx.killedMonster === null) {
     swingProgress = Math.max(0, swingProgress - 1)
+    // Замах пришёлся на умение из очереди — оно ЗАМЕНЯЕТ автоатаку. Не хватило
+    // маны или умение успело уйти в кулдаун — очередь снимается, бьём обычно.
+    const withAbility = consumeQueuedAbility(
+      { ...swung, monster, combatLog },
+      ctx.rng,
+      ctx.emitAttack,
+    )
+    if (withAbility) {
+      swung = withAbility
+      monster = withAbility.monster
+      combatLog = withAbility.combatLog
+      if (monster.currentHp.lte(0)) ctx.killedMonster = monster
+      continue
+    }
+    swung = { ...swung, queuedAbilityId: null }
     // Формула удара живёт в combat.ts — здесь только применение результата.
-    const { amount, isCrit } = rollSwing(s.stats, ctx.rng)
+    const { amount, isCrit } = rollSwing(swung.stats, ctx.rng)
     const hpLeft = monster.currentHp.minus(amount)
     monster = { ...monster, currentHp: Decimal.max(hpLeft, new Decimal(0)) }
     combatLog = pushEvent(combatLog, { type: 'hit', damage: amount, isCrit })
@@ -76,11 +120,53 @@ const applyCombat: TickStep = (s, ctx) => {
       amount,
       isCrit,
       abilityId: null, // авто-атака
-      timestamp: s.playtimeMs.toNumber(),
+      timestamp: swung.playtimeMs.toNumber(),
     })
     if (hpLeft.lte(0)) ctx.killedMonster = monster
   }
-  return { ...s, swingProgress, monster, combatLog }
+  return { ...swung, swingProgress, monster, combatLog }
+}
+
+// Эффекты умений (урон по времени) тикают игровым временем и могут добить
+// моба — поэтому шаг стоит ДО начисления наград.
+const applyEffects: TickStep = (s, ctx) => {
+  if (s.activeEffects.length === 0) return s
+  // Эффекты живут на конкретном мобе: он мёртв или его нет — эффекты снимаются.
+  if (ctx.killedMonster || s.respawnMsLeft > 0) return { ...s, activeEffects: [] }
+  let monster = s.monster
+  let combatLog = s.combatLog
+  const remaining: ActiveEffect[] = []
+  for (const effect of s.activeEffects) {
+    // Интервал между тиками постоянен и живёт в данных умения.
+    const intervalMs = (ABILITY_BY_ID[effect.abilityId]?.effect?.tickIntervalSec ?? 1) * 1000
+    let { ticksLeft, msToNextTick } = effect
+    let msLeft = ctx.dtMs
+    // Один жирный тик может прокрутить несколько тиков эффекта; остаток
+    // переносится в msToNextTick, как и остаток замаха.
+    while (msLeft >= msToNextTick && ticksLeft > 0 && ctx.killedMonster === null) {
+      msLeft -= msToNextTick
+      msToNextTick = intervalMs
+      ticksLeft -= 1
+      const hpLeft = monster.currentHp.minus(effect.damagePerTick)
+      monster = { ...monster, currentHp: Decimal.max(hpLeft, new Decimal(0)) }
+      combatLog = pushEvent(combatLog, {
+        type: 'effect',
+        abilityId: effect.abilityId,
+        damage: effect.damagePerTick,
+      })
+      ctx.emitAttack({
+        sourceId: 'hero',
+        targetId: monster.id,
+        amount: effect.damagePerTick,
+        isCrit: false,
+        abilityId: effect.abilityId,
+        timestamp: s.playtimeMs.toNumber(),
+      })
+      if (hpLeft.lte(0)) ctx.killedMonster = monster
+    }
+    if (ticksLeft > 0) remaining.push({ ...effect, ticksLeft, msToNextTick: msToNextTick - msLeft })
+  }
+  return { ...s, monster, combatLog, activeEffects: remaining }
 }
 
 const applyKillRewards: TickStep = (s, ctx) => {
@@ -166,6 +252,8 @@ const applyMonsterAttack: TickStep = (s, ctx) => {
     ...next,
     heroState: 'dead',
     reviveMsLeft: REVIVE_DELAY_MS,
+    queuedAbilityId: null,
+    activeEffects: [],
     combatLog: pushEvent(next.combatLog, { type: 'death' }),
   }
 }
@@ -191,6 +279,7 @@ const applyRespawn: TickStep = (s, ctx) => {
     ...s,
     respawnMsLeft: 0,
     monster,
+    activeEffects: [], // эффекты были на прежнем мобе
     combatLog: pushEvent(s.combatLog, { type: 'spawn', monsterName: monster.name }),
   }
 }
@@ -201,7 +290,10 @@ const applyAutosaveCounter: TickStep = (s, ctx) => {
 
 const PIPELINE: TickStep[] = [
   applyRevive,
+  applyCooldowns,
+  applyPendingKill,
   applyCombat,
+  applyEffects,
   applyKillRewards,
   applyLevelUps,
   applyLootDrop,

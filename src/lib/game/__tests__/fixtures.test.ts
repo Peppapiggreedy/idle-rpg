@@ -9,6 +9,8 @@ import { expectedSwingDamage } from '../combat'
 import { buyUpgrade } from '../upgrades'
 import { WEAPON_SHARPENING } from '../../data/upgrades'
 import { SAFE_ZONE, ZONE_BY_ID } from '../../data/zones'
+import { ABILITY_BY_ID } from '../../data/abilities'
+import { GCD_MS } from '../../data/balance'
 import {
   SAVE_KEY,
   SAVE_VERSION,
@@ -47,6 +49,7 @@ describe('фикстуры сейвов', () => {
     ['save-v6.json'],
     ['save-v7.json'],
     ['save-v8.json'],
+    ['save-v9.json'],
   ])('%s мигрирует до текущей версии', (name) => {
     const payload = migrateSave(JSON.parse(fixture(name)))
     expect(payload).not.toBeNull()
@@ -153,6 +156,46 @@ describe('фикстуры сейвов', () => {
     expect(s.monster.level).toBeGreaterThanOrEqual(4)
     expect(s.monster.level).toBeLessThanOrEqual(6)
     expect(s.gold.toNumber()).toBe(24000)
+  })
+
+  it('save-v8 -> v9: старый сейв просыпается с готовыми умениями', () => {
+    const s = loadFixture('save-v8.json')
+    expect(s.gcdMsLeft).toBe(0)
+    expect(s.abilityCooldownsMs).toEqual({})
+    expect(s.queuedAbilityId).toBeNull()
+    expect(s.gold.toNumber()).toBe(24000) // прогресс не потерян
+  })
+
+  it('save-v9: кулдауны и мана переживают загрузку', () => {
+    const s = loadFixture('save-v9.json')
+    expect(s.gcdMsLeft).toBe(900)
+    expect(s.abilityCooldownsMs['quick-strike']).toBe(1200)
+    expect(s.abilityCooldownsMs['shattering-blow']).toBe(15000)
+    expect(s.currentMana.toNumber()).toBe(42)
+    // Очередь и эффекты висели на прежнем мобе — при загрузке их нет.
+    expect(s.queuedAbilityId).toBeNull()
+    expect(s.activeEffects).toEqual([])
+  })
+
+  it('мусорные кулдауны из сейва отбрасываются и не запирают кнопку', () => {
+    const raw = JSON.parse(fixture('save-v9.json'))
+    const s = stateFromPayload(
+      migrateSave({
+        ...raw,
+        gcdMsLeft: 1e9,
+        abilityCooldownsMs: {
+          'quick-strike': 1e9, // больше своего кулдауна
+          'ability-from-the-future': 5000, // умения с таким id нет
+          'rending-wound': -5, // мусор
+        },
+      })!,
+    )
+    expect(s.gcdMsLeft).toBe(GCD_MS)
+    expect(s.abilityCooldownsMs['quick-strike']).toBe(
+      ABILITY_BY_ID['quick-strike'].cooldownSec * 1000,
+    )
+    expect(s.abilityCooldownsMs['ability-from-the-future']).toBeUndefined()
+    expect(s.abilityCooldownsMs['rending-wound']).toBeUndefined()
   })
 
   it('сейв с неизвестной зоной деградирует до безопасной, а не ломается', () => {

@@ -52,6 +52,7 @@ export {
   rollMonsterDamage,
   swingDamageRange,
   expectedSwingDamage,
+  expectedAbilityDamage,
   attackPowerContribution,
   critFactor,
 } from './combat'
@@ -68,6 +69,17 @@ export {
   stateInZone,
 } from './zones'
 export type { ZoneForecast, ZoneVerdict } from './zones'
+export {
+  ABILITIES,
+  ABILITY_BY_ID,
+  abilityStatus,
+  allAbilityStatuses,
+  cooldownLeft,
+  useAbility,
+  consumeQueuedAbility,
+  advanceCooldowns,
+} from './abilities'
+export type { AbilityDef, AbilityType, AbilityStatus, AbilityBlockReason } from './abilities'
 export { subscribe as subscribeAttacks, emit as emitAttack } from './events'
 export type { Rng } from './rng'
 export {
@@ -86,7 +98,7 @@ export {
   OFFLINE_MODAL_MIN_MS,
 } from './save'
 export type {
-  SavePayloadV8,
+  SavePayloadV9,
   SavedItem,
   SavedModifier,
   SaveStorage,
