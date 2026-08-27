@@ -92,10 +92,10 @@ test('в текстовом режиме цикл рендера действи�
 test('без WebGL игра идёт текстом, а не падает', async ({ page }) => {
   // Убираем WebGL целиком, ещё до загрузки приложения.
   await page.addInitScript(() => {
-    const original = HTMLCanvasElement.prototype.getContext
-    HTMLCanvasElement.prototype.getContext = function (id: string, ...rest: unknown[]) {
+    const proto = HTMLCanvasElement.prototype as unknown as Record<string, unknown>
+    const original = proto.getContext as (...a: unknown[]) => unknown
+    proto.getContext = function (this: HTMLCanvasElement, id: string, ...rest: unknown[]) {
       if (String(id).includes('webgl')) return null
-      // @ts-expect-error — прокидываем как есть, подмена ради теста
       return original.call(this, id, ...rest)
     }
   })
@@ -110,15 +110,15 @@ test('если контекст не дали в последний момент
   // Проверка проходит (WebGL «есть»), а рендереру контекст уже не достаётся:
   // так ведёт себя браузер, у которого кончился лимит живых контекстов.
   await page.addInitScript(() => {
-    const original = HTMLCanvasElement.prototype.getContext
+    const proto = HTMLCanvasElement.prototype as unknown as Record<string, unknown>
+    const original = proto.getContext as (...a: unknown[]) => unknown
     let webglRequests = 0
-    HTMLCanvasElement.prototype.getContext = function (id: string, ...rest: unknown[]) {
+    proto.getContext = function (this: HTMLCanvasElement, id: string, ...rest: unknown[]) {
       if (String(id).includes('webgl')) {
         webglRequests += 1
         // Первый запрос — проверка доступности из stores/ui.ts, её пропускаем.
         if (webglRequests > 1) return null
       }
-      // @ts-expect-error — прокидываем как есть, подмена ради теста
       return original.call(this, id, ...rest)
     }
   })

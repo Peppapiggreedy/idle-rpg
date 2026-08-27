@@ -13,11 +13,26 @@
   // и на машине без WebGL она не нужна вовсе — пусть не едет в основной бандл.
   import type * as ThreeNs from 'three'
   import { onDestroy, onMount } from 'svelte'
+  import { formatNumber } from '../game'
   import { subscribe as subscribeAttacks } from '../game/events'
-  import { gameState } from '../stores/game'
+  import {
+    FLOATER_MAX_SPEED,
+    MAX_PIXEL_RATIO,
+    MAX_PIXEL_RATIO_MOBILE,
+    MOBILE_BREAKPOINT,
+  } from '../data/render'
+  import { gameState, simSpeed } from '../stores/game'
   import { reportSceneFailure } from '../stores/ui'
   import { isDebugMode, showsSceneHelpers } from '../ui/route'
   import { disposeSceneGraph } from './dispose'
+  import {
+    createFloaterQueue,
+    floaterProgress,
+    projectToScreen,
+    type Floater,
+    type FloaterKind,
+    type ScreenPoint,
+  } from './floaters'
   import { createFrameGate, SCENE_FPS } from './frameGate'
   import { sceneModel, type SceneModel } from './model'
   import { readScenePalette } from './palette'
@@ -59,12 +74,56 @@
     model = sceneModel(s)
   })
 
+  // Множитель скорости симуляции: выше ×1 всплывающих чисел нет вовсе.
+  let speed = 1
+  const unsubscribeSpeed = simSpeed.subscribe((v) => {
+    speed = v
+  })
+
   // Отдача от ударов. Шина событий пишет сюда, кадр — читает и гасит.
   let heroKick = 0
   let monsterKick = 0
+  // Вспышка попадания: 1 в момент удара, гаснет к нулю.
+  let heroFlash = 0
+  let monsterFlash = 0
+
+  const floaters = createFloaterQueue()
+  // Проекции пересчитываются каждый КАДР, а не каждое событие: числа
+  // привязаны к точке мира и обязаны оставаться над головой при любом
+  // движении камеры.
+  let painted = $state<{ f: Floater; at: ScreenPoint; life: number }[]>([])
+  let bars = $state<{ anchor: 'hero' | 'monster'; at: ScreenPoint; health: number }[]>([])
+
+  function floaterKind(targetIsHero: boolean, isCrit: boolean, ability: string | null): FloaterKind {
+    if (targetIsHero) return 'player-damage'
+    if (isCrit) return 'crit'
+    return ability ? 'ability' : 'damage'
+  }
+
   const unsubscribeAttacks = subscribeAttacks((event) => {
-    if (event.targetId === 'hero') heroKick = 1
-    else monsterKick = 1
+    const targetIsHero = event.targetId === 'hero'
+    if (targetIsHero) {
+      heroKick = 1
+      heroFlash = 1
+    } else {
+      monsterKick = 1
+      monsterFlash = 1
+    }
+    // Числа не создаются вовсе, когда их некому читать: спрятанная вкладка
+    // и ускоренная симуляция. Это не оптимизация «на всякий случай» —
+    // на ×100 сюда прилетают сотни событий за кадр.
+    if (document.hidden || speed > FLOATER_MAX_SPEED) return
+    floaters.push({
+      anchor: targetIsHero ? 'hero' : 'monster',
+      kind: floaterKind(targetIsHero, event.isCrit, event.abilityId),
+      text: formatNumber(event.amount),
+      bornAt: performance.now(),
+      // Math.random, а НЕ game/rng: поток случайности игры принадлежит
+      // симуляции, и вычерпывать его из слоя рендера значило бы менять
+      // ход игры от того, открыта вкладка или нет. Разброс украшения
+      // на воспроизводимость игры не влияет.
+      drift: Math.random() * 2 - 1,
+    })
   })
 
   let dispose: (() => void) | null = null
@@ -100,9 +159,11 @@
     const palette = readScenePalette()
 
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true })
-    // Потолок 2: на экране с плотностью 3 это вчетверо меньше пикселей
-    // на кадр, а на глаз разницы для примитивов нет.
-    renderer.setPixelRatio(Math.min(globalThis.devicePixelRatio || 1, 2))
+    // Потолок плотности пикселей. На мобильном он ниже: там запас
+    // оплачивается батареей, а экран меньше и разницы не видно.
+    const mobile = globalThis.innerWidth < MOBILE_BREAKPOINT
+    const cap = mobile ? MAX_PIXEL_RATIO_MOBILE : MAX_PIXEL_RATIO
+    renderer.setPixelRatio(Math.min(globalThis.devicePixelRatio || 1, cap))
 
     const scene = new THREE.Scene()
     scene.background = new THREE.Color(palette.fog)
@@ -184,12 +245,44 @@
     let secondStart = performance.now()
     let previous = performance.now()
 
+    // Точка над головой бойца в мировых координатах — якорь для числа
+    // и для полоски. Переиспользуем один вектор: новый на каждый кадр
+    // и на каждое число — это мусор в куче тридцать раз в секунду.
+    const anchorVec = new THREE.Vector3()
+
+    function anchorOf(mesh: ThreeNs.Mesh, headroom: number): ScreenPoint {
+      anchorVec.set(mesh.position.x, mesh.scale.y + headroom, mesh.position.z)
+      anchorVec.project(camera)
+      return projectToScreen(anchorVec, host.clientWidth, host.clientHeight)
+    }
+
+    function updateOverlay(now: number, current: SceneModel | null): void {
+      const live = floaters.alive(now)
+      const heroAt = anchorOf(heroMesh, 0.35)
+      const monsterAt = monsterMesh.visible ? anchorOf(monsterMesh, 0.35) : null
+      painted = live.map((f) => ({
+        f,
+        at: f.anchor === 'hero' ? heroAt : (monsterAt ?? heroAt),
+        life: floaterProgress(f, now),
+      }))
+      // Полоска над головой: у героя всегда, у моба — пока он на площадке.
+      const next: typeof bars = []
+      if (current) {
+        next.push({ anchor: 'hero', at: heroAt, health: current.hero.health })
+        if (current.monster && monsterAt) {
+          next.push({ anchor: 'monster', at: monsterAt, health: current.monster.health })
+        }
+      }
+      bars = next
+    }
+
     function applyActor(
       mesh: ThreeNs.Mesh,
       baseColor: number,
       actor: { height: number; width: number; depth: number; health: number } | null,
       z: number,
       kick: number,
+      flash: number,
     ): void {
       mesh.visible = actor !== null
       if (!actor) return
@@ -202,6 +295,10 @@
       const material = mesh.material as ThreeNs.MeshLambertMaterial
       material.color.setHex(baseColor)
       material.color.multiplyScalar(0.4 + 0.6 * actor.health)
+      // Вспышка попадания: подмешиваем свет к текущему цвету, а не меняем
+      // материал — смена материала на каждом ударе пересобирает шейдер.
+      if (flash > 0.01) material.emissive.setScalar(flash * 0.5)
+      else material.emissive.setScalar(0)
       // Отдача от удара: меш отъезжает от противника и возвращается.
       mesh.position.z += kick * HIT_KICK * Math.sign(z || 1)
     }
@@ -221,13 +318,17 @@
       heroKick *= decay
       monsterKick *= decay
 
+      heroFlash *= decay
+      monsterFlash *= decay
+
       const current = model
       if (current) {
-        applyActor(heroMesh, palette.hero, current.hero, HERO_Z, heroKick)
-        applyActor(monsterMesh, palette.monster, current.monster, MONSTER_Z, monsterKick)
+        applyActor(heroMesh, palette.hero, current.hero, HERO_Z, heroKick, heroFlash)
+        applyActor(monsterMesh, palette.monster, current.monster, MONSTER_Z, monsterKick, monsterFlash)
       }
 
       renderer.render(scene, camera)
+      updateOverlay(now, current)
 
       framesThisSecond += 1
       if (debug && now - secondStart >= 1000) {
@@ -275,6 +376,8 @@
   onDestroy(() => {
     unsubscribeState()
     unsubscribeAttacks()
+    unsubscribeSpeed()
+    floaters.clear()
     dispose?.()
     dispose = null
   })
@@ -282,6 +385,32 @@
 
 <div class="host" bind:this={host}>
   <canvas bind:this={canvas} aria-hidden="true"></canvas>
+
+  <!-- Оверлей поверх канвы. Позиции берутся ПРОЕКЦИЕЙ мировой точки
+       в экранную, поэтому числа и полоски держатся над головой при любом
+       движении камеры. Указатель не перехватываем: под ним сцена. -->
+  <div class="overlay" aria-hidden="true">
+    {#each bars as bar (bar.anchor)}
+      {#if bar.at.visible}
+        <div
+          class="bar {bar.anchor}"
+          style="left: {bar.at.x}px; top: {bar.at.y}px"
+        >
+          <i style="width: {Math.round(bar.health * 100)}%"></i>
+        </div>
+      {/if}
+    {/each}
+    {#each painted as p (p.f.id)}
+      {#if p.at.visible}
+        <span
+          class="floater {p.f.kind}"
+          style="left: {p.at.x}px; top: {p.at.y}px; --life: {p.life}; --drift: {p.f.drift}"
+        >
+          {p.f.text}
+        </span>
+      {/if}
+    {/each}
+  </div>
   {#if debug}
     <div class="probe">
       <div>fps: {stats.fps} / {SCENE_FPS}</div>
@@ -302,6 +431,83 @@
     display: block;
     width: 100%;
     height: 100%;
+  }
+  .overlay {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+  /* Полоска здоровья над головой. Ширина в процентах — доля здоровья,
+     цвет разный у героя и у моба, как и везде в игре. */
+  .bar {
+    position: absolute;
+    width: 3rem;
+    height: var(--bar-sm);
+    margin-left: -1.5rem;
+    margin-top: -0.4rem;
+    border-radius: var(--radius-pill);
+    background: color-mix(in srgb, var(--c-surface-sunken) 80%, transparent);
+    outline: 1px solid color-mix(in srgb, var(--c-border) 70%, transparent);
+    overflow: hidden;
+  }
+  .bar i {
+    display: block;
+    height: 100%;
+    border-radius: var(--radius-pill);
+  }
+  .bar.hero i {
+    background: var(--c-heal);
+  }
+  .bar.monster i {
+    background: var(--c-damage);
+  }
+
+  .floater {
+    position: absolute;
+    font-variant-numeric: tabular-nums;
+    font-weight: var(--weight-bold);
+    font-size: var(--text-sm);
+    line-height: 1;
+    white-space: nowrap;
+    text-shadow: var(--shadow-md);
+    /* Число поднимается и гаснет. Всё считает --life (доля прожитого),
+       поэтому анимации как таковой нет: кадр сцены сам двигает число,
+       и при паузе рендера оно замирает вместе со сценой. */
+    /* Стартует ВЫШЕ полоски здоровья: они делят один якорь над головой,
+       и без запаса число вылетало бы прямо из полоски. */
+    transform: translate(calc(-50% + var(--drift) * 1.6rem), calc(-2.2rem - var(--life) * 2.4rem));
+    opacity: calc(1 - var(--life) * var(--life));
+  }
+  .floater.damage {
+    color: var(--c-text);
+  }
+  .floater.ability {
+    color: var(--c-xp);
+  }
+  .floater.crit {
+    color: var(--c-warning);
+    font-size: var(--text-xl);
+  }
+  .floater.player-damage {
+    color: var(--c-damage);
+  }
+  .floater.heal {
+    color: var(--c-heal);
+  }
+  .floater.xp {
+    color: var(--c-xp);
+  }
+  .floater.gold {
+    color: var(--c-gold);
+  }
+
+  /* Игрок попросил меньше движения — гасим на месте, без подъёма.
+     Число всё равно должно быть видно: это информация, а не украшение. */
+  @media (prefers-reduced-motion: reduce) {
+    .floater {
+      transform: translate(calc(-50% + var(--drift) * 1.6rem), -2.2rem);
+    }
   }
   /* Отладочные числа — тот самый случай, под который заведён --font-mono:
      технические латинские подписи, которые игрок не читает как текст. */

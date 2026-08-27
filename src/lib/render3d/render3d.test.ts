@@ -2,7 +2,9 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { Decimal } from '../game/numbers'
 import { createInitialState } from '../game/state'
+import { FLOATER_LIMIT } from '../data/render'
 import { disposeSceneGraph, type DisposableNode, type TraversableNode } from './dispose'
+import { createFloaterQueue, floaterProgress, projectToScreen } from './floaters'
 import { createFrameGate, SCENE_FPS } from './frameGate'
 import { HERO_HEIGHT, monsterHeight, sceneModel } from './model'
 import { parseHexColor, readScenePalette, SCENE_TOKENS } from './palette'
@@ -25,15 +27,17 @@ describe('слой 3D только читает', () => {
     expect(sources.length).toBeGreaterThan(0)
   })
 
+  // Из stores/game слою рендера позволены ТОЛЬКО read-only сторы. Всё
+  // остальное, что там экспортируется, — экшены, меняющие игру.
+  const READ_ONLY = ['gameState', 'simSpeed', 'loopMetrics', 'offlineReport']
+
   it.each(sources)('%s: не вызывает экшенов стора игры', (_name, source) => {
-    // Из stores/game слою рендера позволено ровно одно — подписка на
-    // состояние. Всё остальное там меняет игру.
     const gameImports = [...source.matchAll(/import\s*\{([^}]*)\}\s*from\s*'[^']*stores\/game'/g)]
     const imported = gameImports
       .flatMap((m) => m[1].split(','))
       .map((s) => s.trim().split(/\s+as\s+/)[0].trim())
       .filter(Boolean)
-    expect(imported.filter((name) => name !== 'gameState')).toEqual([])
+    expect(imported.filter((name) => !READ_ONLY.includes(name))).toEqual([])
   })
 
   it.each(sources)('%s: не трогает сейв и localStorage', (_name, source) => {
@@ -180,5 +184,79 @@ describe('выгрузка сцены', () => {
 
   it('пустая сцена не считается выгруженной', () => {
     expect(disposeSceneGraph({ traverse: () => {} })).toBe(0)
+  })
+})
+
+describe('всплывающие числа', () => {
+  it('бюджет не превышается, лишние отбрасываются', () => {
+    const q = createFloaterQueue(3, 1000)
+    const add = () =>
+      q.push({ anchor: 'monster', kind: 'damage', text: '1', bornAt: 0, drift: 0 })
+    expect([add(), add(), add(), add(), add()]).toEqual([true, true, true, false, false])
+    expect(q.size()).toBe(3)
+  })
+
+  it('отбрасываются НОВЫЕ, а не вытесняются старые', () => {
+    // Иначе при сотне событий за кадр набор на экране полностью меняется
+    // каждый кадр и не прочитать ни одного числа.
+    const q = createFloaterQueue(2, 1000)
+    q.push({ anchor: 'monster', kind: 'damage', text: 'первое', bornAt: 0, drift: 0 })
+    q.push({ anchor: 'monster', kind: 'damage', text: 'второе', bornAt: 0, drift: 0 })
+    q.push({ anchor: 'monster', kind: 'damage', text: 'третье', bornAt: 0, drift: 0 })
+    expect(q.alive(0).map((f) => f.text)).toEqual(['первое', 'второе'])
+  })
+
+  it('отжившие уходят, и место освобождается', () => {
+    const q = createFloaterQueue(2, 100)
+    q.push({ anchor: 'hero', kind: 'damage', text: 'a', bornAt: 0, drift: 0 })
+    q.push({ anchor: 'hero', kind: 'damage', text: 'b', bornAt: 0, drift: 0 })
+    expect(q.push({ anchor: 'hero', kind: 'damage', text: 'c', bornAt: 0, drift: 0 })).toBe(false)
+    expect(q.alive(150)).toEqual([])
+    expect(q.push({ anchor: 'hero', kind: 'damage', text: 'c', bornAt: 150, drift: 0 })).toBe(true)
+  })
+
+  it('после тысячи событий на экране остаётся не больше бюджета', () => {
+    const q = createFloaterQueue(FLOATER_LIMIT, 1000)
+    for (let i = 0; i < 1000; i += 1) {
+      q.push({ anchor: 'monster', kind: 'damage', text: String(i), bornAt: 0, drift: 0 })
+    }
+    expect(q.alive(0).length).toBe(FLOATER_LIMIT)
+    // И через секунду DOM возвращается к пустому.
+    expect(q.alive(1001).length).toBe(0)
+  })
+
+  it('доля прожитого идёт от нуля к единице и не выходит за края', () => {
+    const f = { id: 1, anchor: 'hero' as const, kind: 'damage' as const, text: '1', bornAt: 100, drift: 0 }
+    expect(floaterProgress(f, 100, 200)).toBe(0)
+    expect(floaterProgress(f, 200, 200)).toBe(0.5)
+    expect(floaterProgress(f, 5000, 200)).toBe(1)
+    expect(floaterProgress(f, 0, 200)).toBe(0)
+  })
+})
+
+describe('проекция мира на экран', () => {
+  it('центр кадра попадает в середину холста', () => {
+    expect(projectToScreen({ x: 0, y: 0, z: 0 }, 800, 600)).toEqual({
+      x: 400,
+      y: 300,
+      visible: true,
+    })
+  })
+
+  it('ось Y перевёрнута: верх мира — верх экрана', () => {
+    expect(projectToScreen({ x: 0, y: 1, z: 0 }, 800, 600).y).toBe(0)
+    expect(projectToScreen({ x: 0, y: -1, z: 0 }, 800, 600).y).toBe(600)
+  })
+
+  it('точка ЗА камерой не рисуется', () => {
+    // project() отдаёт для неё зеркальные координаты в кадре: без отсечения
+    // полоска здоровья мирно поехала бы по экрану, будучи за спиной.
+    expect(projectToScreen({ x: 0, y: 0, z: 1.4 }, 800, 600).visible).toBe(false)
+    expect(projectToScreen({ x: 0, y: 0, z: -3 }, 800, 600).visible).toBe(false)
+  })
+
+  it('улетевшее далеко за край кадра не рисуется', () => {
+    expect(projectToScreen({ x: 4, y: 0, z: 0 }, 800, 600).visible).toBe(false)
+    expect(projectToScreen({ x: Number.NaN, y: 0, z: 0 }, 800, 600).visible).toBe(false)
   })
 })
