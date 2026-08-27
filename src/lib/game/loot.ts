@@ -12,6 +12,7 @@ import {
   ARMOR_BASE_MAX_HP,
   ARMOR_NOUNS,
   WEAPONS,
+  type WeaponTemplate,
 } from '../data/items'
 import type { StatModifier } from './stats'
 import { isEquipped } from './equipment'
@@ -50,7 +51,7 @@ export function rollSlot(rng: Rng): SlotId {
 // Оружие: три модификатора kind 'base' задают БАЗУ боя (скорость и диапазон
 // урона), побочные статы идут обычными модификаторами. Снятое оружие перестаёт
 // давать base — значения возвращаются к UNARMED из data/balance.ts.
-function weaponMods(template: (typeof WEAPONS)[number], rarity: RarityDef): StatModifier[] {
+export function weaponMods(template: WeaponTemplate, rarity: RarityDef): StatModifier[] {
   const source = 'equipment:weapon'
   return [
     { stat: 'weaponSpeed', kind: 'base', value: template.weaponSpeed, source },

@@ -1,5 +1,6 @@
 // Игровые формулы. Каждая — с пояснением, что считает и почему.
 import { Decimal } from './numbers'
+import { XP_CURVE_BASE, XP_CURVE_EXPONENT } from '../data/balance'
 import type { UpgradeDef } from '../types'
 
 // Погрешность pow (считается через exp/ln) может дать 79.999999 вместо 80 —
@@ -14,9 +15,10 @@ export function upgradeCost(def: UpgradeDef, owned: Decimal): Decimal {
   return floorSafe(def.baseCost.times(Decimal.pow(def.costGrowth, owned)))
 }
 
-// Кривая опыта: 10 * level^1.5 — степенная, уровни замедляются, но не встают колом.
+// Кривая опыта: степенная — уровни замедляются, но не встают колом.
+// Оба числа — баланс, поэтому живут в data/balance.ts, а не здесь.
 export function xpToNextLevel(level: Decimal): Decimal {
-  return floorSafe(new Decimal(10).times(level.pow(1.5)))
+  return floorSafe(XP_CURVE_BASE.times(level.pow(XP_CURVE_EXPONENT)))
 }
 
 // Предохранитель applyXp: столько уровней за один вызов хватит на любой честный

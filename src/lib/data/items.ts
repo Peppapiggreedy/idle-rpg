@@ -45,6 +45,10 @@ export const WEAPONS: WeaponTemplate[] = [
   },
 ]
 
+export const WEAPON_BY_ID: Record<string, WeaponTemplate> = Object.fromEntries(
+  WEAPONS.map((w) => [w.id, w]),
+)
+
 // Существительные брони по слотам (оружие берёт своё из WEAPONS).
 export const ARMOR_NOUNS: Record<Exclude<SlotId, 'weapon'>, readonly string[]> = {
   head: ['Шлем', 'Капюшон', 'Венец'],

@@ -9,7 +9,7 @@
 
 | Файл | Отвечает за | Импортирует |
 |---|---|---|
-| `src/main.ts` | старт: `initGame()` (загрузка сейва) → mount App → `startGameLoop()`; слушатель `visibilitychange` для сейва при уходе вкладки в фон | `App.svelte`, `stores/game` |
+| `src/main.ts` | две страницы: при `isBalanceRoute()` монтируется только `BalancePage` (игровой цикл не запускается и сейв не трогается), иначе `initGame()` → mount App → `startGameLoop()` + слушатель `visibilitychange` | `App.svelte`, `ui/BalancePage.svelte`, `ui/route`, `stores/game` |
 | `src/App.svelte` | компоновка экрана, никакой логики | все компоненты `ui/` |
 | `src/app.css` | глобальные стили; декоративные цвета `--color-gold` / `--color-xp` — единственное место определения | — |
 | `src/vite-env.d.ts` | объявление `__BUILD_TIME__` (подставляется Vite define) | — |
@@ -29,13 +29,14 @@
 | `zones.ts` | доступ к зонам (`isZoneUnlocked`), переходы (`travelToZone`, `activateAbility`, `setAbilityAutocast`, `moveAbilityPriority`, `investTalentPoint`, `resetTalentTree`, `enterDungeonRun`, `leaveDungeonRun`, `reviveInZone`, `retreatZone`) и **честный прогноз опасности**: `zoneRate` (темп зоны — среднее по пулу × уровням, смертность один раз на зону по средней потере HP) и `forecastZone` → `ZoneForecast` с кодом вердикта `safe/risky/deadly/hopeless`. Своей формулы боя нет — зовёт `estimateCombatRate` | numbers, combat, state, data/{balance,zones} |
 | `equipment.ts` | надеть/снять/сравнить: `equipItem` (снятое возвращается в инвентарь), `unequipItem` (нужен свободный слот сумки), `isEquipped`, `isUpgrade` и `autoEquipIfBetter` (**строго по `estimateCombatRate().damagePerSecond`**, не по сумме статов), `compareItem` → `EquipComparison` с производными числами для UI | combat, stats, state, data/{balance,slots}, types |
 | `combat.ts` | **ЕДИНСТВЕННЫЙ дом боевых формул**: `rollSwing` (бросок урона оружия + вклад силы атаки + крит), `rollMonsterDamage`, `swingDamageRange`/`expectedSwingDamage`/`critFactor`, `estimateCombatRate` (урон/с, убийств/с, uptime, время до смерти; цикл «фарм → смерть → воскрешение»). tick вызывает эти функции, оффлайн-агрегат — только `estimateCombatRate`; своей формулы нет ни у кого | numbers, rng, state, stats, data/balance, types |
-| `formulas.ts` | `upgradeCost` (base·1.15^owned), `xpToNextLevel` (floor(10·L^1.5) с эпсилоном против погрешности pow), `applyXp` (перенос остатка, мультиуровень, предохранитель) | numbers, types |
+| `formulas.ts` | `upgradeCost` (base·1.15^owned), `xpToNextLevel` (floor(`XP_CURVE_BASE`·L^`XP_CURVE_EXPONENT`) с эпсилоном против погрешности pow; оба числа — баланс и живут в `data/balance.ts`), `applyXp` (перенос остатка, мультиуровень, предохранитель) | numbers, data/balance, types |
 | `loop.ts` | планировщик: rAF + аккумулятор, фикс. шаг `STEP_MS=100`, максимум 10 шагов/кадр, сброс «долга»; метрики fps/tps; `setSpeed(m)` — дебаг-ускорение игрового времени (лимит шагов за кадр сохраняется). Технические константы живут здесь — это не баланс | — |
 | `state.ts` | `GameState`, `createInitialState(seed?)`, `spawnMonster`, `pushEvent`, `COMBAT_LOG_SIZE`. Общая зависимость tick/loot/save — взаимных импортов между ними нет | numbers, formulas, rng, data/{monsters,balance}, types |
 | `tick.ts` | **конвейер тика** из шести чистых шагов `(state, ctx) => state` (см. раздел 3); реэкспорт state-модуля для совместимости | numbers, formulas, loot, rng, state, data/{balance,monsters}, types |
 | `upgrades.ts` | `buyUpgrade`, `ownedCount` | numbers, formulas, state, types |
 | `loot.ts` | `rollRarity` и `rollSlot` (взвешенные рулетки), `rollLoot` (шанс → редкость → слот → имя → модификаторы), `sellItem` (надетое продать нельзя)/`sellPrice` | numbers, rng, state, equipment, data/{rarity,loot,slots,items}, types |
 | `save.ts` | формат сейва v7, миграции, localStorage (инжектируемый), оффлайн-прогресс агрегатом, base64 экспорт/импорт, коды ошибок загрузки | numbers, formulas, state, stats, data/{balance,loot,monsters,rarity,slots}, types |
+| `simulate.ts` | **прогон баланса без UI**: `simulate({hours, zoneId, build, freezeLevel, travel})` крутит настоящий `tick` N игровых часов и отдаёт метрики (убийств/золота/опыта/смертей в час, время до следующего уровня, итоговый уровень, урон за ману). Своей модели боя нет; метрики читаются только по наблюдаемому состоянию и шине `AttackEvent`. `BALANCE_PRESET` — общие числа для теста и страницы `/balance` | numbers, loop, rng, formulas, state, stats, tick, loot, zones, data/* |
 | `index.ts` | фасад: реэкспорт всего публичного | все выше |
 
 Тесты: рядом с кодом (`*.test.ts`) + `__tests__/golden.test.ts` (характеризационный,
@@ -69,7 +70,7 @@
 `state.rngSeed`. Автосейв: счётчик копит шаг конвейера `applyAutosaveCounter`,
 стор проверяет его после тика, сохраняет и сбрасывает.
 
-### `src/lib/ui/` — 15 компонентов
+### `src/lib/ui/` — 16 компонентов и модуль маршрута
 
 `CombatScreen` (моб с его уровнем, HP-бар, статы; **рендер событий лога** — весь
 русский текст боя в функции `eventText`), `HeroPanel`, `UpgradePanel`,
@@ -89,7 +90,17 @@
 `SaveControls`, `OfflineModal`, `NoticeBar` (карта `NoticeCode` → текст),
 `DebugOverlay` (`?debug=0` скрывает), `DebugPanel` (рендерится только при
 `?debug=1`: множитель скорости симуляции ×1/×10/×100 через `loop.setSpeed`,
-чит-кнопки дебаг-экшенами стора, удары/мин по шине, сид rng).
+чит-кнопки дебаг-экшенами стора, удары/мин по шине, сид rng, ссылка на прогон
+баланса), `BalancePage` (отдельная страница `/balance` под `?debug=1`: те же
+таблицы, что печатает `game/__tests__/balance.test.ts`, посчитанные на лету
+через `simulate`; между строками уступает кадр браузеру, чтобы таблица
+наполнялась постепенно).
+
+`route.ts` — не компонент: `isBalanceRoute(location)` отвечает, открыт ли
+прогон баланса. Требует `?debug=1` и понимает два адреса — чистый путь
+`/idle-rpg/balance` (его отдаёт GitHub Pages через `404.html`, копию
+`index.html` делает плагин `pagesSpaFallback` в `vite.config.ts`) и хеш
+`#/balance`, работающий на любом статическом хостинге.
 
 ### `src/lib/types/index.ts`
 

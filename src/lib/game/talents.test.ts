@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { Decimal } from './numbers'
 import { STEP_MS } from './loop'
 import { createInitialState, manualOnlySettings, tick, type GameState } from './tick'
-import { ensureStats } from './stats'
+import { applyModifiers, ensureStats, type StatModifier } from './stats'
 import {
   availablePoints,
   canResetTalents,
@@ -19,6 +19,7 @@ import {
   talentStatus,
 } from './talents'
 import { useAbility } from './abilities'
+import { WEAPONS } from '../data/items'
 import {
   BRANCHES,
   TALENTS,
@@ -290,5 +291,57 @@ describe('порядок причин отказа', () => {
     const s = invest(hero(TALENT_FIRST_LEVEL + 4), EDGE.id, 5)
     expect(availablePoints(s)).toBe(0)
     expect(talentStatus(s, EDGE).reason).toBe('max-rank')
+  })
+})
+
+describe('ускорение: талант и предмет неразличимы', () => {
+  // Правило: талант на скорость выдаёт модификатор haste, и НИКОГДА — плоскую
+  // прибавку к weaponSpeed. Иначе один талант увёл бы скорость оружия в ноль
+  // или в минус, а swingTime = weaponSpeed / (1 + haste) — в бесконечность.
+  // Ускорение в долях: 0.1 — это «+10% скорости», а не «+10% от haste»
+  // (haste стартует с нуля, и процентный модификатор от нуля даст ноль).
+  const weapon = WEAPONS[2] // Крушитель, 3.4 c — на медленном разница виднее
+  const weaponBase: StatModifier[] = [
+    { stat: 'weaponSpeed', kind: 'base', value: weapon.weaponSpeed, source: 'equipment:weapon' },
+  ]
+  const hasteMod = (source: string): StatModifier => ({
+    stat: 'haste',
+    kind: 'flat',
+    value: new Decimal(0.1),
+    source,
+  })
+
+  it('талант на +10% haste даёт ровно тот же swingTime, что и предмет на +10% haste', () => {
+    // Оба модификатора отличаются ТОЛЬКО источником: конвейер про источник не
+    // знает, поэтому и результат обязан быть побитово одинаковым.
+    const fromTalent = applyModifiers([...weaponBase, hasteMod('talent:test-haste')])
+    const fromItem = applyModifiers([...weaponBase, hasteMod('equipment:trinket')])
+    expect(fromTalent.swingTime).toBe(fromItem.swingTime)
+    expect(fromTalent.haste).toBe(0.1)
+    expect(fromTalent.swingTime).toBeCloseTo(3.4 / 1.1, 12)
+  })
+
+  it('ускорение складывается аддитивно и не может обнулить время замаха', () => {
+    const both = applyModifiers([
+      ...weaponBase,
+      hasteMod('talent:test-haste'),
+      hasteMod('equipment:trinket'),
+    ])
+    expect(both.haste).toBeCloseTo(0.2, 12)
+    expect(both.swingTime).toBeCloseTo(3.4 / 1.2, 12)
+    // Сколько бы ускорения ни навесили, замах остаётся положительным.
+    const absurd = applyModifiers([
+      ...weaponBase,
+      { stat: 'haste', kind: 'flat', value: new Decimal(1000), source: 'talent:test-haste' },
+    ])
+    expect(absurd.swingTime).toBeGreaterThan(0)
+  })
+
+  it('ни один талант дерева не трогает weaponSpeed', () => {
+    // Защита правила на данных: талант может ускорять героя только через haste.
+    for (const talent of TALENTS) {
+      const mods = talentModifiers({ [talent.id]: talent.maxRank })
+      expect(mods.filter((m) => m.stat === 'weaponSpeed')).toEqual([])
+    }
   })
 })
