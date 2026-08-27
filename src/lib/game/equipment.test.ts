@@ -9,7 +9,7 @@ import {
   unequipItem,
 } from './equipment'
 import { estimateCombatRate } from './combat'
-import { createInitialState, type GameState } from './state'
+import { createInitialState, manualOnlySettings, type GameState } from './state'
 import { ensureStats } from './stats'
 import { UNARMED } from '../data/balance'
 import { WEAPONS, type WeaponTemplate } from '../data/items'
@@ -118,7 +118,9 @@ describe('инвариант: равное (средний урон / weaponSpee
       let s = withItems([weapon, buff])
       s = equipItem(s, weapon.id)
       s = equipItem(s, buff.id)
-      return estimateCombatRate(s).damagePerSecond.toNumber()
+      // Инвариант — про УДАР ОРУЖИЯ. Умения намеренно любят медленное оружие
+      // (доля от крупного удара больше), поэтому берём автоатаку отдельно.
+      return estimateCombatRate(s).autoDamagePerSecond.toNumber()
     })
     // Три разные скорости (1.4 / 2.2 / 3.4 c) — один и тот же урон в секунду.
     expect(dps[1]).toBeCloseTo(dps[0], 9)
@@ -128,15 +130,22 @@ describe('инвариант: равное (средний урон / weaponSpee
 
 describe('автонадевание', () => {
   it('сравнивает по урону в секунду, а не по сумме силы атаки', () => {
-    // Медленное оружие (3.4 c) против быстрого (1.4 c) при равном отношении
-    // урона к скорости: сумма «сырых» статов у медленного больше, но урон
-    // в секунду одинаков — значит апгрейдом оно не считается.
+    // По автоатаке два оружия равны: отношение урона к скорости одинаково.
     const fast = bareWeapon(WEAPONS[0])
     const slow = bareWeapon(WEAPONS[2])
     let s = withItems([fast, slow])
     s = equipItem(s, fast.id)
     expect(slow.mods[2].value.gt(fast.mods[2].value)).toBe(true) // урон выше
-    expect(isUpgrade(s, slow)).toBe(false) // а урон в секунду — нет
+    const withFast = estimateCombatRate(s).autoDamagePerSecond
+    const withSlow = estimateCombatRate(equipItem(s, slow.id)).autoDamagePerSecond
+    expect(withSlow.toNumber()).toBeCloseTo(withFast.toNumber(), 9)
+
+    // Без умений медленное оружие апгрейдом не считается — урон в секунду тот же.
+    const noAbilities = { ...s, abilitySettings: manualOnlySettings() }
+    expect(isUpgrade(noAbilities, slow)).toBe(false)
+    // А с включённым автокастом — считается, и это НЕ ошибка сравнения: удар
+    // крупнее, значит и умения от него бьют сильнее при той же цене в мане.
+    expect(isUpgrade(s, slow)).toBe(true)
   })
 
   it('надевает предмет, только когда он лучше; выключенный флаг не трогает ничего', () => {

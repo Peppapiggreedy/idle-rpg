@@ -13,6 +13,7 @@ import { sellItem } from '../game/loot'
 import { equipItem, setAutoEquip, unequipItem } from '../game/equipment'
 import { travelToZone as travelAction } from '../game/zones'
 import { useAbility as useAbilityAction } from '../game/abilities'
+import { abilitiesByPriority } from '../game/rotation'
 import { emit as emitAttack } from '../game/events'
 import type { SlotId } from '../data/slots'
 import {
@@ -159,6 +160,36 @@ export function toggleAutoEquip(enabled: boolean): void {
 /** Переход в зону по клику. В закрытую зону экшен не пустит — состояние как было. */
 export function travelToZone(zoneId: string): void {
   state.update((s) => travelAction(s, zoneId, rng()))
+}
+
+/** Галка «использовать автоматически» у умения. */
+export function setAbilityAutocast(abilityId: string, autocast: boolean): void {
+  state.update((s) => {
+    const setting = s.abilitySettings[abilityId]
+    if (!setting) return s
+    return {
+      ...s,
+      abilitySettings: { ...s.abilitySettings, [abilityId]: { ...setting, autocast } },
+    }
+  })
+}
+
+/** Стрелки вверх/вниз: меняет умение приоритетом с соседом по списку. */
+export function moveAbilityPriority(abilityId: string, direction: -1 | 1): void {
+  state.update((s) => {
+    const order = abilitiesByPriority(s.abilitySettings, false)
+    const index = order.findIndex((a) => a.id === abilityId)
+    const target = index + direction
+    if (index === -1 || target < 0 || target >= order.length) return s
+    const swapped = [...order]
+    ;[swapped[index], swapped[target]] = [swapped[target], swapped[index]]
+    // Приоритеты переписываем по новому порядку: 0, 1, 2… без дыр.
+    const abilitySettings = { ...s.abilitySettings }
+    swapped.forEach((ability, priority) => {
+      abilitySettings[ability.id] = { ...abilitySettings[ability.id], priority }
+    })
+    return { ...s, abilitySettings }
+  })
 }
 
 /**

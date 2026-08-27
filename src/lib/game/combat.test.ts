@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { Decimal } from './numbers'
 import { STEP_MS } from './loop'
-import { RESPAWN_DELAY_MS, createInitialState, monsterFromTemplate, tick, type GameState } from './tick'
+import { RESPAWN_DELAY_MS, createInitialState, manualOnlySettings, monsterFromTemplate, tick, type GameState } from './tick'
 import { applyModifiers } from './stats'
 import type { MonsterTemplate } from '../types'
 
@@ -31,7 +31,9 @@ function stateWith(damagePerSwing: number, template: MonsterTemplate): GameState
     { stat: 'weaponDamageMax', kind: 'base', value: new Decimal(damagePerSwing), source: 'test:fixture' },
   ])
   return {
+    // Автокаст выключен: тест про механику АВТОАТАКИ, умения тут только шумят.
     ...createInitialState(1),
+    abilitySettings: manualOnlySettings(),
     stats,
     statsDirty: false,
     monster: monsterFromTemplate(template),

@@ -78,6 +78,8 @@ describe('rollSlot', () => {
   })
 })
 
+// Сид фиксирован: без него spawnMonster выдаёт случайного моба зоны, и тест
+// становится плавающим — длина боя зависит от того, кто попался.
 describe('дроп в бою', () => {
   function untilLoot(state: GameState, rng: () => number): GameState {
     // 30 hp при 20 за удар раз в 2 c: смерть максимум за 2 удара (~4 c)
@@ -90,21 +92,21 @@ describe('дроп в бою', () => {
 
   it('с моба падает предмет и попадает в инвентарь с записью в лог', () => {
     // Автонадевание выключено: проверяем путь «дроп -> инвентарь».
-    const s = untilLoot({ ...createInitialState(), autoEquip: false }, () => 0)
+    const s = untilLoot({ ...createInitialState(1), autoEquip: false }, () => 0)
     expect(s.inventory.length).toBe(1)
     expect(s.combatLog.some((e) => e.type === 'loot')).toBe(true)
   })
 
   it('с включённым автонадеванием предмет сразу уходит в слот', () => {
     // rng 0 -> слот оружия: безоружный герой обязан счесть его апгрейдом.
-    const s = untilLoot(createInitialState(), () => 0)
+    const s = untilLoot(createInitialState(1), () => 0)
     expect(s.equipment.weapon).not.toBeNull()
     expect(s.inventory).toEqual([]) // из инвентаря предмет ушёл на героя
     expect(s.stats.weaponSpeed).toBeCloseTo(1.4, 9) // база боя от оружия
   })
 
   it('автонадевание не трогает предмет, который хуже надетого', () => {
-    const s = untilLoot(createInitialState(), () => 0)
+    const s = untilLoot(createInitialState(1), () => 0)
     const equipped = s.equipment.weapon!
     // Второй такой же дроп не лучше первого — остаётся в инвентаре.
     const after = untilLoot({ ...s, combatLog: [] }, () => 0)
@@ -122,7 +124,7 @@ describe('дроп в бою', () => {
         { stat: 'attackPower', kind: 'flat', value: new Decimal(1), source: 'equipment:hands' },
       ],
     }))
-    let s: GameState = { ...createInitialState(), inventory: full, itemSeq: INVENTORY_SIZE }
+    let s: GameState = { ...createInitialState(1), inventory: full, itemSeq: INVENTORY_SIZE }
     for (let i = 0; i < 40; i++) s = tick(s, STEP_MS, () => 0)
     expect(s.inventory.length).toBe(INVENTORY_SIZE)
   })
@@ -140,7 +142,7 @@ describe('продажа', () => {
   }
 
   it('превращает предмет в золото по цене тира', () => {
-    const s: GameState = { ...createInitialState(), inventory: [item] }
+    const s: GameState = { ...createInitialState(1), inventory: [item] }
     const after = sellItem(s, 'item-1')
     expect(after.inventory.length).toBe(0)
     // база 5 * sellMult(rare) 5 = 25 золота
@@ -149,7 +151,7 @@ describe('продажа', () => {
   })
 
   it('надетый предмет продать нельзя — сперва снять', () => {
-    const s: GameState = { ...createInitialState(), inventory: [item] }
+    const s: GameState = { ...createInitialState(1), inventory: [item] }
     const equipped = equipItem(s, 'item-1')
     expect(equipped.equipment.trinket?.id).toBe('item-1')
     const after = sellItem(equipped, 'item-1')
@@ -158,7 +160,7 @@ describe('продажа', () => {
   })
 
   it('несуществующий id — состояние не меняется', () => {
-    const s: GameState = { ...createInitialState(), inventory: [item] }
+    const s: GameState = { ...createInitialState(1), inventory: [item] }
     expect(sellItem(s, 'нет-такого')).toBe(s)
   })
 })

@@ -2,14 +2,23 @@
   // Панель умений: три кнопки с заливкой кулдауна, стоимостью маны и хоткеями.
   // Весь текст (включая причины недоступности) живёт здесь.
   import {
-    ABILITIES,
+    abilitiesByPriority,
     abilityStatus,
     expectedAbilityDamage,
     formatNumber,
     type AbilityBlockReason,
     type AbilityDef,
   } from '../game'
-  import { activateAbility, gameState } from '../stores/game'
+  import { AUTOCAST_DELAY_MS } from '../data/balance'
+  import {
+    activateAbility,
+    gameState,
+    moveAbilityPriority,
+    setAbilityAutocast,
+  } from '../stores/game'
+
+  // Порядок в панели = порядок приоритета: сверху то, что автокаст жмёт первым.
+  const ordered = $derived(abilitiesByPriority($gameState.abilitySettings, false))
 
   const REASON_TEXT: Record<AbilityBlockReason, string> = {
     dead: 'Ты мёртв — умения недоступны',
@@ -18,7 +27,7 @@
     'no-mana': 'Не хватает маны',
   }
 
-  const statuses = $derived(ABILITIES.map((a) => abilityStatus($gameState, a)))
+  const statuses = $derived(ordered.map((a) => abilityStatus($gameState, a)))
 
   // Хоткеи 1 / 2 / 3 по порядку умений.
   function hotkey(index: number): string {
@@ -30,10 +39,10 @@
     const target = event.target as HTMLElement | null
     if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return
     if (event.metaKey || event.ctrlKey || event.altKey) return
-    const index = ABILITIES.findIndex((_, i) => event.key === hotkey(i))
+    const index = ordered.findIndex((_, i) => event.key === hotkey(i))
     if (index === -1) return
     event.preventDefault()
-    activateAbility(ABILITIES[index].id)
+    activateAbility(ordered[index].id)
   }
 
   function tooltip(ability: AbilityDef, index: number): string {
@@ -64,7 +73,7 @@
 <section class="abilities">
   <h2>Умения</h2>
   <div class="row">
-    {#each ABILITIES as ability, i (ability.id)}
+    {#each ordered as ability, i (ability.id)}
       {@const status = statuses[i]}
       <button
         type="button"
@@ -89,6 +98,40 @@
       </button>
     {/each}
   </div>
+
+  <ul class="settings">
+    {#each ordered as ability, i (ability.id)}
+      <li>
+        <span class="order">{i + 1}.</span>
+        <label>
+          <input
+            type="checkbox"
+            checked={$gameState.abilitySettings[ability.id]?.autocast ?? false}
+            onchange={(e) => setAbilityAutocast(ability.id, e.currentTarget.checked)}
+          />
+          {ability.name} — использовать автоматически
+        </label>
+        <span class="arrows">
+          <button
+            type="button"
+            title="Выше по приоритету"
+            disabled={i === 0}
+            onclick={() => moveAbilityPriority(ability.id, -1)}>▲</button
+          >
+          <button
+            type="button"
+            title="Ниже по приоритету"
+            disabled={i === ordered.length - 1}
+            onclick={() => moveAbilityPriority(ability.id, 1)}>▼</button
+          >
+        </span>
+      </li>
+    {/each}
+  </ul>
+  <p class="gcd idle">
+    Автокаст жмёт первое доступное сверху вниз, но реагирует на
+    {(AUTOCAST_DELAY_MS / 1000).toFixed(1)}с медленнее тебя и не придерживает кулдауны.
+  </p>
   {#if $gameState.gcdMsLeft > 0}
     <p class="gcd">Общая задержка: {seconds($gameState.gcdMsLeft)}с</p>
   {:else}
@@ -167,6 +210,51 @@
   }
   .timer.reason {
     opacity: 0.6;
+  }
+  .settings {
+    list-style: none;
+    margin: 0.6rem 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: 0.78rem;
+    text-align: left;
+  }
+  .settings li {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .settings label {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    cursor: pointer;
+    flex: 1;
+  }
+  .settings .order {
+    opacity: 0.45;
+    min-width: 1.2em;
+  }
+  .arrows {
+    display: flex;
+    gap: 0.15rem;
+  }
+  .arrows button {
+    font: inherit;
+    font-size: 0.7rem;
+    line-height: 1;
+    padding: 0.2em 0.4em;
+    border: 1px solid #8886;
+    border-radius: 4px;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+  }
+  .arrows button:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
   }
   .gcd {
     margin: 0.5rem 0 0;

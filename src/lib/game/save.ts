@@ -5,7 +5,15 @@ import { Decimal } from './numbers'
 import { RARITY_BY_ID } from '../data/rarity'
 import type { Item, Rarity } from '../types'
 import { applyXp, xpToNextLevel } from './formulas'
-import { createInitialState, emptyEquipment, spawnMonster, type Equipment, type GameState } from './state'
+import {
+  createInitialState,
+  defaultAbilitySettings,
+  emptyEquipment,
+  spawnMonster,
+  type AbilitySettings,
+  type Equipment,
+  type GameState,
+} from './state'
 import { createRng } from './rng'
 import { ensureStats, STAT_IDS, type ModifierKind, type StatId, type StatModifier } from './stats'
 import { SLOT_IDS, type SlotId } from '../data/slots'
@@ -15,14 +23,15 @@ import {
   LEGACY_V3_SWING_TIME_S,
   OFFLINE_CAP_HOURS,
   OFFLINE_CHUNK_MIN,
+  OFFLINE_EFFICIENCY,
 } from '../data/balance'
-import { ABILITY_BY_ID } from '../data/abilities'
+import { ABILITIES, ABILITY_BY_ID } from '../data/abilities'
 import { FALLBACK_ITEM_NAME } from '../data/loot'
 import { SAFE_ZONE, ZONE_BY_ID } from '../data/zones'
 import { currentZone, zoneRate } from './zones'
 
 export const SAVE_KEY = 'idle-rpg-save'
-export const SAVE_VERSION = 9
+export const SAVE_VERSION = 10
 export const AUTOSAVE_INTERVAL_MS = AUTOSAVE_INTERVAL_S * 1000
 // Потолок оффлайн-прогресса: дольше отсутствовать можно, но не оплачивается.
 export const OFFLINE_CAP_MS = OFFLINE_CAP_HOURS * 60 * 60 * 1000
@@ -31,7 +40,7 @@ export const OFFLINE_MODAL_MIN_MS = 60_000
 // Шаг, которым идёт оффлайн-агрегат.
 export const OFFLINE_CHUNK_MS = OFFLINE_CHUNK_MIN * 60_000
 
-// Актуальный формат сейва (v9). Все Decimal — строки. Прямых полей урона
+// Актуальный формат сейва (v10). Все Decimal — строки. Прямых полей урона
 // и скорости атаки в формате НЕТ: статы — производные от счётчиков покупок
 // и надетой экипировки, пересчитываются конвейером stats.ts.
 export interface SavedModifier {
@@ -49,8 +58,13 @@ export interface SavedItem {
   mods: SavedModifier[]
 }
 
-export interface SavePayloadV9 {
-  version: 9
+export interface SavedAbilitySetting {
+  autocast: boolean
+  priority: number
+}
+
+export interface SavePayloadV10 {
+  version: 10
   lastTimestamp: number
   gold: string
   level: string
@@ -70,6 +84,8 @@ export interface SavePayloadV9 {
   // мобе, а моб при загрузке спавнится заново.
   gcdMsLeft: number
   abilityCooldownsMs: Record<string, number>
+  // Настройки автокаста: галка и приоритет по каждому умению.
+  abilitySettings: Record<string, SavedAbilitySetting>
   itemSeq: number
   totalTicks: string
   playtimeMs: string
@@ -115,7 +131,7 @@ function savedFromItem(item: Item): SavedItem {
   }
 }
 
-export function payloadFromState(state: GameState, lastTimestamp: number): SavePayloadV9 {
+export function payloadFromState(state: GameState, lastTimestamp: number): SavePayloadV10 {
   const upgrades: Record<string, string> = {}
   for (const [id, owned] of Object.entries(state.upgrades)) upgrades[id] = owned.toString()
   const equipment: Record<string, SavedItem | null> = {}
@@ -128,8 +144,13 @@ export function payloadFromState(state: GameState, lastTimestamp: number): SaveP
   for (const [id, left] of Object.entries(state.abilityCooldownsMs)) {
     if (left > 0 && id in ABILITY_BY_ID) abilityCooldownsMs[id] = left
   }
+  const abilitySettings: Record<string, SavedAbilitySetting> = {}
+  for (const ability of ABILITIES) {
+    const setting = state.abilitySettings[ability.id]
+    if (setting) abilitySettings[ability.id] = { ...setting }
+  }
   return {
-    version: 9,
+    version: 10,
     lastTimestamp,
     inventory: state.inventory.map(savedFromItem),
     equipment,
@@ -138,6 +159,7 @@ export function payloadFromState(state: GameState, lastTimestamp: number): SaveP
     lastSurvivedZoneId: state.lastSurvivedZoneId,
     gcdMsLeft: Math.max(0, state.gcdMsLeft),
     abilityCooldownsMs,
+    abilitySettings,
     itemSeq: state.itemSeq,
     gold: state.gold.toString(),
     level: state.level.toString(),
@@ -227,7 +249,28 @@ function msFromSaved(raw: unknown, max: number): number {
   return typeof raw === 'number' && Number.isFinite(raw) && raw > 0 ? Math.min(raw, max) : 0
 }
 
-export function stateFromPayload(p: SavePayloadV9): GameState {
+// Настройки автокаста из сейва: чужие умения игнорируем, пропущенные
+// добираем дефолтами — иначе новое умение осталось бы без настройки.
+function abilitySettingsFromSaved(raw: unknown): AbilitySettings {
+  const settings = defaultAbilitySettings()
+  if (typeof raw !== 'object' || raw === null) return settings
+  const saved = raw as Record<string, unknown>
+  for (const ability of ABILITIES) {
+    const entry = saved[ability.id]
+    if (typeof entry !== 'object' || entry === null) continue
+    const { autocast, priority } = entry as Record<string, unknown>
+    settings[ability.id] = {
+      autocast: typeof autocast === 'boolean' ? autocast : settings[ability.id].autocast,
+      priority:
+        typeof priority === 'number' && Number.isFinite(priority)
+          ? priority
+          : settings[ability.id].priority,
+    }
+  }
+  return settings
+}
+
+export function stateFromPayload(p: SavePayloadV10): GameState {
   const level = Decimal.max(parseDec(p.level, '1'), new Decimal(1))
   const upgrades: Record<string, Decimal> = {}
   for (const [id, owned] of Object.entries(p.upgrades ?? {})) upgrades[id] = parseDec(owned, '0')
@@ -250,9 +293,11 @@ export function stateFromPayload(p: SavePayloadV9): GameState {
         : zoneIdFromSaved(p.lastSurvivedZoneId, SAFE_ZONE.id),
     gcdMsLeft: msFromSaved(p.gcdMsLeft, GCD_MS),
     abilityCooldownsMs: cooldownsFromSaved(p.abilityCooldownsMs),
+    abilitySettings: abilitySettingsFromSaved(p.abilitySettings),
     // Очередь и эффекты были на прежнем мобе — при загрузке начинаем чисто.
     queuedAbilityId: null,
     activeEffects: [],
+    autocastReadyMs: {},
     itemSeq: typeof p.itemSeq === 'number' ? p.itemSeq : 0,
   }
   // Моб не сохраняется: спавним свежего из восстановленной зоны. Поток
@@ -303,6 +348,9 @@ function itemV6toV7(raw: unknown): RawSave {
 }
 
 const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
+  // 9 -> 10: появился автокаст. Старый сейв получает настройки по умолчанию:
+  // все умения включены, приоритет — порядок из данных.
+  9: (raw) => ({ ...raw, version: 10, abilitySettings: defaultAbilitySettings() }),
   // 8 -> 9: появились активные умения. Старый сейв просыпается с готовыми
   // умениями: кулдаунов не было — значит их и нет.
   8: (raw) => ({ ...raw, version: 9, gcdMsLeft: 0, abilityCooldownsMs: {} }),
@@ -371,7 +419,7 @@ const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
 }
 
 // null = сейв непригоден (не объект или из более новой версии игры).
-export function migrateSave(raw: unknown): SavePayloadV9 | null {
+export function migrateSave(raw: unknown): SavePayloadV10 | null {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null
   let data = raw as RawSave
   let version = typeof data.version === 'number' ? data.version : 0
@@ -382,7 +430,7 @@ export function migrateSave(raw: unknown): SavePayloadV9 | null {
     data = step(data)
     version = typeof data.version === 'number' ? data.version : version + 1
   }
-  return data as unknown as SavePayloadV9
+  return data as unknown as SavePayloadV10
 }
 
 export interface OfflineReport {
@@ -419,12 +467,17 @@ export function applyOfflineProgress(
   // стоял перед героем в момент выхода: за восемь часов он перебьёт весь пул.
   // Формула боя та же (zoneRate зовёт estimateCombatRate), своей у оффлайна нет.
   //
+  // ЖЕЛЕЗНОЕ ПРАВИЛО: оффлайн <= автокаст <= ручная игра. Считаем по модели
+  // АВТОКАСТА (та же задержка реакции и те же приоритеты, что в бою) и ещё
+  // умножаем на OFFLINE_EFFICIENCY. По идеальной игре оффлайн не считается
+  // никогда — иначе выгоднее было бы закрыть вкладку.
+  //
   // Идём шагами по OFFLINE_CHUNK_MS: набранные уровни повышают живучесть, а
   // значит и темп следующего шага. Темп пересчитываем только при смене уровня —
   // внутри одного уровня он неизменен.
   const zone = currentZone(state)
   let s = state
-  let rate = zoneRate(s, zone)
+  let rate = zoneRate(s, zone, 'auto')
   let rateLevel = s.level
   let kills = new Decimal(0)
   let gold = new Decimal(0)
@@ -432,12 +485,12 @@ export function applyOfflineProgress(
   for (let left = cappedMs; left > 0; left -= OFFLINE_CHUNK_MS) {
     const seconds = new Decimal(Math.min(OFFLINE_CHUNK_MS, left)).div(1000)
     if (!rateLevel.eq(s.level)) {
-      rate = zoneRate(s, zone)
+      rate = zoneRate(s, zone, 'auto')
       rateLevel = s.level
     }
-    const chunkXp = rate.xpPerSecond.times(seconds)
-    kills = kills.plus(rate.killsPerSecond.times(seconds))
-    gold = gold.plus(rate.goldPerSecond.times(seconds))
+    const chunkXp = rate.xpPerSecond.times(seconds).times(OFFLINE_EFFICIENCY)
+    kills = kills.plus(rate.killsPerSecond.times(seconds).times(OFFLINE_EFFICIENCY))
+    gold = gold.plus(rate.goldPerSecond.times(seconds).times(OFFLINE_EFFICIENCY))
     xp = xp.plus(chunkXp)
     const leveled = applyXp(s.level, s.currentXp, chunkXp)
     s = {
@@ -519,7 +572,7 @@ export function encodeSaveString(state: GameState, now: () => number = Date.now)
 }
 
 // Понимает base64 от экспорта и, на всякий случай, голый JSON.
-export function decodeSaveString(input: string): SavePayloadV9 | null {
+export function decodeSaveString(input: string): SavePayloadV10 | null {
   const attempts = [
     () => JSON.parse(fromBase64(input.trim())),
     () => JSON.parse(input.trim()),

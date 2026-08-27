@@ -54,7 +54,7 @@ describe('миграция модели урона: эффективный dps �
     const expected = expectedSwingDamage(s.stats)
       .times(critFactor(s.stats))
       .div(s.stats.swingTime)
-    expect(estimateCombatRate(s).damagePerSecond.eq(expected)).toBe(true)
+    expect(estimateCombatRate(s).autoDamagePerSecond.eq(expected)).toBe(true)
   })
 })
 

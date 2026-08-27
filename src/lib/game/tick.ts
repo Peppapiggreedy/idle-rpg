@@ -2,6 +2,7 @@
 //   1. applyRevive          — мёртвый герой: отсчёт воскрешения; по нулю — полный HP
 //                             и откат в последнюю зону, где он выживал
 //   2. applyCooldowns       — кулдауны умений и GCD идут игровым временем
+//   2a. applyAutocast       — таймер реакции и применение умения по приоритету
 //   3. applyPendingKill     — моб, добитый мгновенным умением вне тика
 //   4. applyCombat          — удары героя по свинг-таймеру; умение из очереди
 //                             ЗАМЕНЯЕТ автоатаку; смерть моба в ctx.killedMonster
@@ -27,7 +28,7 @@ import { emit as busEmit } from './events'
 import { INVENTORY_SIZE, RESPAWN_DELAY_MS, REVIVE_DELAY_MS } from '../data/balance'
 import { ABILITY_BY_ID } from '../data/abilities'
 import { currentZone, reviveInZone } from './zones'
-import { advanceCooldowns, consumeQueuedAbility } from './abilities'
+import { advanceCooldowns, autocastStep, consumeQueuedAbility } from './abilities'
 import type { AttackEvent, Monster } from '../types'
 
 // Погрешность накопления долей замаха: 0.05 и подобные не представимы в double.
@@ -67,6 +68,15 @@ const applyRevive: TickStep = (s, ctx) => {
 // Кулдауны умений и GCD идут ИГРОВЫМ временем: множитель скорости из
 // отладочной панели ускоряет их ровно так же, как бой.
 const applyCooldowns: TickStep = (s, ctx) => advanceCooldowns(s, ctx.dtMs)
+
+// Автокаст: ведёт таймер реакции и жмёт первое доступное умение по приоритету.
+// Стоит ПОСЛЕ кулдаунов (иначе умение, освободившееся на этом тике, пришлось
+// бы ждать лишний тик) и ДО боя (мгновенное умение бьёт до замаха).
+const applyAutocast: TickStep = (s, ctx) => {
+  // Между мобами автокаст молчит: бить некого, таймеры взводятся заново.
+  if (s.respawnMsLeft > 0) return { ...s, autocastReadyMs: {} }
+  return autocastStep(s, ctx.dtMs, ctx.rng, ctx.emitAttack)
+}
 
 // Мгновенное умение бьёт вне тика и может добить моба. Смерть оформляет
 // конвейер — награды, лут и респаун идут обычным путём.
@@ -291,6 +301,7 @@ const applyAutosaveCounter: TickStep = (s, ctx) => {
 const PIPELINE: TickStep[] = [
   applyRevive,
   applyCooldowns,
+  applyAutocast,
   applyPendingKill,
   applyCombat,
   applyEffects,
@@ -324,6 +335,8 @@ export function tick(
 export {
   COMBAT_LOG_SIZE,
   createInitialState,
+  manualOnlySettings,
+  defaultAbilitySettings,
   spawnMonster,
   monsterFromTemplate,
   emptyEquipment,

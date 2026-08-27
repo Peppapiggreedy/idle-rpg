@@ -3,8 +3,9 @@
 // считает combat.ts. Текста для игрока тоже нет: наружу идут коды причин.
 import { Decimal } from './numbers'
 import { rollSwing } from './combat'
-import { GCD_MS } from '../data/balance'
+import { AUTOCAST_DELAY_MS, GCD_MS } from '../data/balance'
 import { ABILITIES, ABILITY_BY_ID, type AbilityDef } from '../data/abilities'
+import { abilitiesByPriority } from './rotation'
 import { pushEvent, type ActiveEffect, type GameState } from './state'
 import type { Rng } from './rng'
 import type { AttackEvent } from '../types'
@@ -175,6 +176,59 @@ export function consumeQueuedAbility(
   if (cleared.currentMana.lt(ability.manaCost)) return null
   if (cooldownLeft(cleared, ability) > 0) return null
   return strikeWithAbility(payFor(cleared, ability), ability, rng, emitAttack)
+}
+
+/**
+ * Кандидаты автокаста: включённые галкой умения по приоритету, у которых
+ * вышел кулдаун и ХВАТАЕТ МАНЫ прямо сейчас. Мана проверяется и для
+ * onNextSwing: ставить в очередь то, что всё равно сорвётся, автокаст не станет.
+ */
+export function autocastCandidates(state: GameState): AbilityDef[] {
+  return abilitiesByPriority(state.abilitySettings, true).filter((ability) => {
+    if (state.currentMana.lt(ability.manaCost)) return false
+    // Очередь одна: пока в ней кто-то стоит, второе умение туда не ставим,
+    // а повторное нажатие на стоящее в очереди её бы просто сняло.
+    if (ability.type === 'onNextSwing' && state.queuedAbilityId !== null) return false
+    return abilityStatus(state, ability).usable
+  })
+}
+
+/**
+ * Шаг автокаста. Разница с ручной игрой возникает ЕСТЕСТВЕННО, из двух правил:
+ *  1. задержка реакции — автокаст бьёт не мгновенно, а через AUTOCAST_DELAY_MS
+ *     после того, как умение стало доступно (таймер взводится заново, пока
+ *     доступного нет, и тикает, пока есть);
+ *  2. автокаст не придерживает кулдауны — жмёт первое доступное по приоритету,
+ *     даже если моб умрёт через секунду.
+ * Никаких множителей и скрытых штрафов сверх этого.
+ */
+export function autocastStep(
+  state: GameState,
+  dtMs: number,
+  rng: Rng,
+  emitAttack: (event: AttackEvent) => void,
+): GameState {
+  if (state.heroState === 'dead') return { ...state, autocastReadyMs: {} }
+  const ready = new Set(autocastCandidates(state).map((a) => a.id))
+  const autocastReadyMs: Record<string, number> = {}
+  let cast: AbilityDef | null = null
+  // Таймер ведётся ПО КАЖДОМУ умению: недоступное держит его взведённым,
+  // доступное — тикает. Применяем первое по приоритету, у кого таймер вышел.
+  for (const ability of abilitiesByPriority(state.abilitySettings, true)) {
+    if (!ready.has(ability.id)) {
+      autocastReadyMs[ability.id] = AUTOCAST_DELAY_MS
+      continue
+    }
+    const left = (state.autocastReadyMs[ability.id] ?? AUTOCAST_DELAY_MS) - dtMs
+    if (left > 0 || cast !== null) {
+      autocastReadyMs[ability.id] = Math.max(left, 0)
+      continue
+    }
+    cast = ability
+    autocastReadyMs[ability.id] = AUTOCAST_DELAY_MS
+  }
+  const next = { ...state, autocastReadyMs }
+  return cast ? { ...useAbility(next, cast.id, rng, emitAttack), autocastReadyMs } : next
 }
 
 /** Кулдауны и GCD идут игровым временем — тем же dtMs, что и весь бой. */

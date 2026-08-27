@@ -78,7 +78,11 @@ export {
   useAbility,
   consumeQueuedAbility,
   advanceCooldowns,
+  autocastStep,
+  autocastCandidates,
 } from './abilities'
+export { rotationRate, abilitiesByPriority, PLAN } from './rotation'
+export type { PlayMode, RotationPlan, RotationRate } from './rotation'
 export type { AbilityDef, AbilityType, AbilityStatus, AbilityBlockReason } from './abilities'
 export { subscribe as subscribeAttacks, emit as emitAttack } from './events'
 export type { Rng } from './rng'
@@ -98,7 +102,7 @@ export {
   OFFLINE_MODAL_MIN_MS,
 } from './save'
 export type {
-  SavePayloadV9,
+  SavePayloadV10,
   SavedItem,
   SavedModifier,
   SaveStorage,

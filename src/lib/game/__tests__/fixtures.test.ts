@@ -3,7 +3,7 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { Decimal } from '../numbers'
-import { createInitialState, type GameState } from '../tick'
+import { createInitialState, defaultAbilitySettings, type GameState } from '../tick'
 import { ensureStats } from '../stats'
 import { expectedSwingDamage } from '../combat'
 import { buyUpgrade } from '../upgrades'
@@ -50,6 +50,7 @@ describe('фикстуры сейвов', () => {
     ['save-v7.json'],
     ['save-v8.json'],
     ['save-v9.json'],
+    ['save-v10.json'],
   ])('%s мигрирует до текущей версии', (name) => {
     const payload = migrateSave(JSON.parse(fixture(name)))
     expect(payload).not.toBeNull()
@@ -170,11 +171,17 @@ describe('фикстуры сейвов', () => {
     const s = loadFixture('save-v9.json')
     expect(s.gcdMsLeft).toBe(900)
     expect(s.abilityCooldownsMs['quick-strike']).toBe(1200)
-    expect(s.abilityCooldownsMs['shattering-blow']).toBe(15000)
+    expect(s.abilityCooldownsMs['shattering-blow']).toBe(9000)
     expect(s.currentMana.toNumber()).toBe(42)
     // Очередь и эффекты висели на прежнем мобе — при загрузке их нет.
     expect(s.queuedAbilityId).toBeNull()
     expect(s.activeEffects).toEqual([])
+  })
+
+  it('save-v9 -> v10: старый сейв получает настройки автокаста по умолчанию', () => {
+    const s = loadFixture('save-v9.json')
+    expect(s.abilitySettings).toEqual(defaultAbilitySettings())
+    expect(s.currentMana.toNumber()).toBe(42) // прогресс не потерян
   })
 
   it('мусорные кулдауны из сейва отбрасываются и не запирают кнопку', () => {
@@ -196,6 +203,25 @@ describe('фикстуры сейвов', () => {
     )
     expect(s.abilityCooldownsMs['ability-from-the-future']).toBeUndefined()
     expect(s.abilityCooldownsMs['rending-wound']).toBeUndefined()
+  })
+
+  it('save-v10: настройки автокаста переживают загрузку', () => {
+    const s = loadFixture('save-v10.json')
+    expect(s.abilitySettings['rending-wound'].autocast).toBe(false)
+    expect(s.abilitySettings['rending-wound'].priority).toBe(0)
+    expect(s.abilitySettings['quick-strike'].priority).toBe(2)
+    expect(s.gold.toNumber()).toBe(140000)
+  })
+
+  it('умение без настройки в сейве добирается дефолтом', () => {
+    const raw = JSON.parse(fixture('save-v10.json'))
+    const s = stateFromPayload(
+      migrateSave({ ...raw, abilitySettings: { 'quick-strike': { autocast: false, priority: 5 } } })!,
+    )
+    expect(s.abilitySettings['quick-strike']).toEqual({ autocast: false, priority: 5 })
+    // Остальные умения получили дефолтные настройки, а не исчезли.
+    expect(s.abilitySettings['rending-wound']).toBeDefined()
+    expect(s.abilitySettings['shattering-blow']).toBeDefined()
   })
 
   it('сейв с неизвестной зоной деградирует до безопасной, а не ломается', () => {

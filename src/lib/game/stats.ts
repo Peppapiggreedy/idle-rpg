@@ -97,6 +97,7 @@ export function collectModifiers(state: GameState): StatModifier[] {
       { stat: 'maxHp', kind: 'flat', value: PER_LEVEL.maxHp.times(levelsGained), source },
       { stat: 'hpRegen', kind: 'flat', value: PER_LEVEL.hpRegen.times(levelsGained), source },
       { stat: 'maxMana', kind: 'flat', value: PER_LEVEL.maxMana.times(levelsGained), source },
+      { stat: 'manaRegen', kind: 'flat', value: PER_LEVEL.manaRegen.times(levelsGained), source },
     )
   }
   // Экипировка: модификаторы лежат прямо в предмете, source уже проставлен
