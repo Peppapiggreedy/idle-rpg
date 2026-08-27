@@ -86,6 +86,10 @@
   // Вспышка попадания: 1 в момент удара, гаснет к нулю.
   let heroFlash = 0
   let monsterFlash = 0
+  // Попадание УМЕНИЯ выглядит иначе обычного удара: вспышка ярче и своего
+  // цвета. Пока бойцы — коробки, это единственный способ различить их
+  // на глаз; когда появятся модели, сюда встанет отдельный клип анимации.
+  let monsterFlashIsAbility = false
 
   const floaters = createFloaterQueue()
   // Проекции пересчитываются каждый КАДР, а не каждое событие: числа
@@ -106,8 +110,9 @@
       heroKick = 1
       heroFlash = 1
     } else {
-      monsterKick = 1
+      monsterKick = event.abilityId ? 1.6 : 1
       monsterFlash = 1
+      monsterFlashIsAbility = event.abilityId !== null
     }
     // Числа не создаются вовсе, когда их некому читать: спрятанная вкладка
     // и ускоренная симуляция. Это не оптимизация «на всякий случай» —
@@ -283,6 +288,7 @@
       z: number,
       kick: number,
       flash: number,
+      flashColor: number | null = null,
     ): void {
       mesh.visible = actor !== null
       if (!actor) return
@@ -297,8 +303,12 @@
       material.color.multiplyScalar(0.4 + 0.6 * actor.health)
       // Вспышка попадания: подмешиваем свет к текущему цвету, а не меняем
       // материал — смена материала на каждом ударе пересобирает шейдер.
-      if (flash > 0.01) material.emissive.setScalar(flash * 0.5)
-      else material.emissive.setScalar(0)
+      if (flash > 0.01) {
+        if (flashColor === null) material.emissive.setScalar(flash * 0.5)
+        else material.emissive.setHex(flashColor).multiplyScalar(flash * 0.8)
+      } else {
+        material.emissive.setScalar(0)
+      }
       // Отдача от удара: меш отъезжает от противника и возвращается.
       mesh.position.z += kick * HIT_KICK * Math.sign(z || 1)
     }
@@ -324,7 +334,15 @@
       const current = model
       if (current) {
         applyActor(heroMesh, palette.hero, current.hero, HERO_Z, heroKick, heroFlash)
-        applyActor(monsterMesh, palette.monster, current.monster, MONSTER_Z, monsterKick, monsterFlash)
+        applyActor(
+          monsterMesh,
+          palette.monster,
+          current.monster,
+          MONSTER_Z,
+          monsterKick,
+          monsterFlash,
+          monsterFlashIsAbility ? palette.hero : null,
+        )
       }
 
       renderer.render(scene, camera)

@@ -15,6 +15,7 @@
   import DungeonHud from './lib/ui/DungeonHud.svelte'
   import HeroPanel from './lib/ui/HeroPanel.svelte'
   import SectionTabs from './lib/ui/SectionTabs.svelte'
+  import SwingIndicator from './lib/ui/SwingIndicator.svelte'
 
   import StatsPanel from './lib/ui/StatsPanel.svelte'
   import EquipmentPanel from './lib/ui/EquipmentPanel.svelte'
@@ -62,6 +63,7 @@
       {:else}
         <BattleScene />
       {/if}
+      <SwingIndicator />
       <DungeonHud />
       <CombatLog />
     </div>
