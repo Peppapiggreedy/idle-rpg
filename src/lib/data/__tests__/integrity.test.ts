@@ -35,6 +35,7 @@ describe('целостность контента', () => {
     for (const file of [
       'data/abilities.ts',
       'data/assets.ts',
+      'data/classes.ts',
       'data/dungeons.ts',
       'data/items.ts',
       'data/rarity.ts',
@@ -58,6 +59,7 @@ describe('целостность контента', () => {
       'щит',
       'звук',
       'пропс',
+      'класс',
       'редкость',
       'улучшение',
       'модель',

@@ -5,7 +5,11 @@ import { xpToNextLevel } from './formulas'
 import { randomSeed } from './rng'
 import { buildMonster } from '../data/monsters'
 import { SAFE_ZONE, type Zone } from '../data/zones'
-import { ABILITIES } from '../data/abilities'
+import { ABILITY_BY_ID, type AbilityDef } from '../data/abilities'
+import { CLASS_BY_ID, DEFAULT_CLASS, classById, type ClassDef } from '../data/classes'
+import { RARITY_BY_ID } from '../data/rarity'
+import { SHIELD_BY_ID, WEAPON_BY_ID } from '../data/items'
+import { shieldMods, weaponMods } from './loot'
 import {
   AUTOCAST_DELAY_MS,
   REGEN_TICK_S,
@@ -21,6 +25,8 @@ import type { CombatEvent, DungeonRun, Item, Monster, MonsterTemplate } from '..
 export const COMBAT_LOG_SIZE = 8
 
 export interface GameState {
+  /** Класс героя. Выбирается при новой игре и не меняется никогда. */
+  classId: string
   totalTicks: Decimal
   playtimeMs: Decimal
   gold: Decimal
@@ -125,16 +131,22 @@ export interface AbilitySetting {
 export type AbilitySettings = Record<string, AbilitySetting>
 
 /** Настройки по умолчанию: автокаст включён, приоритет — порядок из данных. */
-export function defaultAbilitySettings(): AbilitySettings {
+/** Умения класса в порядке кнопок; неизвестный класс отдаёт умения дефолтного. */
+export function abilitiesOf(classId: string): AbilityDef[] {
+  const hero = classById(classId)
+  return hero.abilityIds.map((id) => ABILITY_BY_ID[id]).filter((a): a is AbilityDef => !!a)
+}
+
+export function defaultAbilitySettings(classId: string = DEFAULT_CLASS.id): AbilitySettings {
   return Object.fromEntries(
-    ABILITIES.map((a, index) => [a.id, { autocast: true, priority: index, reserve: 0 }]),
+    abilitiesOf(classId).map((a, index) => [a.id, { autocast: true, priority: index, reserve: 0 }]),
   )
 }
 
 /** Все галки автокаста сняты — герой бьёт только автоатакой. */
-export function manualOnlySettings(): AbilitySettings {
+export function manualOnlySettings(classId: string = DEFAULT_CLASS.id): AbilitySettings {
   return Object.fromEntries(
-    ABILITIES.map((a, index) => [a.id, { autocast: false, priority: index, reserve: 0 }]),
+    abilitiesOf(classId).map((a, index) => [a.id, { autocast: false, priority: index, reserve: 0 }]),
   )
 }
 
@@ -142,6 +154,42 @@ export type Equipment = Record<SlotId, Item | null>
 
 export function emptyEquipment(): Equipment {
   return Object.fromEntries(SLOT_IDS.map((slot) => [slot, null])) as Equipment
+}
+
+/**
+ * Стартовая экипировка класса. Собирается ТЕМИ ЖЕ функциями, что и лут
+ * (weaponMods / shieldMods), поэтому застыть в невозможной форме не может:
+ * стартовый клинок — обычный предмет, его можно снять и продать.
+ */
+export function startingEquipment(hero: ClassDef): Equipment {
+  const equipment = emptyEquipment()
+  const rarity = RARITY_BY_ID.common
+  for (const entry of hero.startingEquipment) {
+    if (entry.slot !== 'mainHand' && entry.slot !== 'offHand') continue
+    if (entry.kind === 'shield') {
+      const template = SHIELD_BY_ID[entry.templateId]
+      if (!template) continue
+      equipment[entry.slot] = {
+        id: `start-${entry.slot}-${template.id}`,
+        name: template.noun,
+        rarity: rarity.id,
+        slot: entry.slot,
+        mods: shieldMods(template, rarity),
+      }
+      continue
+    }
+    const template = WEAPON_BY_ID[entry.templateId]
+    if (!template) continue
+    equipment[entry.slot] = {
+      id: `start-${entry.slot}-${template.id}`,
+      name: template.noun,
+      rarity: rarity.id,
+      slot: entry.slot,
+      hands: template.hands,
+      mods: weaponMods(template, rarity, entry.slot),
+    }
+  }
+  return equipment
 }
 
 export function monsterFromTemplate(template: MonsterTemplate): Monster {
@@ -158,9 +206,14 @@ export function spawnMonster(zone: Zone, rng: Rng): Monster {
   return monsterFromTemplate(buildMonster(archetype, level, zone.rewardMultiplier))
 }
 
-export function createInitialState(rngSeed: number = randomSeed()): GameState {
+export function createInitialState(
+  rngSeed: number = randomSeed(),
+  classId: string = DEFAULT_CLASS.id,
+): GameState {
   const level = new Decimal(1)
+  const hero = classById(classId)
   const base: Omit<GameState, 'stats'> = {
+    classId: hero.id,
     totalTicks: new Decimal(0),
     playtimeMs: new Decimal(0),
     gold: new Decimal(0),
@@ -183,14 +236,14 @@ export function createInitialState(rngSeed: number = randomSeed()): GameState {
     abilityCooldownsMs: {},
     queuedAbilityId: null,
     activeEffects: [],
-    abilitySettings: defaultAbilitySettings(),
+    abilitySettings: defaultAbilitySettings(hero.id),
     autocastReadyMs: {},
     heroState: 'alive',
     reviveMsLeft: 0,
     upgrades: {},
     talents: {},
     talentResets: 0,
-    equipment: emptyEquipment(),
+    equipment: startingEquipment(hero),
     autoEquip: true,
     statsDirty: false,
     dungeonRun: null,
@@ -208,7 +261,14 @@ export function createInitialState(rngSeed: number = randomSeed()): GameState {
     msSinceAutosave: 0,
   }
   const stats = recomputeStats(base as GameState)
-  return { ...base, stats, currentHp: stats.maxHp, currentMana: stats.maxMana }
+  return {
+    ...base,
+    stats,
+    currentHp: stats.maxHp,
+    // Мана начинается полной, ярость — пустой. Это ДАННЫЕ класса, а не
+    // условие в коде: обнули startFull, и класс начнёт с пустым ресурсом.
+    currentMana: hero.resource.startFull ? stats.maxMana : new Decimal(0),
+  }
 }
 
 export function pushEvent(log: CombatEvent[], event: CombatEvent): CombatEvent[] {

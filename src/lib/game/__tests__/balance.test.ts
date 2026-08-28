@@ -39,6 +39,7 @@ import {
 import { ZONES, ZONE_BY_ID, zoneMonsterVariants, type Zone } from '../../data/zones'
 import { ONE_HANDED, WEAPONS } from '../../data/items'
 import { BRANCHES } from '../../data/talents'
+import { CLASSES } from '../../data/classes'
 import { ABILITY_BY_ID } from '../../data/abilities'
 
 // Таблицы печатаются в вывод теста: прогон баланса нужен глазами, а не только
@@ -521,6 +522,33 @@ describe('ветки талантов', () => {
 // печатается целиком — контракт нужен глазами не меньше, чем зелёной галкой.
 describe('контракт темпа боя', () => {
   const rows = pacingTable()
+
+  // Контракт держится для КАЖДОГО класса, а не только для дефолтного: класс
+  // меняет ресурс, умения и стартовые статы, то есть ровно те числа, из
+  // которых складывается длина боя.
+  describe.each(CLASSES.map((c) => [c.name, c.id] as const))('%s', (_name, classId) => {
+    const classRows = pacingTable({ classId })
+
+    it(`моб актуальной зоны живёт ${TTK_TARGET_MIN}-${TTK_TARGET_MAX} секунд`, () => {
+      const ttks = classRows.map((r) => currentCell(r).ttk.avg)
+      log(
+        `${classId}: TTK ${Math.min(...ttks).toFixed(1)}-${Math.max(...ttks).toFixed(1)} с, ` +
+          `разброс ${pct(ttkDrift(classRows))}, до ${classRows[classRows.length - 1].level} уровня ` +
+          `за ${(classRows[classRows.length - 1].atSec / 60).toFixed(0)} мин.`,
+      )
+      for (const row of classRows) {
+        const { ttk: t, zoneId } = currentCell(row)
+        const where = `${classId}, ур. ${row.level}, ${zoneId}`
+        expect(t.avg, where).toBeGreaterThanOrEqual(TTK_TARGET_MIN)
+        expect(t.avg, where).toBeLessThanOrEqual(TTK_TARGET_MAX)
+      }
+    })
+
+    it(`разброс TTK по уровням ≤ ${pct(TTK_DRIFT_MAX)}`, () => {
+      expect(ttkDrift(classRows)).toBeLessThanOrEqual(TTK_DRIFT_MAX)
+    })
+  }, 300_000)
+
   const cellsWith = (standing: ZoneStanding) =>
     rows.flatMap((r) => r.cells.filter((c) => c.standing === standing).map((c) => ({ row: r, c })))
 

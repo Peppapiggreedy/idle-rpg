@@ -25,6 +25,7 @@ import { PLAN, rotationRate, type PlayMode, type RotationPlan, type RotationRate
 import type { Monster } from '../types'
 import { SAFE_ZONE, ZONE_BY_ID, zoneMonsterVariants, type Zone } from '../data/zones'
 import { monsterFromTemplate } from './state'
+import { classById } from '../data/classes'
 
 // Какой рукой бьём. Правило нормализации скорости одно на обе, отличаются
 // только база боя и штраф левой руки.
@@ -265,6 +266,20 @@ function hitStream(
   return { rate, killing, paced }
 }
 
+/**
+ * Урон АВТОАТАКИ в секунду — обеих рук вместе.
+ *
+ * Свойство ОРУЖИЯ: сколько бы умений герой ни жал, «столько бьёт этот меч»
+ * не меняется. Этим числом сравниваются предметы, и на нём держится инвариант
+ * нормализации скорости.
+ */
+export function autoDamagePerSecond(stats: StatBlock): Decimal {
+  return expectedSwingDamage(stats)
+    .times(critFactor(stats))
+    .div(stats.swingTime)
+    .plus(offhandDamagePerSecond(stats))
+}
+
 /** Урон левой руки в секунду. Пустая рука не бьёт вовсе. */
 export function offhandDamagePerSecond(stats: StatBlock): Decimal {
   if (!hasOffhand(stats)) return new Decimal(0)
@@ -366,26 +381,50 @@ export function estimateTtk(
   return estimateZoneTtk(state, zone, mode).avg
 }
 
+/**
+ * Сколько ресурса приходит герою в секунду.
+ *
+ * У маны это чистый реген из статов. У ярости — доход ОТ БОЯ: своя автоатака
+ * и чужие удары, помноженные на числа класса. Берётся именно автоатака, а не
+ * весь урон: урон умений сам зависит от того, сколько их удалось применить,
+ * и подставлять его сюда значило бы решать уравнение самим собой.
+ */
+export function resourceIncome(state: GameState): Decimal {
+  const stats = state.stats
+  const resource = classById(state.classId).resource
+  if (resource.perSwingDealt.lte(0) && resource.perHitTaken.lte(0)) return stats.manaRegen
+  // Ударов в секунду: свои — обе руки, чужие — замах моба. Умения сюда не
+  // входят намеренно: их число само зависит от ресурса, и подставлять его
+  // значило бы решать уравнение самим собой.
+  const own = new Decimal(1).div(stats.swingTime).plus(
+    hasOffhand(stats) ? new Decimal(1).div(stats.offhandSwingTime) : new Decimal(0),
+  )
+  const incoming =
+    state.monster.swingTime > 0 && state.monster.damageMax.gt(0)
+      ? new Decimal(1).div(state.monster.swingTime)
+      : new Decimal(0)
+  return stats.manaRegen
+    .plus(own.times(resource.perSwingDealt).times(stats.maxMana))
+    .plus(incoming.times(resource.perHitTaken).times(stats.maxMana))
+}
+
 function rawRate(state: GameState, plan: RotationPlan): CombatRate {
   const stats = state.stats
   const avgSwing = expectedSwingDamage(stats)
   const respawnSec = RESPAWN_DELAY_MS / 1000
-  const rotation = rotationRate(stats, state.abilitySettings, plan)
+  const rotation = rotationRate(stats, state.abilitySettings, plan, resourceIncome(state))
   // Урон автоатаки — свойство ОРУЖИЯ и считается как считался: сколько бы
   // умений герой ни жал, «столько бьёт этот меч» не меняется. Этим числом
   // сравниваются предметы, и на нём держится инвариант нормализации скорости.
   // Автоатака — это ОБЕ руки: у каждой свой таймер и свой урон за удар.
-  const autoDamagePerSecond = avgSwing
-    .times(critFactor(stats))
-    .div(stats.swingTime)
-    .plus(offhandDamagePerSecond(stats))
+  const autoDps = autoDamagePerSecond(stats)
   // Сложить автоатаку и умения напрямую НЕЛЬЗЯ: умение «на следующий удар»
   // ЗАМЕНЯЕТ автоатаку, а не добавляется к ней, — эти замахи посчитаны дважды.
   // Пока бой длился полтора удара, ошибка была незаметной; на длинном бою она
   // делала оффлайн выгоднее живой игры, то есть ломала железное правило.
   const replaced = replacedSwingsPerSecond(stats, rotation).times(avgSwing).times(critFactor(stats))
   // Урон в секунду, реально дошедший до мобов: сырой темп минус перебой.
-  const raw = autoDamagePerSecond.plus(rotation.damagePerSecond).minus(replaced)
+  const raw = autoDps.plus(rotation.damagePerSecond).minus(replaced)
   const perKill = damagePerKill(state, rotation, plan)
   const damagePerSecond = raw.times(state.monster.maxHp.div(perKill))
   // Длина боя — из уже посчитанного урона в секунду (он уже с поправкой на
@@ -422,7 +461,7 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
   if (netLossPerSec.lte(0)) {
     return {
       damagePerSecond,
-      autoDamagePerSecond,
+      autoDamagePerSecond: autoDps,
       abilityDamagePerSecond: rotation.damagePerSecond,
       killsPerSecond: idealKillsPerSecond,
       idealKillsPerSecond,
@@ -434,7 +473,7 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
   const uptime = uptimeFromHpLoss(stats.maxHp, netLossPerSec)
   return {
     damagePerSecond,
-    autoDamagePerSecond,
+    autoDamagePerSecond: autoDps,
     abilityDamagePerSecond: rotation.damagePerSecond,
     killsPerSecond: idealKillsPerSecond.times(uptime),
     idealKillsPerSecond,

@@ -12,6 +12,7 @@ import { Decimal } from '../../../game/numbers'
 import type { IconName } from '../../../ui/icons/manifest'
 import type { StatId } from '../../../game/stats'
 import type { SlotId } from '../../slots'
+import { CLASS_BY_ID } from '../../classes'
 import { realContent } from '../content'
 import type { Content } from '../schema'
 
@@ -198,6 +199,35 @@ export function brokenCases(): BrokenCase[] {
         ),
       },
       expect: [first(real.branches).id, 'ряды идут'],
+    },
+    {
+      title: 'класс ссылается на несуществующее умение',
+      content: {
+        ...real,
+        classes: patch(real.classes, first(real.classes).id, { abilityIds: ['нет-такого'] }),
+      },
+      expect: [first(real.classes).id, 'нет-такого', 'data/abilities.ts'],
+    },
+    {
+      title: 'класс без веток талантов: очки некуда вкладывать',
+      content: {
+        ...real,
+        classes: patch(real.classes, first(real.classes).id, { branchIds: [] }),
+      },
+      expect: [first(real.classes).id, 'ни одной ветки'],
+    },
+    {
+      title: 'ресурс копится боем, но не тает — это копилка, а не ярость',
+      content: {
+        ...real,
+        classes: patch(real.classes, 'reaver', {
+          resource: {
+            ...CLASS_BY_ID.reaver.resource,
+            decayPerSecond: new Decimal(0),
+          },
+        }),
+      },
+      expect: ['reaver', 'не тает вне боя'],
     },
     {
       title: 'пропс ссылается на модель, которой нет в public/models/props',

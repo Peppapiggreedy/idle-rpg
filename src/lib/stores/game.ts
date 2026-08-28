@@ -88,12 +88,28 @@ export function persistNow(): void {
   }
 }
 
+// Есть ли уже начатая игра. Пока её нет, показывается выбор класса: класс
+// выбирается ОДИН раз и не меняется никогда, поэтому спрашивать надо до того,
+// как накопился прогресс, а не после.
+const started = writable(false)
+export const gameStarted = readonly(started)
+
+/** Начать новую игру выбранным классом. Работает только до первого сейва. */
+export function startNewGame(classId: string): void {
+  if (get(started)) return
+  state.set(createInitialState(undefined, classId))
+  started.set(true)
+  persistNow()
+  sessionStart.set(0)
+}
+
 /** Загружает сейв до старта цикла; битый сейв не роняет игру. */
 export function initGame(): void {
   try {
     const result = loadGame()
     if (result.kind === 'loaded') {
       state.set(result.state)
+      started.set(true)
       if (result.offline && result.offline.elapsedMs >= OFFLINE_MODAL_MIN_MS) {
         offline.set(result.offline)
       }
@@ -103,9 +119,13 @@ export function initGame(): void {
   } catch {
     notice.set('save-load-failed')
   }
-  // Фиксируем свежий lastTimestamp (в т.ч. после перевода часов назад).
-  persistNow()
-  sessionStart.set(get(state).playtimeMs.toNumber())
+  // Пока класс не выбран, сейва не создаём: иначе первый же заход записал бы
+  // Стража, и выбор превратился бы в формальность.
+  if (get(started)) {
+    // Фиксируем свежий lastTimestamp (в т.ч. после перевода часов назад).
+    persistNow()
+    sessionStart.set(get(state).playtimeMs.toNumber())
+  }
 }
 
 /** Запускает единственный игровой цикл. Повторный вызов ничего не делает. */

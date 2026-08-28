@@ -69,6 +69,47 @@ export const ABILITIES: AbilityDef[] = [
     weaponDamagePercent: new Decimal(5.0),
     triggersGcd: false,
   },
+
+  // --- Умения Изувера ---
+  // Ярость приходит из боя, а не со временем, поэтому её умения дешевле по
+  // отдельности и с короткими кулдаунами: узкое место у изувера не откат,
+  // а то, успел ли он накопить. Ритм другой, суммарный урон — тот же.
+  {
+    id: 'gut-rip',
+    icon: 'ability-gut-rip',
+    name: 'Потрошащий взмах',
+    type: 'instant',
+    manaCost: new Decimal(18),
+    cooldownSec: 2,
+    weaponDamagePercent: new Decimal(1.6),
+    triggersGcd: true,
+  },
+  {
+    id: 'blood-frenzy',
+    icon: 'ability-blood-frenzy',
+    name: 'Кровавое исступление',
+    type: 'onNextSwing',
+    manaCost: new Decimal(30),
+    cooldownSec: 4,
+    weaponDamagePercent: new Decimal(1.8),
+    triggersGcd: false,
+    effect: {
+      kind: 'damageOverTime',
+      weaponDamagePercent: new Decimal(0.5),
+      ticks: 3,
+      tickIntervalSec: 1.5,
+    },
+  },
+  {
+    id: 'skull-splitter',
+    icon: 'ability-skull-splitter',
+    name: 'Череполом',
+    type: 'onNextSwing',
+    manaCost: new Decimal(60),
+    cooldownSec: 9,
+    weaponDamagePercent: new Decimal(5.0),
+    triggersGcd: false,
+  },
 ]
 
 export const ABILITY_BY_ID: Record<string, AbilityDef> = Object.fromEntries(

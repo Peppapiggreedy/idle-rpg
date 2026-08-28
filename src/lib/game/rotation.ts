@@ -54,7 +54,11 @@ export function abilitiesByPriority(
   settings: AbilitySettings,
   onlyAutocast: boolean,
 ): AbilityDef[] {
-  return ABILITIES.filter((a) => !onlyAutocast || settings[a.id]?.autocast).sort(
+  // Умения ЧУЖОГО класса в настройках не лежат, поэтому фильтр по наличию
+  // настройки и есть фильтр по классу — второго списка заводить не нужно.
+  return ABILITIES.filter(
+    (a) => settings[a.id] !== undefined && (!onlyAutocast || settings[a.id]?.autocast),
+  ).sort(
     (a, b) => (settings[a.id]?.priority ?? 0) - (settings[b.id]?.priority ?? 0),
   )
 }
@@ -68,14 +72,20 @@ export function rotationRate(
   stats: StatBlock,
   settings: AbilitySettings,
   plan: RotationPlan,
+  /**
+   * Сколько ресурса приходит в секунду. По умолчанию — реген из статов
+   * (класс на мане). Класс на ярости передаёт сюда доход ОТ БОЯ: формула
+   * ниже одна на оба случая, различаются только числа.
+   */
+  income: Decimal = stats.manaRegen,
 ): RotationRate {
-  const rate = castPlan(stats, settings, plan)
+  const rate = castPlan(stats, settings, plan, income)
   if (plan.delayed) return rate
   // Игрок в ЛЮБОЙ момент может повторить то, что делает автокаст: подождать
   // и ударить позже. Значит игра руками не бывает хуже авто. Когда мана
   // впритык, реже бить иногда выгоднее — тогда рука повторяет план авто.
   // Это не поблажка руке, а определение: ручная игра — лучшая из доступных.
-  const delayed = castPlan(stats, settings, { ...plan, delayed: true })
+  const delayed = castPlan(stats, settings, { ...plan, delayed: true }, income)
   return rate.damagePerSecond.gte(delayed.damagePerSecond) ? rate : delayed
 }
 
@@ -108,11 +118,12 @@ function dutyCycle(
   stats: StatBlock,
   settings: AbilitySettings,
   desired: RotationRate,
+  income: Decimal,
 ): Decimal {
   const spend = desired.manaPerSecond
   if (spend.lte(0)) return new Decimal(1)
   const events = spendEvents(desired)
-  const regen = stats.manaRegen
+  const regen = income
   if (regen.lte(0)) return new Decimal(0)
   // Пауза до первой порции — не только DELAY: мана приходит ЛОМТЯМИ раз в
   // REGEN_TICK_S, и окно почти никогда не заканчивается ровно по границе
@@ -149,12 +160,17 @@ function dutyCycle(
   return Decimal.min(new Decimal(1), Decimal.max(uniform, burst))
 }
 
-function castPlan(stats: StatBlock, settings: AbilitySettings, plan: RotationPlan): RotationRate {
+function castPlan(
+  stats: StatBlock,
+  settings: AbilitySettings,
+  plan: RotationPlan,
+  income: Decimal,
+): RotationRate {
   // Сперва — чего ротация хочет, если о мане не думать: это упирается в
   // кулдауны, GCD и очередь замаха. Потом — сколько из этого выдерживает
   // ресурс с правилом задержки.
   const desired = fundPlan(stats, settings, plan, UNLIMITED_MANA)
-  const duty = dutyCycle(stats, settings, desired)
+  const duty = dutyCycle(stats, settings, desired, income)
   if (duty.gte(1)) return desired
   // Долю применяем ко ВСЕЙ ротации разом, а не отдаём бюджет по приоритету.
   // Так герой и играет: жмёт всё, что доступно, а когда запас кончился —

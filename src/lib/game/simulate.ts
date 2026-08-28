@@ -10,6 +10,7 @@ import { STEP_MS } from './loop'
 import { createRng } from './rng'
 import { xpToNextLevel } from './formulas'
 import {
+  abilitiesOf,
   createInitialState,
   defaultAbilitySettings,
   manualOnlySettings,
@@ -40,6 +41,7 @@ import { ARMOR_NOUNS, ONE_HANDED, SHIELDS, WEAPONS, WEAPON_BY_ID } from '../data
 import { SLOT_IDS, type SlotId } from '../data/slots'
 import { ZONES } from '../data/zones'
 import { BRANCHES, talentsInBranch, type BranchId } from '../data/talents'
+import { CLASSES, DEFAULT_CLASS } from '../data/classes'
 import { TALENT_FIRST_LEVEL } from '../data/balance'
 import type { AttackEvent, Item, Rarity } from '../types'
 
@@ -78,6 +80,8 @@ export function styleBuild(style: SimStyle, bare = false): Pick<SimBuild, 'weapo
 /** Кто именно бежит прогон. Всё, что влияет на статы, — источниками, как в
  *  игре: уровень, купленные заточки, надетое оружие, ранги талантов. */
 export interface SimBuild {
+  /** Класс героя. Не задан — дефолтный, как у старого сейва. */
+  classId?: string
   level?: number
   sharpening?: number // сколько раз куплена заточка оружия
   weapon?: SimWeapon | null // null — голые кулаки (UNARMED из баланса)
@@ -183,6 +187,8 @@ export const BALANCE_PRESET = {
   branchSpreadLimit: 0.25,
   /** Доля времени на привалах, выше которой зона считается неподъёмной. */
   branchRestShareMax: 0.25,
+  /** Классы, по которым идёт прогон: контракт темпа держится для КАЖДОГО. */
+  classIds: CLASSES.map((c) => c.id),
   // Контракт темпа: сид эталонного прохождения и его потолок по времени.
   pacingSeed: 4242,
   pacingHours: 60,
@@ -222,7 +228,8 @@ export interface PacingRow {
 }
 
 // Кеш эталонного прохождения: оно детерминировано, а стоит целого прогона.
-let pacingCache: PacingRow[] | null = null
+// Ключ — класс: контракт темпа считается для каждого отдельно.
+const pacingCache = new Map<string, PacingRow[]>()
 
 /**
  * Герой, каким его описывает контракт темпа, на заданном уровне: столько
@@ -233,10 +240,14 @@ let pacingCache: PacingRow[] | null = null
  * в игре не встречается — и мерить им зоны значит мерить не ту игру.
  * Уровень выше эталонного отдаёт последнюю известную строку.
  */
-export function referenceBuild(level: number): SimBuild {
-  pacingCache ??= pacingTable()
-  const row = pacingCache.find((r) => r.level === level) ?? pacingCache[pacingCache.length - 1]
-  return { level, sharpening: row.sharpening, gear: 'average' }
+export function referenceBuild(level: number, classId: string = DEFAULT_CLASS.id): SimBuild {
+  let rows = pacingCache.get(classId)
+  if (!rows) {
+    rows = pacingTable({ classId })
+    pacingCache.set(classId, rows)
+  }
+  const row = rows.find((r) => r.level === level) ?? rows[rows.length - 1]
+  return { classId, level, sharpening: row.sharpening, gear: 'average' }
 }
 
 /**
@@ -288,9 +299,12 @@ export function ttkDrift(rows: PacingRow[]): number {
  *
  * Лут случаен, поэтому сид ЗАКРЕПЛЁН: контракт обязан быть воспроизводимым.
  */
-export function pacingTable(options: { seed?: number; hours?: number } = {}): PacingRow[] {
+export function pacingTable(
+  options: { seed?: number; hours?: number; classId?: string } = {},
+): PacingRow[] {
   const seed = options.seed ?? BALANCE_PRESET.pacingSeed
   const hours = options.hours ?? BALANCE_PRESET.pacingHours
+  const classId = options.classId ?? DEFAULT_CLASS.id
   const rng = createRng(seed)
   // Экипировка эталонного героя — СРЕДНЯЯ по рулетке, во всех слотах.
   // Коридор темпа держится именно на ней: редкость множит прибавку предмета
@@ -301,7 +315,7 @@ export function pacingTable(options: { seed?: number; hours?: number } = {}): Pa
   //
   // Автонадевание выключено: случайная находка подменила бы эталон на
   // середине прохождения, и кривая перестала бы быть кривой.
-  let state = buildSimState({ gear: 'average' }, ZONES[0].id, seed)
+  let state = buildSimState({ gear: 'average', classId }, ZONES[0].id, seed)
   const rows: PacingRow[] = []
   let deaths = 0
 
@@ -466,15 +480,15 @@ function buildEquipment(build: SimBuild, weapon: Item | null): Equipment {
   return equipment
 }
 
-function settingsFor(autocast: SimBuild['autocast']): AbilitySettings {
-  if (autocast === undefined || autocast === 'all') return defaultAbilitySettings()
-  if (autocast === 'none') return manualOnlySettings()
-  const settings = manualOnlySettings()
+function settingsFor(autocast: SimBuild['autocast'], classId: string): AbilitySettings {
+  if (autocast === undefined || autocast === 'all') return defaultAbilitySettings(classId)
+  if (autocast === 'none') return manualOnlySettings(classId)
+  const settings = manualOnlySettings(classId)
   autocast.forEach((id, index) => {
     if (settings[id]) settings[id] = { ...settings[id], autocast: true, priority: index }
   })
   // Невыбранные умения уходят в конец списка приоритетов.
-  ABILITIES.filter((a) => !autocast.includes(a.id)).forEach((a, index) => {
+  ABILITIES.filter((a) => settings[a.id] && !autocast.includes(a.id)).forEach((a, index) => {
     settings[a.id] = { ...settings[a.id], autocast: false, priority: autocast.length + index }
   })
   return settings
@@ -486,7 +500,7 @@ export function buildSimState(build: SimBuild, zoneId: string, seed: number): Ga
   const zone = zoneById(zoneId)
   const level = new Decimal(build.level ?? 1)
   const weapon = build.weapon === null ? null : build.weapon ? simWeaponItem(build.weapon) : null
-  const base = createInitialState(seed)
+  const base = createInitialState(seed, build.classId ?? DEFAULT_CLASS.id)
   const state: GameState = {
     ...base,
     level,
@@ -497,7 +511,7 @@ export function buildSimState(build: SimBuild, zoneId: string, seed: number): Ga
       : {},
     talents: { ...(build.talents ?? {}) },
     equipment: buildEquipment(build, weapon),
-    abilitySettings: settingsFor(build.autocast),
+    abilitySettings: settingsFor(build.autocast, base.classId),
     // Прогон меряет ЗАДАННЫЙ билд: автонадевание подменило бы его на середине.
     autoEquip: false,
     currentZoneId: zone.id,
@@ -598,7 +612,7 @@ export function simulate(options: SimOptions): SimResult {
     if (state.heroState === 'resting') restingMs += STEP_MS
     // Каст виден по кулдауну: он тоже только убывает, а вверх его ставит
     // только применение умения (см. payFor в abilities.ts).
-    for (const ability of ABILITIES) {
+    for (const ability of abilitiesOf(state.classId)) {
       const before = prev.abilityCooldownsMs[ability.id] ?? 0
       const after = state.abilityCooldownsMs[ability.id] ?? 0
       if (after > before) {

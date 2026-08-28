@@ -25,6 +25,7 @@ import {
   stateFromPayload,
   type SaveStorage,
 } from '../save'
+import { CLASS_BY_ID, DEFAULT_CLASS, classById } from '../../data/classes'
 
 function fixture(name: string): string {
   return readFileSync(new URL(`../__fixtures__/${name}`, import.meta.url), 'utf8')
@@ -60,6 +61,7 @@ describe('фикстуры сейвов', () => {
     ['save-v13.json'],
     ['save-v14.json'],
     ['save-v15.json'],
+    ['save-v16.json'],
   ])('%s мигрирует до текущей версии', (name) => {
     const payload = migrateSave(JSON.parse(fixture(name)))
     expect(payload).not.toBeNull()
@@ -301,6 +303,35 @@ describe('фикстуры сейвов', () => {
     expect(s.stats.blockValue.toNumber()).toBe(24)
     // Левая рука урона не даёт: щит — не оружие.
     expect(s.stats.offhandDamageMax.toNumber()).toBe(0)
+  })
+
+  it('save-v15 -> v16: старый герой становится Стражем и ничего не теряет', () => {
+    // Классы появились в v16. Прежний герой играл на мане с правилом
+    // задержки — это ровно Страж, поэтому миграция ничего не переносит,
+    // а только называет то, чем он и был.
+    const s = loadFixture('save-v15.json')
+    expect(s.classId).toBe(DEFAULT_CLASS.id)
+    expect(classById(s.classId).resource.kind).toBe('mana')
+    expect(s.gold.toNumber()).toBe(760000) // прогресс не потерян
+    expect(s.equipment.mainHand?.name).toBe('Закалённый Крушитель')
+    // Умения — свои, стражевые, и настройки автокаста к ним прицепились.
+    expect(Object.keys(s.abilitySettings).sort()).toEqual(
+      [...DEFAULT_CLASS.abilityIds].sort(),
+    )
+  })
+
+  it('save-v16: класс, его умения и ресурс переживают загрузку', () => {
+    const s = loadFixture('save-v16.json')
+    expect(s.classId).toBe('reaver')
+    expect(classById(s.classId).resource.kind).toBe('rage')
+    expect(Object.keys(s.abilitySettings).sort()).toEqual(
+      [...CLASS_BY_ID.reaver.abilityIds].sort(),
+    )
+    // Настройки автокаста именно этого класса, а не дефолтные.
+    expect(s.abilitySettings['gut-rip'].reserve).toBeCloseTo(0.3, 9)
+    // Ресурс ведёт себя по-другому: ярость не капает сама и не ждёт паузы.
+    expect(s.stats.manaRegen.toNumber()).toBe(0)
+    expect(s.stats.regenDelay).toBe(0)
   })
 
   it('save-v10 -> v11: старый сейв получает пустое дерево и заработанные очки', () => {

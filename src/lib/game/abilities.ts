@@ -7,7 +7,7 @@ import { AUTOCAST_DELAY_MS, GCD_MS } from '../data/balance'
 import { ABILITIES, ABILITY_BY_ID, type AbilityDef } from '../data/abilities'
 import { abilitiesByPriority } from './rotation'
 import { talentAbilityEffect } from './talents'
-import { pushEvent, type ActiveEffect, type GameState } from './state'
+import { abilitiesOf, pushEvent, type ActiveEffect, type GameState } from './state'
 import type { Rng } from './rng'
 import type { AttackEvent } from '../types'
 
@@ -58,7 +58,7 @@ export function abilityStatus(state: GameState, ability: AbilityDef): AbilitySta
 }
 
 export function allAbilityStatuses(state: GameState): AbilityStatus[] {
-  return ABILITIES.map((a) => abilityStatus(state, a))
+  return abilitiesOf(state.classId).map((a) => abilityStatus(state, a))
 }
 
 // Списание маны, кулдаун и (если умение его тратит) GCD — одним местом,

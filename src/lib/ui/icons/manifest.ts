@@ -21,6 +21,9 @@ export const ICONS = {
   'ability-quick-strike': { file: 'delapouite/sword-brandish.svg', author: 'Delapouite' },
   'ability-rending-wound': { file: 'lorc/bleeding-wound.svg', author: 'Lorc' },
   'ability-shattering-blow': { file: 'lorc/hammer-drop.svg', author: 'Lorc' },
+  'ability-gut-rip': { file: 'delapouite/cleaver.svg', author: 'Delapouite' },
+  'ability-blood-frenzy': { file: 'lorc/fire-punch.svg', author: 'Lorc' },
+  'ability-skull-splitter': { file: 'lorc/battle-axe.svg', author: 'Lorc' },
 
   // --- Таланты: ветка «Ярость» ---
   'talent-honed-edge': { file: 'lorc/saber-slash.svg', author: 'Lorc' },
@@ -44,6 +47,10 @@ export const ICONS = {
   'talent-quick-camp': { file: 'delapouite/camping-tent.svg', author: 'Delapouite' },
   'talent-field-medicine': { file: 'delapouite/first-aid-kit.svg', author: 'Delapouite' },
   'talent-unbroken-focus': { file: 'lorc/sands-of-time.svg', author: 'Lorc' },
+
+  // --- Классы ---
+  'class-warden': { file: 'delapouite/spiked-shield.svg', author: 'Delapouite' },
+  'class-reaver': { file: 'lorc/axe-swing.svg', author: 'Lorc' },
 
   // --- Слоты экипировки ---
   'slot-weapon': { file: 'lorc/broadsword.svg', author: 'Lorc' },

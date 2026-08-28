@@ -24,6 +24,7 @@ import { ARMOR_NOUNS, SHIELDS, WEAPONS } from '../items'
 import { DROP_CHANCE } from '../loot'
 import { RARITIES } from '../rarity'
 import { SOUNDS } from '../sounds'
+import { CLASSES } from '../classes'
 import { SLOT_DROP_WEIGHTS, SLOT_ICONS, SLOT_IDS, SLOT_NAMES } from '../slots'
 import { BRANCHES, TALENTS } from '../talents'
 import { UPGRADES } from '../upgrades'
@@ -91,6 +92,7 @@ export function realContent(): Content {
     spriteIconNames: spriteIconNames(),
     modelFiles: modelFiles(),
     sounds: SOUNDS,
+    classes: CLASSES,
     props: PROP_ASSETS,
     propFiles: readdirSync(PROPS_DIR),
     audioFiles: audioFiles(),

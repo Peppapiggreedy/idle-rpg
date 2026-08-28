@@ -3,7 +3,7 @@
   // в каком бы разделе игрок ни находился. Панели разъехались по вкладкам,
   // но всё, что относится к бою, осталось наверху вместе со сценой.
   import { INVENTORY_SIZE, availablePoints } from './lib/game'
-  import { gameState } from './lib/stores/game'
+  import { gameStarted, gameState } from './lib/stores/game'
   import { activeSection } from './lib/stores/ui'
   import { isTextMode, sceneUnavailable, uiSettings } from './lib/stores/ui'
   import { isSceneDisabled } from './lib/ui/route'
@@ -33,6 +33,7 @@
   import NoticeBar from './lib/ui/NoticeBar.svelte'
   import OfflineModal from './lib/ui/OfflineModal.svelte'
   import LootReveal from './lib/ui/LootReveal.svelte'
+  import ClassPicker from './lib/ui/ClassPicker.svelte'
 
   // ?scene=off убирает сцену и оставляет только DOM — так снимаются
   // стабильные эталоны интерфейса. Текстовый режим приводит к тому же виду,
@@ -111,6 +112,10 @@
 
 <OfflineModal />
 <LootReveal />
+{#if !$gameStarted}
+  <!-- Игра идёт под ним: цикл уже крутится, но экран закрыт выбором класса. -->
+  <ClassPicker />
+{/if}
 
 <DebugOverlay />
 

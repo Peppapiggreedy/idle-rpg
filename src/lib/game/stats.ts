@@ -17,6 +17,7 @@ import { BASE_STATS, MAX_REST_THRESHOLD, MIN_REST_DURATION_S, PER_LEVEL } from '
 import { UPGRADES } from '../data/upgrades'
 import { SLOT_IDS } from '../data/slots'
 import { talentModifiers } from '../data/talents'
+import { classById } from '../data/classes'
 
 // Модифицируемые статы. swingTime сюда НЕ входит намеренно: это производная
 // величина, её нельзя модифицировать напрямую — только через weaponSpeed/haste.
@@ -127,6 +128,11 @@ export interface StatBlock {
 // пересчёт, и в раскладку на панели статов.
 export function collectModifiers(state: GameState): StatModifier[] {
   const mods: StatModifier[] = []
+  // Класс: стартовые статы приходят ПЕРВЫМИ, чтобы его base-модификаторы
+  // (у ярости — свой запас и нулевой реген) могли быть перекрыты предметом,
+  // а не наоборот. Порядок здесь — часть контракта ступени base.
+  const hero = classById(state.classId)
+  for (const mod of hero.baseMods) mods.push({ ...mod, source: `class:${hero.id}` })
   // Уровень персонажа: живучесть и мана. Урон уровень НЕ даёт — его копят
   // апгрейдами и экипировкой; уровень открывает зоны и позволяет в них выжить.
   const levelsGained = Decimal.max(state.level.minus(1), new Decimal(0))

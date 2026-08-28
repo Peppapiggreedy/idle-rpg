@@ -17,6 +17,7 @@ import type { AbilityDef } from '../abilities'
 import type { ModelAsset, PropAsset } from '../assets'
 import type { DungeonDef } from '../dungeons'
 import type { ShieldTemplate, WeaponTemplate } from '../items'
+import type { ClassDef } from '../classes'
 import type { RarityDef } from '../rarity'
 import type { SoundCue } from '../sounds'
 import {
@@ -49,6 +50,7 @@ export interface Content {
   weapons: readonly WeaponTemplate[]
   shields: readonly ShieldTemplate[]
   sounds: readonly SoundCue[]
+  classes: readonly ClassDef[]
   props: readonly PropAsset[]
   /** Имена файлов в public/models/props. */
   propFiles: readonly string[]
@@ -787,6 +789,90 @@ export const SHIELD_SCHEMA: EntitySchema<ShieldTemplate> = {
   },
 }
 
+export const CLASS_SCHEMA: EntitySchema<ClassDef> = {
+  kind: 'класс',
+  file: 'data/classes.ts',
+  entities: (c) => c.classes,
+  id: (c) => c.id,
+  name: (c) => c.name,
+  icon: (c) => c.icon,
+  numbers: [
+    { field: 'resource.perSwingDealt', get: (c) => c.resource?.perSwingDealt, min: 0 },
+    { field: 'resource.perHitTaken', get: (c) => c.resource?.perHitTaken, min: 0 },
+    { field: 'resource.decayPerSecond', get: (c) => c.resource?.decayPerSecond, min: 0 },
+  ],
+  extra: (hero, content, report) => {
+    const where = `класс ${hero.id}`
+    report.need(!!hero.tagline?.trim(), where, 'нет строки о том, как в него играют (data/classes.ts)')
+    // Умения: без них у класса нет ни одной кнопки.
+    report.need(
+      Array.isArray(hero.abilityIds) && hero.abilityIds.length > 0,
+      where,
+      'ни одного умения — играть будет нечем (data/classes.ts)',
+    )
+    for (const id of hero.abilityIds ?? []) {
+      report.need(
+        content.abilities.some((a) => a.id === id),
+        where,
+        `ссылается на умение «${id}», которого нет в data/abilities.ts`,
+      )
+    }
+    // Ветки: без них дерево талантов у класса пустое.
+    report.need(
+      Array.isArray(hero.branchIds) && hero.branchIds.length > 0,
+      where,
+      'ни одной ветки талантов — очки некуда вкладывать (data/classes.ts)',
+    )
+    for (const id of hero.branchIds ?? []) {
+      report.need(
+        content.branches.some((b) => b.id === id),
+        where,
+        `ссылается на ветку «${id}», которой нет в data/talents.ts (BRANCHES)`,
+      )
+    }
+    // Стартовая экипировка ссылается на настоящие шаблоны.
+    for (const item of hero.startingEquipment ?? []) {
+      const known =
+        item.kind === 'shield'
+          ? content.shields.some((sh) => sh.id === item.templateId)
+          : content.weapons.some((w) => w.id === item.templateId)
+      report.need(
+        known,
+        where,
+        `стартовый предмет «${item.templateId}» не найден среди ${item.kind === 'shield' ? 'щитов' : 'оружия'} (data/items.ts)`,
+      )
+      report.need(
+        item.slot === 'mainHand' || item.slot === 'offHand',
+        where,
+        `стартовый предмет лежит в слоте «${item.slot}»: класс раздаёт только руки (data/classes.ts)`,
+      )
+    }
+    // Ресурс обязан хоть как-то пополняться: либо временем, либо боем.
+    const resource = hero.resource
+    if (!resource) {
+      report.add(where, 'нет описания ресурса (data/classes.ts)')
+      return
+    }
+    const fromCombat = resource.perSwingDealt?.gt(0) || resource.perHitTaken?.gt(0)
+    const fromTime = hero.baseMods?.every((m) => m.stat !== 'manaRegen' || !m.value.eq(0)) ?? true
+    report.need(
+      fromCombat || fromTime,
+      where,
+      'ресурс не пополняется ни временем, ни боем — умения не применить ни разу ' +
+        '(data/classes.ts)',
+    )
+    // Ярость без утечки — копилка на потом, а не ресурс непрерывного боя.
+    if (fromCombat) {
+      report.need(
+        resource.decayPerSecond?.gt(0) ?? false,
+        where,
+        'ресурс копится боем, но не тает вне боя: его можно накопить впрок, ' +
+          'и ритм класса пропадает (data/classes.ts)',
+      )
+    }
+  },
+}
+
 export const PROP_SCHEMA: EntitySchema<PropAsset> = {
   kind: 'пропс',
   file: 'data/assets.ts',
@@ -985,6 +1071,7 @@ export const SCHEMAS = [
   SHIELD_SCHEMA,
   SOUND_SCHEMA,
   PROP_SCHEMA,
+  CLASS_SCHEMA,
   RARITY_SCHEMA,
   UPGRADE_SCHEMA,
   MODEL_SCHEMA,

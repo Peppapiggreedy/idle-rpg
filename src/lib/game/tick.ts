@@ -38,6 +38,7 @@ import { ABILITY_BY_ID } from '../data/abilities'
 import { currentZone, reviveInZone } from './zones'
 import { advanceCooldowns, autocastStep, consumeQueuedAbility } from './abilities'
 import { finishRest, needsRest, startRest } from './rest'
+import { classById } from '../data/classes'
 import { reviveMultiplier } from './talents'
 import {
   advanceDungeon,
@@ -64,6 +65,9 @@ interface TickContext {
   rng: Rng
   emitAttack: (event: AttackEvent) => void
   killedMonster: Monster | null
+  /** Ударов нанесено и получено за тик: из них класс копит свой ресурс. */
+  swingsDealt: number
+  hitsTaken: number
 }
 
 type TickStep = (state: GameState, ctx: TickContext) => GameState
@@ -424,14 +428,29 @@ const applyRegen: TickStep = (s, ctx) => {
   // и только потом капаем ПОРЦИЯМИ раз в REGEN_TICK_S. Порции, а не ровный
   // ручеёк, — это то, что делает окно между тратами ощутимым: успел
   // придержать умение на два лишних тика — получил порцию.
+  // Ресурс вне боя ТАЕТ, если так сказано в данных класса. У маны ноль,
+  // у ярости — то, что не даёт копить её между боями. Ветка по классу здесь
+  // не нужна: множитель просто равен нулю.
+  const decay = classById(s.classId).resource.decayPerSecond
+  const drained =
+    s.respawnMsLeft > 0
+      ? Decimal.max(s.currentMana.minus(decay.times(dtSec)), new Decimal(0))
+      : s.currentMana
+
   const regenDelayMsLeft = Math.max(0, s.regenDelayMsLeft - ctx.dtMs)
   if (regenDelayMsLeft > 0) {
     // Пока пауза идёт, таймер тика взведён заново: восстановление начнётся
     // с полного интервала, а не с остатка от прошлого раза.
-    return { ...s, currentHp, regenDelayMsLeft, regenTickMsLeft: REGEN_TICK_S * 1000 }
+    return {
+      ...s,
+      currentHp,
+      currentMana: drained,
+      regenDelayMsLeft,
+      regenTickMsLeft: REGEN_TICK_S * 1000,
+    }
   }
   let regenTickMsLeft = s.regenTickMsLeft - ctx.dtMs
-  let currentMana = s.currentMana
+  let currentMana = drained
   let guard = 0
   while (regenTickMsLeft <= 0 && guard < MAX_REGEN_TICKS_PER_STEP) {
     currentMana = currentMana.plus(s.stats.manaRegen.times(REGEN_TICK_S))
@@ -445,6 +464,22 @@ const applyRegen: TickStep = (s, ctx) => {
     regenDelayMsLeft,
     regenTickMsLeft,
   }
+}
+
+/**
+ * Ресурс из боя. Мана берёт отсюда ноль — у неё оба множителя нулевые, — а
+ * ярость только отсюда и живёт. Ветки по классу нет: числа приходят из данных.
+ */
+const applyResourceGain: TickStep = (s, ctx) => {
+  const resource = classById(s.classId).resource
+  // Доли от полного запаса: с уровнем растёт запас — растёт и доход, ровно
+  // как реген у маны.
+  const gained = resource.perSwingDealt
+    .times(ctx.swingsDealt)
+    .plus(resource.perHitTaken.times(ctx.hitsTaken))
+    .times(s.stats.maxMana)
+  if (gained.lte(0)) return s
+  return { ...s, currentMana: Decimal.min(s.currentMana.plus(gained), s.stats.maxMana) }
 }
 
 const applyRespawn: TickStep = (s, ctx) => {
@@ -487,6 +522,7 @@ const PIPELINE: TickStep[] = [
   applyLevelUps,
   applyLootDrop,
   applyMonsterAttack,
+  applyResourceGain,
   applyRegen,
   applyRespawn,
   applyAutosaveCounter,
@@ -498,7 +534,20 @@ export function tick(
   rng: Rng,
   emitAttack: (event: AttackEvent) => void = busEmit,
 ): GameState {
-  const ctx: TickContext = { dtMs, rng, emitAttack, killedMonster: null }
+  // Учёт урона — ЗДЕСЬ, на той же шине, что кормит цифры на экране: отдельного
+  // счётчика в тик не добавлено. Ресурс класса копится ровно из этих чисел.
+  const ctx: TickContext = {
+    dtMs,
+    rng,
+    emitAttack: (event) => {
+      if (event.targetId === 'hero') ctx.hitsTaken += 1
+      else ctx.swingsDealt += 1
+      emitAttack(event)
+    },
+    killedMonster: null,
+    swingsDealt: 0,
+    hitsTaken: 0,
+  }
   // Кеш статов: пересчёт только если источники менялись с прошлого тика.
   let s: GameState = {
     ...ensureStats(state),

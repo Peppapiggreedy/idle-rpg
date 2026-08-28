@@ -7,6 +7,7 @@ import type { Item, Rarity } from '../types'
 import { applyXp, xpToNextLevel } from './formulas'
 import {
   createInitialState,
+  abilitiesOf,
   defaultAbilitySettings,
   emptyEquipment,
   monsterFromTemplate,
@@ -31,6 +32,7 @@ import {
   OFFLINE_EFFICIENCY,
 } from '../data/balance'
 import { ABILITIES, ABILITY_BY_ID } from '../data/abilities'
+import { DEFAULT_CLASS, classById } from '../data/classes'
 import { TALENTS } from '../data/talents'
 import { DUNGEONS, DUNGEON_BY_ID, buildBoss } from '../data/dungeons'
 import { currentBoss } from './dungeons'
@@ -41,7 +43,7 @@ import { SAFE_ZONE, ZONE_BY_ID } from '../data/zones'
 import { currentZone, zoneRate } from './zones'
 
 export const SAVE_KEY = 'idle-rpg-save'
-export const SAVE_VERSION = 15
+export const SAVE_VERSION = 16
 export const AUTOSAVE_INTERVAL_MS = AUTOSAVE_INTERVAL_S * 1000
 // Потолок оффлайн-прогресса: дольше отсутствовать можно, но не оплачивается.
 export const OFFLINE_CAP_MS = OFFLINE_CAP_HOURS * 60 * 60 * 1000
@@ -83,8 +85,10 @@ export interface SavedDungeonRun {
   fightMs: number
 }
 
-export interface SavePayloadV15 {
-  version: 15
+export interface SavePayloadV16 {
+  version: 16
+  /** Класс героя. Выбирается один раз при новой игре и не меняется. */
+  classId: string
   lastTimestamp: number
   gold: string
   level: string
@@ -167,7 +171,7 @@ function savedFromItem(item: Item): SavedItem {
   }
 }
 
-export function payloadFromState(state: GameState, lastTimestamp: number): SavePayloadV15 {
+export function payloadFromState(state: GameState, lastTimestamp: number): SavePayloadV16 {
   const upgrades: Record<string, string> = {}
   for (const [id, owned] of Object.entries(state.upgrades)) upgrades[id] = owned.toString()
   const equipment: Record<string, SavedItem | null> = {}
@@ -197,7 +201,8 @@ export function payloadFromState(state: GameState, lastTimestamp: number): SaveP
     if (state.dungeonsCleared[dungeon.id] === true) dungeonsCleared[dungeon.id] = true
   }
   return {
-    version: 15,
+    version: 16,
+    classId: state.classId,
     lastTimestamp,
     inventory: state.inventory.map(savedFromItem),
     equipment,
@@ -312,11 +317,13 @@ function msFromSaved(raw: unknown, max: number): number {
 
 // Настройки автокаста из сейва: чужие умения игнорируем, пропущенные
 // добираем дефолтами — иначе новое умение осталось бы без настройки.
-function abilitySettingsFromSaved(raw: unknown): AbilitySettings {
-  const settings = defaultAbilitySettings()
+function abilitySettingsFromSaved(raw: unknown, classId: string): AbilitySettings {
+  // Настройки — ТОЛЬКО по умениям своего класса: чужие в сейве означают
+  // правку руками, и пускать их в ротацию нельзя.
+  const settings = defaultAbilitySettings(classId)
   if (typeof raw !== 'object' || raw === null) return settings
   const saved = raw as Record<string, unknown>
-  for (const ability of ABILITIES) {
+  for (const ability of abilitiesOf(classId)) {
     const entry = saved[ability.id]
     if (typeof entry !== 'object' || entry === null) continue
     const { autocast, priority, reserve } = entry as Record<string, unknown>
@@ -377,12 +384,18 @@ function clearedFromSaved(raw: unknown): Record<string, boolean> {
   return cleared
 }
 
-export function stateFromPayload(p: SavePayloadV15): GameState {
+export function stateFromPayload(p: SavePayloadV16): GameState {
   const level = Decimal.max(parseDec(p.level, '1'), new Decimal(1))
   const upgrades: Record<string, Decimal> = {}
   for (const [id, owned] of Object.entries(p.upgrades ?? {})) upgrades[id] = parseDec(owned, '0')
+  // Класс восстанавливается ПЕРВЫМ: от него зависят стартовые статы, набор
+  // умений и стартовая экипировка, поверх которых кладётся всё сохранённое.
+  // Неизвестный класс (переименовали, откатили версию) деградирует до
+  // дефолтного, а не оставляет героя без ресурса и без кнопок.
+  const hero = classById(p.classId)
   const restored: GameState = {
-    ...createInitialState(),
+    ...createInitialState(undefined, hero.id),
+    classId: hero.id,
     gold: parseDec(p.gold, '0'),
     level,
     currentXp: parseDec(p.currentXp, '0'),
@@ -411,7 +424,7 @@ export function stateFromPayload(p: SavePayloadV15): GameState {
     // мана «недокапала», прогрессом не считаются.
     regenTickMsLeft: REGEN_TICK_S * 1000,
     abilityCooldownsMs: cooldownsFromSaved(p.abilityCooldownsMs),
-    abilitySettings: abilitySettingsFromSaved(p.abilitySettings),
+    abilitySettings: abilitySettingsFromSaved(p.abilitySettings, hero.id),
     // Очередь и эффекты были на прежнем мобе — при загрузке начинаем чисто.
     queuedAbilityId: null,
     activeEffects: [],
@@ -494,6 +507,10 @@ function handItemV14toV15(raw: unknown): unknown {
 }
 
 const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
+  // 15 -> 16: появились классы. Все прежние герои — Стражи: ресурс маны,
+  // правило задержки и те же три умения, что у них и были. Прогресс не
+  // теряется: класс дописывается полем, всё остальное остаётся как есть.
+  15: (raw) => ({ ...raw, version: 16, classId: DEFAULT_CLASS.id }),
   // 14 -> 15: рук стало две. Слот 'weapon' переименован в 'mainHand', левая
   // рука пуста — надеть в неё что-то игрок решит сам. Прогресс не теряется:
   // модификаторы предмета не меняются вовсе, меняется только имя слота.
@@ -506,7 +523,7 @@ const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
     delete equipment.weapon
     return {
       ...raw,
-      version: 15,
+      version: 16,
       inventory: Array.isArray(raw.inventory) ? raw.inventory.map(handItemV14toV15) : [],
       equipment: {
         ...equipment,
@@ -606,7 +623,7 @@ const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
 }
 
 // null = сейв непригоден (не объект или из более новой версии игры).
-export function migrateSave(raw: unknown): SavePayloadV15 | null {
+export function migrateSave(raw: unknown): SavePayloadV16 | null {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null
   let data = raw as RawSave
   let version = typeof data.version === 'number' ? data.version : 0
@@ -617,7 +634,7 @@ export function migrateSave(raw: unknown): SavePayloadV15 | null {
     data = step(data)
     version = typeof data.version === 'number' ? data.version : version + 1
   }
-  return data as unknown as SavePayloadV15
+  return data as unknown as SavePayloadV16
 }
 
 export interface OfflineReport {
@@ -762,7 +779,7 @@ export function encodeSaveString(state: GameState, now: () => number = Date.now)
 }
 
 // Понимает base64 от экспорта и, на всякий случай, голый JSON.
-export function decodeSaveString(input: string): SavePayloadV15 | null {
+export function decodeSaveString(input: string): SavePayloadV16 | null {
   const attempts = [
     () => JSON.parse(fromBase64(input.trim())),
     () => JSON.parse(input.trim()),
