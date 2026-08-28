@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json && tsc -p tsconfig.tests.json",
     "test": "vitest run",
+    "content:check": "vitest run src/lib/data/__tests__/integrity.test.ts",
     "screenshots": "playwright test",
     "screenshots:update": "playwright test --update-snapshots",
     "presets:update": "UPDATE_PRESETS=1 vitest run src/lib/game/__tests__/presets.test.ts",

@@ -1,4 +1,4 @@
-# Проверки на каждый pull request: типы + тесты.
+# Проверки на каждый pull request: типы, целостность контента, тесты.
 name: CI
 
 on:
@@ -20,6 +20,10 @@ jobs:
         run: npm ci
       - name: Type check
         run: npm run check
+      # Отдельным шагом до общего прогона: если сломана ссылка в data/, это
+      # видно сразу и по имени шага, а не поиском по логу тестов.
+      - name: Проверка контента
+        run: npm run content:check
       - name: Tests
         run: npm run test
 
