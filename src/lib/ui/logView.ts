@@ -11,6 +11,10 @@
 // сворачиваются в одну строку со счётчиком.
 
 import { LOG_AGGREGATE_THRESHOLD, LOG_VIEW_SIZE } from '../data/balance'
+// Диф хвоста лога живёт на шине: им же кормится звук, и второй копии быть не должно.
+import { freshEvents } from '../game/events'
+
+export { freshEvents }
 import { Decimal } from '../game'
 import type { CombatEvent } from '../types'
 
@@ -44,20 +48,6 @@ function damageOf(event: CombatEvent): Decimal | null {
   if (event.type === 'block') return event.damage
   if (event.type === 'ability') return event.damage
   return null
-}
-
-/**
- * Что в хвосте состояния появилось нового с прошлого раза.
- * Хвост идёт НОВЫМИ ВПЕРЁД и обрезан, поэтому «новое» — это всё до первой
- * встречи прежней головы. Если прежней головы там уже нет (событий пришло
- * больше, чем длина хвоста), новым считается весь хвост: то, что мы
- * пропустили, показать всё равно неоткуда.
- */
-export function freshEvents(tail: readonly CombatEvent[], seen: CombatEvent | null): CombatEvent[] {
-  if (!seen) return [...tail].reverse()
-  const index = tail.indexOf(seen)
-  const fresh = index === -1 ? [...tail] : tail.slice(0, index)
-  return fresh.reverse()
 }
 
 /** Добавляет новые события в ленту, сворачивая однотипные подряд идущие. */

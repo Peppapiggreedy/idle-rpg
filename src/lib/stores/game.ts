@@ -20,7 +20,7 @@ import {
   enterDungeon as enterDungeonAction,
   leaveDungeon as leaveDungeonAction,
 } from '../game/dungeons'
-import { emit as emitAttack } from '../game/events'
+import { emit as emitAttack, emitLog, freshEvents } from '../game/events'
 import type { SlotId } from '../data/slots'
 import {
   AUTOSAVE_INTERVAL_MS,
@@ -114,7 +114,13 @@ export function startGameLoop(): void {
   const stream = rng()
   loop = createGameLoop({
     step: (dtMs) => {
-      state.update((s) => tick(s, dtMs, stream))
+      state.update((s) => {
+        const next = tick(s, dtMs, stream)
+        // События лога уходят НА ШИНУ, а не кому-то напрямую: звук и лента —
+        // равноправные подписчики, и ни один из них логике не известен.
+        emitLog(freshEvents(next.combatLog, s.combatLog[0] ?? null))
+        return next
+      })
       // Счётчик копит applyAutosaveCounter внутри тика; стор сохраняет и сбрасывает.
       if (get(state).msSinceAutosave >= AUTOSAVE_INTERVAL_MS) {
         persistNow()

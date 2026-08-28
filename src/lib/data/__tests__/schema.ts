@@ -18,6 +18,13 @@ import type { ModelAsset } from '../assets'
 import type { DungeonDef } from '../dungeons'
 import type { ShieldTemplate, WeaponTemplate } from '../items'
 import type { RarityDef } from '../rarity'
+import type { SoundCue } from '../sounds'
+import {
+  SOUND_GAIN_MAX_DB,
+  SOUND_MIN_VARIATIONS,
+  SOUND_PITCH_MAX_SEMITONES,
+  SOUND_PITCH_MIN_SEMITONES,
+} from '../balance'
 import type { SlotId } from '../slots'
 import type { BranchDef, TalentDef } from '../talents'
 import type { Zone } from '../zones'
@@ -41,6 +48,9 @@ export interface Content {
   dungeons: readonly DungeonDef[]
   weapons: readonly WeaponTemplate[]
   shields: readonly ShieldTemplate[]
+  sounds: readonly SoundCue[]
+  /** Пути звуковых файлов, реально лежащих в public/. */
+  audioFiles: readonly string[]
   rarities: readonly RarityDef[]
   upgrades: readonly UpgradeDef[]
   models: readonly ModelAsset[]
@@ -719,6 +729,63 @@ export const SHIELD_SCHEMA: EntitySchema<ShieldTemplate> = {
   },
 }
 
+export const SOUND_SCHEMA: EntitySchema<SoundCue> = {
+  kind: 'звук',
+  file: 'data/sounds.ts',
+  entities: (c) => c.sounds,
+  id: (s) => s.id,
+  name: (s) => s.id,
+  numbers: [
+    {
+      field: 'pitchSemitones',
+      get: (s) => s.pitchSemitones,
+      min: 0,
+      max: SOUND_PITCH_MAX_SEMITONES,
+      why: 'разброс больше трёх полутонов читается как ДРУГОЙ звук, а не как вариация',
+    },
+    { field: 'gainDb', get: (s) => s.gainDb, min: 0, max: SOUND_GAIN_MAX_DB },
+    { field: 'priority', get: (s) => s.priority, min: 0 },
+    { field: 'duckMs', get: (s) => s.duckMs, min: 0, max: 3000 },
+  ],
+  extra: (cue, content, report) => {
+    const where = `звук ${cue.id}`
+    if (!Array.isArray(cue.files) || cue.files.length === 0) {
+      report.add(where, 'нет ни одного файла — кью не прозвучит никогда (data/sounds.ts)')
+      return
+    }
+    for (const file of cue.files) {
+      if (!content.audioFiles.includes(file)) {
+        report.add(
+          where,
+          `файл «${file}» не найден в public/ — промах даёт не ошибку, ` +
+            'а тишину, которую никто не заметит (data/sounds.ts)',
+        )
+      }
+    }
+    if (new Set(cue.files).size !== cue.files.length) {
+      report.add(where, 'один и тот же файл записан вариантом дважды (data/sounds.ts)')
+    }
+    // Правило против усталости слуха: час в одной зоне — тысячи ударов.
+    const varied = cue.files.length >= SOUND_MIN_VARIATIONS
+    const jittered = cue.pitchSemitones > 0 && cue.gainDb > 0
+    if (!varied && !jittered) {
+      report.add(
+        where,
+        `${cue.files.length} вариант(а) и нулевой разброс: нужно либо ` +
+          `${SOUND_MIN_VARIATIONS} файла, либо разброс высоты И громкости ` +
+          '(data/sounds.ts)',
+      )
+    }
+    if (cue.pitchSemitones > 0 && cue.pitchSemitones < SOUND_PITCH_MIN_SEMITONES) {
+      report.add(
+        where,
+        `разброс ${cue.pitchSemitones} полутона на слух неотличим от нуля — ` +
+          `минимум ${SOUND_PITCH_MIN_SEMITONES} (data/sounds.ts)`,
+      )
+    }
+  },
+}
+
 export const RARITY_SCHEMA: EntitySchema<RarityDef> = {
   kind: 'редкость',
   file: 'data/rarity.ts',
@@ -826,6 +893,7 @@ export const SCHEMAS = [
   DUNGEON_SCHEMA,
   WEAPON_SCHEMA,
   SHIELD_SCHEMA,
+  SOUND_SCHEMA,
   RARITY_SCHEMA,
   UPGRADE_SCHEMA,
   MODEL_SCHEMA,

@@ -178,6 +178,34 @@ export function brokenCases(): BrokenCase[] {
       expect: [first(real.weapons).id, 'damageMax', 'damageMin'],
     },
     {
+      title: 'звук ссылается на файл, которого нет в public/',
+      content: {
+        ...real,
+        sounds: patch(real.sounds, first(real.sounds).id, { files: ['audio/ui/нету.ogg'] }),
+      },
+      expect: [first(real.sounds).id, 'нету.ogg', 'не найден'],
+    },
+    {
+      title: 'один сэмпл без разброса: через час игры это дрель',
+      content: {
+        ...real,
+        sounds: patch(real.sounds, first(real.sounds).id, {
+          files: [first(real.sounds).files[0]],
+          pitchSemitones: 0,
+          gainDb: 0,
+        }),
+      },
+      expect: [first(real.sounds).id, 'разброс'],
+    },
+    {
+      title: 'разброс высоты вывернут за границы слышимой вариации',
+      content: {
+        ...real,
+        sounds: patch(real.sounds, first(real.sounds).id, { pitchSemitones: 12 }),
+      },
+      expect: [first(real.sounds).id, 'pitchSemitones'],
+    },
+    {
       title: 'щит не блокирует: вероятность блока ушла в ноль',
       content: {
         ...real,

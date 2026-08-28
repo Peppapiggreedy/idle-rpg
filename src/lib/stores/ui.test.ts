@@ -6,11 +6,16 @@ import {
   sanitizeUiSettings,
   type UiSettings,
 } from './ui'
+import { SOUND_DEFAULT_VOLUMES } from '../data/balance'
 
 describe('настройки интерфейса: разбор сохранённого', () => {
   it('пустое и мусорное значение дают настройки по умолчанию', () => {
     for (const raw of [null, undefined, 42, 'строка', [], {}]) {
-      expect(sanitizeUiSettings(raw)).toEqual({ textMode: 'auto', fpsLimit: 30 })
+      expect(sanitizeUiSettings(raw)).toEqual({
+        textMode: 'auto',
+        fpsLimit: 30,
+        volumes: SOUND_DEFAULT_VOLUMES,
+      })
     }
   })
 
@@ -18,10 +23,12 @@ describe('настройки интерфейса: разбор сохранён
     expect(sanitizeUiSettings({ textMode: 'on', fpsLimit: 30 })).toEqual({
       textMode: 'on',
       fpsLimit: 30,
+      volumes: SOUND_DEFAULT_VOLUMES,
     })
     expect(sanitizeUiSettings({ textMode: 'off', fpsLimit: 60 })).toEqual({
       textMode: 'off',
       fpsLimit: 60,
+      volumes: SOUND_DEFAULT_VOLUMES,
     })
     // null допустим: так записаны настройки, сохранённые до появления
     // значения по умолчанию 30. Терять их из-за смены списка нельзя.
@@ -42,12 +49,22 @@ describe('настройки интерфейса: разбор сохранён
   it('неизвестный режим отображения откатывается к автоопределению', () => {
     expect(sanitizeUiSettings({ textMode: 'graphics' }).textMode).toBe('auto')
   })
+
+  it('громкость из мусора не оглушает и не выключает звук навсегда', () => {
+    // Настройки лежат в localStorage, куда мог залезть кто угодно.
+    const loud = sanitizeUiSettings({ volumes: { master: 12, combat: -3, ui: 'громко' } })
+    expect(loud.volumes.master).toBe(1)
+    expect(loud.volumes.combat).toBe(0)
+    expect(loud.volumes.ui).toBe(SOUND_DEFAULT_VOLUMES.ui)
+    expect(sanitizeUiSettings({}).volumes).toEqual(SOUND_DEFAULT_VOLUMES)
+  })
 })
 
 describe('текстовый режим', () => {
   const settings = (textMode: UiSettings['textMode']): UiSettings => ({
     textMode,
     fpsLimit: null,
+    volumes: { ...SOUND_DEFAULT_VOLUMES },
   })
 
   it('явный выбор игрока сильнее автоопределения', () => {

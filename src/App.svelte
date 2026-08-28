@@ -32,6 +32,7 @@
   import DebugPanel from './lib/ui/DebugPanel.svelte'
   import NoticeBar from './lib/ui/NoticeBar.svelte'
   import OfflineModal from './lib/ui/OfflineModal.svelte'
+  import LootReveal from './lib/ui/LootReveal.svelte'
 
   // ?scene=off убирает сцену и оставляет только DOM — так снимаются
   // стабильные эталоны интерфейса. Текстовый режим приводит к тому же виду,
@@ -109,6 +110,7 @@
 </main>
 
 <OfflineModal />
+<LootReveal />
 
 <DebugOverlay />
 

@@ -25,6 +25,7 @@ import { DUNGEONS } from '../dungeons'
 import { ARMOR_NOUNS, SHIELDS, WEAPONS } from '../items'
 import { DROP_CHANCE } from '../loot'
 import { RARITIES } from '../rarity'
+import { SOUNDS } from '../sounds'
 import { SLOT_DROP_WEIGHTS, SLOT_ICONS, SLOT_IDS, SLOT_NAMES } from '../slots'
 import { BRANCHES, TALENTS } from '../talents'
 import { UPGRADES } from '../upgrades'
@@ -35,6 +36,7 @@ import type { Content } from './schema'
 
 const SPRITE = new URL('../../ui/icons/sprite.svg', import.meta.url)
 const MODELS_DIR = new URL('../../../../public/models/', import.meta.url)
+const AUDIO_DIR = new URL('../../../../public/audio/', import.meta.url)
 
 /** Имена иконок, у которых в спрайте реально есть symbol. */
 function spriteIconNames(): string[] {
@@ -45,6 +47,26 @@ function spriteIconNames(): string[] {
 /** Что лежит в public/models — по этому списку проверяются пути ассетов. */
 function modelFiles(): string[] {
   return readdirSync(MODELS_DIR)
+}
+
+/**
+ * Что лежит в public/audio — пути в реестре звуков сверяются с ним.
+ * Раскладка ровно двухуровневая (`audio/<пак>/<файл>`), поэтому обход
+ * тоже двухуровневый: рекурсия здесь была бы сложнее самой задачи.
+ */
+function audioFiles(): string[] {
+  const files: string[] = []
+  for (const entry of readdirSync(AUDIO_DIR)) {
+    try {
+      for (const file of readdirSync(new URL(`${entry}/`, AUDIO_DIR))) {
+        files.push(`audio/${entry}/${file}`)
+      }
+    } catch {
+      // Не каталог, а файл рядом (тексты лицензий) — в реестр они не входят.
+      files.push(`audio/${entry}`)
+    }
+  }
+  return files
 }
 
 /** Живой контент игры целиком. */
@@ -69,6 +91,8 @@ export function realContent(): Content {
     iconNames: ICON_NAMES,
     spriteIconNames: spriteIconNames(),
     modelFiles: modelFiles(),
+    sounds: SOUNDS,
+    audioFiles: audioFiles(),
     balance: {
       dropChance: DROP_CHANCE,
       baseCritChance: BASE_STATS.critChance.toNumber(),
