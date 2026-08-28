@@ -21,6 +21,13 @@
     TTK_TARGET_MIN,
   } from '../data/balance'
   import { ZONES } from '../data/zones'
+  import { CLASSES } from '../data/classes'
+  import { intendedZone } from '../game/zones'
+  import {
+    DECISION_ALERT_SEC,
+    DECISION_MAX_SEC,
+    DECISION_MIN_SEC,
+  } from '../data/balance'
   import { WEAPONS, WEAPON_BY_ID } from '../data/items'
   import { ABILITY_BY_ID } from '../data/abilities'
   import { Button, NumberText, Panel, Tag } from './kit'
@@ -33,6 +40,11 @@
   let weaponRows = $state<Array<{ name: string; speed: string; result: SimResult }>>([])
   let manaRows = $state<Array<{ name: string; speed: string; result: SimResult }>>([])
   let pacingRows = $state<PacingRow[]>([])
+  // Телеметрия: по строке на класс и уровень. Ровно то, что проверяет
+  // прогон баланса, только посчитанное на лету.
+  let telemetryRows = $state<
+    Array<{ className: string; level: number; zone: string; result: SimResult }>
+  >([])
 
   const drift = $derived(pacingRows.length > 0 ? ttkDrift(pacingRows) : null)
 
@@ -45,6 +57,13 @@
     manaRows.length === 2 && manaRows[0].result.damagePerMana
       ? manaRows[1].result.damagePerMana!.div(manaRows[0].result.damagePerMana!).toNumber()
       : null,
+  )
+
+  const decisionsInWindow = $derived(
+    telemetryRows.filter((r) => {
+      const gap = r.result.decisionIntervalSec
+      return gap !== null && gap >= DECISION_MIN_SEC && gap <= DECISION_MAX_SEC
+    }).length,
   )
 
   // Уступаем браузеру кадр, чтобы таблица наполнялась построчно, а вкладка не
@@ -60,6 +79,7 @@
     weaponRows = []
     manaRows = []
     pacingRows = []
+    telemetryRows = []
     await yieldFrame()
 
     pacingRows = pacingTable()
@@ -110,6 +130,24 @@
         { name: template.noun, speed: template.weaponSpeed.toFixed(1), result },
       ]
       await yieldFrame()
+    }
+
+    for (const hero of CLASSES) {
+      for (const level of BALANCE_PRESET.telemetryLevels) {
+        const zone = intendedZone(level)
+        const result = simulate({
+          hours: BALANCE_PRESET.telemetryHours,
+          zoneId: zone.id,
+          seed: BALANCE_PRESET.pacingSeed,
+          bag: 'sell',
+          build: referenceBuild(level, hero.id),
+        })
+        telemetryRows = [
+          ...telemetryRows,
+          { className: hero.name, level, zone: zone.name, result },
+        ]
+        await yieldFrame()
+      }
     }
 
     running = false
@@ -368,6 +406,58 @@
     {/if}
   {/if}
 
+  {#if telemetryRows.length > 0}
+    <h2>Интервал решений и привалы</h2>
+    <p class="note">
+      Сколько проходит между решениями игрока: находка выше обычной, очко
+      таланта, открывшаяся зона. Здоровое окно — {DECISION_MIN_SEC}–{DECISION_MAX_SEC} с;
+      реже {DECISION_ALERT_SEC} с — уже не idle, а пустой экран.
+      Эталонный герой в подходящей по уровню зоне, {BALANCE_PRESET.telemetryHours} ч на строку.
+    </p>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>класс</th>
+            <th>ур.</th>
+            <th>зона</th>
+            <th>интервал</th>
+            <th>золота/ч</th>
+            <th>опыта/ч</th>
+            <th>привалов/ч</th>
+            <th>простой</th>
+            <th>смертей/ч</th>
+          </tr>
+        </thead>
+        <tbody>
+          {#each telemetryRows as row (`${row.className}-${row.level}`)}
+            {@const gap = row.result.decisionIntervalSec}
+            <tr>
+              <td>{row.className}</td>
+              <td class="num">{row.level}</td>
+              <td>{row.zone}</td>
+              <td
+                class="num"
+                class:good={gap !== null && gap >= DECISION_MIN_SEC && gap <= DECISION_MAX_SEC}
+                class:bad={gap === null || gap > DECISION_ALERT_SEC}
+              >
+                {gap === null ? '—' : `${gap.toFixed(0)}с`}
+              </td>
+              <td class="num"><NumberText value={row.result.goldPerHour} tone="gold" /></td>
+              <td class="num"><NumberText value={row.result.xpPerHour} tone="xp" /></td>
+              <td class="num">{row.result.restsPerHour.toFixed(1)}</td>
+              <td class="num">{(row.result.restShare * 100).toFixed(0)}%</td>
+              <td class="num">{row.result.deathsPerHour.toFixed(2)}</td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    </div>
+    <p class="verdict">
+      В здоровом окне {decisionsInWindow} строк из {telemetryRows.length}.
+    </p>
+  {/if}
+
   {#if done}
     <p class="note">Готово. Поменяй число часов и посчитай ещё раз, если нужна точность.</p>
   {/if}
@@ -465,6 +555,14 @@
     color: var(--c-accent);
   }
   td.ttk.bad {
+    color: var(--c-damage);
+  }
+  /* Интервал решений: зелёный — в окне, красный — за порогом тревоги.
+     Цвет здесь несёт смысл, а не украшает: строка читается боковым зрением. */
+  td.good {
+    color: var(--c-heal);
+  }
+  td.bad {
     color: var(--c-damage);
   }
 </style>

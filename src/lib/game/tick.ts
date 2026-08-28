@@ -241,6 +241,7 @@ const applyEffects: TickStep = (s, ctx) => {
         amount: effect.damagePerTick,
         isCrit: false,
         abilityId: effect.abilityId,
+        overTime: true,
         timestamp: s.playtimeMs.toNumber(),
       })
       if (hpLeft.lte(0)) ctx.killedMonster = monster
@@ -556,7 +557,9 @@ export function tick(
     rng,
     emitAttack: (event) => {
       if (event.targetId === 'hero') ctx.hitsTaken += 1
-      else ctx.swingsDealt += 1
+      // Тики урона по времени ударами не считаются: иначе одно умение с
+      // эффектом кормило бы ресурс втрое лучше остальных.
+      else if (!event.overTime) ctx.swingsDealt += 1
       emitAttack(event)
     },
     killedMonster: null,

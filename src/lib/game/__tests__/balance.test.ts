@@ -519,6 +519,77 @@ describe('ветки талантов', () => {
 })
 
 // ---------------------------------------------------------------------------
+// Телеметрия: как часто игре есть что предложить
+// ---------------------------------------------------------------------------
+describe('интервал решений', () => {
+  const {
+    decisionMinSec,
+    decisionMaxSec,
+    decisionAlertSec,
+    telemetryHours,
+    telemetryLevels,
+    restShareMax,
+  } = BALANCE_PRESET
+
+  // Что считается решением — в simulate.ts: находка выше обычной, очко
+  // таланта, открывшаяся зона. Мерим в подходящей по уровню зоне: игрок
+  // в ней и сидит, и «сколько раз в час игра спросила» — это про неё.
+  const rows = CLASSES.flatMap((hero) =>
+    telemetryLevels.map((level) => {
+      const zone = intendedZone(level)
+      const result = simulate({
+        hours: telemetryHours,
+        zoneId: zone.id,
+        seed: BALANCE_PRESET.pacingSeed,
+        bag: 'sell',
+        build: referenceBuild(level, hero.id),
+      })
+      return { hero, level, zone, result }
+    }),
+  )
+
+  it(`интервал решений ${decisionMinSec}-${decisionMaxSec} с на большей части прогрессии`, () => {
+    header(
+      `Эталонный герой в подходящей зоне, ${telemetryHours} ч на строку. ` +
+        'Решение — находка выше обычной, очко таланта, открывшаяся зона.',
+      'класс          ур.   зона                 интервал   привалов/ч   простой   смертей/ч',
+    )
+    let inWindow = 0
+    for (const row of rows) {
+      const gap = row.result.decisionIntervalSec
+      const mark = gap !== null && gap >= decisionMinSec && gap <= decisionMaxSec ? '✓' : ' '
+      if (mark === '✓') inWindow += 1
+      log(
+        `${row.hero.name.padEnd(14)} ${String(row.level).padStart(3)}   ` +
+          `${row.zone.name.padEnd(20)} ${(gap?.toFixed(0) ?? '—').padStart(6)}с${mark}  ` +
+          `${row.result.restsPerHour.toFixed(1).padStart(10)}   ` +
+          `${pct(row.result.restShare).padStart(7)}   ` +
+          `${row.result.deathsPerHour.toFixed(2).padStart(9)}`,
+      )
+      // ПОТОЛОК ТРЕВОГИ. Реже раза в три минуты — это уже не idle, а пустой
+      // экран: игрок открывает вкладку и не находит, что нажать.
+      expect(gap ?? Number.POSITIVE_INFINITY, `${row.hero.id}, ур. ${row.level}`).toBeLessThanOrEqual(
+        decisionAlertSec,
+      )
+    }
+    log(`В окне ${inWindow} из ${rows.length} строк (${pct(inWindow / rows.length)}).`)
+    // «На большей части»: края прогрессии выпадают законно — на первом уровне
+    // решений больше обычного, на последнем меньше.
+    expect(inWindow / rows.length).toBeGreaterThanOrEqual(0.6)
+  }, 600_000)
+
+  it(`на привалах уходит не больше ${pct(restShareMax)} времени`, () => {
+    // Привал — пауза, а не занятие. Четверть времени на костре ещё читается
+    // как ритм; больше — как налог на то, что герой вообще дерётся.
+    for (const row of rows) {
+      expect(row.result.restShare, `${row.hero.id}, ур. ${row.level}`).toBeLessThanOrEqual(
+        restShareMax,
+      )
+    }
+  }, 600_000)
+})
+
+// ---------------------------------------------------------------------------
 // Контракт темпа боя
 // ---------------------------------------------------------------------------
 // Числа коридора живут в data/balance.ts; здесь только проверки. Таблица

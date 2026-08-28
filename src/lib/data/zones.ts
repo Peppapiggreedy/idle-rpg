@@ -137,7 +137,7 @@ export const ZONES: Zone[] = [
     scene: ASHEN_SCENE,
     icon: 'zone-ashen-ridge',
     name: 'Пепельный гребень',
-    monsterLevelRange: { min: 21, max: 23 },
+    monsterLevelRange: { min: 22, max: 24 },
     monsterPool: [
       { id: 'ember-stinger', name: 'Уголёк-жалун', role: RUNT },
       { id: 'ash-walker', name: 'Пепельный ходок', role: COMMON },
@@ -152,7 +152,7 @@ export const ZONES: Zone[] = [
     scene: COLLAPSE_SCENE,
     icon: 'zone-mine-collapse',
     name: 'Обвал старой шахты',
-    monsterLevelRange: { min: 30, max: 32 },
+    monsterLevelRange: { min: 32, max: 34 },
     monsterPool: [
       { id: 'scree-nibbler', name: 'Осыпной грызун', role: RUNT },
       { id: 'shaft-lurcher', name: 'Штольневый бродяга', role: COMMON },
@@ -167,7 +167,7 @@ export const ZONES: Zone[] = [
     scene: FLOODED_SCENE,
     icon: 'zone-flooded-tier',
     name: 'Затопленный ярус',
-    monsterLevelRange: { min: 40, max: 42 },
+    monsterLevelRange: { min: 44, max: 46 },
     monsterPool: [
       { id: 'brack-nipper', name: 'Солоноватый кусач', role: RUNT },
       { id: 'tide-wader', name: 'Приливный бродник', role: COMMON },
@@ -182,7 +182,7 @@ export const ZONES: Zone[] = [
     scene: TERRACE_SCENE,
     icon: 'zone-ashen-terrace',
     name: 'Пепельная терраса',
-    monsterLevelRange: { min: 54, max: 56 },
+    monsterLevelRange: { min: 58, max: 60 },
     monsterPool: [
       { id: 'cinder-flit', name: 'Искровой порхун', role: RUNT },
       { id: 'terrace-strider', name: 'Террасный ходун', role: COMMON },
@@ -197,7 +197,7 @@ export const ZONES: Zone[] = [
     scene: SALTPIT_SCENE,
     icon: 'zone-salt-pit',
     name: 'Соляной провал',
-    monsterLevelRange: { min: 66, max: 68 },
+    monsterLevelRange: { min: 71, max: 73 },
     monsterPool: [
       { id: 'brine-gnat', name: 'Рассольный гнус', role: RUNT },
       { id: 'salt-treader', name: 'Соляной ступальщик', role: COMMON },
@@ -212,7 +212,7 @@ export const ZONES: Zone[] = [
     scene: RIMEBACK_SCENE,
     icon: 'zone-rimeback-ridge',
     name: 'Стылая гряда',
-    monsterLevelRange: { min: 80, max: 82 },
+    monsterLevelRange: { min: 83, max: 85 },
     monsterPool: [
       { id: 'frost-nibbler', name: 'Изморозный грызун', role: RUNT },
       { id: 'rime-walker', name: 'Стылый ходок', role: COMMON },

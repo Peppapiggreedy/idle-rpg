@@ -18,6 +18,7 @@ import {
   AP_NORMALIZATION,
   AUTOCAST_DELAY_MS,
   AUTOCAST_MAX_LOSS,
+  REGEN_TICK_S,
   RESPAWN_DELAY_MS,
   REVIVE_DELAY_MS,
 } from '../data/balance'
@@ -389,7 +390,21 @@ export function estimateTtk(
  * весь урон: урон умений сам зависит от того, сколько их удалось применить,
  * и подставлять его сюда значило бы решать уравнение самим собой.
  */
-export function resourceIncome(state: GameState): Decimal {
+/**
+ * Пауза после траты, секунд.
+ *
+ * У маны это задержка правила плюс полломтя порции: приходит она РАЗ В
+ * REGEN_TICK_S, и окно почти никогда не кончается ровно по границе ломтя.
+ * У ярости — ноль: она приходит с каждым ударом, а не по таймеру, и штрафа
+ * за «не успел к порции» у неё нет.
+ */
+export function resourcePause(state: GameState): number {
+  const resource = classById(state.classId).resource
+  const timed = resource.perSwingDealt.lte(0) && resource.perHitTaken.lte(0)
+  return state.stats.regenDelay + (timed ? REGEN_TICK_S / 2 : 0)
+}
+
+export function resourceIncome(state: GameState, extraHitsPerSecond = 0): Decimal {
   const stats = state.stats
   const resource = classById(state.classId).resource
   if (resource.perSwingDealt.lte(0) && resource.perHitTaken.lte(0)) return stats.manaRegen
@@ -404,7 +419,7 @@ export function resourceIncome(state: GameState): Decimal {
       ? new Decimal(1).div(state.monster.swingTime)
       : new Decimal(0)
   return stats.manaRegen
-    .plus(own.times(resource.perSwingDealt).times(stats.maxMana))
+    .plus(own.plus(extraHitsPerSecond).times(resource.perSwingDealt).times(stats.maxMana))
     .plus(incoming.times(resource.perHitTaken).times(stats.maxMana))
 }
 
@@ -412,7 +427,25 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
   const stats = state.stats
   const avgSwing = expectedSwingDamage(stats)
   const respawnSec = RESPAWN_DELAY_MS / 1000
-  const rotation = rotationRate(stats, state.abilitySettings, plan, resourceIncome(state))
+  // Ресурс из боя — уравнение с самим собой: удары умений тоже дают ярость,
+  // а число умений зависит от ярости. Решаем ДВУМЯ проходами: сперва доход
+  // от одних автоатак, потом — с учётом посчитанных мгновенных ударов.
+  // Двух хватает: второй проход меняет ответ на проценты, третий — на доли.
+  const pause = resourcePause(state)
+  let rotation = rotationRate(stats, state.abilitySettings, plan, resourceIncome(state), pause)
+  if (classById(state.classId).resource.perSwingDealt.gt(0)) {
+    // Умения «на следующий удар» ЗАМЕНЯЮТ автоатаку и лишнего удара не дают.
+    const extraHits = rotation.casts
+      .filter((c) => c.ability.type === 'instant')
+      .reduce((sum, c) => sum + c.castsPerSecond, 0)
+    rotation = rotationRate(
+      stats,
+      state.abilitySettings,
+      plan,
+      resourceIncome(state, extraHits),
+      pause,
+    )
+  }
   // Урон автоатаки — свойство ОРУЖИЯ и считается как считался: сколько бы
   // умений герой ни жал, «столько бьёт этот меч» не меняется. Этим числом
   // сравниваются предметы, и на нём держится инвариант нормализации скорости.

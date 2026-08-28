@@ -13,6 +13,7 @@ import { Decimal } from '../game/numbers'
 import { applyOfflineProgress } from '../game/save'
 import { sellItem } from '../game/loot'
 import { craft as craftAction } from '../game/crafting'
+import { recordDecision } from './telemetry'
 import { equipItem, setAutoEquip, unequipItem } from '../game/equipment'
 import { currentZone, travelToZone as travelAction } from '../game/zones'
 import { useAbility as useAbilityAction } from '../game/abilities'
@@ -192,11 +193,13 @@ export function sellInventoryItem(itemId: string): void {
 
 /** Надеть предмет из инвентаря; снятое возвращается в инвентарь. */
 export function equipInventoryItem(itemId: string): void {
+  recordDecision('equip')
   state.update((s) => equipItem(s, itemId))
 }
 
 /** Снять предмет из слота в инвентарь; при полном инвентаре ничего не делает. */
 export function unequipSlot(slot: SlotId): void {
+  recordDecision('equip')
   state.update((s) => unequipItem(s, slot))
 }
 
@@ -207,6 +210,7 @@ export function toggleAutoEquip(enabled: boolean): void {
 
 /** Переход в зону по клику. В закрытую зону экшен не пустит — состояние как было. */
 export function travelToZone(zoneId: string): void {
+  recordDecision('zone')
   state.update((s) => travelAction(s, zoneId, rng()))
 }
 
@@ -222,6 +226,7 @@ export function leaveDungeonRun(): void {
 
 /** Вложить очко в талант. Недоступный талант состояние не меняет. */
 export function investTalentPoint(talentId: string): void {
+  recordDecision('talent')
   state.update((s) => investTalentAction(s, talentId))
 }
 
@@ -233,6 +238,7 @@ export function resetTalentTree(): void {
 /** Галка «использовать автоматически» у умения. */
 /** Порог ухода на привал по HP. 0 — не уходить: герой будет фармить до смерти. */
 export function setRestHpThreshold(share: number): void {
+  recordDecision('rest-threshold')
   // statsDirty: порог входит в конвейер базой стата restThreshold —
   // без пересчёта талант на порог увидел бы старое значение.
   state.update((s) =>
@@ -242,11 +248,13 @@ export function setRestHpThreshold(share: number): void {
 
 /** Собрать рецепт. Не хватает материалов или места — состояние не меняется. */
 export function craftRecipe(recipeId: string): void {
+  recordDecision('craft')
   state.update((s) => craftAction(s, recipeId))
 }
 
 /** Порог ухода на привал по ресурсу. */
 export function setRestResourceThreshold(share: number): void {
+  recordDecision('rest-threshold')
   state.update((s) => ({ ...s, restResourceThreshold: Math.min(1, Math.max(0, share)) }))
 }
 
@@ -265,6 +273,7 @@ export function interruptRest(): void {
 
 /** Резерв маны умения: не жать автокастом, если после траты останется меньше. */
 export function setAbilityReserve(abilityId: string, reserve: number): void {
+  recordDecision('autocast')
   state.update((s) => {
     const setting = s.abilitySettings[abilityId]
     if (!setting) return s
@@ -277,6 +286,7 @@ export function setAbilityReserve(abilityId: string, reserve: number): void {
 }
 
 export function setAbilityAutocast(abilityId: string, autocast: boolean): void {
+  recordDecision('autocast')
   state.update((s) => {
     const setting = s.abilitySettings[abilityId]
     if (!setting) return s
@@ -289,6 +299,7 @@ export function setAbilityAutocast(abilityId: string, autocast: boolean): void {
 
 /** Стрелки вверх/вниз: меняет умение приоритетом с соседом по списку. */
 export function moveAbilityPriority(abilityId: string, direction: -1 | 1): void {
+  recordDecision('autocast')
   state.update((s) => {
     const order = abilitiesByPriority(s.abilitySettings, false)
     const index = order.findIndex((a) => a.id === abilityId)

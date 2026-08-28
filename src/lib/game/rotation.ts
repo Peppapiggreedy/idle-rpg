@@ -78,14 +78,19 @@ export function rotationRate(
    * ниже одна на оба случая, различаются только числа.
    */
   income: Decimal = stats.manaRegen,
+  /**
+   * Пауза после траты, секунд. У маны это задержка плюс полломтя порции;
+   * у ярости ноль — она приходит с каждым ударом, а не порциями по таймеру.
+   */
+  pauseSec: number = stats.regenDelay + REGEN_TICK_S / 2,
 ): RotationRate {
-  const rate = castPlan(stats, settings, plan, income)
+  const rate = castPlan(stats, settings, plan, income, pauseSec)
   if (plan.delayed) return rate
   // Игрок в ЛЮБОЙ момент может повторить то, что делает автокаст: подождать
   // и ударить позже. Значит игра руками не бывает хуже авто. Когда мана
   // впритык, реже бить иногда выгоднее — тогда рука повторяет план авто.
   // Это не поблажка руке, а определение: ручная игра — лучшая из доступных.
-  const delayed = castPlan(stats, settings, { ...plan, delayed: true }, income)
+  const delayed = castPlan(stats, settings, { ...plan, delayed: true }, income, pauseSec)
   return rate.damagePerSecond.gte(delayed.damagePerSecond) ? rate : delayed
 }
 
@@ -119,6 +124,7 @@ function dutyCycle(
   settings: AbilitySettings,
   desired: RotationRate,
   income: Decimal,
+  pauseSec: number,
 ): Decimal {
   const spend = desired.manaPerSecond
   if (spend.lte(0)) return new Decimal(1)
@@ -128,7 +134,7 @@ function dutyCycle(
   // Пауза до первой порции — не только DELAY: мана приходит ЛОМТЯМИ раз в
   // REGEN_TICK_S, и окно почти никогда не заканчивается ровно по границе
   // ломтя. В среднем полломтя пропадает, и для расчёта это та же пауза.
-  const pause = stats.regenDelay + REGEN_TICK_S / 2
+  const pause = pauseSec
 
   // Равномерный уклад: сколько от желаемого покрывает доход с паузами.
   const uniform = regen.div(spend.plus(regen.times(pause).times(events)))
@@ -165,12 +171,13 @@ function castPlan(
   settings: AbilitySettings,
   plan: RotationPlan,
   income: Decimal,
+  pauseSec: number,
 ): RotationRate {
   // Сперва — чего ротация хочет, если о мане не думать: это упирается в
   // кулдауны, GCD и очередь замаха. Потом — сколько из этого выдерживает
   // ресурс с правилом задержки.
   const desired = fundPlan(stats, settings, plan, UNLIMITED_MANA)
-  const duty = dutyCycle(stats, settings, desired, income)
+  const duty = dutyCycle(stats, settings, desired, income, pauseSec)
   if (duty.gte(1)) return desired
   // Долю применяем ко ВСЕЙ ротации разом, а не отдаём бюджет по приоритету.
   // Так герой и играет: жмёт всё, что доступно, а когда запас кончился —

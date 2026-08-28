@@ -90,7 +90,7 @@ export const ABILITIES: AbilityDef[] = [
     name: 'Кровавое исступление',
     type: 'onNextSwing',
     manaCost: new Decimal(30),
-    cooldownSec: 4,
+    cooldownSec: 5,
     weaponDamagePercent: new Decimal(1.8),
     triggersGcd: false,
     effect: {
@@ -106,7 +106,7 @@ export const ABILITIES: AbilityDef[] = [
     name: 'Череполом',
     type: 'onNextSwing',
     manaCost: new Decimal(60),
-    cooldownSec: 9,
+    cooldownSec: 12,
     weaponDamagePercent: new Decimal(5.0),
     triggersGcd: false,
   },

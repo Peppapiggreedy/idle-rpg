@@ -94,5 +94,11 @@ export interface AttackEvent {
   amount: Decimal
   isCrit: boolean
   abilityId: string | null // авто-атака = null; умение — его id
+  /**
+   * Тик урона по времени, а не удар. Ресурс класса на ярости копится от
+   * УДАРОВ: тик кровотечения ударом не является, иначе одно умение с
+   * эффектом кормило бы ресурс втрое лучше остальных.
+   */
+  overTime?: boolean
   timestamp: number // игровое время (playtimeMs) на момент удара
 }

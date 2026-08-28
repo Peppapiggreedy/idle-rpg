@@ -22,9 +22,10 @@ import {
 } from './state'
 import { ensureStats } from './stats'
 import { tick } from './tick'
-import { armorMods, shieldMods, weaponMods } from './loot'
+import { armorMods, sellItem, sellPrice, shieldMods, weaponMods } from './loot'
 import { estimateZoneTtk, type TtkEstimate } from './combat'
 import { buyUpgrade } from './upgrades'
+
 import {
   intendedZone,
   travelToZone,
@@ -34,6 +35,7 @@ import {
   zoneStanding,
   type ZoneStanding,
 } from './zones'
+import { INVENTORY_SIZE } from '../data/balance'
 import { UPGRADES, WEAPON_SHARPENING } from '../data/upgrades'
 import { ABILITIES, ABILITY_BY_ID } from '../data/abilities'
 import { AVERAGE_RARITY, RARITY_BY_ID } from '../data/rarity'
@@ -112,6 +114,13 @@ export interface SimOptions {
   // 'best' — на каждом уровне переезжает в лучшую по опыту ОТКРЫТУЮ зону,
   // то есть ведёт себя как игрок, который следит за прокачкой.
   travel?: 'stay' | 'best'
+  /**
+   * Что герой делает с полной сумкой. 'keep' — ничего (по умолчанию: прогон
+   * мерит билд, а не уборку). 'sell' — продаёт самое дешёвое, как живой
+   * игрок: без этого дроп после двенадцатой находки прекращается совсем, и
+   * мерить частоту находок стало бы нечем.
+   */
+  bag?: 'keep' | 'sell'
   // Держать героя на стартовом уровне: опыт копится и попадает в метрики, но
   // уровень не растёт. Нужно для СРАВНЕНИЯ зон: за час свободного прогона
   // герой уходит на два десятка уровней вперёд, и строка «уровень 1» на самом
@@ -141,6 +150,19 @@ export interface SimResult {
   rests: number
   restsPerHour: number
   restShare: number
+  /**
+   * ТОЧКИ РЕШЕНИЯ: сколько раз за прогон игре было что предложить.
+   *
+   * Считается по наблюдаемым событиям, как и всё остальное: выпал предмет
+   * (надеть, оставить, продать), пришло очко таланта, открылась зона.
+   * Настройки привала и автокаста сюда не входят: их пересматривают, а не
+   * «получают», и снаружи этот момент не виден.
+   */
+  decisions: number
+  /** Из них — на находки; остальное уровни и зоны. */
+  dropDecisions: number
+  /** Секунд между решениями. Пусто — решений не было вовсе. */
+  decisionIntervalSec: number | null
   // Доля игрового времени, которую герой прожил живым: 1 — не умирал вовсе.
   uptime: number
   // Урон, разложенный по источнику: автоатака и умения (вместе с их эффектами).
@@ -193,6 +215,15 @@ export const BALANCE_PRESET = {
   branchSpreadLimit: 0.25,
   /** Доля времени на привалах, выше которой зона считается неподъёмной. */
   branchRestShareMax: 0.25,
+  /** Окно интервала решений, секунд, и порог тревоги отладочного оверлея. */
+  decisionMinSec: 40,
+  decisionMaxSec: 90,
+  decisionAlertSec: 180,
+  /** Уровни, на которых меряются решения и привалы. */
+  telemetryLevels: [1, 5, 10, 16, 25, 40] as number[],
+  telemetryHours: 1,
+  /** Потолок доли времени на привалах в подходящей по уровню зоне. */
+  restShareMax: 0.25,
   /** Классы, по которым идёт прогон: контракт темпа держится для КАЖДОГО. */
   classIds: CLASSES.map((c) => c.id),
   // Контракт темпа: сид эталонного прохождения и его потолок по времени.
@@ -566,7 +597,15 @@ function bestZoneId(state: GameState): string {
  * Правило входа живёт в `travelToZone` и продолжает работать в игре.
  */
 export function simulate(options: SimOptions): SimResult {
-  const { hours, zoneId, build = {}, seed = 12345, travel = 'stay', freezeLevel = false } = options
+  const {
+    hours,
+    zoneId,
+    build = {},
+    seed = 12345,
+    travel = 'stay',
+    freezeLevel = false,
+    bag = 'keep',
+  } = options
   const rng = createRng(seed)
   let state = buildSimState(build, zoneId, seed)
   const startLevel = state.level
@@ -579,6 +618,10 @@ export function simulate(options: SimOptions): SimResult {
   let deadMs = 0
   let rests = 0
   let restingMs = 0
+  let decisions = 0
+  let dropDecisions = 0
+  let openZones = ZONES.filter((z) => z.unlockRequirement <= state.level.toNumber()).length
+  let talentPoints = branchPoints(state.level.toNumber())
   let autoDamage = new Decimal(0)
   let abilityDamage = new Decimal(0)
   let manaSpent = new Decimal(0)
@@ -617,6 +660,34 @@ export function simulate(options: SimOptions): SimResult {
     // Привал виден снаружи так же, как убийство: по переходу состояния.
     if (prev.heroState !== 'resting' && state.heroState === 'resting') rests += 1
     if (state.heroState === 'resting') restingMs += STEP_MS
+    // Точки решения по находкам. Считается находка ВЫШЕ ОБЫЧНОЙ: обычный
+    // хлам игрок не обдумывает, он его продаёт не глядя. Материалы не
+    // считаются вовсе — они складываются в мешок сами.
+    //
+    // Считаем ДО уборки сумки: продажа в том же шаге обнулила бы разницу,
+    // и находка перестала бы считаться решением.
+    for (let i = prev.inventory.length; i < state.inventory.length; i += 1) {
+      if (state.inventory[i]?.rarity !== 'common') {
+        decisions += 1
+        dropDecisions += 1
+      }
+    }
+    // Полная сумка: живой игрок продаёт самое дешёвое и освобождает место.
+    // Без этого дроп после двенадцатой находки прекращается совсем.
+    if (bag === 'sell' && state.inventory.length >= INVENTORY_SIZE) {
+      const cheapest = state.inventory.reduce((min, item) =>
+        sellPrice(item).lt(sellPrice(min)) ? item : min,
+      )
+      state = sellItem(state, cheapest.id)
+    }
+    if (state.level.gt(prev.level)) {
+      const level = state.level.toNumber()
+      const zonesNow = ZONES.filter((z) => z.unlockRequirement <= level).length
+      const pointsNow = branchPoints(level)
+      decisions += zonesNow - openZones + Math.max(0, pointsNow - talentPoints)
+      openZones = zonesNow
+      talentPoints = pointsNow
+    }
     // Каст виден по кулдауну: он тоже только убывает, а вверх его ставит
     // только применение умения (см. payFor в abilities.ts).
     for (const ability of abilitiesOf(state.classId)) {
@@ -662,6 +733,9 @@ export function simulate(options: SimOptions): SimResult {
     rests,
     restsPerHour: rests / hours,
     restShare: restingMs / (seconds * 1000),
+    decisions,
+    dropDecisions,
+    decisionIntervalSec: decisions > 0 ? seconds / decisions : null,
     uptime: 1 - deadMs / (seconds * 1000),
     autoDamage,
     abilityDamage,
