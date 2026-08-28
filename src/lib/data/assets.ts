@@ -84,3 +84,90 @@ export const MONSTER_MODEL: ModelAsset = {
 }
 
 export const MODEL_ASSETS: ModelAsset[] = [HERO_MODEL, MONSTER_MODEL]
+
+/**
+ * Пропс — модель БЕЗ анимаций: бочка, ящик, обломок. Отдельный тип, а не
+ * ModelAsset с четырьмя null: клипы у пропса не «отсутствуют», их у него
+ * не бывает, и требовать маппинг состояний от бочки бессмысленно.
+ *
+ * Пропсы обязательны только на бумаге: сцена ставит примитив СРАЗУ и
+ * заменяет его моделью, когда та доедет. Не доехала — остаётся примитив,
+ * и зона по-прежнему выглядит зоной. Это то же правило, что у бойцов.
+ */
+export interface PropAsset {
+  id: string
+  path: string
+  license: string
+  author: string
+  sourceUrl: string
+  /** Целевая высота на площадке, м. Реальный масштаб считается по модели. */
+  targetHeight: number
+}
+
+/**
+ * Пропсы из KayKit Dungeon Remastered — тот же автор и та же лицензия, что
+ * у героя и мобов. Третий пак от Kay Lousberg взят намеренно: единый стиль
+ * важнее разнообразия источников (тот же довод, что и у персонажей).
+ */
+export const PROP_ASSETS: PropAsset[] = [
+  {
+    id: 'prop-barrel',
+    path: 'models/props/barrel_large.glb',
+    license: 'CC0 1.0',
+    author: 'Kay Lousberg',
+    sourceUrl: 'https://github.com/KayKit-Game-Assets/KayKit-Dungeon-Remastered-1.0',
+    targetHeight: 1.2,
+  },
+  {
+    id: 'prop-crates',
+    path: 'models/props/crates_stacked.glb',
+    license: 'CC0 1.0',
+    author: 'Kay Lousberg',
+    sourceUrl: 'https://github.com/KayKit-Game-Assets/KayKit-Dungeon-Remastered-1.0',
+    targetHeight: 1.6,
+  },
+  {
+    id: 'prop-rubble',
+    path: 'models/props/rubble_large.glb',
+    license: 'CC0 1.0',
+    author: 'Kay Lousberg',
+    sourceUrl: 'https://github.com/KayKit-Game-Assets/KayKit-Dungeon-Remastered-1.0',
+    targetHeight: 0.7,
+  },
+  {
+    id: 'prop-pillar',
+    path: 'models/props/pillar.glb',
+    license: 'CC0 1.0',
+    author: 'Kay Lousberg',
+    sourceUrl: 'https://github.com/KayKit-Game-Assets/KayKit-Dungeon-Remastered-1.0',
+    targetHeight: 3,
+  },
+  {
+    id: 'prop-column',
+    path: 'models/props/column.glb',
+    license: 'CC0 1.0',
+    author: 'Kay Lousberg',
+    sourceUrl: 'https://github.com/KayKit-Game-Assets/KayKit-Dungeon-Remastered-1.0',
+    targetHeight: 2.6,
+  },
+  {
+    id: 'prop-keg',
+    path: 'models/props/keg.glb',
+    license: 'CC0 1.0',
+    author: 'Kay Lousberg',
+    sourceUrl: 'https://github.com/KayKit-Game-Assets/KayKit-Dungeon-Remastered-1.0',
+    targetHeight: 1,
+  },
+  {
+    id: 'prop-chest',
+    path: 'models/props/chest.glb',
+    license: 'CC0 1.0',
+    author: 'Kay Lousberg',
+    sourceUrl: 'https://github.com/KayKit-Game-Assets/KayKit-Dungeon-Remastered-1.0',
+    targetHeight: 0.9,
+  },
+]
+
+export const PROP_BY_ID: Record<string, PropAsset> = Object.fromEntries(
+  PROP_ASSETS.map((p) => [p.id, p]),
+)

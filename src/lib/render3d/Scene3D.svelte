@@ -42,7 +42,13 @@
     type ModelCache,
     type ModelDeps,
   } from './models'
-  import { HERO_MODEL, MONSTER_MODEL, type ActorState, type ModelAsset } from '../data/assets'
+  import {
+    HERO_MODEL,
+    MONSTER_MODEL,
+    PROP_BY_ID,
+    type ActorState,
+    type ModelAsset,
+  } from '../data/assets'
   import { createFrameGate, SCENE_FPS } from './frameGate'
   import { sceneModel, type SceneModel } from './model'
   import { readScenePalette } from './palette'
@@ -350,11 +356,31 @@
       group.add(ground)
 
       for (const prop of placeProps(config, GROUND_RADIUS)) {
+        // Примитив встаёт СРАЗУ — зона выглядит зоной с первого кадра.
         const mesh = propMesh(prop.shape, prop.color)
         mesh.position.set(prop.x, prop.scale * 0.9, prop.z)
         mesh.scale.setScalar(prop.scale)
         mesh.rotation.y = prop.rotation
         group.add(mesh)
+        const asset = prop.model ? PROP_BY_ID[prop.model] : undefined
+        if (!asset) continue
+        // Модель заменяет примитив, когда доедет. Не доехала — остаётся
+        // примитив, и игра не падает: то же правило, что у бойцов.
+        void models.load(asset).then((loaded) => {
+          if (scenery !== group) {
+            // Зона успела смениться: выгружаем то, что уже не нужно.
+            disposeSceneGraph(loaded.scene)
+            return
+          }
+          const box = new THREE.Box3().setFromObject(loaded.scene)
+          const height = Math.max(0.001, box.max.y - box.min.y)
+          loaded.scene.scale.setScalar(fitScale(height, asset.targetHeight) * prop.scale)
+          loaded.scene.position.set(prop.x, 0, prop.z)
+          loaded.scene.rotation.y = prop.rotation
+          group.add(loaded.scene)
+          group.remove(mesh)
+          disposeSceneGraph(mesh)
+        })
       }
 
       scene.add(group)

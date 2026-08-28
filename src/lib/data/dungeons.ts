@@ -49,7 +49,7 @@ export const DUNGEONS: DungeonDef[] = [
     icon: 'dungeon-sunken-barrow',
     name: 'Затонувший курган',
     zoneId: 'mirefen-hollows',
-    unlockRequirement: 10,
+    unlockRequirement: 16,
     bosses: [
       {
         id: 'barrow-warden',

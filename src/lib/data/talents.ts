@@ -113,7 +113,7 @@ export const TALENTS: TalentDef[] = [
       // Ускорение ВСЕГДА flat по haste и никогда прибавкой к weaponSpeed:
       // процент от нуля даёт ноль, а плоская правка скорости оружия увела бы
       // её в минус. Правило записано в CLAUDE.md и закреплено тестом.
-      mods: [{ stat: 'haste', kind: 'flat', value: new Decimal(0.04) }],
+      mods: [{ stat: 'haste', kind: 'flat', value: new Decimal(0.035) }],
     },
   },
   {
@@ -163,7 +163,7 @@ export const TALENTS: TalentDef[] = [
     requiredPointsInBranch: 0,
     effect: {
       kind: 'modifiers',
-      mods: [{ stat: 'maxHp', kind: 'percent', value: new Decimal(0.06) }],
+      mods: [{ stat: 'maxHp', kind: 'percent', value: new Decimal(0.1) }],
     },
   },
   {
@@ -176,7 +176,7 @@ export const TALENTS: TalentDef[] = [
     requiredPointsInBranch: 5,
     effect: {
       kind: 'modifiers',
-      mods: [{ stat: 'hpRegen', kind: 'flat', value: new Decimal(2) }],
+      mods: [{ stat: 'hpRegen', kind: 'flat', value: new Decimal(4) }],
     },
   },
   {
@@ -189,7 +189,7 @@ export const TALENTS: TalentDef[] = [
     requiredPointsInBranch: 8,
     effect: {
       kind: 'modifiers',
-      mods: [{ stat: 'blockChance', kind: 'flat', value: new Decimal(0.04) }],
+      mods: [{ stat: 'blockChance', kind: 'flat', value: new Decimal(0.06) }],
     },
   },
   {
@@ -202,7 +202,7 @@ export const TALENTS: TalentDef[] = [
     requiredPointsInBranch: 11,
     effect: {
       kind: 'modifiers',
-      mods: [{ stat: 'blockValue', kind: 'percent', value: new Decimal(0.2) }],
+      mods: [{ stat: 'blockValue', kind: 'percent', value: new Decimal(0.35) }],
     },
   },
   {
@@ -215,7 +215,7 @@ export const TALENTS: TalentDef[] = [
     requiredPointsInBranch: 14,
     effect: {
       kind: 'modifiers',
-      mods: [{ stat: 'damageReduction', kind: 'flat', value: new Decimal(0.02) }],
+      mods: [{ stat: 'damageReduction', kind: 'flat', value: new Decimal(0.045) }],
     },
   },
   {
@@ -244,7 +244,7 @@ export const TALENTS: TalentDef[] = [
     requiredPointsInBranch: 0,
     effect: {
       kind: 'modifiers',
-      mods: [{ stat: 'manaRegen', kind: 'flat', value: new Decimal(1.2) }],
+      mods: [{ stat: 'manaRegen', kind: 'flat', value: new Decimal(2) }],
     },
   },
   {
@@ -259,7 +259,7 @@ export const TALENTS: TalentDef[] = [
       kind: 'modifiers',
       // Пауза регенерации — стат: талант сокращает её через конвейер, как и
       // всё остальное. Отрицательной она не станет — конвейер обрезает по нулю.
-      mods: [{ stat: 'regenDelay', kind: 'flat', value: new Decimal(-0.5) }],
+      mods: [{ stat: 'regenDelay', kind: 'flat', value: new Decimal(-0.8) }],
     },
   },
   {
@@ -274,7 +274,7 @@ export const TALENTS: TalentDef[] = [
       kind: 'modifiers',
       // Запас маны важнее регена: пауза платится один раз за всплеск, и чем
       // глубже запас, тем реже она приходит (см. dutyCycle в rotation.ts).
-      mods: [{ stat: 'maxMana', kind: 'percent', value: new Decimal(0.1) }],
+      mods: [{ stat: 'maxMana', kind: 'percent', value: new Decimal(0.18) }],
     },
   },
   {
@@ -287,7 +287,7 @@ export const TALENTS: TalentDef[] = [
     requiredPointsInBranch: 11,
     effect: {
       kind: 'modifiers',
-      mods: [{ stat: 'restDuration', kind: 'flat', value: new Decimal(-1.5) }],
+      mods: [{ stat: 'restDuration', kind: 'flat', value: new Decimal(-2) }],
     },
   },
   {
@@ -302,7 +302,7 @@ export const TALENTS: TalentDef[] = [
       kind: 'modifiers',
       // Сдвигает ВЫБРАННЫЙ игроком порог вверх, а не спорит с ним: настройка
       // приходит в конвейер базой, талант — прибавкой поверх.
-      mods: [{ stat: 'restThreshold', kind: 'flat', value: new Decimal(0.04) }],
+      mods: [{ stat: 'restThreshold', kind: 'flat', value: new Decimal(0.06) }],
     },
   },
   {

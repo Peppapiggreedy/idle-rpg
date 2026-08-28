@@ -14,7 +14,7 @@
 // Модуль лежит в __tests__, а не в data/: в data/ живут ДАННЫЕ, а это код.
 import { Decimal } from '../../game/numbers'
 import type { AbilityDef } from '../abilities'
-import type { ModelAsset } from '../assets'
+import type { ModelAsset, PropAsset } from '../assets'
 import type { DungeonDef } from '../dungeons'
 import type { ShieldTemplate, WeaponTemplate } from '../items'
 import type { RarityDef } from '../rarity'
@@ -49,6 +49,9 @@ export interface Content {
   weapons: readonly WeaponTemplate[]
   shields: readonly ShieldTemplate[]
   sounds: readonly SoundCue[]
+  props: readonly PropAsset[]
+  /** Имена файлов в public/models/props. */
+  propFiles: readonly string[]
   /** Пути звуковых файлов, реально лежащих в public/. */
   audioFiles: readonly string[]
   rarities: readonly RarityDef[]
@@ -84,8 +87,6 @@ export interface BalanceNumbers {
   ttkBehindMax: number
   ttkAheadMin: number
   ttkDriftMax: number
-  zoneBehindGap: number
-  zoneAheadGap: number
 }
 
 // ---------------------------------------------------------------------------
@@ -786,6 +787,38 @@ export const SHIELD_SCHEMA: EntitySchema<ShieldTemplate> = {
   },
 }
 
+export const PROP_SCHEMA: EntitySchema<PropAsset> = {
+  kind: 'пропс',
+  file: 'data/assets.ts',
+  entities: (c) => c.props,
+  id: (p) => p.id,
+  name: (p) => p.id,
+  numbers: [
+    {
+      field: 'targetHeight',
+      get: (p) => p.targetHeight,
+      min: 0,
+      exclusiveMin: true,
+      max: 20,
+      why: 'высота пропса на площадке в метрах: ноль не видно, двадцать закроет бой',
+    },
+  ],
+  extra: (prop, content, report) => {
+    const where = `пропс ${prop.id}`
+    const file = prop.path?.split('/').pop() ?? ''
+    // Ассет → файл: та же проверка, что у моделей бойцов. Промах даёт не
+    // ошибку, а вечную коробку вместо бочки, и этого никто не заметит.
+    report.need(
+      content.propFiles.includes(file),
+      where,
+      `файла «${prop.path}» нет в public/models/props (data/assets.ts)`,
+    )
+    report.need(!!prop.license?.trim(), where, 'не указана лицензия (data/assets.ts)')
+    report.need(!!prop.author?.trim(), where, 'не указан автор (data/assets.ts)')
+    report.need(!!prop.sourceUrl?.trim(), where, 'не указан источник (data/assets.ts)')
+  },
+}
+
 export const SOUND_SCHEMA: EntitySchema<SoundCue> = {
   kind: 'звук',
   file: 'data/sounds.ts',
@@ -951,6 +984,7 @@ export const SCHEMAS = [
   WEAPON_SCHEMA,
   SHIELD_SCHEMA,
   SOUND_SCHEMA,
+  PROP_SCHEMA,
   RARITY_SCHEMA,
   UPGRADE_SCHEMA,
   MODEL_SCHEMA,
@@ -1107,8 +1141,6 @@ function checkBalance(content: Content, report: Report): void {
     { field: 'AUTOCAST_MAX_LOSS', get: (x) => x.autocastMaxLoss, min: 0, max: 1, why: 'это доля' },
     { field: 'TALENT_FIRST_LEVEL', get: (x) => x.talentFirstLevel, min: 1, integer: true },
     { field: 'TTK_DRIFT_MAX', get: (x) => x.ttkDriftMax, min: 0, exclusiveMin: true, max: 1, why: 'это доля разброса' },
-    { field: 'ZONE_BEHIND_GAP', get: (x) => x.zoneBehindGap, min: 1 },
-    { field: 'ZONE_AHEAD_GAP', get: (x) => x.zoneAheadGap, min: 1 },
   ]
   for (const rule of rules) checkNumber(b, rule, where, 'data/balance.ts', report)
 

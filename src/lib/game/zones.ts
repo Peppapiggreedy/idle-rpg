@@ -3,10 +3,10 @@
 // в данных зоны нет ни слова про «тут опасно». Текст рендерит UI по вердикту.
 import { Decimal } from './numbers'
 import { restDurationMs } from './rest'
-import { estimateCombatRate, expectedMonsterDamage, uptimeFromHpLoss } from './combat'
+import { estimateCombatRate, estimateTtk, expectedMonsterDamage, uptimeFromHpLoss } from './combat'
 import type { PlayMode } from './rotation'
 import { monsterFromTemplate, pushEvent, spawnMonster, type GameState } from './state'
-import { ZONE_BEHIND_GAP, ZONE_AHEAD_GAP, ZONE_VERDICT_UPTIME } from '../data/balance'
+import { TTK_AHEAD_MIN, TTK_BEHIND_MAX, ZONE_VERDICT_UPTIME } from '../data/balance'
 import {
   SAFE_ZONE,
   ZONES,
@@ -50,22 +50,25 @@ export function intendedZone(level: number): Zone {
  *   current — та, на которую герой рассчитан (intendedZone);
  *   behind  — герой её перерос: мобы падают с ходу;
  *   ahead   — герой сунулся раньше времени, и это видно по длине боя;
- *   near    — СОСЕДНЯЯ ступень лестницы: заметно легче или тяжелее
- *             актуальной, но ещё не «с ходу» и не «безнадёжно».
+ *   near    — соседняя ступень: заметно легче или тяжелее актуальной, но
+ *             ещё не «с ходу» и не «безнадёжно».
  *
- * Без `near` контракт темпа противоречил бы сам себе: соседняя зона отстоит
- * по времени убийства ровно на один шаг лестницы, а «отстающая» обязана
- * умирать в 2.7 раза быстрее актуальной — столько набегает только за три
- * ступени. Границы ZONE_BEHIND_GAP / ZONE_AHEAD_GAP и заданы этими тремя
- * ступенями (разбор — в data/balance.ts).
+ * ПОЛОЖЕНИЕ СЧИТАЕТСЯ ПО ВРЕМЕНИ УБИЙСТВА, а не по разнице уровней. Раньше
+ * было наоборот, и на лестнице из четырёх зон разница уровней работала: между
+ * ступенями было столько же уровней, сколько нужно времени. На лестнице из
+ * одиннадцати это сломалось бы молча — ступени стали короче, а пороги в
+ * секундах остались прежними. Да и ярлык обязан значить то, что игрок
+ * почувствует, а не то, что написано в данных: «отстающая» — это «мобы
+ * умирают с ходу», и мерить это надо секундами.
  */
 export type ZoneStanding = 'behind' | 'near' | 'current' | 'ahead'
 
-export function zoneStanding(level: number, zone: Zone): ZoneStanding {
+export function zoneStanding(state: GameState, zone: Zone): ZoneStanding {
+  const level = state.level.toNumber()
   if (zone.id === intendedZone(level).id) return 'current'
-  const gap = averageMonsterLevel(zone) - level
-  if (gap <= -ZONE_BEHIND_GAP) return 'behind'
-  if (gap >= ZONE_AHEAD_GAP) return 'ahead'
+  const ttk = estimateTtk(state, zone)
+  if (ttk <= TTK_BEHIND_MAX) return 'behind'
+  if (ttk >= TTK_AHEAD_MIN) return 'ahead'
   return 'near'
 }
 

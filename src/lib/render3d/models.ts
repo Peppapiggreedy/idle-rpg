@@ -11,7 +11,7 @@
 
 import type * as ThreeNs from 'three'
 import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js'
-import type { ModelAsset } from '../data/assets'
+
 
 export interface LoadedModel {
   /** Готовый к добавлению в сцену корень; у каждого вызова свой. */
@@ -22,8 +22,14 @@ export interface LoadedModel {
   clipNames: string[]
 }
 
+/** Кешу от ассета нужны только id и путь: бойцу, пропсу — всё равно. */
+export interface LoadableAsset {
+  id: string
+  path: string
+}
+
 export interface ModelCache {
-  load(asset: ModelAsset): Promise<LoadedModel>
+  load(asset: LoadableAsset): Promise<LoadedModel>
   /** Сколько файлов реально скачано — по нему видно, что кеш работает. */
   fetches(): number
   dispose(): void

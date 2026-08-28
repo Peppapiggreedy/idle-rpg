@@ -14,7 +14,8 @@ import { zoneRate } from './zones'
 import { ensureStats } from './stats'
 import { COMMON, MONSTER_BASE, buildMonster } from '../data/monsters'
 import { WEAPON_SHARPENING } from '../data/upgrades'
-import { SAFE_ZONE, ZONE_BY_ID } from '../data/zones'
+import { SAFE_ZONE, ZONES, ZONE_BY_ID } from '../data/zones'
+import { PACING_MAX_LEVEL } from './simulate'
 import type { MonsterTemplate } from '../types'
 
 const NO_LUCK = () => 1 // без критов и без дропа
@@ -133,13 +134,16 @@ describe('оффлайн моделирует цикл фарм -> смерть 
 
   it('смертность режет оффлайн-награду в той же зоне', () => {
     const HOURS8 = 8 * 3_600_000
-    const RIDGE = ZONE_BY_ID['ashen-ridge']
+    // Зона глубоко за пределами новичка: на лестнице из одиннадцати ступеней
+    // «пепельный гребень» — уже середина, и новичок там просто мало живёт,
+    // а нужна разница между «почти не живёт» и «живёт спокойно».
+    const RIDGE = ZONES[ZONES.length - 3]
     // Одна и та же зона, одни и те же награды за моба — разница только в том,
     // сколько времени герой в ней жив.
     const rookie: GameState = { ...createInitialState(1), currentZoneId: RIDGE.id }
     const veteran: GameState = ensureStats({
       ...rookie,
-      level: new Decimal(30),
+      level: new Decimal(PACING_MAX_LEVEL),
       upgrades: { [WEAPON_SHARPENING.id]: new Decimal(400) },
       statsDirty: true,
     })

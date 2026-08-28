@@ -181,6 +181,8 @@ export const BALANCE_PRESET = {
   branchHours: 4,
   /** Потолок расхождения итога между тремя чистыми билдами. */
   branchSpreadLimit: 0.25,
+  /** Доля времени на привалах, выше которой зона считается неподъёмной. */
+  branchRestShareMax: 0.25,
   // Контракт темпа: сид эталонного прохождения и его потолок по времени.
   pacingSeed: 4242,
   pacingHours: 60,
@@ -190,8 +192,17 @@ export const BALANCE_PRESET = {
 // Контракт темпа боя
 // ---------------------------------------------------------------------------
 
-/** До какого уровня меряется темп: верхний уровень мобов последней зоны. */
-export const PACING_MAX_LEVEL = ZONES[ZONES.length - 1].monsterLevelRange.max
+/**
+ * До какого уровня меряется темп.
+ *
+ * Считается по УРОВНЮ ГЕРОЯ, а не по уровню мобов последней зоны: таблица —
+ * это прохождение, её строки нумерует герой. Раньше они совпадали случайно,
+ * на лестнице из четырёх зон; на одиннадцати уровни мобов сжаты, и таблица
+ * обрывалась бы раньше, чем открывается последняя зона.
+ */
+export const PACING_TAIL_LEVELS = 4
+export const PACING_MAX_LEVEL =
+  ZONES[ZONES.length - 1].unlockRequirement + PACING_TAIL_LEVELS
 
 export interface PacingCell {
   zoneId: string
@@ -303,7 +314,7 @@ export function pacingTable(options: { seed?: number; hours?: number } = {}): Pa
       currentZoneId: intendedZone(level).id,
       cells: ZONES.map((zone) => ({
         zoneId: zone.id,
-        standing: zoneStanding(level, zone),
+        standing: zoneStanding(state, zone),
         ttk: estimateZoneTtk(state, zone),
       })),
     })

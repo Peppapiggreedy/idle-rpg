@@ -200,6 +200,22 @@ export function brokenCases(): BrokenCase[] {
       expect: [first(real.branches).id, 'ряды идут'],
     },
     {
+      title: 'пропс ссылается на модель, которой нет в public/models/props',
+      content: {
+        ...real,
+        props: patch(real.props, first(real.props).id, { path: 'models/props/нету.glb' }),
+      },
+      expect: [first(real.props).id, 'нету.glb'],
+    },
+    {
+      title: 'у пропса не указан автор — это нарушение лицензии',
+      content: {
+        ...real,
+        props: patch(real.props, first(real.props).id, { author: '' }),
+      },
+      expect: [first(real.props).id, 'автор'],
+    },
+    {
       title: 'звук ссылается на файл, которого нет в public/',
       content: {
         ...real,

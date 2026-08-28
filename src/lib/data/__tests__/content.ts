@@ -5,7 +5,7 @@
 // нельзя было бы прогнать на заведомо битой фикстуре.
 import { readFileSync, readdirSync } from 'node:fs'
 import { ABILITIES } from '../abilities'
-import { MODEL_ASSETS } from '../assets'
+import { MODEL_ASSETS, PROP_ASSETS } from '../assets'
 import {
   AUTOCAST_MAX_LOSS,
   BASE_STATS,
@@ -18,8 +18,6 @@ import {
   TTK_HARD_FLOOR,
   TTK_TARGET_MAX,
   TTK_TARGET_MIN,
-  ZONE_AHEAD_GAP,
-  ZONE_BEHIND_GAP,
 } from '../balance'
 import { DUNGEONS } from '../dungeons'
 import { ARMOR_NOUNS, SHIELDS, WEAPONS } from '../items'
@@ -37,6 +35,7 @@ import type { Content } from './schema'
 const SPRITE = new URL('../../ui/icons/sprite.svg', import.meta.url)
 const MODELS_DIR = new URL('../../../../public/models/', import.meta.url)
 const AUDIO_DIR = new URL('../../../../public/audio/', import.meta.url)
+const PROPS_DIR = new URL('../../../../public/models/props/', import.meta.url)
 
 /** Имена иконок, у которых в спрайте реально есть symbol. */
 function spriteIconNames(): string[] {
@@ -92,6 +91,8 @@ export function realContent(): Content {
     spriteIconNames: spriteIconNames(),
     modelFiles: modelFiles(),
     sounds: SOUNDS,
+    props: PROP_ASSETS,
+    propFiles: readdirSync(PROPS_DIR),
     audioFiles: audioFiles(),
     balance: {
       dropChance: DROP_CHANCE,
@@ -107,8 +108,6 @@ export function realContent(): Content {
       ttkBehindMax: TTK_BEHIND_MAX,
       ttkAheadMin: TTK_AHEAD_MIN,
       ttkDriftMax: TTK_DRIFT_MAX,
-      zoneBehindGap: ZONE_BEHIND_GAP,
-      zoneAheadGap: ZONE_AHEAD_GAP,
     },
   }
 }

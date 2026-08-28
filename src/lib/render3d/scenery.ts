@@ -13,6 +13,8 @@ import type { PropCluster, PropShape, SceneConfig } from '../data/scenery'
 
 export interface PlacedProp {
   shape: PropShape
+  /** Id пропса из data/assets.ts; null — кластер живёт примитивом. */
+  model: string | null
   color: number
   x: number
   z: number
@@ -57,6 +59,7 @@ export function placeProps(config: SceneConfig, groundRadius: number): PlacedPro
       const rotation = between(rng, 0, Math.PI * 2)
       placed.push({
         shape: cluster.shape,
+        model: cluster.model ?? null,
         color: cluster.color,
         x: Math.cos(angle) * radius,
         z: Math.sin(angle) * radius,

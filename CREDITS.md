@@ -63,6 +63,7 @@ Idle RPG собрана на чужих плечах. Здесь перечис�
 |---|---|---|---|---|
 | Герой | `public/models/Knight.glb` | [KayKit Character Pack: Adventurers 1.0](https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0) | Kay Lousberg | CC0 1.0 |
 | Моб | `public/models/Skeleton_Minion.glb` | [KayKit Character Pack: Skeletons 1.0](https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Skeletons-1.0) | Kay Lousberg | CC0 1.0 |
+| Пропсы зон (бочка, ящики, обломки, колонна, столб, бочонок, сундук) | `public/models/props/` | [KayKit Dungeon Remastered 1.0](https://github.com/KayKit-Game-Assets/KayKit-Dungeon-Remastered-1.0) | Kay Lousberg | CC0 1.0 |
 
 Оригинальные тексты лицензий лежат рядом с моделями:
 `public/models/LICENSE-KayKit-Adventurers.txt` и

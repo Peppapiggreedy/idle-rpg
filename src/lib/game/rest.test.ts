@@ -131,19 +131,41 @@ describe('индикатор безопасности зоны', () => {
 })
 
 describe('оффлайн знает про привалы', () => {
-  it('восемь часов с привалами дают строго меньше, чем без них', () => {
+  it('высокий порог стоит времени: привалов больше — золота меньше', () => {
     const HOURS8 = 8 * 3_600_000
-    // Зона, где герой заметно тает: иначе привалов не будет ни в одном случае
-    // и сравнивать будет нечего.
+    // Стартовая зона: герой в ней не умирает ни при каком пороге, поэтому
+    // разница в золоте — это ровно время, проведённое на привалах, и ничего
+    // больше. В опасной зоне сравнение мерило бы смерть против привала, а не
+    // цену самого привала: смерть стоит дороже, и привал на её фоне выгоден.
+    const zone = ZONES[0]
+    const idle = hero({ currentZoneId: zone.id, restHpThreshold: 0.95 })
+    const greedy = ensureStats({
+      ...idle,
+      restHpThreshold: 0,
+      restResourceThreshold: 0,
+      statsDirty: true,
+    })
+    const resting = applyOfflineProgress(idle, HOURS8).report
+    const nonstop = applyOfflineProgress(greedy, HOURS8).report
+    expect(resting).not.toBeNull()
+    expect(nonstop).not.toBeNull()
+    expect(resting!.gold.lt(nonstop!.gold)).toBe(true)
+  })
+
+  it('в опасной зоне привал ВЫГОДНЕЕ смерти — и модель это видит', () => {
+    // Оборотная сторона того же: тридцать секунд воскрешения дороже десяти
+    // секунд привала, поэтому порог окупается там, где без него умирают.
+    const HOURS8 = 8 * 3_600_000
     const zone = ZONES[ZONES.length - 1]
-    const resting = hero({ currentZoneId: zone.id, restHpThreshold: 0.6 })
-    const reckless = { ...resting, restHpThreshold: 0, restResourceThreshold: 0 }
-    const withRest = applyOfflineProgress(resting, HOURS8).report
+    const careful = hero({ currentZoneId: zone.id, restHpThreshold: 0.6 })
+    const reckless = ensureStats({
+      ...careful,
+      restHpThreshold: 0,
+      restResourceThreshold: 0,
+      statsDirty: true,
+    })
+    const withRest = applyOfflineProgress(careful, HOURS8).report
     const withoutRest = applyOfflineProgress(reckless, HOURS8).report
-    expect(withRest).not.toBeNull()
-    expect(withoutRest).not.toBeNull()
-    // Без порога герой не отдыхает вовсе — он умирает, и это тоже простой.
-    // Сравниваем именно то, что просят: привалы обязаны стоить времени.
-    expect(withRest!.gold.lt(withoutRest!.gold.times(1.0001))).toBe(true)
+    expect(withRest!.gold.gt(withoutRest!.gold)).toBe(true)
   })
 })

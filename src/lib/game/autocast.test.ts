@@ -146,8 +146,15 @@ describe('автокаст в бою', () => {
     let worstWaitMs = 0
     let fired = 0
     for (let t = 0; t < 60_000; t += STEP_MS) {
+      // «Доступно» — это ВСЕ условия применения сразу: мана, свой кулдаун,
+      // глобальный кулдаун и живой герой не на привале. Без глобального
+      // кулдауна тест мерил бы очередь умений, а не выдержку автокаста.
       const affordable =
-        s.currentMana.gte(QUICK.manaCost) && (s.abilityCooldownsMs[QUICK.id] ?? 0) <= 0
+        s.currentMana.gte(QUICK.manaCost) &&
+        (s.abilityCooldownsMs[QUICK.id] ?? 0) <= 0 &&
+        s.gcdMsLeft <= 0 &&
+        s.heroState === 'alive' &&
+        s.respawnMsLeft <= 0
       if (affordable && readySince === null) readySince = t
       s = tick(s, STEP_MS, NO_LUCK, (e) => {
         if (e.abilityId === QUICK.id) {

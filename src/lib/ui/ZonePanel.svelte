@@ -10,7 +10,9 @@
 
   const forecasts = $derived(forecastAllZones($gameState))
   const byId = $derived(new Map(forecasts.map((f) => [f.zoneId, f])))
-  const restShare = $derived(Math.round($gameState.restHpThreshold * 100))
+  // Показываем ЭФФЕКТИВНЫЙ порог из конвейера: настройка плюс таланты.
+  // Сырое поле состояния соврало бы всем, кто вложил очки в «Походную перевязку».
+  const restShare = $derived(Math.round($gameState.stats.restThreshold * 100))
 
   const VERDICT_LABEL: Record<ZoneVerdict, string> = {
     safe: 'по силам',
@@ -82,7 +84,7 @@
               Безопасно при пороге {restShare}%: сильнейший удар здесь —
               <NumberText value={safety.worstHit} tone="damage" />, а на привал ты уходишь
               с <NumberText value={safety.thresholdHp} tone="hp" /> HP. Умереть нельзя.
-            {:else if $gameState.restHpThreshold <= 0}
+            {:else if $gameState.stats.restThreshold <= 0}
               Порог привала снят — единственной паузой снова стала смерть.
             {:else}
               Опасно при пороге {restShare}%: сильнейший удар здесь —
