@@ -6,7 +6,30 @@
 import { describe, expect, it } from 'vitest'
 import { Decimal } from '../numbers'
 import { expectedSwingDamage } from '../combat'
-import { BALANCE_PRESET, buildSimState, simulate, spreadOf, type SimResult } from '../simulate'
+import { estimateTtk } from '../combat'
+import {
+  AVERAGE_WEAPON,
+  BALANCE_PRESET,
+  buildSimState,
+  currentCell,
+  pacingTable,
+  referenceBuild,
+  simulate,
+  spreadOf,
+  ttkDrift,
+  PACING_MAX_LEVEL,
+  type SimResult,
+} from '../simulate'
+import { intendedZone, type ZoneStanding } from '../zones'
+import {
+  TTK_AHEAD_MIN,
+  TTK_BEHIND_MAX,
+  TTK_DRIFT_MAX,
+  TTK_HARD_CEILING,
+  TTK_HARD_FLOOR,
+  TTK_TARGET_MAX,
+  TTK_TARGET_MIN,
+} from '../../data/balance'
 import { ZONES, zoneMonsterVariants, type Zone } from '../../data/zones'
 import { WEAPONS, WEAPON_BY_ID } from '../../data/items'
 import { ABILITY_BY_ID } from '../../data/abilities'
@@ -16,6 +39,7 @@ import { ABILITY_BY_ID } from '../../data/abilities'
 const log = (line: string) => console.log(line)
 const num = (d: Decimal, width = 9) => d.toFixed(0).padStart(width)
 const pct = (x: number) => `${(x * 100).toFixed(1)}%`
+const ttk = (x: number) => (Number.isFinite(x) ? (x >= 1000 ? x.toFixed(0) : x.toFixed(1)) : '∞')
 
 function header(title: string, columns: string) {
   log('')
@@ -54,10 +78,11 @@ function hitsPerKill(zone: Zone, level: number, sharpening: number): number {
 
 describe('прогон баланса: таблица зон', () => {
   it('печатает таблицу зон', () => {
-    const { zoneHours, zoneBuild } = BALANCE_PRESET
+    const { zoneHours, zoneLevel } = BALANCE_PRESET
+    const zoneBuild = referenceBuild(zoneLevel)
     header(
-      `Герой ${zoneBuild.level} уровня, ${zoneBuild.sharpening} заточек, автокаст включён, ` +
-        `${zoneHours} часов в каждой зоне.`,
+      `Эталонный герой ${zoneLevel} уровня (${zoneBuild.sharpening} заточек, средняя ` +
+        `экипировка), автокаст включён, ${zoneHours} часов в каждой зоне.`,
       COLUMNS,
     )
     for (const zone of ZONES) {
@@ -73,21 +98,17 @@ describe('прогон баланса: таблица зон', () => {
 describe('прогресс монотонный', () => {
   // Уровень заморожен: за восемь часов свободного прогона герой уходит на
   // десятки уровней вперёд, и строки таблицы перестают быть сравнимыми.
-  const LEVEL = 24
-  const SHARPENING = 240
+  const LEVEL = PACING_MAX_LEVEL
 
   it('в более сложной зоне при достаточном уровне золота и опыта в час строго больше', () => {
+    const build = referenceBuild(LEVEL)
     header(
-      `Герой ${LEVEL} уровня (${SHARPENING} заточек), уровень заморожен, 4 часа на зону.`,
+      `Эталонный герой ${LEVEL} уровня (${build.sharpening} заточек), уровень заморожен, ` +
+        '4 часа на зону.',
       COLUMNS,
     )
     const results = ZONES.map((zone) => {
-      const result = simulate({
-        hours: 4,
-        zoneId: zone.id,
-        freezeLevel: true,
-        build: { level: LEVEL, sharpening: SHARPENING },
-      })
+      const result = simulate({ hours: 4, zoneId: zone.id, freezeLevel: true, build })
       log(row(result, zone.name))
       return result
     })
@@ -100,7 +121,7 @@ describe('прогресс монотонный', () => {
 })
 
 describe('нет доминирующей зоны', () => {
-  const LEVELS = [1, 5, 10, 16, 24]
+  const LEVELS = [1, 5, 10, 16, PACING_MAX_LEVEL]
 
   it('ни одна зона не лучше всех остальных на всех уровнях персонажа', () => {
     header(
@@ -115,7 +136,7 @@ describe('нет доминирующей зоны', () => {
           hours: 1,
           zoneId: zone.id,
           freezeLevel: true,
-          build: { level, sharpening: level * 10 },
+          build: referenceBuild(level),
         }).goldPerHour,
       )
       let best = 0
@@ -153,17 +174,22 @@ describe('темп прокачки', () => {
 })
 
 describe('смертность в подходящей зоне', () => {
-  // «Подходящая» — та, где герой дорос до САМОГО СИЛЬНОГО моба зоны, а не
-  // только до порога входа: порог пускает в зону, где мобы ещё выше уровнем.
+  // «Подходящая» — та, где герой дожил до КОНЦА её правления: от порога входа
+  // до уровня, на котором открывается следующая зона. Уровень моба уровню
+  // героя не равен (это ярлык сложности), поэтому сравнивать их напрямую
+  // нельзя — берём именно правление.
+  const reignEnd = (index: number) =>
+    index + 1 < ZONES.length ? ZONES[index + 1].unlockRequirement - 1 : PACING_MAX_LEVEL
+
   it('смертей в час близко к нулю', () => {
-    header('Уровень героя равен верхней границе уровня мобов зоны, 1 час на зону.', 'зона                 мобы     уровень героя   смертей/ч')
-    for (const zone of ZONES) {
-      const level = zone.monsterLevelRange.max
+    header('Герой на последнем уровне правления зоны, 1 час на зону.', 'зона                 мобы     уровень героя   смертей/ч')
+    for (const [index, zone] of ZONES.entries()) {
+      const level = reignEnd(index)
       const result = simulate({
         hours: 1,
         zoneId: zone.id,
         freezeLevel: true,
-        build: { level, sharpening: level * 10 },
+        build: referenceBuild(level),
       })
       log(
         `${zone.name.padEnd(20)} ${`${zone.monsterLevelRange.min}-${zone.monsterLevelRange.max}`.padEnd(8)} ${String(level).padStart(13)}   ${result.deathsPerHour.toFixed(1).padStart(9)}`,
@@ -287,4 +313,109 @@ describe('скорость оружия', () => {
     expect(ratio).toBeGreaterThan(1)
     expect(ratio).toBeCloseTo(speedRatio, 1)
   }, 300_000)
+})
+
+// ---------------------------------------------------------------------------
+// Контракт темпа боя
+// ---------------------------------------------------------------------------
+// Числа коридора живут в data/balance.ts; здесь только проверки. Таблица
+// печатается целиком — контракт нужен глазами не меньше, чем зелёной галкой.
+describe('контракт темпа боя', () => {
+  const rows = pacingTable()
+  const cellsWith = (standing: ZoneStanding) =>
+    rows.flatMap((r) => r.cells.filter((c) => c.standing === standing).map((c) => ({ row: r, c })))
+
+  it('печатает время убийства по зонам и уровням', () => {
+    const columns =
+      'ур.  ' +
+      ZONES.map((z) => `${z.name.slice(0, 9)} ${z.monsterLevelRange.min}-${z.monsterLevelRange.max}`.padStart(18)).join('') +
+      '  заточек  смертей   минут'
+    header(
+      'Эталонное прохождение: герой в СРЕДНЕЙ по рулетке экипировке, всё золото ' +
+        'в заточку, переезд по мере открытия зон.\n' +
+        '* актуальная зона, < отстающая, > опережающая. В скобках — самый быстрый и самый долгий моб зоны.',
+      columns,
+    )
+    for (const r of rows) {
+      const cells = r.cells.map((c) => {
+        const mark = c.standing === 'current' ? '*' : c.standing === 'behind' ? '<' : c.standing === 'ahead' ? '>' : ' '
+        return `${mark}${ttk(c.ttk.avg)} (${ttk(c.ttk.min)}-${ttk(c.ttk.max)})`.padStart(18)
+      })
+      log(
+        `${String(r.level).padStart(3)}  ${cells.join('')}  ${String(r.sharpening).padStart(7)}  ` +
+          `${String(r.deaths).padStart(7)}  ${(r.atSec / 60).toFixed(1).padStart(6)}`,
+      )
+    }
+    log(`Разброс TTK по уровням: ${pct(ttkDrift(rows))} при потолке ${pct(TTK_DRIFT_MAX)}.`)
+    expect(rows.length).toBe(PACING_MAX_LEVEL)
+  }, 300_000)
+
+  it(`в актуальной зоне моб живёт ${TTK_TARGET_MIN}-${TTK_TARGET_MAX} секунд на ВСЕХ уровнях`, () => {
+    for (const row of rows) {
+      const { ttk: t, zoneId } = currentCell(row)
+      const where = `ур. ${row.level}, ${zoneId}`
+      expect(t.avg, where).toBeGreaterThanOrEqual(TTK_TARGET_MIN)
+      expect(t.avg, where).toBeLessThanOrEqual(TTK_TARGET_MAX)
+    }
+  })
+
+  it(`ни один моб актуальной зоны не умирает быстрее ${TTK_HARD_FLOOR} секунд`, () => {
+    // Ниже этого бой перестаёт быть событием: игрок не успевает ни прочитать
+    // имя моба, ни нажать умение.
+    for (const row of rows) {
+      const { ttk: t, zoneId } = currentCell(row)
+      expect(t.min, `ур. ${row.level}, ${zoneId}`).toBeGreaterThanOrEqual(TTK_HARD_FLOOR)
+    }
+  })
+
+  it(`ни один моб актуальной зоны не живёт дольше ${TTK_HARD_CEILING} секунд`, () => {
+    for (const row of rows) {
+      const { ttk: t, zoneId } = currentCell(row)
+      expect(t.max, `ур. ${row.level}, ${zoneId}`).toBeLessThanOrEqual(TTK_HARD_CEILING)
+    }
+  })
+
+  it(`отстающая зона проходится с ходу: не дольше ${TTK_BEHIND_MAX} секунд на моба`, () => {
+    const cells = cellsWith('behind')
+    // Пустая проверка — не проверка: если классификация перестала кого-то
+    // относить к отстающим, контракт молча выродился бы в ничто.
+    expect(cells.length, 'ни одна зона не оказалась отстающей').toBeGreaterThan(0)
+    for (const { row, c } of cells) {
+      expect(c.ttk.avg, `ур. ${row.level}, ${c.zoneId}`).toBeLessThanOrEqual(TTK_BEHIND_MAX)
+    }
+  })
+
+  it(`опережающая зона видна сразу: не быстрее ${TTK_AHEAD_MIN} секунд на моба`, () => {
+    const cells = cellsWith('ahead')
+    expect(cells.length, 'ни одна зона не оказалась опережающей').toBeGreaterThan(0)
+    for (const { row, c } of cells) {
+      expect(c.ttk.avg, `ур. ${row.level}, ${c.zoneId}`).toBeGreaterThanOrEqual(TTK_AHEAD_MIN)
+    }
+  })
+
+  it(`темп не сжимается с прогрессом: разброс TTK по уровням ≤ ${pct(TTK_DRIFT_MAX)}`, () => {
+    // Главная проверка контракта. Без неё коридор 8-15 выполнялся бы «в
+    // среднем»: первый уровень у потолка, последний у пола — и бой к концу
+    // игры проходился бы вдвое быстрее, чем в начале.
+    expect(ttkDrift(rows)).toBeLessThanOrEqual(TTK_DRIFT_MAX)
+  })
+
+  it('везение ускоряет бой, а не задаёт коридор', () => {
+    // Смысл коридора: он держится на СРЕДНЕЙ экипировке. Редкая находка
+    // обязана давать преимущество — иначе лут не нужен.
+    const level = PACING_MAX_LEVEL
+    const zone = intendedZone(level)
+    const build = { level, sharpening: rows[rows.length - 1].sharpening }
+    const average = estimateTtk(buildSimState({ ...build, gear: 'average' }, zone.id, 1), zone)
+    const lucky = estimateTtk(
+      buildSimState(
+        { ...build, gear: 'average', weapon: { templateId: AVERAGE_WEAPON.id, rarity: 'epic' } },
+        zone.id,
+        1,
+      ),
+      zone,
+    )
+    log(`Средняя экипировка ${average.toFixed(1)}с против эпического оружия ${lucky.toFixed(1)}с.`)
+    expect(lucky).toBeLessThan(average)
+  })
 })

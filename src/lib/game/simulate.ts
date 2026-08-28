@@ -15,15 +15,28 @@ import {
   manualOnlySettings,
   spawnMonster,
   type AbilitySettings,
+  type Equipment,
   type GameState,
 } from './state'
 import { ensureStats } from './stats'
 import { tick } from './tick'
-import { weaponMods } from './loot'
-import { travelToZone, zoneById, isZoneUnlocked, zoneRate } from './zones'
+import { armorMods, weaponMods } from './loot'
+import { estimateZoneTtk, type TtkEstimate } from './combat'
+import { buyUpgrade } from './upgrades'
+import {
+  intendedZone,
+  travelToZone,
+  zoneById,
+  isZoneUnlocked,
+  zoneRate,
+  zoneStanding,
+  type ZoneStanding,
+} from './zones'
+import { UPGRADES, WEAPON_SHARPENING } from '../data/upgrades'
 import { ABILITIES, ABILITY_BY_ID } from '../data/abilities'
-import { RARITY_BY_ID } from '../data/rarity'
-import { WEAPON_BY_ID } from '../data/items'
+import { AVERAGE_RARITY, RARITY_BY_ID } from '../data/rarity'
+import { ARMOR_NOUNS, WEAPONS, WEAPON_BY_ID } from '../data/items'
+import { SLOT_IDS, type SlotId } from '../data/slots'
 import { ZONES } from '../data/zones'
 import type { AttackEvent, Item, Rarity } from '../types'
 
@@ -42,6 +55,10 @@ export interface SimBuild {
   level?: number
   sharpening?: number // сколько раз куплена заточка оружия
   weapon?: SimWeapon | null // null — голые кулаки (UNARMED из баланса)
+  // Экипировка эталонного героя. 'average' — все слоты заняты СРЕДНИМ по
+  // рулетке предметом (см. AVERAGE_RARITY): это не «повезло» и не «не
+  // повезло», а то, во что игрок одет обычно. 'none' — голый герой.
+  gear?: 'none' | 'average'
   talents?: Record<string, number>
   // Какие умения жмёт автокаст: 'all' — все, 'none' — ни одного (только
   // автоатака), список id — только они, в порядке приоритета.
@@ -98,19 +115,163 @@ export interface SimResult {
 // (game/__tests__/balance.test.ts) и страница /balance, чтобы «та же таблица»
 // была той же буквально, а не похожей.
 export const BALANCE_PRESET = {
-  // Таблица зон: герой, которому открыты все четыре зоны.
+  // Таблица зон: герой, которому открыты все четыре зоны. Сам билд не задаём
+  // руками — берём эталонный (referenceBuild): «уровень × десять заточек» было
+  // выдумкой, а с ценой апгрейда внутри контракта темпа такой герой в игре
+  // не встречается.
   zoneHours: 8,
-  zoneBuild: { level: 16, sharpening: 150 } as SimBuild,
+  zoneLevel: 16,
   // Сравнение оружия: бой должен длиться полтора десятка замахов, иначе
   // сравнение меряет перебой добивающего удара, а не нормализацию скорости.
+  // Заточек НАМЕРЕННО меньше эталона: чем слабее герой, тем длиннее бой и
+  // тем меньше в итоге доля перебоя.
   weaponHours: 4,
   weaponZoneId: 'ashen-ridge',
-  weaponBuild: { level: 30, sharpening: 100 } as SimBuild,
+  weaponBuild: { level: 22, sharpening: 10 } as SimBuild,
   // Урон за ману считается по умениям «на следующий удар».
   manaAbilities: ['rending-wound', 'shattering-blow'],
   // Порог расхождения итога между тремя оружиями с равным уроном в секунду.
   weaponSpreadLimit: 0.03,
+  // Контракт темпа: сид эталонного прохождения и его потолок по времени.
+  pacingSeed: 4242,
+  pacingHours: 60,
 } as const
+
+// ---------------------------------------------------------------------------
+// Контракт темпа боя
+// ---------------------------------------------------------------------------
+
+/** До какого уровня меряется темп: верхний уровень мобов последней зоны. */
+export const PACING_MAX_LEVEL = ZONES[ZONES.length - 1].monsterLevelRange.max
+
+export interface PacingCell {
+  zoneId: string
+  standing: ZoneStanding
+  ttk: TtkEstimate
+}
+
+export interface PacingRow {
+  level: number
+  /** Игровых секунд от начала прохождения до этого уровня. */
+  atSec: number
+  /** Смертей за всё прохождение к этому уровню. */
+  deaths: number
+  sharpening: number
+  currentZoneId: string
+  cells: PacingCell[]
+}
+
+// Кеш эталонного прохождения: оно детерминировано, а стоит целого прогона.
+let pacingCache: PacingRow[] | null = null
+
+/**
+ * Герой, каким его описывает контракт темпа, на заданном уровне: столько
+ * заточек, сколько он к этому уровню успел купить, и средняя экипировка.
+ *
+ * Нужен всем таблицам прогона: «уровень × десять заточек» было удобной
+ * выдумкой, но с ценой апгрейда, которая теперь часть контракта, такой герой
+ * в игре не встречается — и мерить им зоны значит мерить не ту игру.
+ * Уровень выше эталонного отдаёт последнюю известную строку.
+ */
+export function referenceBuild(level: number): SimBuild {
+  pacingCache ??= pacingTable()
+  const row = pacingCache.find((r) => r.level === level) ?? pacingCache[pacingCache.length - 1]
+  return { level, sharpening: row.sharpening, gear: 'average' }
+}
+
+/** TTK по актуальной зоне — та самая строка, на которой держится коридор. */
+export function currentCell(row: PacingRow): PacingCell {
+  return row.cells.find((c) => c.standing === 'current') ?? row.cells[0]
+}
+
+/** Разброс между минимальным и максимальным TTK по уровням, доля от минимума. */
+export function ttkDrift(rows: PacingRow[]): number {
+  const values = rows.map((r) => currentCell(r).ttk.avg)
+  const min = Math.min(...values)
+  if (!(min > 0)) return Number.POSITIVE_INFINITY
+  return (Math.max(...values) - min) / min
+}
+
+/**
+ * ЭТАЛОННОЕ ПРОХОЖДЕНИЕ: герой, который просто играет.
+ *
+ * Никакого выдуманного «билда N уровня» здесь нет — это была бы отдельная
+ * модель прогрессии, и контракт мерил бы её, а не игру. Герой идёт настоящим
+ * конвейером тика от первого уровня: покупает заточку, как только хватает
+ * золота, надевает то, что выпало, и переезжает в новую зону, как только она
+ * открылась. На каждом взятом уровне снимается состояние — по нему и считается
+ * время убийства во всех зонах сразу.
+ *
+ * Лут случаен, поэтому сид ЗАКРЕПЛЁН: контракт обязан быть воспроизводимым.
+ */
+export function pacingTable(options: { seed?: number; hours?: number } = {}): PacingRow[] {
+  const seed = options.seed ?? BALANCE_PRESET.pacingSeed
+  const hours = options.hours ?? BALANCE_PRESET.pacingHours
+  const rng = createRng(seed)
+  // Экипировка эталонного героя — СРЕДНЯЯ по рулетке, во всех слотах.
+  // Коридор темпа держится именно на ней: редкость множит прибавку предмета
+  // от 1 до 16 раз, и если бы эталон был голым, коридор описывал бы игру,
+  // в которую никто не играет. Везение остаётся преимуществом — герой в
+  // редком и легендарном бьёт быстрее коридора, и это ровно то, ради чего
+  // лут в игре есть.
+  //
+  // Автонадевание выключено: случайная находка подменила бы эталон на
+  // середине прохождения, и кривая перестала бы быть кривой.
+  let state = buildSimState({ gear: 'average' }, ZONES[0].id, seed)
+  const rows: PacingRow[] = []
+  let deaths = 0
+
+  const snapshot = (level: number, atSec: number) => {
+    rows.push({
+      level,
+      atSec,
+      deaths,
+      sharpening: (state.upgrades[WEAPON_SHARPENING.id] ?? new Decimal(0)).toNumber(),
+      currentZoneId: intendedZone(level).id,
+      cells: ZONES.map((zone) => ({
+        zoneId: zone.id,
+        standing: zoneStanding(level, zone),
+        ttk: estimateZoneTtk(state, zone),
+      })),
+    })
+  }
+
+  // Всё золото уходит в заточку: копить его в этой игре не на что.
+  const spend = (input: GameState): GameState => {
+    let next = input
+    for (const def of UPGRADES) {
+      for (;;) {
+        const bought = buyUpgrade(next, def)
+        if (bought === next) break
+        next = bought
+      }
+    }
+    return next
+  }
+
+  snapshot(1, 0)
+  const steps = Math.round((hours * 3600 * 1000) / STEP_MS)
+  for (let step = 1; step <= steps; step++) {
+    const prev = state
+    state = tick(prev, STEP_MS, rng, () => {})
+    if (prev.heroState === 'alive' && state.heroState === 'dead') deaths += 1
+    // Покупки не на каждый тик: игрок не сидит с пальцем на кнопке, а конвейер
+    // пересчитывает статы на каждой покупке.
+    if (step % PACING_BUY_EVERY === 0) state = spend(state)
+    if (state.level.gt(prev.level)) {
+      state = spend(state)
+      const level = state.level.toNumber()
+      const zone = intendedZone(level)
+      if (zone.id !== state.currentZoneId) state = travelToZone(state, zone.id, rng)
+      if (level > rows[rows.length - 1].level) snapshot(level, (step * STEP_MS) / 1000)
+      if (level >= PACING_MAX_LEVEL) break
+    }
+  }
+  return rows
+}
+
+/** Раз в сколько тиков эталонный герой заходит в магазин. */
+const PACING_BUY_EVERY = 10
 
 /** Разброс между лучшим и худшим результатом — доля от худшего. */
 export function spreadOf(values: Decimal[]): number {
@@ -135,6 +296,41 @@ export function simWeaponItem(weapon: SimWeapon): Item {
     // Голое оружие — только база боя: скорость и диапазон урона.
     mods: weapon.bare ? mods.filter((m) => m.kind === 'base') : mods,
   }
+}
+
+/**
+ * Оружие «среднего» героя. Три шаблона по построению дают ОДИНАКОВЫЙ урон
+ * оружия в секунду (это отдельный инвариант баланса со своим тестом), поэтому
+ * выбор между ними на темп не влияет; берём среднее по скорости — чтобы в
+ * таблице стояло что-то одно и понятное.
+ */
+export const AVERAGE_WEAPON = [...WEAPONS].sort((a, b) =>
+  a.weaponSpeed.minus(b.weaponSpeed).toNumber(),
+)[Math.floor(WEAPONS.length / 2)]
+
+/** Полный комплект средней по рулетке экипировки. */
+export function averageGear(): Equipment {
+  const gear = {} as Record<SlotId, Item | null>
+  for (const slot of SLOT_IDS) {
+    if (slot === 'weapon') {
+      gear.weapon = {
+        id: 'sim-gear-weapon',
+        name: AVERAGE_WEAPON.noun,
+        rarity: AVERAGE_RARITY.id,
+        slot,
+        mods: weaponMods(AVERAGE_WEAPON, AVERAGE_RARITY),
+      }
+      continue
+    }
+    gear[slot] = {
+      id: `sim-gear-${slot}`,
+      name: ARMOR_NOUNS[slot][0],
+      rarity: AVERAGE_RARITY.id,
+      slot,
+      mods: armorMods(slot, AVERAGE_RARITY),
+    }
+  }
+  return gear as Equipment
 }
 
 function settingsFor(autocast: SimBuild['autocast']): AbilitySettings {
@@ -167,7 +363,10 @@ export function buildSimState(build: SimBuild, zoneId: string, seed: number): Ga
       ? { 'weapon-sharpening': new Decimal(build.sharpening) }
       : {},
     talents: { ...(build.talents ?? {}) },
-    equipment: { ...base.equipment, weapon },
+    equipment:
+      build.gear === 'average'
+        ? { ...averageGear(), ...(weapon ? { weapon } : {}) }
+        : ({ ...base.equipment, weapon } as Equipment),
     abilitySettings: settingsFor(build.autocast),
     // Прогон меряет ЗАДАННЫЙ билд: автонадевание подменило бы его на середине.
     autoEquip: false,

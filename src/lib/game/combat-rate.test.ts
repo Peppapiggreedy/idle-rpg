@@ -7,31 +7,72 @@ import { tick } from './tick'
 import { STEP_MS } from './loop'
 import { createRng } from './rng'
 import { applyOfflineProgress } from './save'
-import { OFFLINE_EFFICIENCY } from '../data/balance'
+import {
+  AP_NORMALIZATION,
+  OFFLINE_EFFICIENCY,
+  RESPAWN_DELAY_MS,
+  REVIVE_DELAY_MS,
+} from '../data/balance'
 
 describe('estimateCombatRate', () => {
   it('считает урон в секунду с матожиданием критов', () => {
-    // Явный моб: спавн в зоне случаен, а формулу проверяем на фиксированных числах.
-    // Обычный моб 1 уровня — 30 hp, 4 урона каждые 1.6 c.
+    // Явный моб: спавн в зоне случаен, а формулу проверяем на фиксированных
+    // числах. Модель ПЕРЕСОБИРАЕМ здесь по её описанию, а не вызываем те же
+    // функции: тест, который зовёт проверяемый код, проверяет только сам себя.
+    // Числа моба берём из данных — они часть контракта темпа и меняются вместе
+    // с балансом, а вот правила остаются те же.
     const squelcher = buildMonster(
       { id: 'test-squelcher', name: 'Хлюпень', role: COMMON },
       1,
       new Decimal(1),
     )
-    const rate = estimateCombatRate({
+    const state = {
       // Автокаст выключен: тест про формулу автоатаки и uptime.
       ...createInitialState(1),
       abilitySettings: manualOnlySettings(),
       monster: monsterFromTemplate(squelcher),
-    })
-    // 20 за удар * (1 + 0.05 * (2 - 1)) / 2 c = 10.5
-    expect(rate.autoDamagePerSecond.toNumber()).toBeCloseTo(10.5, 10)
-    // Идеальный цикл: 2 удара * 2 c + 0.3 c респаун = 4.3 c на моба.
-    // Хлюпень бьёт в ответ: 2 удара по 4 за бой против 7 регена за цикл ->
-    // теряем 1 hp за 4.3 c, смерть через 430 c, uptime = 430/(430+30).
-    const uptime = 430 / 460
-    expect(rate.uptime).toBeCloseTo(uptime, 10)
-    expect(rate.killsPerSecond.toNumber()).toBeCloseTo((1 / 4.3) * uptime, 10)
+    }
+    const rate = estimateCombatRate(state)
+    const { stats } = state
+
+    // Средний удар: диапазон оружия плюс вклад силы атаки за замах.
+    const avgSwing = stats.weaponDamageMin
+      .plus(stats.weaponDamageMax)
+      .div(2)
+      .plus(stats.attackPower.times(stats.weaponSpeed).div(AP_NORMALIZATION))
+    // Криты — матожидание, а не бросок. Вероятность в конвейере статов —
+    // обычный number, поэтому множитель считается в number.
+    const crit = 1 + stats.critChance * (stats.critMultiplier.toNumber() - 1)
+    expect(rate.autoDamagePerSecond.toNumber()).toBeCloseTo(
+      avgSwing.times(crit).div(stats.swingTime).toNumber(),
+      8,
+    )
+
+    // Убийство квантуется по ударам: последний почти всегда с перебоем, но
+    // не меньше половины замаха.
+    const perKill = Decimal.max(
+      squelcher.maxHp.div(avgSwing).ceil().times(avgSwing),
+      squelcher.maxHp.plus(avgSwing.div(2)),
+    )
+    const hits = Decimal.max(perKill.div(avgSwing).ceil(), new Decimal(1)).toNumber()
+    const fightSec = hits * stats.swingTime
+    const cycleSec = fightSec + RESPAWN_DELAY_MS / 1000
+    expect(rate.idealKillsPerSecond.toNumber()).toBeCloseTo(1 / cycleSec, 8)
+
+    // Баланс HP за цикл: целое число ответных ударов за ФАЗУ БОЯ против
+    // регена (в бою медленный, в паузе респауна быстрый).
+    const incoming = squelcher.damageMin
+      .plus(squelcher.damageMax)
+      .div(2)
+      .times(Math.floor(fightSec / squelcher.swingTime))
+    const regen = stats.hpRegen
+      .times(fightSec)
+      .plus(stats.hpRegenOutOfCombat.times(RESPAWN_DELAY_MS / 1000))
+    const lossPerSec = incoming.minus(regen).div(cycleSec)
+    const timeToDeath = stats.maxHp.div(lossPerSec).toNumber()
+    const uptime = timeToDeath / (timeToDeath + REVIVE_DELAY_MS / 1000)
+    expect(rate.uptime).toBeCloseTo(uptime, 8)
+    expect(rate.killsPerSecond.toNumber()).toBeCloseTo((1 / cycleSec) * uptime, 8)
   })
 
   // Бюджет расхождения — 8%, и это осознанно. Оффлайн-агрегат усредняет темп

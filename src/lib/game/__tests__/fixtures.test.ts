@@ -160,8 +160,11 @@ describe('фикстуры сейвов', () => {
     expect(s.lastSurvivedZoneId).toBe('hollow-quarry')
     const pool = ZONE_BY_ID['hollow-quarry'].monsterPool.map((a) => a.id)
     expect(pool).toContain(s.monster.id)
-    expect(s.monster.level).toBeGreaterThanOrEqual(4)
-    expect(s.monster.level).toBeLessThanOrEqual(6)
+    // Границы берём из данных: диапазон уровней зоны — это баланс, а тест
+    // здесь про то, что моб пришёл ИЗ ЗОНЫ, а не про конкретные числа.
+    const range = ZONE_BY_ID['hollow-quarry'].monsterLevelRange
+    expect(s.monster.level).toBeGreaterThanOrEqual(range.min)
+    expect(s.monster.level).toBeLessThanOrEqual(range.max)
     expect(s.gold.toNumber()).toBe(24000)
   })
 

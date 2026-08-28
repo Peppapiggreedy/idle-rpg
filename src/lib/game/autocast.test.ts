@@ -15,7 +15,12 @@ import { estimateCombatRate } from './combat'
 import { abilitiesByPriority, rotationRate, PLAN } from './rotation'
 import { applyOfflineProgress } from './save'
 import { stateInZone, zoneRate } from './zones'
-import { AUTOCAST_DELAY_MS, AUTOCAST_MAX_LOSS, OFFLINE_EFFICIENCY } from '../data/balance'
+import {
+  AUTOCAST_DELAY_MS,
+  AUTOCAST_MAX_LOSS,
+  OFFLINE_CHUNK_MIN,
+  OFFLINE_EFFICIENCY,
+} from '../data/balance'
 import { ABILITY_BY_ID } from '../data/abilities'
 import { WEAPON_SHARPENING } from '../data/upgrades'
 import { ZONES } from '../data/zones'
@@ -200,20 +205,21 @@ describe('честная разница авто и ручной игры', () =
 
 describe('железное правило: оффлайн <= автокаст <= ручная игра', () => {
   it('оффлайн считается по автокасту с поправкой, а не по идеальной игре', () => {
-    const HOUR = 3_600_000
+    // Меряем ОДИН шаг агрегата. Внутри шага темп не меняется, поэтому
+    // совпадение обязано быть ТОЧНЫМ, а не «в пределах допуска»: за час герой
+    // набирает уровни, темп следующих шагов растёт, и сравнивать час с одним
+    // снимком статов бессмысленно — раньше это скрывалось широкой вилкой.
+    const chunkMs = OFFLINE_CHUNK_MIN * 60_000
     for (const level of [1, 9, 20]) {
       const s = hero(level, level * 8)
-      const { report } = applyOfflineProgress(s, HOUR)
+      const { report } = applyOfflineProgress(s, chunkMs)
       const auto = zoneRate(s, ZONES[0], 'auto')
       const manual = zoneRate(s, ZONES[0], 'manual')
       expect(auto.goldPerSecond.lte(manual.goldPerSecond)).toBe(true)
-      // Оффлайн — автокаст, урезанный на OFFLINE_EFFICIENCY. Точного
-      // равенства нет: за час герой набирает уровни, и темп по шагам растёт.
-      const autoHour = auto.goldPerSecond.times(3600)
-      expect(report!.gold.lt(autoHour)).toBe(true)
-      const ratio = report!.gold.div(autoHour).toNumber()
-      expect(ratio).toBeGreaterThan(OFFLINE_EFFICIENCY - 0.05)
-      expect(ratio).toBeLessThanOrEqual(OFFLINE_EFFICIENCY + 0.05)
+      const expected = auto.goldPerSecond.times(chunkMs / 1000).times(OFFLINE_EFFICIENCY)
+      expect(report!.gold.toNumber()).toBeCloseTo(expected.toNumber(), 9)
+      // И это строго меньше того же шага по идеальной игре.
+      expect(report!.gold.lt(manual.goldPerSecond.times(chunkMs / 1000))).toBe(true)
     }
   })
 

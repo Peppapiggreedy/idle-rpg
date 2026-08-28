@@ -28,3 +28,26 @@ export const RARITY_BY_ID = Object.fromEntries(RARITIES.map((r) => [r.id, r])) a
   Rarity,
   RarityDef
 >
+
+/**
+ * Ожидаемая прибавка предмета по рулетке дропа: Σ(вес × bonusMult) / Σвес.
+ *
+ * Это и есть «средняя экипировка» — не выбранный руками тир, а то, что
+ * рулетка выдаёт в среднем. Считается ИЗ ТЕХ ЖЕ весов, по которым падает
+ * лут: поправишь веса — среднее поедет следом, и контракт темпа это увидит.
+ */
+export const EXPECTED_BONUS_MULT: Decimal = RARITIES.reduce(
+  (sum, r) => sum.plus(r.bonusMult.times(r.weight)),
+  new Decimal(0),
+).div(RARITIES.reduce((sum, r) => sum + r.weight, 0))
+
+/**
+ * Синтетический тир «средний предмет». Настоящим тиром не является и в лут
+ * не попадает: он нужен эталонным сборкам прогона, чтобы «герой в средней
+ * экипировке» был ОДНОЙ воспроизводимой кривой, а не разбросом от обычного
+ * до легендарного.
+ */
+export const AVERAGE_RARITY: RarityDef = {
+  ...RARITIES[0],
+  bonusMult: EXPECTED_BONUS_MULT,
+}

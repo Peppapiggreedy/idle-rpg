@@ -7,24 +7,36 @@ import { createInitialState, type GameState } from './tick'
 import { WEAPON_SHARPENING } from '../data/upgrades'
 
 describe('upgradeCost и покупка', () => {
-  it('цена растёт как 10 * 1.15^owned, целым золотом', () => {
-    expect(upgradeCost(WEAPON_SHARPENING, new Decimal(0)).toNumber()).toBe(10)
-    expect(upgradeCost(WEAPON_SHARPENING, new Decimal(1)).toNumber()).toBe(11)
-    expect(upgradeCost(WEAPON_SHARPENING, new Decimal(5)).toNumber()).toBe(20)
+  // Числа заточки — часть контракта темпа и живут в data/upgrades.ts, поэтому
+  // тест берёт их оттуда, а не повторяет: иначе он ловил бы не поломку формулы,
+  // а осознанную правку баланса.
+  const cost = (owned: number) =>
+    Math.floor(
+      WEAPON_SHARPENING.baseCost.times(WEAPON_SHARPENING.costGrowth.pow(owned)).toNumber() *
+        (1 + 1e-9),
+    )
+
+  it('цена растёт как baseCost * costGrowth^owned, целым золотом', () => {
+    for (const owned of [0, 1, 5, 20]) {
+      expect(upgradeCost(WEAPON_SHARPENING, new Decimal(owned)).toNumber()).toBe(cost(owned))
+    }
   })
 
-  it('покупка 10 апгрейдов подряд списывает ровно 200 золота', () => {
-    // floor(10*1.15^k) для k=0..9: 10+11+13+15+17+20+23+26+30+35 = 200
-    let s: GameState = { ...createInitialState(), gold: new Decimal(1000) }
+  it('покупка 10 апгрейдов подряд списывает ровно сумму их цен', () => {
+    const total = [...Array(10).keys()].reduce((sum, k) => sum + cost(k), 0)
+    const purse = total * 5
+    let s: GameState = { ...createInitialState(), gold: new Decimal(purse) }
     const damageBefore = s.stats.attackPower
     for (let i = 0; i < 10; i++) s = buyUpgrade(s, WEAPON_SHARPENING)
-    expect(s.gold.toNumber()).toBe(800)
+    expect(s.gold.toNumber()).toBe(purse - total)
     expect(ownedCount(s, WEAPON_SHARPENING).toNumber()).toBe(10)
-    expect(s.stats.attackPower.minus(damageBefore).toNumber()).toBe(140) // 10 покупок по +14 силы атаки
+    expect(s.stats.attackPower.minus(damageBefore).toNumber()).toBe(
+      WEAPON_SHARPENING.damageBonus.times(10).toNumber(),
+    )
   })
 
   it('при нехватке золота покупка ничего не меняет', () => {
-    const s: GameState = { ...createInitialState(), gold: new Decimal(5) }
+    const s: GameState = { ...createInitialState(), gold: new Decimal(cost(0) - 1) }
     const after = buyUpgrade(s, WEAPON_SHARPENING)
     expect(after).toBe(s)
   })

@@ -82,8 +82,9 @@ describe('rollSlot', () => {
 // становится плавающим — длина боя зависит от того, кто попался.
 describe('дроп в бою', () => {
   function untilLoot(state: GameState, rng: () => number): GameState {
-    // 30 hp при 20 за удар раз в 2 c: смерть максимум за 2 удара (~4 c)
-    for (let i = 0; i < 45; i++) {
+    // Бой обычного моба стартовой зоны идёт около десяти секунд (контракт
+    // темпа), поэтому крутим щедрый запас тиков и выходим по первому же луту.
+    for (let i = 0; i < 1200; i++) {
       state = tick(state, STEP_MS, rng)
       if (state.combatLog.some((e) => e.type === 'loot')) break
     }
