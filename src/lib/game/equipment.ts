@@ -3,16 +3,52 @@ import { estimateCombatRate, swingDamageRange } from './combat'
 import { INVENTORY_SIZE } from '../data/balance'
 import { ensureStats } from './stats'
 import type { Decimal } from './numbers'
-import type { GameState } from './state'
+import type { Equipment, GameState } from './state'
 import type { SlotId } from '../data/slots'
 import type { Item } from '../types'
 
+/**
+ * Правила связки рук. Живут ЗДЕСЬ, а не в данных слотов: слоты — это перечень
+ * мест, а «двуручное занимает обе» — правило игры.
+ *
+ * Возвращает снаряжение после надевания и список предметов, которые пришлось
+ * снять: двуручное вытесняет обе руки, а любое одноручное или щит в правой
+ * руке вытесняет надетое двуручное.
+ */
+export function equipmentWith(
+  equipment: Equipment,
+  item: Item,
+): { equipment: Equipment; removed: Item[] } {
+  const next: Equipment = { ...equipment, [item.slot]: item }
+  const removed: Item[] = []
+  const push = (existing: Item | null) => {
+    if (existing && existing.id !== item.id) removed.push(existing)
+  }
+  push(equipment[item.slot])
+  if (item.slot === 'mainHand') {
+    if (item.hands === 2) {
+      // Двуручное занимает обе руки: левая обязана освободиться.
+      push(equipment.offHand)
+      next.offHand = null
+    }
+  } else if (item.slot === 'offHand') {
+    // Занять левую руку можно, только если правая не держит двуручное.
+    if (equipment.mainHand?.hands === 2) {
+      push(equipment.mainHand)
+      next.mainHand = null
+    }
+  }
+  return { equipment: next, removed }
+}
+
 // Состояние с надетым предметом — без изменения инвентаря. Нужно для оценки
-// «а если надеть?» и для реального надевания.
+// «а если надеть?» и для реального надевания. Считает СВЯЗКУ целиком: смена
+// одной руки может освободить или занять вторую, и урон в секунду сравнивают
+// именно связки, а не отдельные предметы.
 function withEquipped(state: GameState, item: Item): GameState {
   return ensureStats({
     ...state,
-    equipment: { ...state.equipment, [item.slot]: item },
+    equipment: equipmentWith(state.equipment, item).equipment,
     statsDirty: true,
   })
 }
@@ -74,14 +110,16 @@ export function compareItem(state: GameState, item: Item): EquipComparison {
 export function equipItem(state: GameState, itemId: string): GameState {
   const item = state.inventory.find((i) => i.id === itemId)
   if (!item) return state
-  const previous = state.equipment[item.slot]
-  // Место всегда есть: надеваемый предмет покидает инвентарь.
+  const { equipment, removed } = equipmentWith(state.equipment, item)
+  // Место всегда есть под сам предмет: он покидает инвентарь. Снятая вторая
+  // рука может и не поместиться — тогда надеть не выйдет, иначе предмет
+  // пропал бы молча.
   const inventory = state.inventory.filter((i) => i.id !== itemId)
-  if (previous) inventory.push(previous)
+  if (inventory.length + removed.length > INVENTORY_SIZE) return state
   return ensureStats({
     ...state,
-    inventory,
-    equipment: { ...state.equipment, [item.slot]: item },
+    inventory: [...inventory, ...removed],
+    equipment,
     statsDirty: true,
   })
 }

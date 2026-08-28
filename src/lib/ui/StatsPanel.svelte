@@ -28,6 +28,11 @@
     maxHp: 'Здоровье',
     maxMana: 'Мана',
     weaponSpeed: 'Скорость оружия',
+    offhandSpeed: 'Скорость левой руки',
+    offhandDamageMin: 'Урон левой руки (мин)',
+    offhandDamageMax: 'Урон левой руки (макс)',
+    blockChance: 'Шанс блока',
+    blockValue: 'Сила блока',
     haste: 'Ускорение',
     critChance: 'Шанс крита',
     critMultiplier: 'Множитель крита',
@@ -38,8 +43,8 @@
   }
 
   // Проценты и секунды читаются иначе, чем растущие величины.
-  const PERCENT_STATS: StatId[] = ['critChance', 'damageReduction', 'haste']
-  const SECONDS_STATS: StatId[] = ['weaponSpeed']
+  const PERCENT_STATS: StatId[] = ['critChance', 'damageReduction', 'haste', 'blockChance']
+  const SECONDS_STATS: StatId[] = ['weaponSpeed', 'offhandSpeed']
 
   // 'swingTime' — производная строка, не модифицируемый стат.
   type RowId = StatId | 'swingTime' | 'swingDamage' | 'dps'

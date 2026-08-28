@@ -13,9 +13,10 @@ import { equipItem } from '../../equipment'
 import { rollBossLoot, rollLoot } from '../../loot'
 import { investTalent } from '../../talents'
 import { travelToZone } from '../../zones'
-import { payloadFromState, type SavePayloadV12 } from '../../save'
+import { payloadFromState, type SavePayloadV15 } from '../../save'
 import { DUNGEONS } from '../../../data/dungeons'
 import { TALENTS } from '../../../data/talents'
+import { SLOT_IDS } from '../../../data/slots'
 import type { Item } from '../../../types'
 
 export type PresetName = 'fresh' | 'mid' | 'rich'
@@ -103,8 +104,10 @@ function rich(): GameState {
     rollBossLoot(boss.loot, createRng(500 + index), 100 + index * 10),
   )
   state = addToInventory(state, [...rollItems(state, 606, 5), ...bossLoot])
-  // Надеваем по одному предмету на слот: берём первый подходящий.
-  for (const slot of ['weapon', 'head', 'chest', 'hands', 'legs', 'trinket'] as const) {
+  // Надеваем по одному предмету на слот: берём первый подходящий. Правая рука
+  // идёт первой, левая — второй: двуручное в правой само освободит левую, и
+  // связка сложится по правилам игры, а не по порядку строк здесь.
+  for (const slot of SLOT_IDS) {
     const item = state.inventory.find((i) => i.slot === slot)
     if (item) state = equipItem(state, item.id)
   }
@@ -129,6 +132,6 @@ export function buildPreset(name: PresetName): GameState {
   return BUILDERS[name]()
 }
 
-export function presetPayload(name: PresetName): SavePayloadV12 {
+export function presetPayload(name: PresetName): SavePayloadV15 {
   return payloadFromState(buildPreset(name), FROZEN_TIMESTAMP)
 }

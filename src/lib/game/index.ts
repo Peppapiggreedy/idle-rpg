@@ -142,7 +142,7 @@ export {
   OFFLINE_MODAL_MIN_MS,
 } from './save'
 export type {
-  SavePayloadV12,
+  SavePayloadV15,
   SavedDungeonRun,
   SavedItem,
   SavedModifier,

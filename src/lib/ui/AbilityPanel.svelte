@@ -8,8 +8,13 @@
     expectedAbilityDamage,
     formatNumber,
   } from '../game'
-  import { AUTOCAST_DELAY_MS } from '../data/balance'
-  import { gameState, moveAbilityPriority, setAbilityAutocast } from '../stores/game'
+  import { AUTOCAST_DELAY_MS, REGEN_DELAY_S, RESERVE_PRESETS } from '../data/balance'
+  import {
+    gameState,
+    moveAbilityPriority,
+    setAbilityAutocast,
+    setAbilityReserve,
+  } from '../stores/game'
   import { ABILITY_REASON_TEXT } from './abilityText'
   import { Button, NumberText, Panel, Tag } from './kit'
 
@@ -71,6 +76,21 @@
           />
           Использовать автоматически
         </label>
+        {#if ability.manaCost.gt(0)}
+          {@const reserve = $gameState.abilitySettings[ability.id]?.reserve ?? 0}
+          <div class="reserve">
+            <span class="label">Беречь ману:</span>
+            {#each RESERVE_PRESETS as preset (preset)}
+              <Button
+                size="sm"
+                variant={reserve === preset ? 'primary' : 'ghost'}
+                onclick={() => setAbilityReserve(ability.id, preset)}
+              >
+                {preset === 0 ? 'нет' : `${Math.round(preset * 100)}%`}
+              </Button>
+            {/each}
+          </div>
+        {/if}
         {#if status.reason}
           <p class="reason">Сейчас недоступно: {ABILITY_REASON_TEXT[status.reason]}</p>
         {/if}
@@ -83,6 +103,11 @@
       Автокаст жмёт первое доступное сверху вниз, но реагирует на
       {(AUTOCAST_DELAY_MS / 1000).toFixed(1)}с медленнее тебя и не придерживает кулдауны.
       Сами кнопки умений — под сценой, они видны в любом разделе.
+    </p>
+    <p class="hint">
+      Мана не восстанавливается {REGEN_DELAY_S}с после каждой траты. «Беречь ману» —
+      это выбор: нулевой резерв даёт больше урона сейчас, высокий оставляет окна
+      под восстановление и умение, готовое к нужному моменту.
     </p>
   {/snippet}
 </Panel>
@@ -103,6 +128,16 @@
     padding: var(--space-2);
     border: 1px solid var(--c-border);
     border-radius: var(--radius-md);
+  }
+  .reserve {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    flex-wrap: wrap;
+  }
+  .reserve .label {
+    font-size: var(--text-sm);
+    color: var(--c-text-muted);
   }
   .head {
     display: flex;

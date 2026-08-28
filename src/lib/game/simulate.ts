@@ -14,13 +14,14 @@ import {
   defaultAbilitySettings,
   manualOnlySettings,
   spawnMonster,
+  emptyEquipment,
   type AbilitySettings,
   type Equipment,
   type GameState,
 } from './state'
 import { ensureStats } from './stats'
 import { tick } from './tick'
-import { armorMods, weaponMods } from './loot'
+import { armorMods, shieldMods, weaponMods } from './loot'
 import { estimateZoneTtk, type TtkEstimate } from './combat'
 import { buyUpgrade } from './upgrades'
 import {
@@ -35,7 +36,7 @@ import {
 import { UPGRADES, WEAPON_SHARPENING } from '../data/upgrades'
 import { ABILITIES, ABILITY_BY_ID } from '../data/abilities'
 import { AVERAGE_RARITY, RARITY_BY_ID } from '../data/rarity'
-import { ARMOR_NOUNS, WEAPONS, WEAPON_BY_ID } from '../data/items'
+import { ARMOR_NOUNS, ONE_HANDED, SHIELDS, WEAPONS, WEAPON_BY_ID } from '../data/items'
 import { SLOT_IDS, type SlotId } from '../data/slots'
 import { ZONES } from '../data/zones'
 import type { AttackEvent, Item, Rarity } from '../types'
@@ -49,12 +50,37 @@ export interface SimWeapon {
   bare?: boolean
 }
 
+/**
+ * Стиль боя связки. Прогон сравнивает именно СВЯЗКИ: инвариант нормализации
+ * с итерации 2 теперь про них, а не про отдельный предмет.
+ */
+export type SimStyle = 'twoHanded' | 'shield' | 'dual'
+
+export const SIM_STYLES: readonly SimStyle[] = ['twoHanded', 'dual', 'shield'] as const
+
+/**
+ * Связка стиля из ДАННЫХ, а не из списка id в тесте: добавили оружие —
+ * прогон подхватит его сам. `bare` снимает побочные статы шаблона: инвариант
+ * нормализации скорости — про базу боя, а не про крит кинжала.
+ */
+export function styleBuild(style: SimStyle, bare = false): Pick<SimBuild, 'weapon' | 'offhand'> {
+  const one = ONE_HANDED[0].id
+  const two = (WEAPONS.find((w) => w.hands === 2) ?? WEAPONS[0]).id
+  if (style === 'twoHanded') return { weapon: { templateId: two, bare }, offhand: null }
+  if (style === 'dual') {
+    return { weapon: { templateId: one, bare }, offhand: { templateId: one, bare } }
+  }
+  return { weapon: { templateId: one, bare }, offhand: 'shield' }
+}
+
 /** Кто именно бежит прогон. Всё, что влияет на статы, — источниками, как в
  *  игре: уровень, купленные заточки, надетое оружие, ранги талантов. */
 export interface SimBuild {
   level?: number
   sharpening?: number // сколько раз куплена заточка оружия
   weapon?: SimWeapon | null // null — голые кулаки (UNARMED из баланса)
+  /** Что во второй руке. Не задан — рука пуста. */
+  offhand?: SimWeapon | 'shield' | null
   // Экипировка эталонного героя. 'average' — все слоты заняты СРЕДНИМ по
   // рулетке предметом (см. AVERAGE_RARITY): это не «повезло» и не «не
   // повезло», а то, во что игрок одет обычно. 'none' — голый герой.
@@ -98,6 +124,11 @@ export interface SimResult {
   gold: Decimal
   xp: Decimal
   deaths: number
+  // Привалы: сколько раз герой уходил отдыхать и какую долю времени просидел.
+  // Меряются снаружи, как и всё остальное: уход виден по переходу в 'resting'.
+  rests: number
+  restsPerHour: number
+  restShare: number
   // Доля игрового времени, которую герой прожил живым: 1 — не умирал вовсе.
   uptime: number
   // Урон, разложенный по источнику: автоатака и умения (вместе с их эффектами).
@@ -130,8 +161,17 @@ export const BALANCE_PRESET = {
   weaponBuild: { level: 22, sharpening: 10 } as SimBuild,
   // Урон за ману считается по умениям «на следующий удар».
   manaAbilities: ['rending-wound', 'shattering-blow'],
-  // Порог расхождения итога между тремя оружиями с равным уроном в секунду.
+  // Порог расхождения итога между связками с равным уроном оружия в секунду.
   weaponSpreadLimit: 0.03,
+  // Сравнение стилей идёт по СРЕДНЕМУ нескольких сидов. Один сид даёт разброс
+  // до шести процентов на пустом месте: спавн выдаёт разные пулы мобов, и
+  // измерялась бы удача, а не нормализация.
+  weaponSeeds: [11, 22, 33, 44],
+  // Плата за щит проверяется ПОД ДАВЛЕНИЕМ: слабый герой в зоне не по себе.
+  // Там, где герой не теряет HP вовсе, живучесть измерить нечем — и щит
+  // выглядел бы чистым проигрышем.
+  stressBuild: { level: 8, sharpening: 0 } as SimBuild,
+  stressZoneId: 'ashen-ridge',
   // Контракт темпа: сид эталонного прохождения и его потолок по времени.
   pacingSeed: 4242,
   pacingHours: 60,
@@ -283,18 +323,31 @@ export function spreadOf(values: Decimal[]): number {
 
 /** Предмет-оружие из шаблона данных. Модификаторы строит та же `weaponMods`,
  *  что и лут, — второй копии правил «оружие задаёт базу боя» не существует. */
-export function simWeaponItem(weapon: SimWeapon): Item {
+export function simWeaponItem(weapon: SimWeapon, slot: 'mainHand' | 'offHand' = 'mainHand'): Item {
   const template = WEAPON_BY_ID[weapon.templateId]
   if (!template) throw new Error(`unknown weapon template: ${weapon.templateId}`)
   const rarity = RARITY_BY_ID[weapon.rarity ?? 'common']
-  const mods = weaponMods(template, rarity)
+  const mods = weaponMods(template, rarity, slot)
   return {
-    id: `sim-weapon-${template.id}`,
+    id: `sim-weapon-${slot}-${template.id}`,
     name: template.noun,
     rarity: rarity.id,
-    slot: 'weapon',
+    slot,
+    hands: template.hands,
     // Голое оружие — только база боя: скорость и диапазон урона.
     mods: weapon.bare ? mods.filter((m) => m.kind === 'base') : mods,
+  }
+}
+
+/** Щит для прогона: берём первый из данных, второго пока и нет. */
+export function simShieldItem(rarity: Rarity = 'common'): Item {
+  const template = SHIELDS[0]
+  return {
+    id: 'sim-shield',
+    name: template.noun,
+    rarity,
+    slot: 'offHand',
+    mods: shieldMods(template, RARITY_BY_ID[rarity]),
   }
 }
 
@@ -304,22 +357,38 @@ export function simWeaponItem(weapon: SimWeapon): Item {
  * выбор между ними на темп не влияет; берём среднее по скорости — чтобы в
  * таблице стояло что-то одно и понятное.
  */
-export const AVERAGE_WEAPON = [...WEAPONS].sort((a, b) =>
+export const AVERAGE_WEAPON = [...ONE_HANDED].sort((a, b) =>
   a.weaponSpeed.minus(b.weaponSpeed).toNumber(),
-)[Math.floor(WEAPONS.length / 2)]
+)[Math.floor(ONE_HANDED.length / 2)]
 
 /** Полный комплект средней по рулетке экипировки. */
 export function averageGear(): Equipment {
   const gear = {} as Record<SlotId, Item | null>
   for (const slot of SLOT_IDS) {
-    if (slot === 'weapon') {
-      gear.weapon = {
-        id: 'sim-gear-weapon',
+    if (slot === 'mainHand') {
+      gear.mainHand = {
+        id: 'sim-gear-mainHand',
         name: AVERAGE_WEAPON.noun,
         rarity: AVERAGE_RARITY.id,
         slot,
-        mods: weaponMods(AVERAGE_WEAPON, AVERAGE_RARITY),
+        hands: AVERAGE_WEAPON.hands,
+        mods: weaponMods(AVERAGE_WEAPON, AVERAGE_RARITY, 'mainHand'),
       }
+      continue
+    }
+    if (slot === 'offHand') {
+      // Средний герой носит щит: одноручное со щитом — самая обычная связка,
+      // и коридор темпа держится именно на ней.
+      gear.offHand =
+        AVERAGE_WEAPON.hands === 2
+          ? null
+          : {
+              id: 'sim-gear-offHand',
+              name: SHIELDS[0].noun,
+              rarity: AVERAGE_RARITY.id,
+              slot,
+              mods: shieldMods(SHIELDS[0], AVERAGE_RARITY),
+            }
       continue
     }
     gear[slot] = {
@@ -333,16 +402,36 @@ export function averageGear(): Equipment {
   return gear as Equipment
 }
 
+/**
+ * Снаряжение прогона. Правила связки те же, что в игре: двуручное оставляет
+ * левую руку пустой, одноручное пускает туда щит или второй клинок.
+ */
+function buildEquipment(build: SimBuild, weapon: Item | null): Equipment {
+  const base = build.gear === 'average' ? averageGear() : emptyEquipment()
+  const equipment: Equipment = { ...base }
+  if (weapon) {
+    equipment.mainHand = weapon
+    if (weapon.hands === 2) equipment.offHand = null
+  }
+  if (build.offhand === null) equipment.offHand = null
+  else if (build.offhand === 'shield') equipment.offHand = simShieldItem()
+  else if (build.offhand) equipment.offHand = simWeaponItem(build.offhand, 'offHand')
+  // Двуручное в правой руке несовместимо со второй: правило одно и то же
+  // и для игры, и для прогона.
+  if (equipment.mainHand?.hands === 2) equipment.offHand = null
+  return equipment
+}
+
 function settingsFor(autocast: SimBuild['autocast']): AbilitySettings {
   if (autocast === undefined || autocast === 'all') return defaultAbilitySettings()
   if (autocast === 'none') return manualOnlySettings()
   const settings = manualOnlySettings()
   autocast.forEach((id, index) => {
-    if (settings[id]) settings[id] = { autocast: true, priority: index }
+    if (settings[id]) settings[id] = { ...settings[id], autocast: true, priority: index }
   })
   // Невыбранные умения уходят в конец списка приоритетов.
   ABILITIES.filter((a) => !autocast.includes(a.id)).forEach((a, index) => {
-    settings[a.id] = { autocast: false, priority: autocast.length + index }
+    settings[a.id] = { ...settings[a.id], autocast: false, priority: autocast.length + index }
   })
   return settings
 }
@@ -363,10 +452,7 @@ export function buildSimState(build: SimBuild, zoneId: string, seed: number): Ga
       ? { 'weapon-sharpening': new Decimal(build.sharpening) }
       : {},
     talents: { ...(build.talents ?? {}) },
-    equipment:
-      build.gear === 'average'
-        ? { ...averageGear(), ...(weapon ? { weapon } : {}) }
-        : ({ ...base.equipment, weapon } as Equipment),
+    equipment: buildEquipment(build, weapon),
     abilitySettings: settingsFor(build.autocast),
     // Прогон меряет ЗАДАННЫЙ билд: автонадевание подменило бы его на середине.
     autoEquip: false,
@@ -426,6 +512,8 @@ export function simulate(options: SimOptions): SimResult {
   let kills = new Decimal(0)
   let deaths = 0
   let deadMs = 0
+  let rests = 0
+  let restingMs = 0
   let autoDamage = new Decimal(0)
   let abilityDamage = new Decimal(0)
   let manaSpent = new Decimal(0)
@@ -461,6 +549,9 @@ export function simulate(options: SimOptions): SimResult {
     if (prev.respawnMsLeft <= 0 && state.respawnMsLeft > 0) kills = kills.plus(1)
     if (prev.heroState === 'alive' && state.heroState === 'dead') deaths += 1
     if (state.heroState === 'dead') deadMs += STEP_MS
+    // Привал виден снаружи так же, как убийство: по переходу состояния.
+    if (prev.heroState !== 'resting' && state.heroState === 'resting') rests += 1
+    if (state.heroState === 'resting') restingMs += STEP_MS
     // Каст виден по кулдауну: он тоже только убывает, а вверх его ставит
     // только применение умения (см. payFor в abilities.ts).
     for (const ability of ABILITIES) {
@@ -503,6 +594,9 @@ export function simulate(options: SimOptions): SimResult {
     gold,
     xp,
     deaths,
+    rests,
+    restsPerHour: rests / hours,
+    restShare: restingMs / (seconds * 1000),
     uptime: 1 - deadMs / (seconds * 1000),
     autoDamage,
     abilityDamage,

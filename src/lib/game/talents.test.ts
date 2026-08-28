@@ -219,8 +219,12 @@ describe('эффекты талантов', () => {
     expect(reviveMultiplier(swift.talents)).toBe(0.5)
 
     // Проверяем на живом тике: герой с нулевым HP уходит в простой.
+    // Порог привала снят намеренно — тест про воскрешение, а с порогом герой
+    // ушёл бы отдыхать и до смерти не дожил.
     const dying: GameState = {
       ...swift,
+      restHpThreshold: 0,
+      restResourceThreshold: 0,
       currentHp: new Decimal(0.01),
       monster: { ...swift.monster, damageMin: new Decimal(1e6), damageMax: new Decimal(1e6) },
     }
@@ -302,7 +306,7 @@ describe('ускорение: талант и предмет неразличи�
   // (haste стартует с нуля, и процентный модификатор от нуля даст ноль).
   const weapon = WEAPONS[2] // Крушитель, 3.4 c — на медленном разница виднее
   const weaponBase: StatModifier[] = [
-    { stat: 'weaponSpeed', kind: 'base', value: weapon.weaponSpeed, source: 'equipment:weapon' },
+    { stat: 'weaponSpeed', kind: 'base', value: weapon.weaponSpeed, source: 'equipment:mainHand' },
   ]
   const hasteMod = (source: string): StatModifier => ({
     stat: 'haste',

@@ -337,16 +337,17 @@ describe('умения масштабируются от оружия', () => {
   // для умений — размер ОДНОГО удара.
   function withWeapon(index: number): GameState {
     const w = WEAPONS[index]
-    const source = 'equipment:weapon'
+    const source = 'equipment:mainHand'
     return ensureStats({
       ...hero(),
       equipment: {
         ...hero().equipment,
-        weapon: {
+        mainHand: {
           id: `w${index}`,
           name: w.noun,
           rarity: 'common',
-          slot: 'weapon',
+          slot: 'mainHand',
+          hands: w.hands,
           mods: [
             { stat: 'weaponSpeed', kind: 'base', value: w.weaponSpeed, source },
             { stat: 'weaponDamageMin', kind: 'base', value: w.damageMin, source },

@@ -24,6 +24,16 @@ export type StatId =
   | 'attackPower'
   | 'weaponDamageMin'
   | 'weaponDamageMax'
+  // Левая рука — СВОЯ база боя: своя скорость и свой диапазон урона. Без
+  // отдельных статов дуалвилд пришлось бы считать мимо конвейера, а правило
+  // «итоговые статы меняются только модификатором» запрещает такие обходы.
+  // Ноль в offhandDamageMax означает «левая рука пуста»: она не бьёт.
+  | 'offhandSpeed'
+  | 'offhandDamageMin'
+  | 'offhandDamageMax'
+  // Щит: шанс блока и сколько урона он снимает.
+  | 'blockChance'
+  | 'blockValue'
   | 'maxHp'
   | 'maxMana'
   | 'weaponSpeed'
@@ -39,6 +49,11 @@ export const STAT_IDS: StatId[] = [
   'attackPower',
   'weaponDamageMin',
   'weaponDamageMax',
+  'offhandSpeed',
+  'offhandDamageMin',
+  'offhandDamageMax',
+  'blockChance',
+  'blockValue',
   'maxHp',
   'maxMana',
   'weaponSpeed',
@@ -60,7 +75,7 @@ export interface StatModifier {
   // percent — доля (0.2 = +20%); multiplier — множитель.
   value: Decimal
   // Обязательный человекочитаемый источник: 'upgrade:weapon-sharpening',
-  // 'equipment:weapon', 'talent:heavy_blows', 'zone:ashen_wastes'. UI показывает
+  // 'equipment:mainHand', 'talent:heavy_blows', 'zone:ashen_wastes'. UI показывает
   // раскладку по source построчно.
   source: string
 }
@@ -76,6 +91,13 @@ export interface StatBlock {
   weaponSpeed: number // секунд между ударами оружия (меньше = быстрее)
   haste: number // ускорение в долях: 0.2 = +20% скорости (больше = быстрее)
   swingTime: number // ПРОИЗВОДНАЯ: weaponSpeed / (1 + haste), секунд на замах
+  // Левая рука. offhandDamageMax === 0 означает «рука пуста»: замаха нет.
+  offhandSpeed: number
+  offhandDamageMin: Decimal
+  offhandDamageMax: Decimal
+  offhandSwingTime: number // ПРОИЗВОДНАЯ, тот же haste на обе руки
+  blockChance: number // вероятность 0..1
+  blockValue: Decimal // сколько урона снимает удачный блок
   critChance: number // вероятность 0..1
   critMultiplier: Decimal
   hpRegen: Decimal // в бою
@@ -102,7 +124,7 @@ export function collectModifiers(state: GameState): StatModifier[] {
     )
   }
   // Экипировка: модификаторы лежат прямо в предмете, source уже проставлен
-  // генератором ('equipment:weapon' и т.д.). Оружие среди них задаёт БАЗУ
+  // генератором ('equipment:mainHand' и т.д.). Оружие среди них задаёт БАЗУ
   // weaponSpeed / weaponDamageMin / weaponDamageMax через kind 'base' —
   // сняли оружие, и значения вернулись к UNARMED из data/balance.ts.
   for (const slot of SLOT_IDS) {
@@ -158,10 +180,18 @@ export function computeSwingTime(weaponSpeed: number, haste: number): number {
 export function applyModifiers(mods: StatModifier[]): StatBlock {
   const weaponSpeed = computeStat('weaponSpeed', mods).toNumber()
   const haste = computeStat('haste', mods).toNumber()
+  // Ускорение одно на героя, а не на предмет: haste ускоряет обе руки.
+  const offhandSpeed = computeStat('offhandSpeed', mods).toNumber()
   return {
     attackPower: computeStat('attackPower', mods),
     weaponDamageMin: computeStat('weaponDamageMin', mods),
     weaponDamageMax: computeStat('weaponDamageMax', mods),
+    offhandSpeed,
+    offhandDamageMin: computeStat('offhandDamageMin', mods),
+    offhandDamageMax: computeStat('offhandDamageMax', mods),
+    offhandSwingTime: computeSwingTime(offhandSpeed, haste),
+    blockChance: computeStat('blockChance', mods).toNumber(),
+    blockValue: computeStat('blockValue', mods),
     maxHp: computeStat('maxHp', mods),
     maxMana: computeStat('maxMana', mods),
     weaponSpeed,

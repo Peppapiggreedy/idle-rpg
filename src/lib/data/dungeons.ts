@@ -85,7 +85,7 @@ export const DUNGEONS: DungeonDef[] = [
         goldMult: new Decimal(35),
         xpMult: new Decimal(28),
         enrageAfterSec: 35,
-        loot: { slots: ['weapon', 'trinket'], minRarity: 'epic' },
+        loot: { slots: ['mainHand', 'trinket'], minRarity: 'epic' },
       },
     ],
   },

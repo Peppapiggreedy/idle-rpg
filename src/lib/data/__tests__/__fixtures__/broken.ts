@@ -178,6 +178,32 @@ export function brokenCases(): BrokenCase[] {
       expect: [first(real.weapons).id, 'damageMax', 'damageMin'],
     },
     {
+      title: 'щит не блокирует: вероятность блока ушла в ноль',
+      content: {
+        ...real,
+        shields: patch(real.shields, first(real.shields).id, { blockChance: new Decimal(0) }),
+      },
+      expect: [first(real.shields).id, 'blockChance', 'больше 0'],
+    },
+    {
+      title: 'щит блокирует чаще, чем всегда',
+      content: {
+        ...real,
+        shields: patch(real.shields, first(real.shields).id, { blockChance: new Decimal(1.4) }),
+      },
+      expect: [first(real.shields).id, 'blockChance', 'не больше 1'],
+    },
+    {
+      title: 'щит выдаёт себя за оружие и даёт урон',
+      content: {
+        ...real,
+        shields: patch(real.shields, first(real.shields).id, {
+          extra: [{ stat: 'offhandDamageMax', kind: 'flat', value: new Decimal(9) }],
+        }),
+      },
+      expect: [first(real.shields).id, 'offhandDamageMax', 'не оружие'],
+    },
+    {
       title: 'лут босса ссылается на несуществующий слот',
       content: {
         ...real,

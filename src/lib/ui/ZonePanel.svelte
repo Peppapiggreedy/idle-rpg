@@ -2,12 +2,15 @@
   // Экран выбора зоны. Весь текст — здесь; логика отдаёт только числа и вердикт.
   import { formatNumber, forecastAllZones, type ZoneForecast, type ZoneVerdict } from '../game'
   import { ZONES, ZONE_BY_ID } from '../data/zones'
-  import { gameState, travelToZone } from '../stores/game'
+  import { REST_DURATION_S, REST_HP_PRESETS } from '../data/balance'
+  import { zoneSafety } from '../game/rest'
+  import { gameState, setRestHpThreshold, travelToZone } from '../stores/game'
   import { Button, NumberText, Panel, Tag } from './kit'
   import { Icon } from './icons'
 
   const forecasts = $derived(forecastAllZones($gameState))
   const byId = $derived(new Map(forecasts.map((f) => [f.zoneId, f])))
+  const restShare = $derived(Math.round($gameState.restHpThreshold * 100))
 
   const VERDICT_LABEL: Record<ZoneVerdict, string> = {
     safe: 'по силам',
@@ -56,6 +59,7 @@
   <ul>
     {#each ZONES as zone (zone.id)}
       {@const f = byId.get(zone.id)}
+      {@const safety = zoneSafety($gameState, zone)}
       {#if f}
         <li
           class="zone {f.verdict}"
@@ -73,6 +77,20 @@
             <NumberText value={f.xpPerHour} tone="xp" /> опыта/ч
           </div>
           <div class="warning">{warning(f)}, {toughness(f)}.</div>
+          <div class="safety" class:safe={safety.safe}>
+            {#if safety.safe}
+              Безопасно при пороге {restShare}%: сильнейший удар здесь —
+              <NumberText value={safety.worstHit} tone="damage" />, а на привал ты уходишь
+              с <NumberText value={safety.thresholdHp} tone="hp" /> HP. Умереть нельзя.
+            {:else if $gameState.restHpThreshold <= 0}
+              Порог привала снят — единственной паузой снова стала смерть.
+            {:else}
+              Опасно при пороге {restShare}%: сильнейший удар здесь —
+              <NumberText value={safety.worstHit} tone="damage" />, а уходишь ты
+              с <NumberText value={safety.thresholdHp} tone="hp" /> HP. Один такой удар
+              с порога — и ты труп.
+            {/if}
+          </div>
           {#if zone.id === $gameState.currentZoneId}
             <Tag tone="accent" label="ты здесь" />
           {:else if f.unlocked}
@@ -85,7 +103,24 @@
     {/each}
   </ul>
 
+  <div class="rest">
+    <span class="label">Уходить на привал при HP ниже:</span>
+    {#each REST_HP_PRESETS as preset (preset)}
+      <Button
+        size="sm"
+        variant={$gameState.restHpThreshold === preset ? 'primary' : 'ghost'}
+        onclick={() => setRestHpThreshold(preset)}
+      >
+        {preset === 0 ? 'никогда' : `${Math.round(preset * 100)}%`}
+      </Button>
+    {/each}
+  </div>
+
   {#snippet footer()}
+    <p class="hint">
+      Привал длится {REST_DURATION_S} с и восстанавливает всё. Чем выше порог, тем
+      безопаснее и тем больше времени уходит на отдых, — это и есть выбор.
+    </p>
     <p class="hint">
       Смерть отбрасывает в последнюю зону, где ты выживал
       {#if $gameState.lastSurvivedZoneId}
@@ -98,6 +133,24 @@
 </Panel>
 
 <style>
+  .safety {
+    font-size: var(--text-sm);
+    color: var(--c-warning);
+  }
+  .safety.safe {
+    color: var(--c-heal);
+  }
+  .rest {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    flex-wrap: wrap;
+    margin-top: var(--space-3);
+  }
+  .rest .label {
+    font-size: var(--text-sm);
+    color: var(--c-text-muted);
+  }
   ul {
     list-style: none;
     margin: 0;

@@ -2,6 +2,7 @@
 // из статов героя и мобов зоны через ту же estimateCombatRate, что и бой, —
 // в данных зоны нет ни слова про «тут опасно». Текст рендерит UI по вердикту.
 import { Decimal } from './numbers'
+import { restDurationMs } from './rest'
 import { estimateCombatRate, expectedMonsterDamage, uptimeFromHpLoss } from './combat'
 import type { PlayMode } from './rotation'
 import { monsterFromTemplate, pushEvent, spawnMonster, type GameState } from './state'
@@ -108,7 +109,13 @@ export function zoneRate(state: GameState, zone: Zone, mode: PlayMode = 'auto'):
     xp = xp.plus(rate.idealKillsPerSecond.times(template.xpReward))
     hpLoss = hpLoss.plus(rate.hpLossPerSecond)
   }
-  const uptime = uptimeFromHpLoss(state.stats.maxHp, hpLoss.div(n))
+  // Привал — часть цикла зоны: герой не умирает, а отдыхает, и это время
+  // тоже не приносит золота. Модель обязана его вычесть, иначе оффлайн
+  // пообещает больше живой игры.
+  const uptime = uptimeFromHpLoss(state.stats.maxHp, hpLoss.div(n), {
+    hpThreshold: state.restHpThreshold,
+    durationMs: restDurationMs(state),
+  })
   return {
     killsPerSecond: kills.div(n).times(uptime),
     goldPerSecond: gold.div(n).times(uptime),

@@ -16,7 +16,7 @@ import { Decimal } from '../../game/numbers'
 import type { AbilityDef } from '../abilities'
 import type { ModelAsset } from '../assets'
 import type { DungeonDef } from '../dungeons'
-import type { WeaponTemplate } from '../items'
+import type { ShieldTemplate, WeaponTemplate } from '../items'
 import type { RarityDef } from '../rarity'
 import type { SlotId } from '../slots'
 import type { BranchDef, TalentDef } from '../talents'
@@ -40,6 +40,7 @@ export interface Content {
   zones: readonly Zone[]
   dungeons: readonly DungeonDef[]
   weapons: readonly WeaponTemplate[]
+  shields: readonly ShieldTemplate[]
   rarities: readonly RarityDef[]
   upgrades: readonly UpgradeDef[]
   models: readonly ModelAsset[]
@@ -47,7 +48,7 @@ export interface Content {
   slotNames: Record<SlotId, string>
   slotIcons: Record<SlotId, string>
   slotDropWeights: Record<SlotId, number>
-  armorNouns: Record<Exclude<SlotId, 'weapon'>, readonly string[]>
+  armorNouns: Record<Exclude<SlotId, 'mainHand' | 'offHand'>, readonly string[]>
   statIds: readonly StatId[]
   /** Имена из реестра иконок (ui/icons/manifest.ts). */
   iconNames: readonly string[]
@@ -665,6 +666,59 @@ export const WEAPON_SCHEMA: EntitySchema<WeaponTemplate> = {
   },
 }
 
+export const SHIELD_SCHEMA: EntitySchema<ShieldTemplate> = {
+  kind: 'щит',
+  file: 'data/items.ts',
+  entities: (c) => c.shields,
+  id: (s) => s.id,
+  name: (s) => s.noun,
+  numbers: [
+    {
+      field: 'blockChance',
+      get: (s) => s.blockChance,
+      min: 0,
+      max: 1,
+      exclusiveMin: true,
+      why: 'вероятность блока — доля 0..1; ноль означал бы щит, который не блокирует',
+    },
+    {
+      field: 'blockValue',
+      get: (s) => s.blockValue,
+      min: 0,
+      exclusiveMin: true,
+      why: 'щит с нулевой силой блока не снимает урона и не отличим от пустой руки',
+    },
+  ],
+  extra: (shield, content, report) => {
+    const where = `щит ${shield.id}`
+    for (const mod of shield.extra ?? []) {
+      if (!content.statIds.includes(mod.stat)) {
+        report.add(
+          where,
+          `побочный стат «${mod.stat}» не входит в StatId из game/stats.ts ` +
+            '(шаблон щита — data/items.ts)',
+        )
+      }
+      if (mod.kind === 'base') {
+        report.add(
+          where,
+          `побочный стат «${mod.stat}» помечен kind: 'base' — блок задаёт ` +
+            'shieldMods в game/loot.ts, второй базы быть не должно',
+        )
+      }
+      // Щит НЕ оружие: урона он не даёт ни в каком виде, иначе стиль «щит»
+      // перестал бы быть платой за живучесть.
+      if (String(mod.stat).startsWith('offhandDamage') || String(mod.stat).startsWith('weaponDamage')) {
+        report.add(
+          where,
+          `щит даёт урон статом «${mod.stat}» — щит не оружие, его вклад ` +
+            'это блок и живучесть (data/items.ts)',
+        )
+      }
+    }
+  },
+}
+
 export const RARITY_SCHEMA: EntitySchema<RarityDef> = {
   kind: 'редкость',
   file: 'data/rarity.ts',
@@ -771,6 +825,7 @@ export const SCHEMAS = [
   ZONE_SCHEMA,
   DUNGEON_SCHEMA,
   WEAPON_SCHEMA,
+  SHIELD_SCHEMA,
   RARITY_SCHEMA,
   UPGRADE_SCHEMA,
   MODEL_SCHEMA,
@@ -844,8 +899,8 @@ function checkReachable(content: Content, report: Report): void {
       `слот ${slot}`,
       `иконка «${icon}» не найдена в реестре ui/icons/manifest.ts (SLOT_ICONS в data/slots.ts)`,
     )
-    if (slot === 'weapon') continue
-    const nouns = content.armorNouns[slot as Exclude<SlotId, 'weapon'>]
+    if (slot === 'mainHand' || slot === 'offHand') continue
+    const nouns = content.armorNouns[slot as Exclude<SlotId, 'mainHand' | 'offHand'>]
     report.need(
       Array.isArray(nouns) && nouns.length > 0,
       `слот ${slot}`,

@@ -15,7 +15,7 @@ import { Decimal } from '../game'
 import type { CombatEvent } from '../types'
 
 /** Типы, которые имеет смысл сворачивать: их бывает много и они однообразны. */
-const AGGREGATABLE: CombatEvent['type'][] = ['hit', 'effect', 'hurt']
+const AGGREGATABLE: CombatEvent['type'][] = ['hit', 'effect', 'hurt', 'block']
 
 export interface LogRow {
   /** Ключ для #each: свой у каждой строки и стабильный, пока строка живёт. */
@@ -40,6 +40,8 @@ export function emptyLogView(): LogView {
 
 function damageOf(event: CombatEvent): Decimal | null {
   if (event.type === 'hit' || event.type === 'effect' || event.type === 'hurt') return event.damage
+  // У блока показываем прошедший урон: он и есть потеря HP.
+  if (event.type === 'block') return event.damage
   if (event.type === 'ability') return event.damage
   return null
 }
@@ -96,7 +98,7 @@ export function isAggregated(row: LogRow): boolean {
 /** Группы для фильтра ленты. */
 export const LOG_FILTERS = {
   all: { label: 'Всё', types: null },
-  damage: { label: 'Урон', types: ['hit', 'ability', 'effect', 'hurt'] },
+  damage: { label: 'Урон', types: ['hit', 'ability', 'effect', 'hurt', 'block'] },
   loot: { label: 'Добыча', types: ['kill', 'loot', 'levelup'] },
   events: {
     label: 'События',

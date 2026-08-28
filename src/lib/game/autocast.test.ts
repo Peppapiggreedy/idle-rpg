@@ -54,8 +54,8 @@ describe('выбор умения автокастом', () => {
       ...s,
       abilitySettings: {
         ...s.abilitySettings,
-        [QUICK.id]: { autocast: true, priority: 9 },
-        [BLOW.id]: { autocast: true, priority: 0 },
+        [QUICK.id]: { ...s.abilitySettings[QUICK.id], autocast: true, priority: 9 },
+        [BLOW.id]: { ...s.abilitySettings[BLOW.id], autocast: true, priority: 0 },
       },
     }
     expect(autocastCandidates(flipped)[0].id).toBe(BLOW.id)
@@ -65,7 +65,7 @@ describe('выбор умения автокастом', () => {
     const s = hero(10, 0, {
       abilitySettings: {
         ...defaultAbilitySettings(),
-        [QUICK.id]: { autocast: false, priority: 0 },
+        [QUICK.id]: { autocast: false, priority: 0, reserve: 0 },
       },
     })
     expect(autocastCandidates(s).map((a) => a.id)).not.toContain(QUICK.id)
@@ -120,25 +120,46 @@ describe('задержка реакции', () => {
 
 describe('автокаст в бою', () => {
   it('герой сам применяет умения и тратит на них ману', () => {
-    const s = hero(10)
-    const after = run(s, 20_000)
-    expect(after.combatLog.some((e) => e.type === 'ability')).toBe(true)
-    expect(after.currentMana.lt(after.stats.maxMana)).toBe(true)
-  })
-
-  it('автокаст не придерживает кулдауны: бьёт, как только смог', () => {
-    // За минуту умение с кулдауном 2 c должно уйти в дело много раз, а не
-    // ждать удобного момента.
+    // Считаем по шине, а не по хвосту лога: лог хранит последние COMBAT_LOG_SIZE
+    // событий, и при пустой мане в конце окна там одни автоатаки.
     let casts = 0
     let s = hero(10)
-    for (let t = 0; t < 60_000; t += STEP_MS) {
+    for (let t = 0; t < 20_000; t += STEP_MS) {
       s = tick(s, STEP_MS, NO_LUCK, (e) => {
-        if (e.abilityId === QUICK.id) casts += 1
+        if (e.abilityId !== null) casts += 1
       })
     }
-    // Идеал — 60/2 = 30 применений; с задержкой реакции и паузами на респаун
-    // выходит меньше, но заметно больше половины.
-    expect(casts).toBeGreaterThan(15)
+    expect(casts).toBeGreaterThan(0)
+    expect(s.currentMana.lt(s.stats.maxMana)).toBe(true)
+  })
+
+  it('автокаст не придерживает кулдауны: жмёт, как только маны хватило', () => {
+    // Проверяем МЕХАНИЗМ, а не число применений: с правилом задержки регена
+    // темп упирается в ману, а не в кулдаун, и «сколько раз за минуту» стало
+    // мерить экономику, а не выдержку автокаста.
+    //
+    // Утверждение то же самое: автокаст не выжидает удобного момента. Значит
+    // между «маны стало достаточно» и «умение ушло в дело» проходит ровно
+    // задержка реакции плюс шаг симуляции, и не больше.
+    let s = hero(10, 0, { currentMana: new Decimal(0) })
+    let readySince: number | null = null
+    let worstWaitMs = 0
+    let fired = 0
+    for (let t = 0; t < 60_000; t += STEP_MS) {
+      const affordable =
+        s.currentMana.gte(QUICK.manaCost) && (s.abilityCooldownsMs[QUICK.id] ?? 0) <= 0
+      if (affordable && readySince === null) readySince = t
+      s = tick(s, STEP_MS, NO_LUCK, (e) => {
+        if (e.abilityId === QUICK.id) {
+          if (readySince !== null) worstWaitMs = Math.max(worstWaitMs, t - readySince)
+          readySince = null
+          fired += 1
+        }
+      })
+      if (!affordable) readySince = null
+    }
+    expect(fired, 'умение не применялось ни разу').toBeGreaterThan(0)
+    expect(worstWaitMs).toBeLessThanOrEqual(AUTOCAST_DELAY_MS + STEP_MS)
   })
 })
 
@@ -179,7 +200,17 @@ describe('честная разница авто и ручной игры', () =
   it('разница берётся из задержки реакции, а не из множителя', () => {
     // Обнулим задержку в модели, подставив ручной режим той же ротации:
     // без задержки и перебоя авто и рука совпадают до знака.
-    const s = stateInZone(hero(16, 120), ZONES[2])
+    //
+    // Умение здесь ОДНО и с длинным кулдауном намеренно. С правилом задержки
+    // регена частая ротация упирается в ману, обе руки садятся на один и тот
+    // же равновесный темп, и разницы в цикле не остаётся вовсе — задержка
+    // реакции видна только там, где ограничивает кулдаун, а не ресурс.
+    // Это следствие правила, а не поблажка: см. REGEN_DELAY_S в balance.ts.
+    const onlyBlow = {
+      ...manualOnlySettings(),
+      [BLOW.id]: { autocast: true, priority: 0, reserve: 0 },
+    }
+    const s = stateInZone(hero(16, 120, { abilitySettings: onlyBlow }), ZONES[2])
     const auto = rotationRate(s.stats, s.abilitySettings, PLAN.auto)
     const manual = rotationRate(s.stats, s.abilitySettings, PLAN.autocastByHand)
     for (const cast of auto.casts) {

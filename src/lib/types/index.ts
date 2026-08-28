@@ -36,6 +36,8 @@ export interface UpgradeDef {
 export type Rarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary'
 
 export interface Item {
+  /** Сколько рук занимает оружие. Нет поля — предмет не оружие. */
+  hands?: 1 | 2
   id: string
   name: string
   rarity: Rarity
@@ -67,6 +69,12 @@ export type CombatEvent =
   | { type: 'dungeon-exit'; defeated: boolean }
   | { type: 'dungeon-clear'; dungeonName: string; firstClear: boolean }
   | { type: 'enrage'; bossName: string; multiplier: number }
+  // Привал: управляемая пауза по порогу. 'interrupted' — игрок прервал сам,
+  // и восстановление вышло частичным.
+  // Блок щитом: `damage` — что прошло, `blocked` — что снял щит.
+  | { type: 'block'; damage: Decimal; blocked: Decimal; monsterName: string }
+  | { type: 'rest-start' }
+  | { type: 'rest-end'; interrupted: boolean }
 
 // Активный забег по данжу. Хранится в состоянии и в сейве: цепочку можно
 // продолжить после перезагрузки, но не после смерти внутри.

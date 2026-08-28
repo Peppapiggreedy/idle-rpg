@@ -21,6 +21,10 @@ import { SLOT_IDS, type SlotId } from '../data/slots'
 import {
   AUTOSAVE_INTERVAL_S,
   GCD_MS,
+  REGEN_DELAY_S,
+  REGEN_TICK_S,
+  REST_HP_THRESHOLD_DEFAULT,
+  REST_RESOURCE_THRESHOLD_DEFAULT,
   LEGACY_V3_SWING_TIME_S,
   OFFLINE_CAP_HOURS,
   OFFLINE_CHUNK_MIN,
@@ -37,7 +41,7 @@ import { SAFE_ZONE, ZONE_BY_ID } from '../data/zones'
 import { currentZone, zoneRate } from './zones'
 
 export const SAVE_KEY = 'idle-rpg-save'
-export const SAVE_VERSION = 12
+export const SAVE_VERSION = 15
 export const AUTOSAVE_INTERVAL_MS = AUTOSAVE_INTERVAL_S * 1000
 // Потолок оффлайн-прогресса: дольше отсутствовать можно, но не оплачивается.
 export const OFFLINE_CAP_MS = OFFLINE_CAP_HOURS * 60 * 60 * 1000
@@ -61,12 +65,16 @@ export interface SavedItem {
   name: string
   rarity: string
   slot: string
+  /** Сколько рук занимает оружие. Нет поля — предмет не оружие. */
+  hands?: number
   mods: SavedModifier[]
 }
 
 export interface SavedAbilitySetting {
   autocast: boolean
   priority: number
+  /** Резерв маны, доля 0..1. Настройка игрока — значит, часть прогресса. */
+  reserve: number
 }
 
 export interface SavedDungeonRun {
@@ -75,15 +83,20 @@ export interface SavedDungeonRun {
   fightMs: number
 }
 
-export interface SavePayloadV12 {
-  version: 12
+export interface SavePayloadV15 {
+  version: 15
   lastTimestamp: number
   gold: string
   level: string
   currentXp: string
   currentHp: string
   currentMana: string
-  heroState: 'alive' | 'dead'
+  // Привал сохраняется как СОСТОЯНИЕ, но не как отсчёт: перезагрузка не
+  // должна ни красть уже отсиженное, ни давать его даром. Герой просыпается
+  // отдохнувшим — это честнее обеих альтернатив.
+  heroState: 'alive' | 'dead' | 'resting'
+  restHpThreshold: number
+  restResourceThreshold: number
   reviveMsLeft: number
   upgrades: Record<string, string>
   // Таланты: id -> ранг (обычные числа, не Decimal — рангов единицы).
@@ -102,6 +115,10 @@ export interface SavePayloadV12 {
   // мобе, а моб при загрузке спавнится заново.
   gcdMsLeft: number
   abilityCooldownsMs: Record<string, number>
+  // Правило задержки регенерации: сколько ещё ждать до старта восстановления.
+  // Сохраняется, чтобы перезагрузка не обнуляла паузу — иначе выход и вход
+  // стали бы способом мгновенно запустить реген.
+  regenDelayMsLeft: number
   // Настройки автокаста: галка и приоритет по каждому умению.
   abilitySettings: Record<string, SavedAbilitySetting>
   itemSeq: number
@@ -140,6 +157,7 @@ function savedFromItem(item: Item): SavedItem {
     name: item.name,
     rarity: item.rarity,
     slot: item.slot,
+    ...(item.hands ? { hands: item.hands } : {}),
     mods: item.mods.map((m) => ({
       stat: m.stat,
       kind: m.kind,
@@ -149,7 +167,7 @@ function savedFromItem(item: Item): SavedItem {
   }
 }
 
-export function payloadFromState(state: GameState, lastTimestamp: number): SavePayloadV12 {
+export function payloadFromState(state: GameState, lastTimestamp: number): SavePayloadV15 {
   const upgrades: Record<string, string> = {}
   for (const [id, owned] of Object.entries(state.upgrades)) upgrades[id] = owned.toString()
   const equipment: Record<string, SavedItem | null> = {}
@@ -179,7 +197,7 @@ export function payloadFromState(state: GameState, lastTimestamp: number): SaveP
     if (state.dungeonsCleared[dungeon.id] === true) dungeonsCleared[dungeon.id] = true
   }
   return {
-    version: 12,
+    version: 15,
     lastTimestamp,
     inventory: state.inventory.map(savedFromItem),
     equipment,
@@ -190,6 +208,9 @@ export function payloadFromState(state: GameState, lastTimestamp: number): SaveP
     dungeonsCleared,
     gcdMsLeft: Math.max(0, state.gcdMsLeft),
     abilityCooldownsMs,
+    regenDelayMsLeft: Math.max(0, state.regenDelayMsLeft),
+    restHpThreshold: state.restHpThreshold,
+    restResourceThreshold: state.restResourceThreshold,
     abilitySettings,
     itemSeq: state.itemSeq,
     gold: state.gold.toString(),
@@ -232,11 +253,15 @@ function itemFromSaved(raw: SavedItem, index: number): Item {
   const mods = Array.isArray(raw.mods)
     ? raw.mods.map(modifierFromSaved).filter((m): m is StatModifier => m !== null)
     : []
+  // Двуручность — свойство предмета, а не слота: без неё связка рук
+  // рассыпалась бы, и двуручное молча уживалось бы со щитом.
+  const hands = raw.hands === 2 ? 2 : raw.hands === 1 ? 1 : undefined
   return {
     id: typeof raw.id === 'string' ? raw.id : `item-restored-${index}`,
     name: typeof raw.name === 'string' ? raw.name : FALLBACK_ITEM_NAME,
     rarity,
     slot,
+    ...(hands ? { hands } : {}),
     mods,
   }
 }
@@ -252,6 +277,9 @@ function equipmentFromSaved(raw: Record<string, SavedItem | null> | undefined): 
     const item = itemFromSaved(saved, index)
     if (item.slot === slot) equipment[slot] = item
   })
+  // Правило связки рук держится и на загрузке: правленый руками сейв не должен
+  // давать двуручное вместе со щитом. Побеждает правая рука — она задаёт бой.
+  if (equipment.mainHand?.hands === 2) equipment.offHand = null
   return equipment
 }
 
@@ -291,13 +319,19 @@ function abilitySettingsFromSaved(raw: unknown): AbilitySettings {
   for (const ability of ABILITIES) {
     const entry = saved[ability.id]
     if (typeof entry !== 'object' || entry === null) continue
-    const { autocast, priority } = entry as Record<string, unknown>
+    const { autocast, priority, reserve } = entry as Record<string, unknown>
     settings[ability.id] = {
       autocast: typeof autocast === 'boolean' ? autocast : settings[ability.id].autocast,
       priority:
         typeof priority === 'number' && Number.isFinite(priority)
           ? priority
           : settings[ability.id].priority,
+      // Резерв появился позже галки и приоритета: в старом сейве его нет,
+      // и ноль — то самое поведение, к которому игрок привык.
+      reserve:
+        typeof reserve === 'number' && Number.isFinite(reserve)
+          ? Math.min(1, Math.max(0, reserve))
+          : settings[ability.id].reserve,
     }
   }
   return settings
@@ -343,7 +377,7 @@ function clearedFromSaved(raw: unknown): Record<string, boolean> {
   return cleared
 }
 
-export function stateFromPayload(p: SavePayloadV12): GameState {
+export function stateFromPayload(p: SavePayloadV15): GameState {
   const level = Decimal.max(parseDec(p.level, '1'), new Decimal(1))
   const upgrades: Record<string, Decimal> = {}
   for (const [id, owned] of Object.entries(p.upgrades ?? {})) upgrades[id] = parseDec(owned, '0')
@@ -372,6 +406,10 @@ export function stateFromPayload(p: SavePayloadV12): GameState {
         ? null
         : zoneIdFromSaved(p.lastSurvivedZoneId, SAFE_ZONE.id),
     gcdMsLeft: msFromSaved(p.gcdMsLeft, GCD_MS),
+    regenDelayMsLeft: msFromSaved(p.regenDelayMsLeft, REGEN_DELAY_S * 1000),
+    // Таймер порции при загрузке взводится заново: доли секунды, которые
+    // мана «недокапала», прогрессом не считаются.
+    regenTickMsLeft: REGEN_TICK_S * 1000,
     abilityCooldownsMs: cooldownsFromSaved(p.abilityCooldownsMs),
     abilitySettings: abilitySettingsFromSaved(p.abilitySettings),
     // Очередь и эффекты были на прежнем мобе — при загрузке начинаем чисто.
@@ -395,12 +433,24 @@ export function stateFromPayload(p: SavePayloadV12): GameState {
   const currentHp = Decimal.min(parseDec(p.currentHp, withStats.stats.maxHp.toString()), withStats.stats.maxHp)
   const currentMana = Decimal.min(parseDec(p.currentMana, withStats.stats.maxMana.toString()), withStats.stats.maxMana)
   const dead = p.heroState === 'dead'
+  // Порог привала — настройка игрока, а не прогресс: мусор в поле означает
+  // значение по умолчанию, а не потерю сейва.
+  const share = (value: unknown, fallback: number) =>
+    typeof value === 'number' && Number.isFinite(value)
+      ? Math.min(1, Math.max(0, value))
+      : fallback
   return {
     ...withStats,
     currentHp: dead ? new Decimal(0) : currentHp,
     currentMana,
     heroState: dead ? 'dead' : 'alive',
     reviveMsLeft: dead && typeof p.reviveMsLeft === 'number' && p.reviveMsLeft > 0 ? p.reviveMsLeft : dead ? 1 : 0,
+    // Привал не досиживается через перезагрузку: герой просыпается на ногах.
+    restMsLeft: 0,
+    restTotalMs: 0,
+    restHpThreshold: share(p.restHpThreshold, REST_HP_THRESHOLD_DEFAULT),
+    restResourceThreshold: share(p.restResourceThreshold, REST_RESOURCE_THRESHOLD_DEFAULT),
+    restSpeedupSource: null,
   }
 }
 
@@ -432,7 +482,53 @@ function itemV6toV7(raw: unknown): RawSave {
   }
 }
 
+// Старый предмет знал один слот руки — 'weapon'. Слотов стало два, и у оружия
+// появилось поле hands. Всё сохранённое оружие строилось с одним и тем же
+// отношением «урон/скорость», то есть было ОДНОРУЧНЫМ по нынешним меркам:
+// поэтому hands: 1, и вторая рука у старого героя остаётся свободной.
+function handItemV14toV15(raw: unknown): unknown {
+  if (typeof raw !== 'object' || raw === null) return raw
+  const old = raw as RawSave
+  if (old.slot !== 'weapon') return raw
+  return { ...old, slot: 'mainHand', hands: 1 }
+}
+
 const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
+  // 14 -> 15: рук стало две. Слот 'weapon' переименован в 'mainHand', левая
+  // рука пуста — надеть в неё что-то игрок решит сам. Прогресс не теряется:
+  // модификаторы предмета не меняются вовсе, меняется только имя слота.
+  14: (raw) => {
+    const equipment =
+      typeof raw.equipment === 'object' && raw.equipment !== null
+        ? ({ ...raw.equipment } as RawSave)
+        : {}
+    const weapon = equipment.weapon
+    delete equipment.weapon
+    return {
+      ...raw,
+      version: 15,
+      inventory: Array.isArray(raw.inventory) ? raw.inventory.map(handItemV14toV15) : [],
+      equipment: {
+        ...equipment,
+        mainHand: weapon ? handItemV14toV15(weapon) : null,
+        offHand: null,
+      },
+    }
+  },
+  // 13 -> 14: появился привал. Старый герой получает порог по умолчанию: до
+  // сих пор его единственной паузой была смерть, и теперь он будет уходить
+  // отдыхать, не дожидаясь её.
+  13: (raw) => ({
+    ...raw,
+    version: 14,
+    restHpThreshold: REST_HP_THRESHOLD_DEFAULT,
+    restResourceThreshold: REST_RESOURCE_THRESHOLD_DEFAULT,
+  }),
+  // 12 -> 13: правило задержки регенерации. У каждого умения появился резерв
+  // маны, а у героя — пауза до старта восстановления. Старый герой просыпается
+  // с нулевым резервом (жать всегда — ровно то поведение, к которому он
+  // привык) и с уже идущей регенерацией.
+  12: (raw) => ({ ...raw, version: 13, regenDelayMsLeft: 0 }),
   // 11 -> 12: появился данж. Старый сейв просыпается снаружи и без
   // достижений — цепочку ещё предстоит пройти.
   11: (raw) => ({ ...raw, version: 12, dungeonRun: null, dungeonsCleared: {} }),
@@ -510,7 +606,7 @@ const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
 }
 
 // null = сейв непригоден (не объект или из более новой версии игры).
-export function migrateSave(raw: unknown): SavePayloadV12 | null {
+export function migrateSave(raw: unknown): SavePayloadV15 | null {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null
   let data = raw as RawSave
   let version = typeof data.version === 'number' ? data.version : 0
@@ -521,7 +617,7 @@ export function migrateSave(raw: unknown): SavePayloadV12 | null {
     data = step(data)
     version = typeof data.version === 'number' ? data.version : version + 1
   }
-  return data as unknown as SavePayloadV12
+  return data as unknown as SavePayloadV15
 }
 
 export interface OfflineReport {
@@ -666,7 +762,7 @@ export function encodeSaveString(state: GameState, now: () => number = Date.now)
 }
 
 // Понимает base64 от экспорта и, на всякий случай, голый JSON.
-export function decodeSaveString(input: string): SavePayloadV12 | null {
+export function decodeSaveString(input: string): SavePayloadV15 | null {
   const attempts = [
     () => JSON.parse(fromBase64(input.trim())),
     () => JSON.parse(input.trim()),

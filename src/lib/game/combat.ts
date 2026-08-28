@@ -18,6 +18,7 @@ import {
   AP_NORMALIZATION,
   AUTOCAST_DELAY_MS,
   AUTOCAST_MAX_LOSS,
+  OFFHAND_PENALTY,
   RESPAWN_DELAY_MS,
   REVIVE_DELAY_MS,
 } from '../data/balance'
@@ -26,20 +27,68 @@ import type { Monster } from '../types'
 import { SAFE_ZONE, ZONE_BY_ID, zoneMonsterVariants, type Zone } from '../data/zones'
 import { monsterFromTemplate } from './state'
 
+// Какой рукой бьём. Правило нормализации скорости одно на обе, отличаются
+// только база боя и штраф левой руки.
+export type Hand = 'main' | 'off'
+
+/** Скорость оружия этой руки — БАЗОВАЯ, без haste. */
+export function handSpeed(stats: StatBlock, hand: Hand): number {
+  return hand === 'off' ? stats.offhandSpeed : stats.weaponSpeed
+}
+
+/** Время между ударами этой руки с учётом haste. Ускорение одно на обе. */
+export function handSwingTime(stats: StatBlock, hand: Hand): number {
+  return hand === 'off' ? stats.offhandSwingTime : stats.swingTime
+}
+
+/** Бьёт ли левая рука вообще: пустая рука урона не наносит. */
+export function hasOffhand(stats: StatBlock): boolean {
+  return stats.offhandDamageMax.gt(0)
+}
+
+/**
+ * Какая доля силы атаки достаётся ОДНОМУ замаху руки.
+ *
+ * Сила атаки — свойство ГЕРОЯ, а не оружия: за секунду она обязана давать
+ * attackPower / AP_NORMALIZATION урона, чем бы герой ни махал. Поэтому при двух
+ * руках она между ними ДЕЛИТСЯ, а не удваивается. Делитель именно
+ * `1 + OFFHAND_PENALTY`, потому что удар левой руки потом целиком множится на
+ * штраф: доли выходят 2/3 и 1/3, в сумме — единица.
+ *
+ * Без деления дуалвилд получал бы полторы силы атаки, и с её ростом один стиль
+ * вытеснил бы остальные — сколько ни правь урон самого оружия в данных.
+ */
+function attackPowerShare(stats: StatBlock): number {
+  return hasOffhand(stats) ? 1 / (1 + OFFHAND_PENALTY) : 1
+}
+
 // Вклад силы атаки в один удар: чем медленнее оружие, тем больше за удар.
-export function attackPowerContribution(stats: StatBlock): Decimal {
-  return stats.attackPower.times(stats.weaponSpeed).div(AP_NORMALIZATION)
+export function attackPowerContribution(stats: StatBlock, hand: Hand = 'main'): Decimal {
+  return stats.attackPower
+    .times(handSpeed(stats, hand))
+    .times(attackPowerShare(stats))
+    .div(AP_NORMALIZATION)
 }
 
 // Границы урона одного удара без учёта крита.
-export function swingDamageRange(stats: StatBlock): { min: Decimal; max: Decimal } {
-  const ap = attackPowerContribution(stats)
+export function swingDamageRange(
+  stats: StatBlock,
+  hand: Hand = 'main',
+): { min: Decimal; max: Decimal } {
+  const ap = attackPowerContribution(stats, hand)
+  if (hand === 'off') {
+    // Левая рука бьёт слабее на OFFHAND_PENALTY — это плата за второй замах.
+    return {
+      min: stats.offhandDamageMin.plus(ap).times(OFFHAND_PENALTY),
+      max: stats.offhandDamageMax.plus(ap).times(OFFHAND_PENALTY),
+    }
+  }
   return { min: stats.weaponDamageMin.plus(ap), max: stats.weaponDamageMax.plus(ap) }
 }
 
 // Матожидание урона удара без крита — им считаются оценки (dps, удары до смерти моба).
-export function expectedSwingDamage(stats: StatBlock): Decimal {
-  const { min, max } = swingDamageRange(stats)
+export function expectedSwingDamage(stats: StatBlock, hand: Hand = 'main'): Decimal {
+  const { min, max } = swingDamageRange(stats, hand)
   return min.plus(max).div(2)
 }
 
@@ -61,11 +110,27 @@ export function rollSwing(
   stats: StatBlock,
   rng: Rng,
   weaponDamagePercent: Decimal = new Decimal(1),
+  hand: Hand = 'main',
 ): SwingResult {
-  const weaponRoll = randRange(rng, stats.weaponDamageMin, stats.weaponDamageMax)
-  const base = weaponRoll.plus(attackPowerContribution(stats)).times(weaponDamagePercent)
+  const { min, max } = swingDamageRange(stats, hand)
+  const base = randRange(rng, min, max).times(weaponDamagePercent)
   const isCrit = rng() < stats.critChance
   return { amount: isCrit ? base.times(stats.critMultiplier) : base, isCrit }
+}
+
+/**
+ * Бросок блока по входящему удару. Щит снимает фиксированную величину, а не
+ * долю: против слабых ударов он тем и хорош, а против сильных не спасает —
+ * ровно то, чего ждёшь от щита.
+ */
+export function rollBlock(
+  stats: StatBlock,
+  incoming: Decimal,
+  rng: Rng,
+): { amount: Decimal; blocked: boolean } {
+  if (stats.blockChance <= 0 || stats.blockValue.lte(0)) return { amount: incoming, blocked: false }
+  if (rng() >= stats.blockChance) return { amount: incoming, blocked: false }
+  return { amount: Decimal.max(incoming.minus(stats.blockValue), new Decimal(0)), blocked: true }
 }
 
 // Матожидание урона удара умения без крита. Умения считаются ТОЙ ЖЕ формулой,
@@ -107,10 +172,30 @@ export interface CombatRate {
   timeToDeathSec: number | null
 }
 
-// Цикл жизни героя: timeToDeath секунд фарма + фиксированный простой на
-// воскрешение. Отсюда доля времени, которую он вообще что-то приносит.
-export function uptimeFromHpLoss(maxHp: Decimal, hpLossPerSecond: Decimal): number {
+/**
+ * Доля времени, которую герой что-то приносит.
+ *
+ * Цикл теперь один из двух, и выбирает между ними ПОРОГ ПРИВАЛА:
+ *   порог выставлен — герой фармит до порога, потом сидит REST_DURATION_S
+ *                     и возвращается целым; простой короткий и управляемый;
+ *   порога нет      — герой фармит до нуля и платит полным воскрешением.
+ *
+ * Оффлайн обязан считать по тому же правилу: время привалов вычитается из
+ * полезного времени, иначе оффлайн обещал бы больше, чем даёт живая игра.
+ */
+export function uptimeFromHpLoss(
+  maxHp: Decimal,
+  hpLossPerSecond: Decimal,
+  rest?: { hpThreshold: number; durationMs: number },
+): number {
   if (hpLossPerSecond.lte(0)) return 1
+  if (rest && rest.hpThreshold > 0) {
+    // Падать герою есть куда только до порога: ниже он уходит отдыхать.
+    const usableHp = maxHp.times(1 - rest.hpThreshold)
+    if (usableHp.lte(0)) return 0
+    const farmSec = usableHp.div(hpLossPerSecond)
+    return farmSec.div(farmSec.plus(rest.durationMs / 1000)).toNumber()
+  }
   const timeToDeathSec = maxHp.div(hpLossPerSecond)
   return timeToDeathSec.div(timeToDeathSec.plus(REVIVE_DELAY_MS / 1000)).toNumber()
 }
@@ -161,11 +246,16 @@ function hitStream(
   const swingRate = new Decimal(1).div(stats.swingTime)
   const swing = expectedSwingDamage(stats)
   const replaced = replacedSwingsPerSecond(stats, rotation)
-  // Ударов в секунду: все замахи плюс мгновенные умения. «На следующий удар»
-  // новых ударов не добавляет — оно занимает уже существующий замах, только
-  // бьёт он сильнее.
-  let rate = swingRate
-  let killing = swing.times(swingRate.minus(replaced))
+  // Ударов в секунду: замахи ОБЕИХ рук плюс мгновенные умения. «На следующий
+  // удар» новых ударов не добавляет — оно занимает уже существующий замах
+  // правой руки, только бьёт он сильнее.
+  const offRate = hasOffhand(stats)
+    ? new Decimal(1).div(stats.offhandSwingTime)
+    : new Decimal(0)
+  let rate = swingRate.plus(offRate)
+  let killing = swing.times(swingRate.minus(replaced)).plus(
+    hasOffhand(stats) ? expectedSwingDamage(stats, 'off').times(offRate) : new Decimal(0),
+  )
   let paced = killing
   for (const cast of rotation.casts) {
     const castRate = new Decimal(cast.castsPerSecond)
@@ -174,6 +264,12 @@ function hitStream(
     paced = paced.plus(cast.totalDamage.times(castRate))
   }
   return { rate, killing, paced }
+}
+
+/** Урон левой руки в секунду. Пустая рука не бьёт вовсе. */
+export function offhandDamagePerSecond(stats: StatBlock): Decimal {
+  if (!hasOffhand(stats)) return new Decimal(0)
+  return expectedSwingDamage(stats, 'off').times(critFactor(stats)).div(stats.offhandSwingTime)
 }
 
 /** Сколько замахов в секунду занято умениями «на следующий удар». */
@@ -279,7 +375,11 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
   // Урон автоатаки — свойство ОРУЖИЯ и считается как считался: сколько бы
   // умений герой ни жал, «столько бьёт этот меч» не меняется. Этим числом
   // сравниваются предметы, и на нём держится инвариант нормализации скорости.
-  const autoDamagePerSecond = avgSwing.times(critFactor(stats)).div(stats.swingTime)
+  // Автоатака — это ОБЕ руки: у каждой свой таймер и свой урон за удар.
+  const autoDamagePerSecond = avgSwing
+    .times(critFactor(stats))
+    .div(stats.swingTime)
+    .plus(offhandDamagePerSecond(stats))
   // Сложить автоатаку и умения напрямую НЕЛЬЗЯ: умение «на следующий удар»
   // ЗАМЕНЯЕТ автоатаку, а не добавляется к ней, — эти замахи посчитаны дважды.
   // Пока бой длился полтора удара, ошибка была незаметной; на длинном бою она

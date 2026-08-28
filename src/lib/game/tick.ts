@@ -1,10 +1,12 @@
 // Тик — конвейер чистых шагов (state, ctx) => state. Порядок фиксирован и важен:
 //   1. applyRevive          — мёртвый герой: отсчёт воскрешения; по нулю — полный HP
 //                             и откат в последнюю зону, где он выживал
+//   1a. applyRest           — привал: отсчёт отдыха либо уход на него по порогу
 //   2. applyCooldowns       — кулдауны умений и GCD идут игровым временем
 //   2a. applyEnrage         — время боя с боссом; по нему растёт его урон
 //   2a. applyAutocast       — таймер реакции и применение умения по приоритету
 //   3. applyPendingKill     — моб, добитый мгновенным умением вне тика
+//   4a. applyOffhandCombat  — удары ЛЕВОЙ руки по своему таймеру, независимо
 //   4. applyCombat          — удары героя по свинг-таймеру; умение из очереди
 //                             ЗАМЕНЯЕТ автоатаку; смерть моба в ctx.killedMonster
 //   5. applyEffects         — тики урона по времени; тоже могут убить моба
@@ -20,16 +22,22 @@
 import { Decimal } from './numbers'
 import { applyXp } from './formulas'
 import { rollLoot } from './loot'
-import { rollMonsterDamage, rollSwing } from './combat'
+import { hasOffhand, rollBlock, rollMonsterDamage, rollSwing } from './combat'
 import { autoEquipIfBetter } from './equipment'
 import type { Rng } from './rng'
 import { pushEvent, spawnMonster, type ActiveEffect, type GameState } from './state'
 import { ensureStats } from './stats'
 import { emit as busEmit } from './events'
-import { INVENTORY_SIZE, RESPAWN_DELAY_MS, REVIVE_DELAY_MS } from '../data/balance'
+import {
+  INVENTORY_SIZE,
+  REGEN_TICK_S,
+  RESPAWN_DELAY_MS,
+  REVIVE_DELAY_MS,
+} from '../data/balance'
 import { ABILITY_BY_ID } from '../data/abilities'
 import { currentZone, reviveInZone } from './zones'
 import { advanceCooldowns, autocastStep, consumeQueuedAbility } from './abilities'
+import { finishRest, needsRest, startRest } from './rest'
 import { reviveMultiplier } from './talents'
 import {
   advanceDungeon,
@@ -44,6 +52,11 @@ import type { AttackEvent, Monster } from '../types'
 
 // Погрешность накопления долей замаха: 0.05 и подобные не представимы в double.
 const SWING_EPS = 1e-9
+
+// Предохранитель на случай огромного dtMs (возврат из оффлайна одним шагом):
+// цикл начисления порций маны обязан быть конечным. Мана всё равно упирается
+// в кап, поэтому потолок ничего не отнимает.
+const MAX_REGEN_TICKS_PER_STEP = 64
 
 // Контекст одного тика: вход (dtMs, rng, emit) и факты, которыми шаги обмениваются.
 interface TickContext {
@@ -76,6 +89,26 @@ const applyRevive: TickStep = (s, ctx) => {
   }
 }
 
+/**
+ * Привал. Сидит ДО кулдаунов и боя: пока герой отдыхает, он не бьёт, не
+ * получает по себе и не жмёт умений — тик для него сводится к отсчёту.
+ *
+ * Уход на привал проверяется здесь же, но ПОСЛЕ отсчёта: порог мерится по
+ * состоянию, с которым герой пришёл в тик.
+ */
+const applyRest: TickStep = (s, ctx) => {
+  if (s.heroState === 'dead') return s
+  if (s.heroState === 'resting') {
+    const restMsLeft = s.restMsLeft - ctx.dtMs
+    if (restMsLeft > 0) return { ...s, restMsLeft }
+    const done = finishRest(s)
+    return { ...done, combatLog: pushEvent(done.combatLog, { type: 'rest-end', interrupted: false }) }
+  }
+  if (!needsRest(s)) return s
+  const resting = startRest(s)
+  return { ...resting, combatLog: pushEvent(resting.combatLog, { type: 'rest-start' }) }
+}
+
 // Кулдауны умений и GCD идут ИГРОВЫМ временем: множитель скорости из
 // отладочной панели ускоряет их ровно так же, как бой.
 const applyCooldowns: TickStep = (s, ctx) => advanceCooldowns(s, ctx.dtMs)
@@ -104,22 +137,24 @@ const applyEnrage: TickStep = (s, ctx) => {
 // Стоит ПОСЛЕ кулдаунов (иначе умение, освободившееся на этом тике, пришлось
 // бы ждать лишний тик) и ДО боя (мгновенное умение бьёт до замаха).
 const applyAutocast: TickStep = (s, ctx) => {
-  // Между мобами автокаст молчит: бить некого, таймеры взводятся заново.
-  if (s.respawnMsLeft > 0) return { ...s, autocastReadyMs: {} }
+  // Между мобами и на привале автокаст молчит: бить некого, таймеры
+  // взводятся заново.
+  if (s.respawnMsLeft > 0 || s.heroState === 'resting') return { ...s, autocastReadyMs: {} }
   return autocastStep(s, ctx.dtMs, ctx.rng, ctx.emitAttack)
 }
 
 // Мгновенное умение бьёт вне тика и может добить моба. Смерть оформляет
 // конвейер — награды, лут и респаун идут обычным путём.
 const applyPendingKill: TickStep = (s, ctx) => {
-  if (s.respawnMsLeft > 0 || s.heroState === 'dead') return s
+  if (s.respawnMsLeft > 0 || s.heroState !== 'alive') return s
   if (s.monster.currentHp.gt(0)) return s
   ctx.killedMonster = s.monster
   return s
 }
 
 const applyCombat: TickStep = (s, ctx) => {
-  if (s.heroState === 'dead') return s
+  // На привале герой не бьёт: замах стоит, как и во время респауна.
+  if (s.heroState !== 'alive') return s
   // Во время респауна свинг-таймер стоит: первый удар по новому мобу — через
   // полный замах, без бесплатного «накопленного» удара.
   if (s.respawnMsLeft > 0) return s
@@ -284,9 +319,42 @@ function dropBossLoot(s: GameState, boss: BossDef, ctx: TickContext): GameState 
   return next
 }
 
+/**
+ * Удар ЛЕВОЙ руки. Отдельный шаг и отдельный таймер: две руки идут
+ * независимо, и число ударов каждой определяется только её скоростью.
+ *
+ * Умение из очереди сюда не приходит — оно применяется к правой руке
+ * (см. правило про onNextSwing в CLAUDE.md).
+ */
+const applyOffhandCombat: TickStep = (s, ctx) => {
+  if (s.heroState !== 'alive' || s.respawnMsLeft > 0) return s
+  if (!hasOffhand(s.stats)) return { ...s, offhandSwingProgress: 0 }
+  let progress = s.offhandSwingProgress + ctx.dtMs / (s.stats.offhandSwingTime * 1000)
+  let monster = s.monster
+  let combatLog = s.combatLog
+  while (progress >= 1 - SWING_EPS && ctx.killedMonster === null) {
+    progress = Math.max(0, progress - 1)
+    const { amount, isCrit } = rollSwing(s.stats, ctx.rng, new Decimal(1), 'off')
+    const hpLeft = monster.currentHp.minus(amount)
+    monster = { ...monster, currentHp: Decimal.max(hpLeft, new Decimal(0)) }
+    combatLog = pushEvent(combatLog, { type: 'hit', damage: amount, isCrit })
+    ctx.emitAttack({
+      sourceId: 'hero',
+      targetId: monster.id,
+      amount,
+      isCrit,
+      abilityId: null,
+      timestamp: s.playtimeMs.toNumber(),
+    })
+    if (hpLeft.lte(0)) ctx.killedMonster = monster
+  }
+  return { ...s, offhandSwingProgress: progress, monster, combatLog }
+}
+
 const applyMonsterAttack: TickStep = (s, ctx) => {
   // Моб бьёт, только пока оба живы; мирные мобы (damage 0) не бьют вовсе.
-  if (s.heroState === 'dead' || s.respawnMsLeft > 0 || ctx.killedMonster) return s
+  // На привале по герою не бьют: он вышел из боя, а не отвернулся в нём.
+  if (s.heroState !== 'alive' || s.respawnMsLeft > 0 || ctx.killedMonster) return s
   if (s.monster.damageMax.lte(0)) return s
   let monsterSwing = s.monster.swingProgress + ctx.dtMs / (s.monster.swingTime * 1000)
   let currentHp = s.currentHp
@@ -296,14 +364,25 @@ const applyMonsterAttack: TickStep = (s, ctx) => {
     monsterSwing = Math.max(0, monsterSwing - 1)
     // Формула входящего урона (бросок из диапазона + damageReduction) — в combat.ts.
     const boss = currentBoss(s)
-    const amount = rollMonsterDamage(
+    const raw = rollMonsterDamage(
       s.monster,
       s.stats,
       ctx.rng,
       boss && s.dungeonRun ? enrageMultiplier(boss, s.dungeonRun.fightMs) : 1,
     )
+    // Блок — отдельное событие в шине: его подхватят и визуал, и звук.
+    // Бросок делается ВСЕГДА, когда щит есть: иначе поток случайности
+    // зависел бы от того, попал моб или нет.
+    const { amount, blocked } = rollBlock(s.stats, raw, ctx.rng)
     currentHp = Decimal.max(currentHp.minus(amount), new Decimal(0))
-    combatLog = pushEvent(combatLog, { type: 'hurt', damage: amount, monsterName: s.monster.name })
+    combatLog = blocked
+      ? pushEvent(combatLog, {
+          type: 'block',
+          damage: amount,
+          blocked: raw.minus(amount),
+          monsterName: s.monster.name,
+        })
+      : pushEvent(combatLog, { type: 'hurt', damage: amount, monsterName: s.monster.name })
     ctx.emitAttack({
       sourceId: s.monster.id,
       targetId: 'hero',
@@ -332,13 +411,40 @@ const applyMonsterAttack: TickStep = (s, ctx) => {
 }
 
 const applyRegen: TickStep = (s, ctx) => {
-  if (s.heroState === 'dead') return s
+  // На привале обычная регенерация молчит: привал САМ и есть восстановление,
+  // и оно приходит целиком в его конце. Иначе полоска ползла бы дважды —
+  // и по ходу отдыха, и скачком после него.
+  if (s.heroState !== 'alive') return s
   const dtSec = ctx.dtMs / 1000
   // Вне боя (пауза респауна) HP восстанавливается быстрой ставкой, в бою — медленной.
   const hpRate = s.respawnMsLeft > 0 ? s.stats.hpRegenOutOfCombat : s.stats.hpRegen
   const currentHp = Decimal.min(s.currentHp.plus(hpRate.times(dtSec)), s.stats.maxHp)
-  const currentMana = Decimal.min(s.currentMana.plus(s.stats.manaRegen.times(dtSec)), s.stats.maxMana)
-  return { ...s, currentHp, currentMana }
+
+  // Мана — по правилу задержки. Сперва досиживаем паузу с последней траты,
+  // и только потом капаем ПОРЦИЯМИ раз в REGEN_TICK_S. Порции, а не ровный
+  // ручеёк, — это то, что делает окно между тратами ощутимым: успел
+  // придержать умение на два лишних тика — получил порцию.
+  const regenDelayMsLeft = Math.max(0, s.regenDelayMsLeft - ctx.dtMs)
+  if (regenDelayMsLeft > 0) {
+    // Пока пауза идёт, таймер тика взведён заново: восстановление начнётся
+    // с полного интервала, а не с остатка от прошлого раза.
+    return { ...s, currentHp, regenDelayMsLeft, regenTickMsLeft: REGEN_TICK_S * 1000 }
+  }
+  let regenTickMsLeft = s.regenTickMsLeft - ctx.dtMs
+  let currentMana = s.currentMana
+  let guard = 0
+  while (regenTickMsLeft <= 0 && guard < MAX_REGEN_TICKS_PER_STEP) {
+    currentMana = currentMana.plus(s.stats.manaRegen.times(REGEN_TICK_S))
+    regenTickMsLeft += REGEN_TICK_S * 1000
+    guard += 1
+  }
+  return {
+    ...s,
+    currentHp,
+    currentMana: Decimal.min(currentMana, s.stats.maxMana),
+    regenDelayMsLeft,
+    regenTickMsLeft,
+  }
 }
 
 const applyRespawn: TickStep = (s, ctx) => {
@@ -369,11 +475,13 @@ const applyAutosaveCounter: TickStep = (s, ctx) => {
 
 const PIPELINE: TickStep[] = [
   applyRevive,
+  applyRest,
   applyCooldowns,
   applyEnrage,
   applyAutocast,
   applyPendingKill,
   applyCombat,
+  applyOffhandCombat,
   applyEffects,
   applyKillRewards,
   applyLevelUps,

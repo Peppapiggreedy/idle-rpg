@@ -40,7 +40,7 @@ describe('weaponSpeed / haste / swingTime', () => {
     expect(fast.swingTime).toBe(1) // 2 / (1 + 1)
 
     const slow = applyModifiers([
-      { stat: 'weaponSpeed', kind: 'base', value: new Decimal(3.6), source: 'equipment:weapon' },
+      { stat: 'weaponSpeed', kind: 'base', value: new Decimal(3.6), source: 'equipment:mainHand' },
     ])
     expect(slow.swingTime).toBe(3.6)
   })
@@ -56,7 +56,7 @@ describe("модификатор kind 'base'", () => {
   it('ЗАМЕНЯЕТ базовое значение, а не прибавляется к нему', () => {
     // Топор 3.6с вместо безоружных 2.0с — не 2.0 + 3.6.
     const s = applyModifiers([
-      { stat: 'weaponSpeed', kind: 'base', value: new Decimal(3.6), source: 'equipment:weapon' },
+      { stat: 'weaponSpeed', kind: 'base', value: new Decimal(3.6), source: 'equipment:mainHand' },
     ])
     expect(s.weaponSpeed).toBe(3.6)
   })
@@ -67,7 +67,7 @@ describe("модификатор kind 'base'", () => {
 
   it('при двух base-источниках выигрывает ПОСЛЕДНИЙ (зафиксировано намеренно)', () => {
     const mods: StatModifier[] = [
-      { stat: 'weaponSpeed', kind: 'base', value: new Decimal(3.6), source: 'equipment:weapon' },
+      { stat: 'weaponSpeed', kind: 'base', value: new Decimal(3.6), source: 'equipment:mainHand' },
       { stat: 'weaponSpeed', kind: 'base', value: new Decimal(1.4), source: 'equipment:offhand' },
     ]
     expect(applyModifiers(mods).weaponSpeed).toBe(1.4)
@@ -76,7 +76,7 @@ describe("модификатор kind 'base'", () => {
   it('порядок применения: base -> flat -> percent -> multiplier', () => {
     // (база заменена на 10, +5 flat) * (1 + 0.5) * 2 = 45
     const s = applyModifiers([
-      { stat: 'attackPower', kind: 'base', value: new Decimal(10), source: 'equipment:weapon' },
+      { stat: 'attackPower', kind: 'base', value: new Decimal(10), source: 'equipment:mainHand' },
       { stat: 'attackPower', kind: 'flat', value: new Decimal(5), source: 'talent:heavy_blows' },
       { stat: 'attackPower', kind: 'percent', value: new Decimal(0.5), source: 'zone:ashen_wastes' },
       { stat: 'attackPower', kind: 'multiplier', value: new Decimal(2), source: 'talent:frenzy' },
@@ -157,7 +157,7 @@ describe('конвейер статов', () => {
     // Проценты аддитивны, множители перемножаются; проверяем на синтетике.
     const s = withUpgrades(0)
     const mods = [
-      { stat: 'attackPower', kind: 'flat', value: new Decimal(10), source: 'equipment:weapon' },
+      { stat: 'attackPower', kind: 'flat', value: new Decimal(10), source: 'equipment:mainHand' },
       { stat: 'attackPower', kind: 'percent', value: new Decimal(0.2), source: 'talent:heavy_blows' },
       { stat: 'attackPower', kind: 'percent', value: new Decimal(0.3), source: 'zone:ashen_wastes' },
       { stat: 'attackPower', kind: 'multiplier', value: new Decimal(2), source: 'talent:frenzy' },

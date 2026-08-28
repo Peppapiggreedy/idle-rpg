@@ -3,7 +3,7 @@
 // считает combat.ts. Текста для игрока тоже нет: наружу идут коды причин.
 import { Decimal } from './numbers'
 import { rollSwing } from './combat'
-import { AUTOCAST_DELAY_MS, GCD_MS } from '../data/balance'
+import { AUTOCAST_DELAY_MS, GCD_MS, REGEN_DELAY_S } from '../data/balance'
 import { ABILITIES, ABILITY_BY_ID, type AbilityDef } from '../data/abilities'
 import { abilitiesByPriority } from './rotation'
 import { talentAbilityEffect } from './talents'
@@ -63,16 +63,39 @@ export function allAbilityStatuses(state: GameState): AbilityStatus[] {
 
 // Списание маны, кулдаун и (если умение его тратит) GCD — одним местом,
 // чтобы instant и onNextSwing расходовали ресурсы одинаково.
+/**
+ * Взводит ли умение паузу до старта регенерации. Только ТРАТА: умение с
+ * нулевой стоимостью таймер не сбрасывает — иначе бесплатная кнопка молча
+ * выключала бы восстановление, и правило стало бы ловушкой вместо решения.
+ */
+export function resetsRegenDelay(ability: AbilityDef): boolean {
+  return ability.manaCost.gt(0)
+}
+
 function payFor(state: GameState, ability: AbilityDef): GameState {
+  const spends = resetsRegenDelay(ability)
   return {
     ...state,
     currentMana: state.currentMana.minus(ability.manaCost),
+    regenDelayMsLeft: spends ? REGEN_DELAY_S * 1000 : state.regenDelayMsLeft,
     abilityCooldownsMs: {
       ...state.abilityCooldownsMs,
       [ability.id]: ability.cooldownSec * 1000,
     },
     gcdMsLeft: ability.triggersGcd ? GCD_MS : state.gcdMsLeft,
   }
+}
+
+/**
+ * Хватает ли маны с учётом РЕЗЕРВА этого умения: после траты должно остаться
+ * не меньше настроенной доли запаса. Резерв — настройка автокаста, поэтому
+ * ручное нажатие им не ограничено: игрок вправе потратить всё.
+ */
+export function passesReserve(state: GameState, ability: AbilityDef): boolean {
+  const reserve = state.abilitySettings[ability.id]?.reserve ?? 0
+  if (reserve <= 0) return true
+  const floor = state.stats.maxMana.times(reserve)
+  return state.currentMana.minus(ability.manaCost).gte(floor)
 }
 
 // Эффект удара умения: свой из данных умения либо тот, которому научил талант
@@ -193,6 +216,7 @@ export function consumeQueuedAbility(
 export function autocastCandidates(state: GameState): AbilityDef[] {
   return abilitiesByPriority(state.abilitySettings, true).filter((ability) => {
     if (state.currentMana.lt(ability.manaCost)) return false
+    if (!passesReserve(state, ability)) return false
     // Очередь одна: пока в ней кто-то стоит, второе умение туда не ставим,
     // а повторное нажатие на стоящее в очереди её бы просто сняло.
     if (ability.type === 'onNextSwing' && state.queuedAbilityId !== null) return false

@@ -35,6 +35,7 @@ export const ICONS = {
 
   // --- Слоты экипировки ---
   'slot-weapon': { file: 'lorc/broadsword.svg', author: 'Lorc' },
+  'slot-offhand': { file: 'sbed/shield.svg', author: 'Sbed' },
   'slot-head': { file: 'lorc/crested-helmet.svg', author: 'Lorc' },
   'slot-chest': { file: 'delapouite/chest-armor.svg', author: 'Delapouite' },
   'slot-hands': { file: 'delapouite/gauntlet.svg', author: 'Delapouite' },
@@ -56,6 +57,13 @@ export const ICONS = {
   'stat-manaRegen': { file: 'delapouite/star-formation.svg', author: 'Delapouite' },
   'stat-damageReduction': { file: 'lorc/bordered-shield.svg', author: 'Lorc' },
   'stat-swingTime': { file: 'lorc/hourglass.svg', author: 'Lorc' },
+  // Левая рука и щит. Своя иконка у КАЖДОГО стата: в панели статов они стоят
+  // рядом со статами правой руки, и повтор картинки читался бы как ошибка.
+  'stat-offhandSpeed': { file: 'delapouite/hook-swords.svg', author: 'Delapouite' },
+  'stat-offhandDamageMin': { file: 'lorc/dervish-swords.svg', author: 'Lorc' },
+  'stat-offhandDamageMax': { file: 'lorc/sword-spin.svg', author: 'Lorc' },
+  'stat-blockChance': { file: 'lorc/shield-reflect.svg', author: 'Lorc' },
+  'stat-blockValue': { file: 'delapouite/shield-bash.svg', author: 'Delapouite' },
 
   // --- Зоны ---
   'zone-shepherds-meadow': { file: 'generalace135/shepherds-crook.svg', author: 'GeneralAce135' },

@@ -46,6 +46,10 @@
           ? `КРИТ! ${name}: ${formatNumber(e.damage)} урона`
           : `${name}: ${formatNumber(e.damage)} урона`
       }
+      case 'rest-start':
+        return 'Привал: восстанавливаешься'
+      case 'rest-end':
+        return e.interrupted ? 'Привал прерван' : 'Привал окончен, запас полон'
       case 'effect':
         return `${ABILITY_BY_ID[e.abilityId]?.name ?? 'Эффект'} жжёт: ${formatNumber(e.damage)} урона`
       case 'kill':
@@ -58,6 +62,8 @@
         return `Появился ${e.monsterName}`
       case 'hurt':
         return `${e.monsterName} бьёт: −${formatNumber(e.damage)} здоровья`
+      case 'block':
+        return `Блок! ${e.monsterName} бьёт: −${formatNumber(e.damage)} здоровья (щит снял ${formatNumber(e.blocked)})`
       case 'death':
         return 'Ты пал в бою! Воскрешение через 30 с…'
       case 'revive':
@@ -88,6 +94,7 @@
     loot: 'slot-trinket',
     spawn: 'zone-mirefen-hollows',
     hurt: 'stat-maxHp',
+    block: 'slot-offhand',
     death: 'stat-maxHp',
     revive: 'talent-swift-return',
     zone: 'zone-shepherds-meadow',
@@ -95,6 +102,10 @@
     'dungeon-exit': 'dungeon-sunken-barrow',
     'dungeon-clear': 'dungeon-sunken-barrow',
     enrage: 'stat-critMultiplier',
+    // Костёр уже есть в реестре — это иконка регенерации вне боя, и привал
+    // ровно про неё. Заводить вторую такую же незачем.
+    'rest-start': 'stat-hpRegenOutOfCombat',
+    'rest-end': 'stat-hpRegenOutOfCombat',
   }
 
   /** Свёрнутая строка: «12 ударов, 1.2K урона» вместо двенадцати строк. */
@@ -104,6 +115,8 @@
     switch (row.event.type) {
       case 'hurt':
         return `${row.count} ударов по тебе${total}`
+      case 'block':
+        return `${row.count} ударов по тебе${total}, часть в щит`
       case 'effect':
         return `${row.count} тиков эффекта${total}`
       default:
@@ -115,6 +128,7 @@
   function tone(e: CombatEvent): string {
     if (e.type === 'hit' && e.isCrit) return 'crit'
     if (e.type === 'hurt' || e.type === 'death') return 'hurt'
+    if (e.type === 'block') return 'block'
     if (e.type === 'kill') return 'kill'
     if (e.type === 'levelup' || e.type === 'dungeon-clear') return 'good'
     if (e.type === 'loot') return 'loot'
@@ -222,6 +236,11 @@
   }
   .log li.hurt {
     color: var(--c-damage);
+  }
+  /* Блок — тот же урон, но смягчённый: второстепенный текст вместо цвета
+     урона. Своей семантики у щита нет, и заводить её незачем. */
+  .log li.block {
+    color: var(--c-text-muted);
   }
   .log li.kill {
     color: var(--c-heal);

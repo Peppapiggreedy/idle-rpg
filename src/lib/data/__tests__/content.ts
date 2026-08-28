@@ -22,7 +22,7 @@ import {
   ZONE_BEHIND_GAP,
 } from '../balance'
 import { DUNGEONS } from '../dungeons'
-import { ARMOR_NOUNS, WEAPONS } from '../items'
+import { ARMOR_NOUNS, SHIELDS, WEAPONS } from '../items'
 import { DROP_CHANCE } from '../loot'
 import { RARITIES } from '../rarity'
 import { SLOT_DROP_WEIGHTS, SLOT_ICONS, SLOT_IDS, SLOT_NAMES } from '../slots'
@@ -56,6 +56,7 @@ export function realContent(): Content {
     zones: ZONES,
     dungeons: DUNGEONS,
     weapons: WEAPONS,
+    shields: SHIELDS,
     rarities: RARITIES,
     upgrades: UPGRADES,
     models: MODEL_ASSETS,

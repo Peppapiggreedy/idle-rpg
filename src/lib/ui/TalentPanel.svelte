@@ -34,6 +34,11 @@
     maxHp: 'здоровья',
     maxMana: 'маны',
     weaponSpeed: 'скорости оружия',
+    offhandSpeed: 'скорости левой руки',
+    offhandDamageMin: 'урона левой руки (мин)',
+    offhandDamageMax: 'урона левой руки (макс)',
+    blockChance: 'шанса блока',
+    blockValue: 'силы блока',
     haste: 'ускорения',
     critChance: 'шанса крита',
     critMultiplier: 'множителя крита',
@@ -42,7 +47,7 @@
     manaRegen: 'восстановления маны',
     damageReduction: 'снижения урона',
   }
-  const PERCENT_STATS: StatId[] = ['critChance', 'damageReduction', 'haste']
+  const PERCENT_STATS: StatId[] = ['critChance', 'damageReduction', 'haste', 'blockChance']
   const FLAG_TEXT: Record<TalentFlag, string> = {
     'quick-strike-bleeds': 'Скорый выпад начинает накладывать урон по времени',
     'halved-revive': 'Воскрешение занимает вдвое меньше времени',

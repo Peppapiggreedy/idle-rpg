@@ -2,7 +2,8 @@
 // и вызывают экшены, цикл и экшены пишут в состояние.
 import { get, readonly, writable } from 'svelte/store'
 import { createGameLoop, STEP_MS, type GameLoop, type LoopMetrics } from '../game/loop'
-import { createInitialState, spawnMonster, type GameState } from '../game/state'
+import { createInitialState, pushEvent, spawnMonster, type GameState } from '../game/state'
+import { finishRest, restProgress } from '../game/rest'
 import { tick } from '../game/tick'
 import { createRng, type Rng } from '../game/rng'
 import { buyUpgrade } from '../game/upgrades'
@@ -202,6 +203,42 @@ export function resetTalentTree(): void {
 }
 
 /** Галка «использовать автоматически» у умения. */
+/** Порог ухода на привал по HP. 0 — не уходить: герой будет фармить до смерти. */
+export function setRestHpThreshold(share: number): void {
+  state.update((s) => ({ ...s, restHpThreshold: Math.min(1, Math.max(0, share)) }))
+}
+
+/** Порог ухода на привал по ресурсу. */
+export function setRestResourceThreshold(share: number): void {
+  state.update((s) => ({ ...s, restResourceThreshold: Math.min(1, Math.max(0, share)) }))
+}
+
+/**
+ * Прервать привал руками. Восстановление частичное — ровно та доля, которую
+ * герой успел отсидеть. Бесплатным прерывание быть не должно: иначе порог
+ * перестаёт что-либо значить, а привал превращается в кнопку «полный запас».
+ */
+export function interruptRest(): void {
+  state.update((s) => {
+    if (s.heroState !== 'resting') return s
+    const done = finishRest(s, restProgress(s))
+    return { ...done, combatLog: pushEvent(done.combatLog, { type: 'rest-end', interrupted: true }) }
+  })
+}
+
+/** Резерв маны умения: не жать автокастом, если после траты останется меньше. */
+export function setAbilityReserve(abilityId: string, reserve: number): void {
+  state.update((s) => {
+    const setting = s.abilitySettings[abilityId]
+    if (!setting) return s
+    const clamped = Math.min(1, Math.max(0, reserve))
+    return {
+      ...s,
+      abilitySettings: { ...s.abilitySettings, [abilityId]: { ...setting, reserve: clamped } },
+    }
+  })
+}
+
 export function setAbilityAutocast(abilityId: string, autocast: boolean): void {
   state.update((s) => {
     const setting = s.abilitySettings[abilityId]

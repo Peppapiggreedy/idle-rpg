@@ -86,9 +86,9 @@
   }
 
   const SAMPLE_MODS: StatModifier[] = [
-    { stat: 'weaponSpeed', kind: 'base', value: new Decimal(3.4), source: 'equipment:weapon' },
-    { stat: 'weaponDamageMin', kind: 'base', value: new Decimal(34), source: 'equipment:weapon' },
-    { stat: 'attackPower', kind: 'percent', value: new Decimal(0.1), source: 'equipment:weapon' },
+    { stat: 'weaponSpeed', kind: 'base', value: new Decimal(3.4), source: 'equipment:mainHand' },
+    { stat: 'weaponDamageMin', kind: 'base', value: new Decimal(34), source: 'equipment:mainHand' },
+    { stat: 'attackPower', kind: 'percent', value: new Decimal(0.1), source: 'equipment:mainHand' },
     { stat: 'critChance', kind: 'flat', value: new Decimal(0.03), source: 'equipment:trinket' },
   ]
 

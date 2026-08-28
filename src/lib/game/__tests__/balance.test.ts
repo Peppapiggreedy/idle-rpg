@@ -16,12 +16,16 @@ import {
   referenceBuild,
   simulate,
   spreadOf,
+  styleBuild,
   ttkDrift,
   PACING_MAX_LEVEL,
+  SIM_STYLES,
   type SimResult,
+  type SimStyle,
 } from '../simulate'
 import { intendedZone, type ZoneStanding } from '../zones'
 import {
+  REST_DURATION_S,
   TTK_AHEAD_MIN,
   TTK_BEHIND_MAX,
   TTK_DRIFT_MAX,
@@ -31,7 +35,7 @@ import {
   TTK_TARGET_MIN,
 } from '../../data/balance'
 import { ZONES, zoneMonsterVariants, type Zone } from '../../data/zones'
-import { WEAPONS, WEAPON_BY_ID } from '../../data/items'
+import { ONE_HANDED, WEAPONS } from '../../data/items'
 import { ABILITY_BY_ID } from '../../data/abilities'
 
 // Таблицы печатаются в вывод теста: прогон баланса нужен глазами, а не только
@@ -199,53 +203,113 @@ describe('смертность в подходящей зоне', () => {
   }, 300_000)
 })
 
-describe('скорость оружия', () => {
-  // Все три оружия построены с одним отношением (средний урон / weaponSpeed),
-  // то есть с одинаковым уроном оружия в секунду. Берём их ГОЛЫМИ — без
-  // побочных статов шаблона (крит у кинжала, сила атаки у двуручника):
-  // проверяем нормализацию скорости, а не бонусы конкретной модели.
-  const { weaponBuild, weaponHours, weaponZoneId, weaponSpreadLimit } = BALANCE_PRESET
+describe('стиль боя', () => {
+  // Инвариант нормализации из итерации 2 пережил вторую руку, но мерится
+  // теперь на СВЯЗКАХ: два одноручных и одно двуручное построены с равным
+  // уроном оружия в секунду (11.25), одноручное со щитом — с меньшим (7.5),
+  // и эта разница есть ПЛАТА за блок, а не перекос. Связки берём ГОЛЫМИ —
+  // без побочных статов шаблонов: проверяем нормализацию, а не бонусы модели.
+  const { weaponBuild, weaponHours, weaponSeeds, weaponZoneId, weaponSpreadLimit } = BALANCE_PRESET
   const LEVEL = weaponBuild.level!
   const SHARPENING = weaponBuild.sharpening!
+  // Названия стилей — текст, поэтому живут здесь, а не в game/simulate.ts.
+  const STYLE_NAMES: Record<SimStyle, string> = {
+    twoHanded: 'двуручное',
+    dual: 'два одноручных',
+    shield: 'одноручное и щит',
+  }
 
-  function goldFor(templateId: string, autocast: 'none' | 'all') {
-    return simulate({
-      hours: weaponHours,
-      zoneId: weaponZoneId,
-      freezeLevel: true,
-      build: { ...weaponBuild, weapon: { templateId, bare: true }, autocast },
-    })
+  // Средний итог по нескольким сидам. Один сид меряет не нормализацию, а
+  // удачу спавна: разброс скачет до шести процентов, не меняя ни строчки кода.
+  function meanGold(runs: SimResult[]): Decimal {
+    return runs.reduce((sum, r) => sum.plus(r.goldPerHour), new Decimal(0)).div(runs.length)
+  }
+
+  function runStyle(style: SimStyle, autocast: 'none' | 'all' = 'none'): SimResult[] {
+    return weaponSeeds.map((seed) =>
+      simulate({
+        hours: weaponHours,
+        zoneId: weaponZoneId,
+        seed,
+        freezeLevel: true,
+        build: { ...weaponBuild, ...styleBuild(style, true), autocast },
+      }),
+    )
   }
 
   it(`равный урон оружия в секунду — итог в пределах ${pct(weaponSpreadLimit)}`, () => {
     const zone = ZONES.find((z) => z.id === weaponZoneId)!
     header(
-      `Голое оружие, герой ${LEVEL} уровня (${SHARPENING} заточек), ${zone.name}, ` +
+      `Голые связки, герой ${LEVEL} уровня (${SHARPENING} заточек), ${zone.name}, ` +
         `${weaponHours} ч, только автоатака.`,
-      'оружие               скорость   золота/ч   отклонение',
+      'стиль                 золота/ч   отклонение   привалов/ч',
     )
-    const results = WEAPONS.map((w) => goldFor(w.id, 'none'))
-    const gold = results.map((r) => r.goldPerHour.toNumber())
+    const results = SIM_STYLES.map((style) => ({ style, runs: runStyle(style) }))
+    // Равными обязаны быть только связки, ЗАНИМАЮЩИЕ ОБЕ РУКИ. Щит в этот
+    // набор не входит намеренно: у него меньше урона по построению.
+    const paired = results.filter((r) => r.style !== 'shield')
+    const gold = paired.map((r) => meanGold(r.runs).toNumber())
     const mean = gold.reduce((a, b) => a + b, 0) / gold.length
-    WEAPONS.forEach((w, i) => {
+    for (const { style, runs } of results) {
+      const g = meanGold(runs).toNumber()
+      const rests = runs.reduce((sum, r) => sum + r.restsPerHour, 0) / runs.length
+      const dev = style === 'shield' ? '' : ((g - mean) / mean >= 0 ? '+' : '') + pct((g - mean) / mean)
       log(
-        `${w.noun.padEnd(20)} ${w.weaponSpeed.toFixed(1).padStart(8)}с ${gold[i].toFixed(0).padStart(10)}   ${((gold[i] - mean) / mean >= 0 ? '+' : '') + pct((gold[i] - mean) / mean)}`,
+        `${STYLE_NAMES[style].padEnd(21)} ${g.toFixed(0).padStart(9)}   ${dev.padStart(10)}   ` +
+          `${rests.toFixed(1).padStart(10)}`,
       )
-    })
-    const spread = spreadOf(results.map((r) => r.goldPerHour))
+    }
+    const spread = spreadOf(paired.map((r) => meanGold(r.runs)))
     log(
       `Разброс ${pct(spread)} при ${hitsPerKill(zone, LEVEL, SHARPENING).toFixed(1)} замахах двуручника на моба.`,
     )
     expect(spread).toBeLessThanOrEqual(weaponSpreadLimit)
   }, 300_000)
 
+  it('щит платит уроном за живучесть — и то, и другое видно', () => {
+    // Обещание стиля: меньше урона, меньше потерь HP. Если бы щит не отнимал
+    // урона, он был бы бесплатным, и выбора стиля не существовало бы.
+    const { stressBuild, stressZoneId } = BALANCE_PRESET
+    const stress = (style: SimStyle): SimResult[] =>
+      weaponSeeds.map((seed) =>
+        simulate({
+          hours: weaponHours,
+          zoneId: stressZoneId,
+          seed,
+          freezeLevel: true,
+          build: { ...stressBuild, ...styleBuild(style, true), autocast: 'none' },
+        }),
+      )
+    const dual = stress('dual')
+    const shield = stress('shield')
+    // Простой — доля времени вне боя: привалы плюс смерти. Щит обязан
+    // уменьшать её, иначе он был бы бесплатным и выбора стиля не было бы.
+    const idle = (runs: SimResult[]) =>
+      runs.reduce((sum, r) => sum + r.restShare + (1 - r.uptime), 0) / runs.length
+    header(
+      `Герой ${stressBuild.level} уровня (${stressBuild.sharpening} заточек) в зоне ` +
+        `${ZONES.find((z) => z.id === stressZoneId)!.name} — не по себе. ${weaponHours} ч.`,
+      'стиль                 золота/ч   простой',
+    )
+    for (const [style, runs] of [
+      ['dual', dual],
+      ['shield', shield],
+    ] as const) {
+      log(`${STYLE_NAMES[style].padEnd(21)} ${meanGold(runs).toFixed(0).padStart(9)}   ${pct(idle(runs)).padStart(7)}`)
+    }
+    // Простой обязан заметно упасть, а не просто «не вырасти»: щит покупает
+    // живучесть, и покупка должна быть видна.
+    expect(idle(shield)).toBeLessThan(idle(dual) * 0.9)
+    expect(meanGold(shield).lt(meanGold(dual))).toBe(true)
+  }, 300_000)
+
   it('перебой: чем короче бой, тем сильнее расходится итог', () => {
     // Инвариант выше держится не везде: он про урон, который ДОШЁЛ до моба.
     // Когда моб умирает с одного замаха, лишний урон крупного удара пропадает,
-    // и быстрое оружие выигрывает просто числом замахов в секунду. Таблица
-    // показывает границу, за которой выбор оружия перестаёт быть равным.
+    // и частая связка выигрывает просто числом замахов. Таблица показывает
+    // границу, за которой выбор стиля перестаёт быть равным.
     header(
-      'Голое оружие, только автоатака, 1 час на клетку. Разброс против длины боя.',
+      'Голые связки, только автоатака, 1 час на клетку. Разброс против длины боя.',
       'зона                 ур. заточек  замахов/моб   разброс   лучшее',
     )
     const cases = [
@@ -254,24 +318,30 @@ describe('скорость оружия', () => {
       { zone: 'ashen-ridge', level: 40, sharpening: 200 },
       { zone: weaponZoneId, level: LEVEL, sharpening: SHARPENING },
     ]
+    const paired = SIM_STYLES.filter((style) => style !== 'shield')
     for (const c of cases) {
       const zone = ZONES.find((z) => z.id === c.zone)!
-      const gold = WEAPONS.map((w) =>
-        simulate({
-          hours: 1,
-          zoneId: c.zone,
-          freezeLevel: true,
-          build: {
-            level: c.level,
-            sharpening: c.sharpening,
-            weapon: { templateId: w.id, bare: true },
-            autocast: 'none',
-          },
-        }).goldPerHour,
+      const gold = paired.map((style) =>
+        meanGold(
+          weaponSeeds.map((seed) =>
+            simulate({
+              hours: 1,
+              zoneId: c.zone,
+              seed,
+              freezeLevel: true,
+              build: {
+                level: c.level,
+                sharpening: c.sharpening,
+                ...styleBuild(style, true),
+                autocast: 'none',
+              },
+            }),
+          ),
+        ),
       )
       const spread = spreadOf(gold)
       const numbers = gold.map((g) => g.toNumber())
-      const best = WEAPONS[numbers.indexOf(Math.max(...numbers))].noun
+      const best = STYLE_NAMES[paired[numbers.indexOf(Math.max(...numbers))]]
       log(
         `${zone.name.padEnd(20)} ${String(c.level).padStart(3)} ${String(c.sharpening).padStart(8)} ` +
           `${hitsPerKill(zone, c.level, c.sharpening).toFixed(1).padStart(12)} ${pct(spread).padStart(9)}   ${best}`,
@@ -282,21 +352,31 @@ describe('скорость оружия', () => {
   it('урон за ману: медленное оружие тем и окупается', () => {
     // Умение «на следующий удар» стоит фиксированную ману и бьёт долей ЗАМАХА.
     // Замах медленного оружия крупнее ровно во столько раз, во сколько оно
-    // медленнее, — значит и урона за ту же ману выходит во столько же раз больше.
+    // медленнее, — значит и урона за ту же ману выходит во столько же раз
+    // больше. Сравниваем ОДНОРУЧНЫЕ: у них одинаковый урон оружия в секунду,
+    // и разница между ними — ровно скорость. Двуручное выигрывает ещё больше,
+    // но там к скорости примешан его собственный, вдвое больший замах.
     const onNextSwing = [...BALANCE_PRESET.manaAbilities]
     header(
       `Только умения «на следующий удар» (${onNextSwing.map((id) => ABILITY_BY_ID[id].name).join(', ')}), ` +
         `${ZONES.find((z) => z.id === weaponZoneId)!.name}, ${weaponHours} ч.`,
       'оружие               скорость   урон умений      мана   урон за ману',
     )
-    const rows = ['fang', 'crusher'].map((templateId) => {
+    const sorted = [...ONE_HANDED].sort(
+      (a, b) => a.weaponSpeed.toNumber() - b.weaponSpeed.toNumber(),
+    )
+    const rows = [sorted[0], sorted[sorted.length - 1]].map((template) => {
       const result = simulate({
         hours: weaponHours,
         zoneId: weaponZoneId,
         freezeLevel: true,
-        build: { ...weaponBuild, weapon: { templateId, bare: true }, autocast: onNextSwing },
+        build: {
+          ...weaponBuild,
+          weapon: { templateId: template.id, bare: true },
+          offhand: null,
+          autocast: onNextSwing,
+        },
       })
-      const template = WEAPON_BY_ID[templateId]
       log(
         `${template.noun.padEnd(20)} ${template.weaponSpeed.toFixed(1).padStart(8)}с ` +
           `${num(result.abilityDamage, 13)} ${num(result.manaSpent)} ${num(result.damagePerMana!, 14)}`,
@@ -398,6 +478,20 @@ describe('контракт темпа боя', () => {
     // среднем»: первый уровень у потолка, последний у пола — и бой к концу
     // игры проходился бы вдвое быстрее, чем в начале.
     expect(ttkDrift(rows)).toBeLessThanOrEqual(TTK_DRIFT_MAX)
+  })
+
+  it(`привал короче боя: ${REST_DURATION_S} с против медианного TTK актуальной зоны`, () => {
+    // Контракт привала. Если отсидка длиннее убийства моба, пауза перестаёт
+    // быть паузой и становится основным занятием: игрок смотрит на костёр
+    // дольше, чем на бой. Медиана, а не среднее — один разросшийся уровень
+    // не должен разрешать длинный привал на всех остальных.
+    const current = rows.map((r) => currentCell(r).ttk.avg).sort((a, b) => a - b)
+    const median = current[Math.floor(current.length / 2)]
+    log(
+      `Привал ${REST_DURATION_S} с при медианном TTK ${median.toFixed(1)} с ` +
+        `(от ${current[0].toFixed(1)} до ${current[current.length - 1].toFixed(1)}).`,
+    )
+    expect(REST_DURATION_S).toBeLessThanOrEqual(median)
   })
 
   it('везение ускоряет бой, а не задаёт коридор', () => {
