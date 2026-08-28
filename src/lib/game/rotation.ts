@@ -82,14 +82,26 @@ export function rotationRate(
 function castPlan(stats: StatBlock, settings: AbilitySettings, plan: RotationPlan): RotationRate {
   const delaySec = plan.delayed ? AUTOCAST_DELAY_MS / 1000 : 0
   let manaBudget = stats.manaRegen
+  // Второй ограничитель, кроме маны: умения «на следующий удар» ЖДУТ замаха,
+  // и очередь на него одна. Значит вместе они не могут срабатывать чаще, чем
+  // герой замахивается, — сколько бы маны ни было. Без этого потолка модель
+  // раскладывала бы по два-три таких умения на один замах.
+  let swingBudget = new Decimal(1).div(stats.swingTime)
   const casts: AbilityCastRate[] = []
   let damage = new Decimal(0)
   let manaSpent = new Decimal(0)
 
   for (const ability of abilitiesByPriority(settings, plan.onlyAutocast)) {
     // Цикл каста: кулдаун плюс задержка реакции. У руки задержки нет.
-    const cycleSec = new Decimal(ability.cooldownSec).plus(delaySec)
-    const wantPerSecond = new Decimal(1).div(cycleSec)
+    // Умение «на следующий удар» вдобавок ЖДЁТ замаха: нажатие ставит его в
+    // очередь, а бьёт оно, когда дойдёт черёд. В среднем это ползамаха
+    // ожидания — и на медленном оружии это заметная часть цикла.
+    const queueSec = ability.type === 'onNextSwing' ? stats.swingTime / 2 : 0
+    const cycleSec = new Decimal(ability.cooldownSec).plus(delaySec).plus(queueSec)
+    const wanted = new Decimal(1).div(cycleSec)
+    const wantPerSecond =
+      ability.type === 'onNextSwing' ? Decimal.min(wanted, swingBudget) : wanted
+    if (wantPerSecond.lte(0)) continue
     const manaWanted = ability.manaCost.times(wantPerSecond)
     // Маны на всё не хватает — умение получает столько тактов, сколько оплачено.
     const share = manaWanted.lte(manaBudget)
@@ -97,6 +109,7 @@ function castPlan(stats: StatBlock, settings: AbilitySettings, plan: RotationPla
       : Decimal.max(manaBudget, new Decimal(0)).div(manaWanted)
     if (share.lte(0)) continue
     const castsPerSecond = wantPerSecond.times(share)
+    if (ability.type === 'onNextSwing') swingBudget = swingBudget.minus(castsPerSecond)
     const hitDamage = expectedAbilityDamage(stats, ability.weaponDamagePercent)
     const totalDamage = withEffect(stats, ability, hitDamage)
     manaBudget = manaBudget.minus(manaWanted.times(share))

@@ -35,6 +35,20 @@ export interface Zone {
   scene: SceneConfig
 }
 
+// Лестница зон. Уровни мобов и требования по уровню героя — ЧАСТЬ КОНТРАКТА
+// ТЕМПА (PACING в data/balance.ts), а не украшение:
+//
+//   * расстояние между СРЕДНИМИ уровнями мобов соседних зон задаёт ступеньку
+//     HP, а она обязана совпасть с тем, насколько герой усилился, пока
+//     фармил предыдущую зону. Отсюда неровные промежутки 7 / 7 / 5: рост
+//     героя от заточек с уровнями замедляется, и ступеньки идут следом;
+//   * unlockRequirement — это границы «правления» зоны, то есть длина отрезка
+//     уровней, на котором она актуальна. Их и подбирали так, чтобы за это
+//     правление герой усиливался ровно на одну ступеньку.
+//
+// Уровень моба намеренно не равен уровню героя: это ярлык сложности, а не
+// возраст противника. Менять эти числа врозь нельзя — контракт темпа
+// проверяет их вместе (game/__tests__/balance.test.ts).
 export const ZONES: Zone[] = [
   {
     id: 'shepherds-meadow',
@@ -56,14 +70,14 @@ export const ZONES: Zone[] = [
     scene: QUARRY_SCENE,
     icon: 'zone-hollow-quarry',
     name: 'Полая каменоломня',
-    monsterLevelRange: { min: 4, max: 6 },
+    monsterLevelRange: { min: 8, max: 9 },
     monsterPool: [
       { id: 'stone-gnawer', name: 'Каменный грызун', role: RUNT },
       { id: 'dust-digger', name: 'Пылевой копач', role: COMMON },
       { id: 'rumbling-caver', name: 'Гулкий обвальщик', role: BRUTE },
     ],
-    rewardMultiplier: new Decimal(1.6),
-    unlockRequirement: 4,
+    rewardMultiplier: new Decimal(1.2),
+    unlockRequirement: 3,
     isSafe: false,
   },
   {
@@ -71,14 +85,14 @@ export const ZONES: Zone[] = [
     scene: MIREFEN_SCENE,
     icon: 'zone-mirefen-hollows',
     name: 'Топкие лощины',
-    monsterLevelRange: { min: 9, max: 12 },
+    monsterLevelRange: { min: 15, max: 16 },
     monsterPool: [
       { id: 'silt-crawler', name: 'Тинный ползун', role: RUNT },
       { id: 'rotfang', name: 'Гнилозуб', role: COMMON },
       { id: 'bog-drifter', name: 'Топляк', role: BRUTE },
     ],
-    rewardMultiplier: new Decimal(2.6),
-    unlockRequirement: 9,
+    rewardMultiplier: new Decimal(1.45),
+    unlockRequirement: 7,
     isSafe: false,
   },
   {
@@ -86,14 +100,14 @@ export const ZONES: Zone[] = [
     scene: ASHEN_SCENE,
     icon: 'zone-ashen-ridge',
     name: 'Пепельный гребень',
-    monsterLevelRange: { min: 16, max: 20 },
+    monsterLevelRange: { min: 20, max: 21 },
     monsterPool: [
       { id: 'ember-stinger', name: 'Уголёк-жалун', role: RUNT },
       { id: 'ash-walker', name: 'Пепельный ходок', role: COMMON },
       { id: 'flint-colossus', name: 'Кремнёвый исполин', role: BRUTE },
     ],
-    rewardMultiplier: new Decimal(4.5),
-    unlockRequirement: 16,
+    rewardMultiplier: new Decimal(6.5),
+    unlockRequirement: 12,
     isSafe: false,
   },
 ]

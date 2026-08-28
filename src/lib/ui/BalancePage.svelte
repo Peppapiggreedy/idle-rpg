@@ -9,7 +9,17 @@
     spreadOf,
     type SimResult,
   } from '../game'
+  import { currentCell, pacingTable, referenceBuild, ttkDrift, type PacingRow } from '../game/simulate'
   import { Decimal } from '../game'
+  import {
+    TTK_AHEAD_MIN,
+    TTK_BEHIND_MAX,
+    TTK_DRIFT_MAX,
+    TTK_HARD_CEILING,
+    TTK_HARD_FLOOR,
+    TTK_TARGET_MAX,
+    TTK_TARGET_MIN,
+  } from '../data/balance'
   import { ZONES } from '../data/zones'
   import { WEAPONS, WEAPON_BY_ID } from '../data/items'
   import { ABILITY_BY_ID } from '../data/abilities'
@@ -22,6 +32,9 @@
   let zoneRows = $state<Array<{ name: string; result: SimResult }>>([])
   let weaponRows = $state<Array<{ name: string; speed: string; result: SimResult }>>([])
   let manaRows = $state<Array<{ name: string; speed: string; result: SimResult }>>([])
+  let pacingRows = $state<PacingRow[]>([])
+
+  const drift = $derived(pacingRows.length > 0 ? ttkDrift(pacingRows) : null)
 
   const weaponSpread = $derived(
     weaponRows.length === WEAPONS.length
@@ -46,13 +59,17 @@
     zoneRows = []
     weaponRows = []
     manaRows = []
+    pacingRows = []
+    await yieldFrame()
+
+    pacingRows = pacingTable()
     await yieldFrame()
 
     for (const zone of ZONES) {
       const result = simulate({
         hours,
         zoneId: zone.id,
-        build: BALANCE_PRESET.zoneBuild,
+        build: referenceBuild(BALANCE_PRESET.zoneLevel),
       })
       zoneRows = [...zoneRows, { name: zone.name, result }]
       await yieldFrame()
@@ -105,6 +122,20 @@
   }
 
   const percent = (v: number) => `${(v * 100).toFixed(1)}%`
+  const sec = (v: number) => (Number.isFinite(v) ? `${v < 100 ? v.toFixed(1) : v.toFixed(0)} с` : '∞')
+  const MARK: Record<string, string> = {
+    current: 'актуальная',
+    behind: 'отстающая',
+    ahead: 'опережающая',
+    near: 'соседняя',
+  }
+  // Красным — то, что вышло за контракт. Порог зависит от положения зоны.
+  function broken(standing: string, avg: number): boolean {
+    if (standing === 'current') return avg < TTK_TARGET_MIN || avg > TTK_TARGET_MAX
+    if (standing === 'behind') return avg > TTK_BEHIND_MAX
+    if (standing === 'ahead') return avg < TTK_AHEAD_MIN
+    return false
+  }
   const zoneName = ZONES.find((z) => z.id === BALANCE_PRESET.weaponZoneId)?.name ?? ''
   const abilityNames = BALANCE_PRESET.manaAbilities
     .map((id) => ABILITY_BY_ID[id]?.name)
@@ -141,14 +172,76 @@
   <p class="warn">
     Счёт идёт в этой же вкладке: {hours} ч на строку — это примерно {(hours * 0.5).toFixed(
       1,
-    )} с работы на каждую из {ZONES.length + WEAPONS.length + 2} строк. Вкладка на это время подтормаживает.
+    )} с работы на каждую из {ZONES.length + WEAPONS.length + 2} строк, плюс одно
+    эталонное прохождение на таблицу темпа. Вкладка на это время подтормаживает.
   </p>
+
+  {#if pacingRows.length > 0}
+    <h2>Темп боя</h2>
+    <p class="note">
+      Эталонное прохождение: герой в средней по рулетке экипировке, всё золото
+      уходит в заточку, переезд в новую зону по мере открытия. В клетке —
+      среднее время убийства моба зоны, в скобках самый быстрый и самый долгий.
+      Контракт: в актуальной зоне {TTK_TARGET_MIN}–{TTK_TARGET_MAX} с, ни один моб не
+      быстрее {TTK_HARD_FLOOR} с и не дольше {TTK_HARD_CEILING} с, отстающая зона до
+      {TTK_BEHIND_MAX} с, опережающая от {TTK_AHEAD_MIN} с.
+    </p>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Ур.</th>
+            {#each ZONES as zone (zone.id)}
+              <th>{zone.name}<br /><span class="faint"
+                  >{zone.monsterLevelRange.min}–{zone.monsterLevelRange.max}</span
+                ></th>
+            {/each}
+            <th>Заточек</th>
+            <th>Смертей</th>
+          </tr>
+        </thead>
+        <tbody>
+          {#each pacingRows as row (row.level)}
+            <tr>
+              <td class="name">{row.level}</td>
+              {#each row.cells as cell (cell.zoneId)}
+                <td
+                  class="ttk"
+                  class:current={cell.standing === 'current'}
+                  class:bad={broken(cell.standing, cell.ttk.avg)}
+                  title={MARK[cell.standing]}
+                >
+                  {sec(cell.ttk.avg)}
+                  <span class="faint">({sec(cell.ttk.min)}–{sec(cell.ttk.max)})</span>
+                </td>
+              {/each}
+              <td>{row.sharpening}</td>
+              <td>{row.deaths}</td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    </div>
+    {#if drift !== null}
+      <p class="verdict">
+        <Tag
+          tone={drift > TTK_DRIFT_MAX ? 'damage' : 'accent'}
+          size="md"
+          label="разброс {percent(drift)}"
+        />
+        {drift > TTK_DRIFT_MAX
+          ? `темп сжимается с прогрессом: к концу игры бой идёт заметно быстрее, чем в начале (потолок ${percent(TTK_DRIFT_MAX)}).`
+          : 'темп держится: бой длится примерно одинаково на всех уровнях.'}
+      </p>
+    {/if}
+  {/if}
 
   {#if zoneRows.length > 0}
     <h2>Зоны</h2>
     <p class="note">
-      Герой {BALANCE_PRESET.zoneBuild.level} уровня, {BALANCE_PRESET.zoneBuild.sharpening} заточек,
-      автокаст включён. Уровень растёт по ходу прогона, как в живой игре.
+      Эталонный герой {BALANCE_PRESET.zoneLevel} уровня: столько заточек, сколько
+      он к этому уровню успел купить, и средняя по рулетке экипировка. Автокаст
+      включён, уровень растёт по ходу прогона, как в живой игре.
     </p>
     <div class="scroll">
       <table>
@@ -363,5 +456,15 @@
   .back {
     margin-top: var(--space-5);
     font-size: var(--text-sm);
+  }
+  .faint {
+    color: var(--c-text-faint);
+    font-size: var(--text-xs);
+  }
+  td.ttk.current {
+    color: var(--c-accent);
+  }
+  td.ttk.bad {
+    color: var(--c-damage);
   }
 </style>

@@ -48,6 +48,8 @@ export type {
 } from './stats'
 export {
   estimateCombatRate,
+  estimateTtk,
+  estimateZoneTtk,
   rollSwing,
   rollMonsterDamage,
   swingDamageRange,
@@ -56,7 +58,7 @@ export {
   attackPowerContribution,
   critFactor,
 } from './combat'
-export type { CombatRate, SwingResult } from './combat'
+export type { CombatRate, SwingResult, TtkEstimate } from './combat'
 export {
   zoneById,
   currentZone,
@@ -67,8 +69,10 @@ export {
   retreatZone,
   reviveInZone,
   stateInZone,
+  intendedZone,
+  zoneStanding,
 } from './zones'
-export type { ZoneForecast, ZoneVerdict } from './zones'
+export type { ZoneForecast, ZoneVerdict, ZoneStanding } from './zones'
 export {
   ABILITIES,
   ABILITY_BY_ID,

@@ -12,7 +12,7 @@ import { estimateCombatRate } from './combat'
 import { applyOfflineProgress } from './save'
 import { zoneRate } from './zones'
 import { ensureStats } from './stats'
-import { COMMON, buildMonster } from '../data/monsters'
+import { COMMON, MONSTER_BASE, buildMonster } from '../data/monsters'
 import { WEAPON_SHARPENING } from '../data/upgrades'
 import { SAFE_ZONE, ZONE_BY_ID } from '../data/zones'
 import type { MonsterTemplate } from '../types'
@@ -48,17 +48,20 @@ function inZone(template: MonsterTemplate): GameState {
 
 describe('ответные удары моба', () => {
   it('моб бьёт по своему свинг-таймеру, герой теряет HP', () => {
-    // Явный моб: спавн в зоне случаен. Обычный 1 уровня — 4 урона каждые 1.6 c,
-    // реген в бою 1/с.
+    // Явный моб: спавн в зоне случаен. Числа берём из данных, а не повторяем:
+    // обычный моб 1 уровня бьёт ровно на MONSTER_BASE.damage раз в COMMON.swingTime.
     const squelcher = buildMonster(
       { id: 'test-squelcher', name: 'Хлюпень', role: COMMON },
       1,
       new Decimal(1),
     )
-    let s = run(inZone(squelcher), 1600)
-    // До удара HP на капе (реген в потолок не копится); удар на 1.6 c: -4,
-    // затем реген того же тика +0.1 -> 96.1.
-    expect(s.currentHp.toNumber()).toBeCloseTo(96.1, 6)
+    const state = inZone(squelcher)
+    let s = run(state, COMMON.swingTime * 1000)
+    // До удара HP на капе (реген в потолок не копится); удар на полном свинге,
+    // затем реген того же тика.
+    const regenPerStep = state.stats.hpRegen.times(STEP_MS / 1000)
+    const expected = state.stats.maxHp.minus(MONSTER_BASE.damage).plus(regenPerStep)
+    expect(s.currentHp.toNumber()).toBeCloseTo(expected.toNumber(), 6)
     expect(s.combatLog.some((e) => e.type === 'hurt')).toBe(true)
   })
 

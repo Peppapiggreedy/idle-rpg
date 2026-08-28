@@ -49,12 +49,12 @@ export const DUNGEONS: DungeonDef[] = [
     icon: 'dungeon-sunken-barrow',
     name: 'Затонувший курган',
     zoneId: 'mirefen-hollows',
-    unlockRequirement: 12,
+    unlockRequirement: 10,
     bosses: [
       {
         id: 'barrow-warden',
         name: 'Страж кургана',
-        level: 12,
+        level: 15,
         hpMult: new Decimal(9),
         damageMult: new Decimal(1.25),
         swingTime: 2.4,
@@ -66,7 +66,7 @@ export const DUNGEONS: DungeonDef[] = [
       {
         id: 'silt-matron',
         name: 'Тинная матрона',
-        level: 14,
+        level: 17,
         hpMult: new Decimal(14),
         damageMult: new Decimal(1.55),
         swingTime: 2.0,
@@ -78,7 +78,7 @@ export const DUNGEONS: DungeonDef[] = [
       {
         id: 'drowned-king',
         name: 'Утопший король',
-        level: 16,
+        level: 19,
         hpMult: new Decimal(22),
         damageMult: new Decimal(1.9),
         swingTime: 1.8,

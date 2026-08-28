@@ -61,7 +61,10 @@ export function weaponMods(template: WeaponTemplate, rarity: RarityDef): StatMod
   ]
 }
 
-function armorMods(slot: Exclude<SlotId, 'weapon'>, rarity: RarityDef): StatModifier[] {
+// Экспортируется ради эталонных сборок прогона баланса: «средняя броня»
+// обязана строиться теми же правилами, что и выпавшая, иначе прогон мерил бы
+// не ту игру.
+export function armorMods(slot: Exclude<SlotId, 'weapon'>, rarity: RarityDef): StatModifier[] {
   const source = `equipment:${slot}`
   return [
     { stat: 'attackPower', kind: 'flat', value: ARMOR_BASE_ATTACK_POWER.times(rarity.bonusMult), source },

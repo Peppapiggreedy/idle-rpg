@@ -23,6 +23,8 @@ import {
 } from '../data/balance'
 import { PLAN, rotationRate, type PlayMode, type RotationPlan, type RotationRate } from './rotation'
 import type { Monster } from '../types'
+import { SAFE_ZONE, ZONE_BY_ID, zoneMonsterVariants, type Zone } from '../data/zones'
+import { monsterFromTemplate } from './state'
 
 // Вклад силы атаки в один удар: чем медленнее оружие, тем больше за удар.
 export function attackPowerContribution(stats: StatBlock): Decimal {
@@ -89,7 +91,10 @@ export function expectedMonsterDamage(monster: Monster, stats: StatBlock): Decim
 }
 
 export interface CombatRate {
-  damagePerSecond: Decimal // ВЕСЬ урон героя в секунду: автоатака + умения
+  // ВЕСЬ урон героя в секунду. Сумме двух чисел ниже он НЕ равен: умение
+  // «на следующий удар» занимает замах автоатаки, и эти замахи входят в оба
+  // слагаемых. Складывать их напрямую нельзя.
+  damagePerSecond: Decimal
   autoDamagePerSecond: Decimal // только автоатака
   abilityDamagePerSecond: Decimal // только умения при выбранном режиме игры
   killsPerSecond: Decimal // убийств в секунду С УЧЁТОМ смертей героя (uptime)
@@ -155,16 +160,31 @@ function hitStream(
 ): { rate: Decimal; killing: Decimal; paced: Decimal } {
   const swingRate = new Decimal(1).div(stats.swingTime)
   const swing = expectedSwingDamage(stats)
+  const replaced = replacedSwingsPerSecond(stats, rotation)
+  // Ударов в секунду: все замахи плюс мгновенные умения. «На следующий удар»
+  // новых ударов не добавляет — оно занимает уже существующий замах, только
+  // бьёт он сильнее.
   let rate = swingRate
-  let killing = swing.times(swingRate)
+  let killing = swing.times(swingRate.minus(replaced))
   let paced = killing
   for (const cast of rotation.casts) {
     const castRate = new Decimal(cast.castsPerSecond)
-    rate = rate.plus(castRate)
+    if (cast.ability.type === 'instant') rate = rate.plus(castRate)
     killing = killing.plus(cast.hitDamage.times(castRate))
     paced = paced.plus(cast.totalDamage.times(castRate))
   }
   return { rate, killing, paced }
+}
+
+/** Сколько замахов в секунду занято умениями «на следующий удар». */
+function replacedSwingsPerSecond(stats: StatBlock, rotation: RotationRate): Decimal {
+  const used = rotation.casts.reduce(
+    (sum, cast) =>
+      cast.ability.type === 'onNextSwing' ? sum.plus(cast.castsPerSecond) : sum,
+    new Decimal(0),
+  )
+  // Больше, чем герой успевает замахнуться, занять нельзя — очередь одна.
+  return Decimal.min(used, new Decimal(1).div(stats.swingTime))
 }
 
 export function estimateCombatRate(state: GameState, mode: PlayMode = 'auto'): CombatRate {
@@ -188,14 +208,85 @@ export function estimateCombatRate(state: GameState, mode: PlayMode = 'auto'): C
   }
 }
 
+/** Время убийства по зоне: среднее и края по всем мобам, которых даёт спавн. */
+export interface TtkEstimate {
+  /** Самый быстрый моб зоны — по нему проверяется пол темпа. */
+  min: number
+  /** Среднее по пулу — основной показатель темпа зоны. */
+  avg: number
+  /** Самый долгий моб зоны — по нему проверяется потолок темпа. */
+  max: number
+}
+
+/**
+ * Ожидаемое время убийства (TTK) моба зоны при текущем билде, секунд.
+ *
+ * СВОЕЙ ФОРМУЛЫ ЗДЕСЬ НЕТ и быть не должно: длина боя вынимается из той же
+ * estimateCombatRate, которая считает и урон, и темп зоны, и оффлайн. Иначе
+ * контракт темпа мерил бы одну игру, а игрок играл бы в другую.
+ *
+ * idealKillsPerSecond — это 1 / (бой + респаун), поэтому сам бой получается
+ * обратным ходом: вычитаем паузу респауна. Берётся именно ideal, без поправки
+ * на смерти героя: TTK — про длину ОДНОГО боя, а смертность зоны — отдельная
+ * характеристика (см. forecastZone).
+ *
+ * Перебор — по ВСЕМ мобам, которых может выдать спавн (пул × уровни), тем же
+ * множеством, что и zoneRate.
+ */
+export function estimateZoneTtk(
+  state: GameState,
+  zone: string | Zone,
+  mode: PlayMode = 'auto',
+): TtkEstimate {
+  const respawnSec = RESPAWN_DELAY_MS / 1000
+  // Зона берётся из данных напрямую, а не через game/zones.ts: тот сам зовёт
+  // combat.ts, и импорт обратно замкнул бы модули в кольцо.
+  const target = typeof zone === 'string' ? (ZONE_BY_ID[zone] ?? SAFE_ZONE) : zone
+  const variants = zoneMonsterVariants(target)
+  if (variants.length === 0) return { min: 0, avg: 0, max: 0 }
+  let total = 0
+  let min = Number.POSITIVE_INFINITY
+  let max = 0
+  for (const template of variants) {
+    const facing: GameState = { ...state, monster: monsterFromTemplate(template) }
+    const rate = estimateCombatRate(facing, mode)
+    // Бесконечность здесь законна: герой может не пробивать моба вовсе.
+    const cycle = rate.idealKillsPerSecond.gt(0)
+      ? new Decimal(1).div(rate.idealKillsPerSecond).toNumber()
+      : Number.POSITIVE_INFINITY
+    const ttk = Math.max(0, cycle - respawnSec)
+    total += ttk
+    if (ttk < min) min = ttk
+    if (ttk > max) max = ttk
+  }
+  return { min, avg: total / variants.length, max }
+}
+
+/** Среднее время убийства моба зоны, секунд. */
+export function estimateTtk(
+  state: GameState,
+  zone: string | Zone,
+  mode: PlayMode = 'auto',
+): number {
+  return estimateZoneTtk(state, zone, mode).avg
+}
+
 function rawRate(state: GameState, plan: RotationPlan): CombatRate {
   const stats = state.stats
   const avgSwing = expectedSwingDamage(stats)
-  const autoDamagePerSecond = avgSwing.times(critFactor(stats)).div(stats.swingTime)
   const respawnSec = RESPAWN_DELAY_MS / 1000
   const rotation = rotationRate(stats, state.abilitySettings, plan)
+  // Урон автоатаки — свойство ОРУЖИЯ и считается как считался: сколько бы
+  // умений герой ни жал, «столько бьёт этот меч» не меняется. Этим числом
+  // сравниваются предметы, и на нём держится инвариант нормализации скорости.
+  const autoDamagePerSecond = avgSwing.times(critFactor(stats)).div(stats.swingTime)
+  // Сложить автоатаку и умения напрямую НЕЛЬЗЯ: умение «на следующий удар»
+  // ЗАМЕНЯЕТ автоатаку, а не добавляется к ней, — эти замахи посчитаны дважды.
+  // Пока бой длился полтора удара, ошибка была незаметной; на длинном бою она
+  // делала оффлайн выгоднее живой игры, то есть ломала железное правило.
+  const replaced = replacedSwingsPerSecond(stats, rotation).times(avgSwing).times(critFactor(stats))
   // Урон в секунду, реально дошедший до мобов: сырой темп минус перебой.
-  const raw = autoDamagePerSecond.plus(rotation.damagePerSecond)
+  const raw = autoDamagePerSecond.plus(rotation.damagePerSecond).minus(replaced)
   const perKill = damagePerKill(state, rotation, plan)
   const damagePerSecond = raw.times(state.monster.maxHp.div(perKill))
   // Длина боя — из уже посчитанного урона в секунду (он уже с поправкой на

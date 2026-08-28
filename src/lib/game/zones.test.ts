@@ -11,7 +11,13 @@ import {
   travelToZone,
   zoneRate,
 } from './zones'
-import { SAFE_ZONE, ZONES, ZONE_BY_ID, representativeMonster } from '../data/zones'
+import {
+  SAFE_ZONE,
+  ZONES,
+  ZONE_BY_ID,
+  averageMonsterLevel,
+  representativeMonster,
+} from '../data/zones'
 import { MONSTER_BASE, buildMonster, COMMON, RUNT, BRUTE } from '../data/monsters'
 import { WEAPON_SHARPENING } from '../data/upgrades'
 
@@ -69,8 +75,12 @@ describe('масштаб мобов от уровня', () => {
     expect(high.maxHp.gt(low.maxHp)).toBe(true)
     expect(high.damageMin.gt(low.damageMin)).toBe(true)
     expect(high.goldReward.gt(low.goldReward)).toBe(true)
-    // hp растёт быстрее урона: зона требует урона, а не бесконечного запаса HP.
-    expect(high.maxHp.div(low.maxHp).gt(high.damageMin.div(low.damageMin))).toBe(true)
+    // Урон растёт БЫСТРЕЕ hp — и это ставка контракта темпа, а не случайность.
+    // HP догоняет прокачку урона героя, а она от заточек почти линейна, так что
+    // расти быстро hp нельзя: бой начнёт растягиваться. Урону такой привязки
+    // нет, зато есть своя: регенерация героя в бою растёт с уровнем, и урон
+    // обязан её обгонять — иначе «сунуться в дальнюю зону» перестаёт убивать.
+    expect(high.damageMin.div(low.damageMin).gt(high.maxHp.div(low.maxHp))).toBe(true)
   })
 
   it('множитель зоны умножает награду, но не трогает hp и урон', () => {
@@ -164,7 +174,7 @@ describe('честный прогноз опасности', () => {
     expect(ridge.verdict).toBe('hopeless')
     expect(ridge.unlocked).toBe(false)
     // Разрыв в уровнях считается, а не берётся из текста в данных.
-    expect(ridge.levelGap).toBe(17)
+    expect(ridge.levelGap).toBe(averageMonsterLevel(RIDGE) - 1)
   })
 
   it('прокачка превращает смертельную зону в безопасную', () => {
@@ -204,7 +214,7 @@ describe('честный прогноз опасности', () => {
     const goldPerKill = rate.goldPerSecond.div(rate.killsPerSecond)
     expect(goldPerKill.gte(cheapest)).toBe(true)
     expect(goldPerKill.lte(priciest)).toBe(true)
-    expect(typical.level).toBe(5) // середина диапазона 4-6
+    expect(typical.level).toBe(averageMonsterLevel(QUARRY))
   })
 })
 

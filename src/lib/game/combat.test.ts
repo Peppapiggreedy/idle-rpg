@@ -93,8 +93,10 @@ describe('дискретные удары', () => {
     expect(s.monster.currentHp.eq(s.monster.maxHp)).toBe(true)
     s = run(s, 1900) // 1.9 c замаха — удара ещё нет
     expect(s.monster.currentHp.eq(s.monster.maxHp)).toBe(true)
-    s = run(s, 100) // полный замах — удар
-    expect(s.monster.currentHp.toNumber()).toBe(0)
+    s = run(s, 100) // полный замах — удар. Новый моб пришёл из зоны, и переживёт
+    // он удар или нет — дело баланса; проверяем ровно то, ради чего тест: удар
+    // случился именно на полном замахе, а не раньше.
+    expect(s.monster.currentHp.lt(s.monster.maxHp)).toBe(true)
   })
 
   it('события удара уходят в шину через emitAttack', () => {
