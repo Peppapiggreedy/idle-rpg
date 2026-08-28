@@ -9,9 +9,10 @@
 // Текста для игрока здесь нет: наружу идут числа и состояния, подписи рисует UI.
 import { Decimal } from './numbers'
 import { expectedMonsterDamage } from './combat'
-import { REST_DURATION_S, REST_FOOD_SPEEDUP } from '../data/balance'
+import { REST_FOOD_SPEEDUP } from '../data/balance'
 import { zoneMonsterVariants, type Zone } from '../data/zones'
 import type { StatBlock } from './stats'
+import { restCooldownMultiplier } from './talents'
 import type { GameState } from './state'
 
 /**
@@ -22,14 +23,16 @@ import type { GameState } from './state'
  * единственное место, где длительность вообще считается.
  */
 export function restDurationMs(state: GameState): number {
-  const base = REST_DURATION_S * 1000
+  const base = state.stats.restDuration * 1000
   return state.restSpeedupSource ? base / REST_FOOD_SPEEDUP : base
 }
 
 /** Пора ли на привал: HP или ресурс упали ниже своего порога. */
 export function needsRest(state: GameState): boolean {
-  if (state.restHpThreshold > 0) {
-    if (state.currentHp.lt(state.stats.maxHp.times(state.restHpThreshold))) return true
+  // Порог — СТАТ: настройка игрока приходит в конвейер базой, а таланты её
+  // сдвигают. Читать здесь сырое поле состояния значило бы обойти таланты.
+  if (state.stats.restThreshold > 0) {
+    if (state.currentHp.lt(state.stats.maxHp.times(state.stats.restThreshold))) return true
   }
   if (state.restResourceThreshold > 0) {
     if (state.currentMana.lt(state.stats.maxMana.times(state.restResourceThreshold))) return true
@@ -62,8 +65,19 @@ export function finishRest(state: GameState, progress = 1): GameState {
   const share = Math.min(1, Math.max(0, progress))
   const heal = (current: Decimal, max: Decimal) =>
     Decimal.min(current.plus(max.minus(current).times(share)), max)
+  // Талант ветки самообладания: из привала герой выходит с готовыми умениями.
+  // Множитель приходит из данных таланта — своего числа у логики нет.
+  const cooldownShare = restCooldownMultiplier(state.talents)
+  const abilityCooldownsMs =
+    cooldownShare >= 1
+      ? state.abilityCooldownsMs
+      : Object.fromEntries(
+          Object.entries(state.abilityCooldownsMs).map(([id, left]) => [id, left * cooldownShare]),
+        )
   return {
     ...state,
+    abilityCooldownsMs,
+    gcdMsLeft: cooldownShare >= 1 ? state.gcdMsLeft : state.gcdMsLeft * cooldownShare,
     heroState: 'alive',
     restMsLeft: 0,
     restTotalMs: 0,
@@ -119,11 +133,11 @@ export interface ZoneSafety {
  * Именно это превращает выбор зоны из угадывания в расчёт.
  */
 export function zoneSafety(state: GameState, zone: Zone): ZoneSafety {
-  const thresholdHp = state.stats.maxHp.times(state.restHpThreshold)
+  const thresholdHp = state.stats.maxHp.times(state.stats.restThreshold)
   const worstHit = maxMonsterHit(zone, state.stats)
   return {
     thresholdHp,
     worstHit,
-    safe: state.restHpThreshold > 0 && thresholdHp.gt(worstHit),
+    safe: state.stats.restThreshold > 0 && thresholdHp.gt(worstHit),
   }
 }

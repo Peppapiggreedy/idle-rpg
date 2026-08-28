@@ -178,6 +178,28 @@ export function brokenCases(): BrokenCase[] {
       expect: [first(real.weapons).id, 'damageMax', 'damageMin'],
     },
     {
+      title: 'в ветку талантов невозможно войти: первый ряд требует очков',
+      content: {
+        ...real,
+        talents: real.talents.map((t) =>
+          t.row === 1 && t.branch === first(real.branches).id
+            ? { ...t, requiredPointsInBranch: 3 }
+            : t,
+        ),
+      },
+      expect: [first(real.branches).id, 'невозможно войти'],
+    },
+    {
+      title: 'ряды ветки идут с дыркой — на панели останется пустая строка',
+      content: {
+        ...real,
+        talents: real.talents.map((t) =>
+          t.branch === first(real.branches).id && t.row === 2 ? { ...t, row: 9 } : t,
+        ),
+      },
+      expect: [first(real.branches).id, 'ряды идут'],
+    },
+    {
       title: 'звук ссылается на файл, которого нет в public/',
       content: {
         ...real,

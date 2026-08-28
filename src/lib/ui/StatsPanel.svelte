@@ -33,6 +33,10 @@
     offhandDamageMax: 'Урон левой руки (макс)',
     blockChance: 'Шанс блока',
     blockValue: 'Сила блока',
+    offhandPenalty: 'Сила левой руки',
+    regenDelay: 'Пауза восст. маны',
+    restDuration: 'Длина привала',
+    restThreshold: 'Порог привала',
     haste: 'Ускорение',
     critChance: 'Шанс крита',
     critMultiplier: 'Множитель крита',
@@ -43,8 +47,15 @@
   }
 
   // Проценты и секунды читаются иначе, чем растущие величины.
-  const PERCENT_STATS: StatId[] = ['critChance', 'damageReduction', 'haste', 'blockChance']
-  const SECONDS_STATS: StatId[] = ['weaponSpeed', 'offhandSpeed']
+  const PERCENT_STATS: StatId[] = [
+    'critChance',
+    'damageReduction',
+    'haste',
+    'blockChance',
+    'offhandPenalty',
+    'restThreshold',
+  ]
+  const SECONDS_STATS: StatId[] = ['weaponSpeed', 'offhandSpeed', 'regenDelay', 'restDuration']
 
   // 'swingTime' — производная строка, не модифицируемый стат.
   type RowId = StatId | 'swingTime' | 'swingDamage' | 'dps'

@@ -5,6 +5,7 @@ import { createGameLoop, STEP_MS, type GameLoop, type LoopMetrics } from '../gam
 import { createInitialState, pushEvent, spawnMonster, type GameState } from '../game/state'
 import { finishRest, restProgress } from '../game/rest'
 import { tick } from '../game/tick'
+import { ensureStats } from '../game/stats'
 import { createRng, type Rng } from '../game/rng'
 import { buyUpgrade } from '../game/upgrades'
 import { xpToNextLevel } from '../game/formulas'
@@ -211,7 +212,11 @@ export function resetTalentTree(): void {
 /** Галка «использовать автоматически» у умения. */
 /** Порог ухода на привал по HP. 0 — не уходить: герой будет фармить до смерти. */
 export function setRestHpThreshold(share: number): void {
-  state.update((s) => ({ ...s, restHpThreshold: Math.min(1, Math.max(0, share)) }))
+  // statsDirty: порог входит в конвейер базой стата restThreshold —
+  // без пересчёта талант на порог увидел бы старое значение.
+  state.update((s) =>
+    ensureStats({ ...s, restHpThreshold: Math.min(1, Math.max(0, share)), statsDirty: true }),
+  )
 }
 
 /** Порог ухода на привал по ресурсу. */

@@ -20,6 +20,10 @@
     offhandDamageMax: 'урон левой руки (макс)',
     blockChance: 'шанс блока',
     blockValue: 'сила блока',
+    offhandPenalty: 'сила левой руки',
+    regenDelay: 'пауза восст. маны',
+    restDuration: 'длина привала',
+    restThreshold: 'порог привала',
     haste: 'ускорение',
     critChance: 'шанс крита',
     critMultiplier: 'множитель крита',
@@ -28,7 +32,14 @@
     manaRegen: 'восст. маны',
     damageReduction: 'снижение урона',
   }
-  const PERCENT_STATS: StatId[] = ['critChance', 'damageReduction', 'haste', 'blockChance']
+  const PERCENT_STATS: StatId[] = [
+    'critChance',
+    'damageReduction',
+    'haste',
+    'blockChance',
+    'offhandPenalty',
+    'restThreshold',
+  ]
 
   function line(mod: StatModifier): string {
     const name = NAMES[mod.stat]

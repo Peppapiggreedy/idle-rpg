@@ -39,6 +39,10 @@
     offhandDamageMax: 'урона левой руки (макс)',
     blockChance: 'шанса блока',
     blockValue: 'силы блока',
+    offhandPenalty: 'силы левой руки',
+    regenDelay: 'паузы восстановления маны',
+    restDuration: 'длины привала',
+    restThreshold: 'порога привала',
     haste: 'ускорения',
     critChance: 'шанса крита',
     critMultiplier: 'множителя крита',
@@ -47,10 +51,18 @@
     manaRegen: 'восстановления маны',
     damageReduction: 'снижения урона',
   }
-  const PERCENT_STATS: StatId[] = ['critChance', 'damageReduction', 'haste', 'blockChance']
+  const PERCENT_STATS: StatId[] = [
+    'critChance',
+    'damageReduction',
+    'haste',
+    'blockChance',
+    'offhandPenalty',
+    'restThreshold',
+  ]
   const FLAG_TEXT: Record<TalentFlag, string> = {
     'quick-strike-bleeds': 'Скорый выпад начинает накладывать урон по времени',
     'halved-revive': 'Воскрешение занимает вдвое меньше времени',
+    'rest-clears-cooldowns': 'После привала умения готовы: кулдауны снимаются',
   }
   const REASON_TEXT: Record<TalentBlockReason, (t: TalentDef) => string> = {
     'branch-locked': (t) => `Нужно ${t.requiredPointsInBranch} очков в ветке`,
@@ -200,7 +212,9 @@
 
   @media (min-width: 720px) {
     .branches {
-      grid-template-columns: 1fr 1fr;
+      /* Веток три, и на широком экране они стоят рядом: дерево читается
+         целиком, а не листается. */
+      grid-template-columns: repeat(3, 1fr);
     }
   }
 </style>

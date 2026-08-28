@@ -351,6 +351,48 @@ export const BRANCH_SCHEMA: EntitySchema<BranchDef> = {
   entities: (c) => c.branches,
   id: (b) => b.id,
   name: (b) => b.name,
+  extra: (branch, content, report) => {
+    const where = `ветка ${branch.id}`
+    const talents = content.talents
+      .filter((t) => t.branch === branch.id)
+      .sort((a, b) => a.row - b.row)
+    // Ветка без талантов — вкладка, которая ничего не делает.
+    if (talents.length === 0) {
+      report.add(where, 'в ветке нет ни одного таланта (data/talents.ts)')
+      return
+    }
+    // Ряды идут подряд с первого: дырка в нумерации означает, что талант
+    // потеряли при правке, и на панели останется пустая строка.
+    const rows = talents.map((t) => t.row)
+    const expected = talents.map((_, i) => i + 1)
+    if (rows.join(',') !== expected.join(',')) {
+      report.add(
+        where,
+        `ряды идут как ${rows.join(', ')}, а должны подряд с первого ` +
+          `(${expected.join(', ')}) — data/talents.ts`,
+      )
+    }
+    // Первый ряд обязан быть открыт сразу: иначе в ветку не войти вовсе.
+    if (talents[0].requiredPointsInBranch !== 0) {
+      report.add(
+        where,
+        `первый ряд требует ${talents[0].requiredPointsInBranch} очков в ветке — ` +
+          'в ветку невозможно войти (data/talents.ts)',
+      )
+    }
+    // Требование ряда не может быть больше, чем реально можно вложить выше.
+    let reachable = 0
+    for (const talent of talents) {
+      if (talent.requiredPointsInBranch > reachable) {
+        report.add(
+          `талант ${talent.id}`,
+          `требует ${talent.requiredPointsInBranch} очков в ветке, а выше него ` +
+            `можно вложить только ${reachable} — талант недостижим (data/talents.ts)`,
+        )
+      }
+      reachable += talent.maxRank
+    }
+  },
 }
 
 export const TALENT_SCHEMA: EntitySchema<TalentDef> = {
@@ -412,6 +454,21 @@ export const TALENT_SCHEMA: EntitySchema<TalentDef> = {
           )
         }
       }
+    }
+    if (talent.effect.kind === 'flag' && talent.effect.flag === 'rest-clears-cooldowns') {
+      checkNumber(
+        talent.effect,
+        {
+          field: 'effect.cooldownShare',
+          get: (e) => e.cooldownShare,
+          min: 0,
+          max: 1,
+          why: 'доля, на которую множатся кулдауны после привала: больше единицы — талант-наказание',
+        },
+        where,
+        'data/talents.ts',
+        report,
+      )
     }
     if (talent.effect.kind === 'flag' && talent.effect.flag === 'halved-revive') {
       checkNumber(

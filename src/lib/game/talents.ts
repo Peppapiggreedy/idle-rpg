@@ -149,6 +149,21 @@ export function talentAbilityEffect(ranks: TalentRanks, abilityId: string) {
   return null
 }
 
+/**
+ * Во сколько раз множатся кулдауны после привала (1 — не трогаются).
+ *
+ * Число приходит из ДАННЫХ таланта, а не зашито здесь: ослабить талант
+ * можно правкой одной строки в data/talents.ts, не заходя в логику.
+ */
+export function restCooldownMultiplier(ranks: TalentRanks): number {
+  for (const talent of TALENTS) {
+    if (talent.effect.kind !== 'flag') continue
+    if (talent.effect.flag !== 'rest-clears-cooldowns') continue
+    if (rankOf(ranks, talent.id) > 0) return talent.effect.cooldownShare
+  }
+  return 1
+}
+
 /** Множитель времени воскрешения от талантов (1 — без изменений). */
 export function reviveMultiplier(ranks: TalentRanks): number {
   for (const talent of TALENTS) {

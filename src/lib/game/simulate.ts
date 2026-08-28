@@ -39,6 +39,8 @@ import { AVERAGE_RARITY, RARITY_BY_ID } from '../data/rarity'
 import { ARMOR_NOUNS, ONE_HANDED, SHIELDS, WEAPONS, WEAPON_BY_ID } from '../data/items'
 import { SLOT_IDS, type SlotId } from '../data/slots'
 import { ZONES } from '../data/zones'
+import { BRANCHES, talentsInBranch, type BranchId } from '../data/talents'
+import { TALENT_FIRST_LEVEL } from '../data/balance'
 import type { AttackEvent, Item, Rarity } from '../types'
 
 /** Оружие для прогона. `bare` снимает побочные статы шаблона и оставляет
@@ -172,6 +174,13 @@ export const BALANCE_PRESET = {
   // выглядел бы чистым проигрышем.
   stressBuild: { level: 8, sharpening: 0 } as SimBuild,
   stressZoneId: 'ashen-ridge',
+  // Ветки талантов: сколько очков вкладывать в ЧИСТЫЙ билд, на каком уровне
+  // и в какой зоне их сравнивать. Уровень взят так, чтобы очков хватило на
+  // полную ветку, а зона — актуальная для этого уровня.
+  branchLevel: 30,
+  branchHours: 4,
+  /** Потолок расхождения итога между тремя чистыми билдами. */
+  branchSpreadLimit: 0.25,
   // Контракт темпа: сид эталонного прохождения и его потолок по времени.
   pacingSeed: 4242,
   pacingHours: 60,
@@ -217,6 +226,30 @@ export function referenceBuild(level: number): SimBuild {
   pacingCache ??= pacingTable()
   const row = pacingCache.find((r) => r.level === level) ?? pacingCache[pacingCache.length - 1]
   return { level, sharpening: row.sharpening, gear: 'average' }
+}
+
+/**
+ * ЧИСТЫЙ билд ветки: все её таланты по максимуму, в остальные — ни очка.
+ *
+ * Ранги считаются из ДАННЫХ дерева, а не перечисляются здесь: добавили талант —
+ * прогон подхватит его сам, и сравнение веток не устареет молча.
+ */
+export function pureBranchTalents(branch: BranchId, points: number): Record<string, number> {
+  const ranks: Record<string, number> = {}
+  let spent = 0
+  for (const talent of talentsInBranch(branch)) {
+    if (spent < talent.requiredPointsInBranch) break
+    const rank = Math.min(talent.maxRank, points - spent)
+    if (rank <= 0) break
+    ranks[talent.id] = rank
+    spent += rank
+  }
+  return ranks
+}
+
+/** Сколько очков есть у героя этого уровня. */
+export function branchPoints(level: number): number {
+  return Math.max(0, level - TALENT_FIRST_LEVEL + 1)
 }
 
 /** TTK по актуальной зоне — та самая строка, на которой держится коридор. */

@@ -18,7 +18,6 @@ import {
   AP_NORMALIZATION,
   AUTOCAST_DELAY_MS,
   AUTOCAST_MAX_LOSS,
-  OFFHAND_PENALTY,
   RESPAWN_DELAY_MS,
   REVIVE_DELAY_MS,
 } from '../data/balance'
@@ -52,14 +51,14 @@ export function hasOffhand(stats: StatBlock): boolean {
  * Сила атаки — свойство ГЕРОЯ, а не оружия: за секунду она обязана давать
  * attackPower / AP_NORMALIZATION урона, чем бы герой ни махал. Поэтому при двух
  * руках она между ними ДЕЛИТСЯ, а не удваивается. Делитель именно
- * `1 + OFFHAND_PENALTY`, потому что удар левой руки потом целиком множится на
+ * `1 + offhandPenalty`, потому что удар левой руки потом целиком множится на
  * штраф: доли выходят 2/3 и 1/3, в сумме — единица.
  *
  * Без деления дуалвилд получал бы полторы силы атаки, и с её ростом один стиль
  * вытеснил бы остальные — сколько ни правь урон самого оружия в данных.
  */
 function attackPowerShare(stats: StatBlock): number {
-  return hasOffhand(stats) ? 1 / (1 + OFFHAND_PENALTY) : 1
+  return hasOffhand(stats) ? 1 / (1 + stats.offhandPenalty) : 1
 }
 
 // Вклад силы атаки в один удар: чем медленнее оружие, тем больше за удар.
@@ -77,10 +76,10 @@ export function swingDamageRange(
 ): { min: Decimal; max: Decimal } {
   const ap = attackPowerContribution(stats, hand)
   if (hand === 'off') {
-    // Левая рука бьёт слабее на OFFHAND_PENALTY — это плата за второй замах.
+    // Левая рука бьёт слабее на offhandPenalty — это плата за второй замах.
     return {
-      min: stats.offhandDamageMin.plus(ap).times(OFFHAND_PENALTY),
-      max: stats.offhandDamageMax.plus(ap).times(OFFHAND_PENALTY),
+      min: stats.offhandDamageMin.plus(ap).times(stats.offhandPenalty),
+      max: stats.offhandDamageMax.plus(ap).times(stats.offhandPenalty),
     }
   }
   return { min: stats.weaponDamageMin.plus(ap), max: stats.weaponDamageMax.plus(ap) }
@@ -176,7 +175,7 @@ export interface CombatRate {
  * Доля времени, которую герой что-то приносит.
  *
  * Цикл теперь один из двух, и выбирает между ними ПОРОГ ПРИВАЛА:
- *   порог выставлен — герой фармит до порога, потом сидит REST_DURATION_S
+ *   порог выставлен — герой фармит до порога, потом сидит restDuration
  *                     и возвращается целым; простой короткий и управляемый;
  *   порога нет      — герой фармит до нуля и платит полным воскрешением.
  *

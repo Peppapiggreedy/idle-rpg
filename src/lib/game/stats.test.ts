@@ -139,7 +139,9 @@ describe('конвейер статов', () => {
   })
 
   it('апгрейды дают flat-модификатор из СЧЁТЧИКА покупок', () => {
-    const mods = collectModifiers(withUpgrades(7))
+    // Порог привала тоже приходит источником (настройка игрока — база стата),
+    // поэтому ищем именно апгрейд, а не «единственный модификатор».
+    const mods = collectModifiers(withUpgrades(7)).filter((m) => m.source.startsWith('upgrade:'))
     expect(mods).toHaveLength(1)
     expect(mods[0]).toMatchObject({ stat: 'attackPower', kind: 'flat', source: 'upgrade:weapon-sharpening' })
     expect(mods[0].value.toNumber()).toBe(98) // 7 покупок по +14 силы атаки

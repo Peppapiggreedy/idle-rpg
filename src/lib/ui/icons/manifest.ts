@@ -32,6 +32,18 @@ export const ICONS = {
   'talent-second-wind': { file: 'lorc/wolf-howl.svg', author: 'Lorc' },
   'talent-clear-mind': { file: 'lorc/brain.svg', author: 'Lorc' },
   'talent-swift-return': { file: 'lorc/angel-wings.svg', author: 'Lorc' },
+  // --- Таланты: добавленные в третью итерацию дерева ---
+  'talent-frenzy': { file: 'delapouite/wolverine-claws.svg', author: 'Delapouite' },
+  'talent-offhand-mastery': { file: 'delapouite/hook-swords.svg', author: 'Delapouite' },
+  'talent-shield-wall': { file: 'lorc/shield-reflect.svg', author: 'Lorc' },
+  'talent-bulwark-training': { file: 'delapouite/armor-upgrade.svg', author: 'Delapouite' },
+  'talent-iron-skin': { file: 'lorc/mineral-heart.svg', author: 'Lorc' },
+  // --- Таланты: ветка «Самообладание» ---
+  'talent-steady-breath': { file: 'lorc/magic-swirl.svg', author: 'Lorc' },
+  'talent-deep-well': { file: 'delapouite/water-flask.svg', author: 'Delapouite' },
+  'talent-quick-camp': { file: 'delapouite/camping-tent.svg', author: 'Delapouite' },
+  'talent-field-medicine': { file: 'delapouite/first-aid-kit.svg', author: 'Delapouite' },
+  'talent-unbroken-focus': { file: 'lorc/sands-of-time.svg', author: 'Lorc' },
 
   // --- Слоты экипировки ---
   'slot-weapon': { file: 'lorc/broadsword.svg', author: 'Lorc' },
@@ -64,6 +76,12 @@ export const ICONS = {
   'stat-offhandDamageMax': { file: 'lorc/sword-spin.svg', author: 'Lorc' },
   'stat-blockChance': { file: 'lorc/shield-reflect.svg', author: 'Lorc' },
   'stat-blockValue': { file: 'delapouite/shield-bash.svg', author: 'Delapouite' },
+  // Четыре стата, которые раньше были константами: штраф левой руки, пауза
+  // регенерации, длина привала и порог ухода на него.
+  'stat-offhandPenalty': { file: 'delapouite/split-arrows.svg', author: 'Delapouite' },
+  'stat-regenDelay': { file: 'lorc/time-trap.svg', author: 'Lorc' },
+  'stat-restDuration': { file: 'delapouite/night-sleep.svg', author: 'Delapouite' },
+  'stat-restThreshold': { file: 'lorc/meditation.svg', author: 'Lorc' },
 
   // --- Зоны ---
   'zone-shepherds-meadow': { file: 'generalace135/shepherds-crook.svg', author: 'GeneralAce135' },

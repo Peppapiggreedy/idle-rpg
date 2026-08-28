@@ -3,7 +3,7 @@
 // считает combat.ts. Текста для игрока тоже нет: наружу идут коды причин.
 import { Decimal } from './numbers'
 import { rollSwing } from './combat'
-import { AUTOCAST_DELAY_MS, GCD_MS, REGEN_DELAY_S } from '../data/balance'
+import { AUTOCAST_DELAY_MS, GCD_MS } from '../data/balance'
 import { ABILITIES, ABILITY_BY_ID, type AbilityDef } from '../data/abilities'
 import { abilitiesByPriority } from './rotation'
 import { talentAbilityEffect } from './talents'
@@ -77,7 +77,9 @@ function payFor(state: GameState, ability: AbilityDef): GameState {
   return {
     ...state,
     currentMana: state.currentMana.minus(ability.manaCost),
-    regenDelayMsLeft: spends ? REGEN_DELAY_S * 1000 : state.regenDelayMsLeft,
+    // Пауза берётся из СТАТА: талант автономности её сокращает, и делает
+    // это через конвейер, как всё остальное.
+    regenDelayMsLeft: spends ? state.stats.regenDelay * 1000 : state.regenDelayMsLeft,
     abilityCooldownsMs: {
       ...state.abilityCooldownsMs,
       [ability.id]: ability.cooldownSec * 1000,

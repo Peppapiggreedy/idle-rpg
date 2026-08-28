@@ -36,6 +36,14 @@ export const BASE_STATS = {
   offhandDamageMax: new Decimal(0),
   blockChance: new Decimal(0), // без щита не блокируется ничего
   blockValue: new Decimal(0),
+  // Четыре стата ниже раньше были константами. Стать статами их заставил
+  // шаг талантов: «ускорить привал» и «поправить штраф левой руки» обязаны
+  // выражаться модификатором конвейера, а не веткой в коде.
+  offhandPenalty: new Decimal(0.5),
+  regenDelay: new Decimal(4),
+  restDuration: new Decimal(12),
+  restThreshold: new Decimal(0), // база приходит настройкой игрока
+
   maxHp: new Decimal(100),
   maxMana: new Decimal(50),
   weaponSpeed: UNARMED.weaponSpeed, // секунд между ударами оружия (меньше = быстрее)
@@ -109,7 +117,10 @@ export const RESPAWN_DELAY_MS = 300
  * оружия в секунду: два независимых замаха дают меньше перебоя. Штраф — цена
  * этого преимущества, и он же оставляет двуручнику его нишу.
  */
-export const OFFHAND_PENALTY = 0.5
+// Само значение живёт СТАТОМ `offhandPenalty` в BASE_STATS: талант на
+// дуалвилд обязан выражаться модификатором конвейера, а не веткой в коде.
+// Константа осталась ради читаемости данных и тестов.
+export const OFFHAND_PENALTY = BASE_STATS.offhandPenalty.toNumber()
 
 // ---------------------------------------------------------------------------
 // Задержка регенерации ресурса
@@ -126,7 +137,9 @@ export const OFFHAND_PENALTY = 0.5
 //
 // Ни одной новой сущности правило не добавляет: работает на автокасте,
 // который уже есть.
-export const REGEN_DELAY_S = 4
+// Само значение — стат `regenDelay` (см. BASE_STATS): его сокращает талант
+// ветки автономности, и сокращать он обязан через конвейер.
+export const REGEN_DELAY_S = BASE_STATS.regenDelay.toNumber()
 export const REGEN_TICK_S = 2
 
 /** Пресеты резерва для UI, доля маны. 0 — жать всегда, как было раньше. */
@@ -142,7 +155,13 @@ export const RESERVE_PRESETS = [0, 0.3, 0.5, 0.7] as const
 //
 // КОНТРАКТ: привал не длиннее медианного TTK текущей зоны. Даунтайм, равный
 // длине боя, читается как налог; в районе половины боя — как ритм.
-export const REST_DURATION_S = 12
+// Само значение — стат `restDuration` (см. BASE_STATS).
+export const REST_DURATION_S = BASE_STATS.restDuration.toNumber()
+
+/** Ниже этой длины привал перестаёт быть паузой и становится кнопкой «полный запас». */
+export const MIN_REST_DURATION_S = 3
+/** Выше этого порога герой уходил бы отдыхать после первой же царапины. */
+export const MAX_REST_THRESHOLD = 0.95
 
 /** Пресеты порога по HP: ниже этой доли герой уходит на привал. */
 export const REST_HP_PRESETS = [0, 0.4, 0.6, 0.8] as const

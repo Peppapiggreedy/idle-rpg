@@ -14,6 +14,8 @@ import {
   currentCell,
   pacingTable,
   referenceBuild,
+  branchPoints,
+  pureBranchTalents,
   simulate,
   spreadOf,
   styleBuild,
@@ -36,6 +38,7 @@ import {
 } from '../../data/balance'
 import { ZONES, zoneMonsterVariants, type Zone } from '../../data/zones'
 import { ONE_HANDED, WEAPONS } from '../../data/items'
+import { BRANCHES } from '../../data/talents'
 import { ABILITY_BY_ID } from '../../data/abilities'
 
 // Таблицы печатаются в вывод теста: прогон баланса нужен глазами, а не только
@@ -392,6 +395,98 @@ describe('стиль боя', () => {
     // раз, во сколько оно медленнее: доля замаха — это и есть вся формула.
     expect(ratio).toBeGreaterThan(1)
     expect(ratio).toBeCloseTo(speedRatio, 1)
+  }, 300_000)
+})
+
+// ---------------------------------------------------------------------------
+// Ветки талантов
+// ---------------------------------------------------------------------------
+describe('ветки талантов', () => {
+  const { branchHours, branchLevel, branchSpreadLimit, weaponSeeds } = BALANCE_PRESET
+  const points = branchPoints(branchLevel)
+  const zone = intendedZone(branchLevel)
+  const BRANCH_KIND: Record<string, string> = {
+    fury: 'урон',
+    endurance: 'живучесть',
+    composure: 'автономность',
+  }
+
+  // ЧЕМ МЕРИТЬ. Взять «урон в секунду» напрямую нельзя: ветка живучести не
+  // добавляет к удару ни единицы, и по этому числу она всегда проигрывала бы
+  // втрое — не потому, что она плохая, а потому, что прибор мерит не то.
+  // Мерим ИТОГ за час: он учитывает и урон, и то, сколько времени герой
+  // провёл в бою, а не на привале и не мёртвым. Это и есть «сколько стоит
+  // ветка» с точки зрения игрока.
+  function runBranch(branch: string) {
+    return weaponSeeds.map((seed) =>
+      simulate({
+        hours: branchHours,
+        zoneId: zone.id,
+        seed,
+        freezeLevel: true,
+        build: {
+          ...referenceBuild(branchLevel),
+          talents: pureBranchTalents(branch as never, points),
+        },
+      }),
+    )
+  }
+
+  it(`три чистых билда на ${points} очках сходятся в пределах ${pct(branchSpreadLimit)}`, () => {
+    header(
+      `Чистые билды по веткам, герой ${branchLevel} уровня в средней экипировке, ` +
+        `${zone.name}, ${branchHours} ч на сид.`,
+      'ветка            стиль          золота/ч   отклонение   привалов/ч   смертей/ч',
+    )
+    const rows = BRANCHES.map((branch) => ({ branch, runs: runBranch(branch.id) }))
+    const mean = (runs: SimResult[]) =>
+      runs.reduce((sum, r) => sum.plus(r.goldPerHour), new Decimal(0)).div(runs.length)
+    const gold = rows.map((r) => mean(r.runs).toNumber())
+    const avg = gold.reduce((a, b) => a + b, 0) / gold.length
+    rows.forEach((row, i) => {
+      const rests = row.runs.reduce((sum, r) => sum + r.restsPerHour, 0) / row.runs.length
+      const deaths = row.runs.reduce((sum, r) => sum + r.deathsPerHour, 0) / row.runs.length
+      log(
+        `${row.branch.name.padEnd(16)} ${BRANCH_KIND[row.branch.id].padEnd(14)} ` +
+          `${gold[i].toFixed(0).padStart(8)}   ` +
+          `${(((gold[i] - avg) / avg >= 0 ? '+' : '') + pct((gold[i] - avg) / avg)).padStart(10)}   ` +
+          `${rests.toFixed(1).padStart(10)}   ${deaths.toFixed(2).padStart(9)}`,
+      )
+    })
+    const spread = spreadOf(rows.map((r) => mean(r.runs)))
+    log(`Разброс ${pct(spread)} при потолке ${pct(branchSpreadLimit)}.`)
+    // Ветка, отставшая сильнее этого, — ловушка: игрок вложил очки и получил
+    // меньше, чем если бы вложил куда угодно ещё. Сброс стоит золота, так что
+    // ошибка выбора наказывает дважды.
+    expect(spread).toBeLessThanOrEqual(branchSpreadLimit)
+  }, 300_000)
+
+  it('ветки различаются СТИЛЕМ, а не только числом', () => {
+    // Итог сопоставим, а путь разный — иначе выбор ветки декоративен.
+    // Ярость обязана бить сильнее, стойкость — реже останавливаться на
+    // смерть, самообладание — реже и короче отдыхать.
+    const fury = runBranch('fury')
+    const endurance = runBranch('endurance')
+    const composure = runBranch('composure')
+    const avg = (runs: SimResult[], pick: (r: SimResult) => number) =>
+      runs.reduce((sum, r) => sum + pick(r), 0) / runs.length
+    const damage = (runs: SimResult[]) =>
+      avg(runs, (r) => r.autoDamage.plus(r.abilityDamage).div(r.hours).toNumber())
+    log(
+      `Урон/ч: ярость ${damage(fury).toFixed(0)}, стойкость ${damage(endurance).toFixed(0)}, ` +
+        `самообладание ${damage(composure).toFixed(0)}.`,
+    )
+    log(
+      `Доля простоя: ярость ${pct(avg(fury, (r) => r.restShare))}, ` +
+        `стойкость ${pct(avg(endurance, (r) => r.restShare))}, ` +
+        `самообладание ${pct(avg(composure, (r) => r.restShare))}.`,
+    )
+    expect(damage(fury)).toBeGreaterThan(damage(endurance))
+    expect(damage(fury)).toBeGreaterThan(damage(composure))
+    // Самообладание платит за это временем в бою, а не уроном за удар.
+    expect(avg(composure, (r) => r.restShare)).toBeLessThanOrEqual(
+      avg(fury, (r) => r.restShare) + 1e-9,
+    )
   }, 300_000)
 })
 

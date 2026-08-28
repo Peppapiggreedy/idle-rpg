@@ -11,7 +11,7 @@
 import { Decimal } from './numbers'
 import { critFactor, expectedAbilityDamage } from './combat'
 import { ABILITIES, type AbilityDef } from '../data/abilities'
-import { AUTOCAST_DELAY_MS, REGEN_DELAY_S, REGEN_TICK_S } from '../data/balance'
+import { AUTOCAST_DELAY_MS, REGEN_TICK_S } from '../data/balance'
 import type { StatBlock } from './stats'
 import type { AbilitySettings } from './state'
 
@@ -117,7 +117,7 @@ function dutyCycle(
   // Пауза до первой порции — не только DELAY: мана приходит ЛОМТЯМИ раз в
   // REGEN_TICK_S, и окно почти никогда не заканчивается ровно по границе
   // ломтя. В среднем полломтя пропадает, и для расчёта это та же пауза.
-  const pause = REGEN_DELAY_S + REGEN_TICK_S / 2
+  const pause = stats.regenDelay + REGEN_TICK_S / 2
 
   // Равномерный уклад: сколько от желаемого покрывает доход с паузами.
   const uniform = regen.div(spend.plus(regen.times(pause).times(events)))
