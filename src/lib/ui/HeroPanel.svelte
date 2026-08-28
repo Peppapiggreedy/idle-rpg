@@ -1,9 +1,16 @@
 <script lang="ts">
   import { formatNumber } from '../game'
   import { REGEN_TICK_S, REVIVE_DELAY_MS } from '../data/balance'
+  import { classById } from '../data/classes'
   import { restProgress } from '../game/rest'
   import { gameState, interruptRest } from '../stores/game'
+  import { resourceWords } from './resource'
   import { Button, Panel, StatBar } from './kit'
+
+  // Имя класса и имя ресурса приходят из данных: «Воин» в заголовке и «Мана»
+  // на полоске одинаково врали изуверу, который дерётся на ярости.
+  const hero = $derived(classById($gameState.classId))
+  const resource = $derived(resourceWords($gameState.classId))
 
   const hp = $derived($gameState.currentHp.toNumber())
   const maxHp = $derived($gameState.stats.maxHp.toNumber())
@@ -17,17 +24,22 @@
   // на месте, и непонятно почему. Поэтому состояние всегда на экране.
   const regenWaitSec = $derived(Math.ceil($gameState.regenDelayMsLeft / 1000))
   const regenLabel = $derived(
-    $gameState.currentMana.gte($gameState.stats.maxMana)
-      ? 'запас полон'
-      : regenWaitSec > 0
-        ? `восстановление через ${regenWaitSec} с`
-        : `восстанавливается, +${formatNumber($gameState.stats.manaRegen.times(REGEN_TICK_S))} каждые ${REGEN_TICK_S} с`,
+    // Ресурс боя не «восстанавливается» — он копится от ударов и тает
+    // без них. Подпись про порции регена рассказывала бы о правиле,
+    // которого у ярости нет.
+    resource.fromCombat
+      ? 'копится от ударов, тает вне боя'
+      : $gameState.currentMana.gte($gameState.stats.maxMana)
+        ? 'запас полон'
+        : regenWaitSec > 0
+          ? `восстановление через ${regenWaitSec} с`
+          : `восстанавливается, +${formatNumber($gameState.stats.manaRegen.times(REGEN_TICK_S))} каждые ${REGEN_TICK_S} с`,
   )
 
   const pair = (a: unknown, b: unknown) => `${a} / ${b}`
 </script>
 
-<Panel title="Воин · Уровень {formatNumber($gameState.level)}">
+<Panel title="{hero.name} · Уровень {formatNumber($gameState.level)}">
   {#if $gameState.heroState === 'resting'}
     <StatBar
       value={restProgress($gameState)}
@@ -65,13 +77,13 @@
       value={mana}
       max={maxMana}
       tone="mana"
-      label="Мана"
+      label={resource.name}
       valueLabel={pair(
         formatNumber($gameState.currentMana),
         formatNumber($gameState.stats.maxMana),
       )}
     />
-    <p class="regen" class:waiting={regenWaitSec > 0}>{regenLabel}</p>
+    <p class="regen" class:waiting={regenWaitSec > 0 && !resource.fromCombat}>{regenLabel}</p>
   {/if}
   <StatBar
     value={xp}

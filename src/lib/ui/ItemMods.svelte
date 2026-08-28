@@ -2,18 +2,23 @@
   // Модификаторы предмета человеческим текстом. Логика отдаёт коды статов —
   // все названия и знаки живут здесь.
   import { formatNumber, type StatId, type StatModifier } from '../game'
+  import { gameState } from '../stores/game'
+  import { resourceWords } from './resource'
 
   interface Props {
     mods: StatModifier[]
   }
   let { mods }: Props = $props()
 
-  const NAMES: Record<StatId, string> = {
+  // Ресурс называется по классу: «восст. маны» на вещи изувера — неправда.
+  const resource = $derived(resourceWords($gameState.classId))
+
+  const NAMES: Record<StatId, string> = $derived({
     attackPower: 'сила атаки',
     weaponDamageMin: 'урон оружия (мин)',
     weaponDamageMax: 'урон оружия (макс)',
     maxHp: 'здоровье',
-    maxMana: 'мана',
+    maxMana: resource.name.toLowerCase(),
     weaponSpeed: 'скорость',
     offhandSpeed: 'скорость левой руки',
     offhandDamageMin: 'урон левой руки (мин)',
@@ -21,7 +26,7 @@
     blockChance: 'шанс блока',
     blockValue: 'сила блока',
     offhandPenalty: 'сила левой руки',
-    regenDelay: 'пауза восст. маны',
+    regenDelay: `пауза восст. ${resource.genitive}`,
     restDuration: 'длина привала',
     restThreshold: 'порог привала',
     haste: 'ускорение',
@@ -29,9 +34,9 @@
     critMultiplier: 'множитель крита',
     hpRegen: 'восст. здоровья',
     hpRegenOutOfCombat: 'восст. здоровья (отдых)',
-    manaRegen: 'восст. маны',
+    manaRegen: `восст. ${resource.genitive}`,
     damageReduction: 'снижение урона',
-  }
+  })
   const PERCENT_STATS: StatId[] = [
     'critChance',
     'damageReduction',

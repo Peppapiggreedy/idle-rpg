@@ -8,11 +8,9 @@
   import { CLASSES, type ClassDef } from '../data/classes'
   import { ABILITY_BY_ID } from '../data/abilities'
   import { startNewGame } from '../stores/game'
+  import { resourceKindName } from './resource'
   import { Button, Panel } from './kit'
   import { Icon } from './icons'
-
-  // Названия ресурсов — тоже текст, поэтому здесь, а не в данных.
-  const RESOURCE_NAME: Record<string, string> = { mana: 'Мана', rage: 'Ярость' }
 
   function abilityNames(hero: ClassDef): string {
     return hero.abilityIds.map((id) => ABILITY_BY_ID[id]?.name ?? id).join(', ')
@@ -32,7 +30,7 @@
           <p class="tagline">{hero.tagline}</p>
           <dl>
             <dt>Ресурс</dt>
-            <dd>{RESOURCE_NAME[hero.resource.kind] ?? hero.resource.kind}</dd>
+            <dd>{resourceKindName(hero.resource.kind)}</dd>
             <dt>Умения</dt>
             <dd>{abilityNames(hero)}</dd>
           </dl>

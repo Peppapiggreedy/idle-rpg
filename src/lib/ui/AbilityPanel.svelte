@@ -15,8 +15,12 @@
     setAbilityAutocast,
     setAbilityReserve,
   } from '../stores/game'
-  import { ABILITY_REASON_TEXT } from './abilityText'
+  import { abilityReasonText } from './abilityText'
+  import { resourceWords } from './resource'
   import { Button, NumberText, Panel, Tag } from './kit'
+
+  // Ресурс называется так, как у класса: у изувера умения стоят ярость.
+  const resource = $derived(resourceWords($gameState.classId))
 
   // Порядок в списке = порядок приоритета: сверху то, что автокаст жмёт первым.
   const ordered = $derived(abilitiesByPriority($gameState.abilitySettings, false))
@@ -31,7 +35,7 @@
         <div class="head">
           <span class="order">{i + 1}.</span>
           <span class="name">{ability.name}</span>
-          <Tag tone="xp" label="{formatNumber(ability.manaCost)} маны" />
+          <Tag tone="xp" label="{formatNumber(ability.manaCost)} {resource.genitive}" />
           <Tag label="кулдаун {ability.cooldownSec}с" />
           <span class="arrows">
             <Button
@@ -79,7 +83,7 @@
         {#if ability.manaCost.gt(0)}
           {@const reserve = $gameState.abilitySettings[ability.id]?.reserve ?? 0}
           <div class="reserve">
-            <span class="label">Беречь ману:</span>
+            <span class="label">Беречь {resource.accusative}:</span>
             {#each RESERVE_PRESETS as preset (preset)}
               <Button
                 size="sm"
@@ -92,7 +96,7 @@
           </div>
         {/if}
         {#if status.reason}
-          <p class="reason">Сейчас недоступно: {ABILITY_REASON_TEXT[status.reason]}</p>
+          <p class="reason">Сейчас недоступно: {abilityReasonText(status.reason, resource)}</p>
         {/if}
       </li>
     {/each}
@@ -105,9 +109,13 @@
       Сами кнопки умений — под сценой, они видны в любом разделе.
     </p>
     <p class="hint">
-      Мана не восстанавливается {REGEN_DELAY_S}с после каждой траты. «Беречь ману» —
-      это выбор: нулевой резерв даёт больше урона сейчас, высокий оставляет окна
-      под восстановление и умение, готовое к нужному моменту.
+      {#if resource.fromCombat}
+        Ярость копится от ударов и тает вне боя: копить её впрок не выйдет.
+      {:else}
+        Мана не восстанавливается {REGEN_DELAY_S}с после каждой траты.
+      {/if}
+      Резерв — это выбор: нулевой даёт больше урона сейчас, высокий оставляет
+      окна и умение, готовое к нужному моменту.
     </p>
   {/snippet}
 </Panel>

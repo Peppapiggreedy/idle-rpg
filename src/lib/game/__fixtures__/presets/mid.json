@@ -6,26 +6,6 @@
   "lastTimestamp": 1700000000000,
   "inventory": [
     {
-      "id": "item-3",
-      "name": "Гремящий Капюшон",
-      "rarity": "common",
-      "slot": "head",
-      "mods": [
-        {
-          "stat": "attackPower",
-          "kind": "flat",
-          "value": "7",
-          "source": "equipment:head"
-        },
-        {
-          "stat": "maxHp",
-          "kind": "flat",
-          "value": "10",
-          "source": "equipment:head"
-        }
-      ]
-    },
-    {
       "id": "item-4",
       "name": "Сумрачный Наруч",
       "rarity": "uncommon",
@@ -64,12 +44,103 @@
           "source": "equipment:head"
         }
       ]
+    },
+    {
+      "id": "item-6",
+      "name": "Звёздный Нагрудник",
+      "rarity": "common",
+      "slot": "chest",
+      "mods": [
+        {
+          "stat": "attackPower",
+          "kind": "flat",
+          "value": "7",
+          "source": "equipment:chest"
+        },
+        {
+          "stat": "maxHp",
+          "kind": "flat",
+          "value": "10",
+          "source": "equipment:chest"
+        }
+      ]
+    },
+    {
+      "id": "item-8",
+      "name": "Пастуший Нагрудник",
+      "rarity": "common",
+      "slot": "chest",
+      "mods": [
+        {
+          "stat": "attackPower",
+          "kind": "flat",
+          "value": "7",
+          "source": "equipment:chest"
+        },
+        {
+          "stat": "maxHp",
+          "kind": "flat",
+          "value": "10",
+          "source": "equipment:chest"
+        }
+      ]
     }
   ],
   "equipment": {
-    "mainHand": null,
+    "mainHand": {
+      "id": "item-7",
+      "name": "Ржавый Полуторник",
+      "rarity": "uncommon",
+      "slot": "mainHand",
+      "hands": 1,
+      "mods": [
+        {
+          "stat": "weaponSpeed",
+          "kind": "base",
+          "value": "2.2",
+          "source": "equipment:mainHand"
+        },
+        {
+          "stat": "weaponDamageMin",
+          "kind": "base",
+          "value": "22",
+          "source": "equipment:mainHand"
+        },
+        {
+          "stat": "weaponDamageMax",
+          "kind": "base",
+          "value": "44",
+          "source": "equipment:mainHand"
+        },
+        {
+          "stat": "attackPower",
+          "kind": "flat",
+          "value": "14",
+          "source": "equipment:mainHand"
+        }
+      ]
+    },
     "offHand": null,
-    "head": null,
+    "head": {
+      "id": "item-3",
+      "name": "Гремящий Капюшон",
+      "rarity": "common",
+      "slot": "head",
+      "mods": [
+        {
+          "stat": "attackPower",
+          "kind": "flat",
+          "value": "7",
+          "source": "equipment:head"
+        },
+        {
+          "stat": "maxHp",
+          "kind": "flat",
+          "value": "10",
+          "source": "equipment:head"
+        }
+      ]
+    },
     "chest": {
       "id": "item-1",
       "name": "Верный Панцирь",
@@ -162,11 +233,11 @@
       "reserve": 0
     }
   },
-  "itemSeq": 6,
+  "itemSeq": 9,
   "gold": "4820",
   "level": "10",
   "currentXp": "483",
-  "currentHp": "158",
+  "currentHp": "164",
   "currentMana": "42",
   "heroState": "alive",
   "reviveMsLeft": 0,

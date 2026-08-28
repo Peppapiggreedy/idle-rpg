@@ -76,10 +76,16 @@ function mid(): GameState {
   let state = createInitialState(202)
   state = atLevel(state, 10)
   state = withUpgrade(state, 24)
-  // Оружие и пара вещей — надеваем через обычный equipItem.
-  const loot = rollItems(state, 2024, 6)
+  // Оружие и пара вещей — надеваем через обычный equipItem. Оружие берём
+  // ЯВНО, а не первым по порядку: без него герой на снимке дерётся кулаками,
+  // и «урон оружия 8–12» в статах читается как поломка, а не как пустая рука.
+  const loot = rollItems(state, 2024, 9)
   state = addToInventory(state, loot)
-  for (const item of loot.slice(0, 3)) state = equipItem(state, item.id)
+  const weapon = loot.find((i) => i.slot === 'mainHand')
+  const rest = loot.filter((i) => i !== weapon).slice(0, 4)
+  for (const item of [weapon, ...rest]) {
+    if (item) state = equipItem(state, item.id)
+  }
   state = travelToZone(state, 'hollow-quarry', createRng(303))
   // Первое очко таланта приходит как раз на десятом уровне.
   state = investTalent(state, 'honed-edge')

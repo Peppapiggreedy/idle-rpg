@@ -19,6 +19,7 @@
   } from '../data/talents'
   import { TALENT_FIRST_LEVEL } from '../data/balance'
   import { gameState, investTalentPoint, resetTalentTree } from '../stores/game'
+  import { resourceWords } from './resource'
   import { Button, NumberText, Panel, Tag } from './kit'
   import { Icon } from './icons'
 
@@ -26,13 +27,17 @@
   const cost = $derived(resetCost($gameState))
   const canReset = $derived(canResetTalents($gameState))
 
+  // Ресурс называется по классу: ветки у классов разные, но общие статы
+  // описываются одними и теми же строками.
+  const resource = $derived(resourceWords($gameState.classId))
+
   // Названия статов и флагов — единственное место, где они превращаются в текст.
-  const STAT_NAMES: Record<StatId, string> = {
+  const STAT_NAMES: Record<StatId, string> = $derived({
     attackPower: 'силы атаки',
     weaponDamageMin: 'урона оружия (мин)',
     weaponDamageMax: 'урона оружия (макс)',
     maxHp: 'здоровья',
-    maxMana: 'маны',
+    maxMana: resource.genitive,
     weaponSpeed: 'скорости оружия',
     offhandSpeed: 'скорости левой руки',
     offhandDamageMin: 'урона левой руки (мин)',
@@ -40,7 +45,7 @@
     blockChance: 'шанса блока',
     blockValue: 'силы блока',
     offhandPenalty: 'силы левой руки',
-    regenDelay: 'паузы восстановления маны',
+    regenDelay: `паузы восстановления ${resource.genitive}`,
     restDuration: 'длины привала',
     restThreshold: 'порога привала',
     haste: 'ускорения',
@@ -48,9 +53,9 @@
     critMultiplier: 'множителя крита',
     hpRegen: 'восстановления здоровья',
     hpRegenOutOfCombat: 'восстановления здоровья вне боя',
-    manaRegen: 'восстановления маны',
+    manaRegen: `восстановления ${resource.genitive}`,
     damageReduction: 'снижения урона',
-  }
+  })
   const PERCENT_STATS: StatId[] = [
     'critChance',
     'damageReduction',
