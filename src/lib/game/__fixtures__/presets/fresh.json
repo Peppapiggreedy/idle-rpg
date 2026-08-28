@@ -1,9 +1,13 @@
 {
-  "version": 12,
+  "version": 17,
+  "classId": "warden",
+  "materials": {},
+  "restSpeedupSource": null,
   "lastTimestamp": 1700000000000,
   "inventory": [],
   "equipment": {
-    "weapon": null,
+    "mainHand": null,
+    "offHand": null,
     "head": null,
     "chest": null,
     "hands": null,
@@ -17,18 +21,24 @@
   "dungeonsCleared": {},
   "gcdMsLeft": 0,
   "abilityCooldownsMs": {},
+  "regenDelayMsLeft": 0,
+  "restHpThreshold": 0.4,
+  "restResourceThreshold": 0,
   "abilitySettings": {
     "quick-strike": {
       "autocast": true,
-      "priority": 0
+      "priority": 0,
+      "reserve": 0
     },
     "rending-wound": {
       "autocast": true,
-      "priority": 1
+      "priority": 1,
+      "reserve": 0
     },
     "shattering-blow": {
       "autocast": true,
-      "priority": 2
+      "priority": 2,
+      "reserve": 0
     }
   },
   "itemSeq": 0,

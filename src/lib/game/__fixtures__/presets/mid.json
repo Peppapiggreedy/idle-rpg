@@ -1,24 +1,27 @@
 {
-  "version": 12,
+  "version": 17,
+  "classId": "warden",
+  "materials": {},
+  "restSpeedupSource": null,
   "lastTimestamp": 1700000000000,
   "inventory": [
     {
       "id": "item-3",
-      "name": "Гремящий Нагрудник",
+      "name": "Гремящий Капюшон",
       "rarity": "common",
-      "slot": "chest",
+      "slot": "head",
       "mods": [
         {
           "stat": "attackPower",
           "kind": "flat",
           "value": "7",
-          "source": "equipment:chest"
+          "source": "equipment:head"
         },
         {
           "stat": "maxHp",
           "kind": "flat",
           "value": "10",
-          "source": "equipment:chest"
+          "source": "equipment:head"
         }
       ]
     },
@@ -44,27 +47,28 @@
     },
     {
       "id": "item-5",
-      "name": "Сумрачный Нагрудник",
+      "name": "Сумрачный Капюшон",
       "rarity": "common",
-      "slot": "chest",
+      "slot": "head",
       "mods": [
         {
           "stat": "attackPower",
           "kind": "flat",
           "value": "7",
-          "source": "equipment:chest"
+          "source": "equipment:head"
         },
         {
           "stat": "maxHp",
           "kind": "flat",
           "value": "10",
-          "source": "equipment:chest"
+          "source": "equipment:head"
         }
       ]
     }
   ],
   "equipment": {
-    "weapon": null,
+    "mainHand": null,
+    "offHand": null,
     "head": null,
     "chest": {
       "id": "item-1",
@@ -86,27 +90,27 @@
         }
       ]
     },
-    "hands": null,
-    "legs": {
+    "hands": {
       "id": "item-0",
-      "name": "Сумрачный Сапог",
+      "name": "Сумрачный Хват",
       "rarity": "common",
-      "slot": "legs",
+      "slot": "hands",
       "mods": [
         {
           "stat": "attackPower",
           "kind": "flat",
           "value": "7",
-          "source": "equipment:legs"
+          "source": "equipment:hands"
         },
         {
           "stat": "maxHp",
           "kind": "flat",
           "value": "10",
-          "source": "equipment:legs"
+          "source": "equipment:hands"
         }
       ]
     },
+    "legs": null,
     "trinket": {
       "id": "item-2",
       "name": "Верный Амулет",
@@ -138,18 +142,24 @@
     "rending-wound": 2400,
     "shattering-blow": 9100
   },
+  "regenDelayMsLeft": 0,
+  "restHpThreshold": 0.4,
+  "restResourceThreshold": 0,
   "abilitySettings": {
     "quick-strike": {
       "autocast": true,
-      "priority": 0
+      "priority": 0,
+      "reserve": 0
     },
     "rending-wound": {
       "autocast": true,
-      "priority": 1
+      "priority": 1,
+      "reserve": 0
     },
     "shattering-blow": {
       "autocast": true,
-      "priority": 2
+      "priority": 2,
+      "reserve": 0
     }
   },
   "itemSeq": 6,
