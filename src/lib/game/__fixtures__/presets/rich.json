@@ -6,6 +6,39 @@
   "lastTimestamp": 1700000000000,
   "inventory": [
     {
+      "id": "item-0",
+      "name": "Пастуший Змеезуб",
+      "rarity": "common",
+      "slot": "offHand",
+      "hands": 1,
+      "mods": [
+        {
+          "stat": "offhandSpeed",
+          "kind": "base",
+          "value": "1.4",
+          "source": "equipment:offHand"
+        },
+        {
+          "stat": "offhandDamageMin",
+          "kind": "base",
+          "value": "7",
+          "source": "equipment:offHand"
+        },
+        {
+          "stat": "offhandDamageMax",
+          "kind": "base",
+          "value": "14",
+          "source": "equipment:offHand"
+        },
+        {
+          "stat": "critChance",
+          "kind": "flat",
+          "value": "0.03",
+          "source": "equipment:offHand"
+        }
+      ]
+    },
+    {
       "id": "item-1",
       "name": "Сумрачный Заслон",
       "rarity": "rare",
@@ -103,8 +136,10 @@
           "source": "equipment:mainHand"
         }
       ]
-    },
-    {
+    }
+  ],
+  "equipment": {
+    "mainHand": {
       "id": "item-4",
       "name": "Щербатый Крушитель",
       "rarity": "common",
@@ -136,43 +171,8 @@
           "source": "equipment:mainHand"
         }
       ]
-    }
-  ],
-  "equipment": {
-    "mainHand": null,
-    "offHand": {
-      "id": "item-0",
-      "name": "Пастуший Змеезуб",
-      "rarity": "common",
-      "slot": "offHand",
-      "hands": 1,
-      "mods": [
-        {
-          "stat": "offhandSpeed",
-          "kind": "base",
-          "value": "1.4",
-          "source": "equipment:offHand"
-        },
-        {
-          "stat": "offhandDamageMin",
-          "kind": "base",
-          "value": "7",
-          "source": "equipment:offHand"
-        },
-        {
-          "stat": "offhandDamageMax",
-          "kind": "base",
-          "value": "14",
-          "source": "equipment:offHand"
-        },
-        {
-          "stat": "critChance",
-          "kind": "flat",
-          "value": "0.03",
-          "source": "equipment:offHand"
-        }
-      ]
     },
+    "offHand": null,
     "head": {
       "id": "item-110",
       "name": "Ржавый Венец",

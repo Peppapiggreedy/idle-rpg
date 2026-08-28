@@ -373,6 +373,9 @@ export function applyScreenshotState(preset: GameState): void {
   let s = seeded
   for (let i = 0; i < SCREENSHOT_TICKS; i++) s = tick(s, STEP_MS, stream, emitAttack)
   state.set(s)
+  // Пресет — это НАЧАТАЯ игра: класс в нём уже выбран. Без этой строки поверх
+  // снимка встаёт выбор класса и закрывает собой всё, что снимают.
+  started.set(true)
   sessionStart.set(s.playtimeMs.toNumber())
 }
 

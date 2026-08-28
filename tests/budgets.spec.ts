@@ -10,6 +10,10 @@ async function openLiveGame(page: Page): Promise<void> {
   // ЖИВАЯ игра, а не пресет: бюджеты меряются на работающем цикле.
   await page.goto('?debug=1')
   await expect(page.locator('html')).toHaveAttribute('data-ready', 'game')
+  // Новая игра начинается с выбора класса, и до выбора экран закрыт им же.
+  // Берём первый класс: бюджеты слоя представления от класса не зависят,
+  // а вот незакрытый выбор перехватил бы все нажатия теста.
+  await page.getByRole('button', { name: /^Играть за/ }).first().click()
   await expect(page.locator(SCENE_READY)).toBeAttached({ timeout: 30_000 })
 }
 

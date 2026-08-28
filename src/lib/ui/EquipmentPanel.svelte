@@ -29,14 +29,17 @@
   <div class="grid">
     {#each SLOT_IDS as slot (slot)}
       {@const item = $gameState.equipment[slot]}
-      <IconSlot slotLabel={SLOT_NAMES[slot]} rarity={item?.rarity} active={item !== null}>
+      <IconSlot
+        slotLabel={SLOT_NAMES[slot]}
+        rarity={item?.rarity}
+        active={item !== null}
+        emptyText={slot === 'offHand' && twoHanded ? 'Занята двуручным' : 'пусто'}
+      >
         {#snippet badge()}<Icon name={SLOT_ICONS[slot]} size="lg" />{/snippet}
         {#if item}
           <span class="name">{item.name}</span>
           <Tag rarity={item.rarity} />
           <ItemMods mods={item.mods} />
-        {:else if slot === 'offHand' && twoHanded}
-          <span class="locked">Занята двуручным оружием</span>
         {/if}
         {#snippet footer()}
           {#if item}
@@ -87,10 +90,6 @@
   }
   .name {
     font-weight: var(--weight-bold);
-  }
-  .locked {
-    color: var(--c-text-faint);
-    font-size: var(--text-sm);
   }
   .unarmed {
     margin: 0;

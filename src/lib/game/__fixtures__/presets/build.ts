@@ -104,10 +104,12 @@ function rich(): GameState {
     rollBossLoot(boss.loot, createRng(500 + index), 100 + index * 10),
   )
   state = addToInventory(state, [...rollItems(state, 606, 5), ...bossLoot])
-  // Надеваем по одному предмету на слот: берём первый подходящий. Правая рука
-  // идёт первой, левая — второй: двуручное в правой само освободит левую, и
-  // связка сложится по правилам игры, а не по порядку строк здесь.
+  // Надеваем по одному предмету на слот: берём первый подходящий. Левую руку
+  // пропускаем, если в правой двуручное: по правилам игры вещь в левой руке
+  // выбивает двуручное обратно в сумку, и слепой обход слотов оставил бы
+  // героя с пустой правой рукой — то есть с голыми кулаками на 22 уровне.
   for (const slot of SLOT_IDS) {
+    if (slot === 'offHand' && state.equipment.mainHand?.hands === 2) continue
     const item = state.inventory.find((i) => i.slot === slot)
     if (item) state = equipItem(state, item.id)
   }
