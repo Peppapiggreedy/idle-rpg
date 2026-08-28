@@ -38,6 +38,7 @@ import { ABILITY_BY_ID } from '../data/abilities'
 import { currentZone, reviveInZone } from './zones'
 import { advanceCooldowns, autocastStep, consumeQueuedAbility } from './abilities'
 import { finishRest, needsRest, startRest } from './rest'
+import { addMaterial, rollMaterial } from './crafting'
 import { classById } from '../data/classes'
 import { reviveMultiplier } from './talents'
 import {
@@ -287,6 +288,19 @@ const applyLevelUps: TickStep = (s, ctx) => {
   }
 }
 
+const applyMaterialDrop: TickStep = (s, ctx) => {
+  if (!ctx.killedMonster) return s
+  // Материалы падают СВОИМ броском и в свой мешок: места в сумке не занимают
+  // и шансы редкости предметов не сдвигают. Бросок идёт ДО дропа предмета —
+  // порядок фиксирован, иначе прогоны с сидом перестанут воспроизводиться.
+  const material = rollMaterial(s.currentZoneId, ctx.rng)
+  if (!material) return s
+  return {
+    ...addMaterial(s, material.id),
+    combatLog: pushEvent(s.combatLog, { type: 'material', materialId: material.id }),
+  }
+}
+
 const applyLootDrop: TickStep = (s, ctx) => {
   if (!ctx.killedMonster) return s
   // Босс роняет свой пул целиком, а не по общему шансу дропа.
@@ -520,6 +534,7 @@ const PIPELINE: TickStep[] = [
   applyEffects,
   applyKillRewards,
   applyLevelUps,
+  applyMaterialDrop,
   applyLootDrop,
   applyMonsterAttack,
   applyResourceGain,

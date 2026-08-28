@@ -24,6 +24,7 @@
   import TalentPanel from './lib/ui/TalentPanel.svelte'
   import UpgradePanel from './lib/ui/UpgradePanel.svelte'
   import InventoryPanel from './lib/ui/InventoryPanel.svelte'
+  import CraftPanel from './lib/ui/CraftPanel.svelte'
   import ZonePanel from './lib/ui/ZonePanel.svelte'
   import DungeonPanel from './lib/ui/DungeonPanel.svelte'
   import SettingsPanel from './lib/ui/SettingsPanel.svelte'
@@ -97,6 +98,7 @@
       <UpgradePanel />
     {:else if $activeSection === 'bag'}
       <InventoryPanel />
+      <CraftPanel />
     {:else if $activeSection === 'world'}
       <ZonePanel />
       <DungeonPanel />

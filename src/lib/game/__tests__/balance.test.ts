@@ -242,7 +242,9 @@ describe('стиль боя', () => {
         zoneId: weaponZoneId,
         seed,
         freezeLevel: true,
-        build: { ...weaponBuild, ...styleBuild(style, true), autocast },
+        // Привалы выключены: измерение про УДАР, а не про то, кто чаще
+        // садится отдыхать. С ними разброс мерил бы живучесть связки.
+        build: { ...weaponBuild, ...styleBuild(style, true), autocast, restThreshold: 0 },
       }),
     )
   }
@@ -344,6 +346,7 @@ describe('стиль боя', () => {
                 sharpening: c.sharpening,
                 ...styleBuild(style, true),
                 autocast: 'none',
+                restThreshold: 0,
               },
             }),
           ),

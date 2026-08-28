@@ -52,6 +52,21 @@ export const ICONS = {
   'class-warden': { file: 'delapouite/spiked-shield.svg', author: 'Delapouite' },
   'class-reaver': { file: 'lorc/axe-swing.svg', author: 'Lorc' },
 
+  // --- Материалы профессий ---
+  'material-herb': { file: 'delapouite/herbs-bundle.svg', author: 'Delapouite' },
+  'material-meat': { file: 'lorc/meat.svg', author: 'Lorc' },
+  'material-ore': { file: 'faithtoken/ore.svg', author: 'FaithToken' },
+  'material-hide': { file: 'delapouite/animal-hide.svg', author: 'Delapouite' },
+  'material-shard': { file: 'lorc/crystal-shine.svg', author: 'Lorc' },
+  'material-salt': { file: 'lorc/stone-block.svg', author: 'Lorc' },
+
+  // --- Профессии и рецепты ---
+  'profession-cooking': { file: 'delapouite/cooking-pot.svg', author: 'Delapouite' },
+  'profession-smithing': { file: 'lorc/hammer-nails.svg', author: 'Lorc' },
+  'recipe-broth': { file: 'delapouite/meal.svg', author: 'Delapouite' },
+  'recipe-stew': { file: 'lorc/fire-bowl.svg', author: 'Lorc' },
+  'recipe-jerky': { file: 'lorc/mushroom.svg', author: 'Lorc' },
+
   // --- Слоты экипировки ---
   'slot-weapon': { file: 'lorc/broadsword.svg', author: 'Lorc' },
   'slot-offhand': { file: 'sbed/shield.svg', author: 'Sbed' },

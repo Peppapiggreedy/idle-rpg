@@ -87,6 +87,12 @@ export interface SimBuild {
   weapon?: SimWeapon | null // null — голые кулаки (UNARMED из баланса)
   /** Что во второй руке. Не задан — рука пуста. */
   offhand?: SimWeapon | 'shield' | null
+  /**
+   * Порог привала. Не задан — как у свежего героя. Ноль выключает привалы
+   * совсем: измерения, которые про УДАР (нормализация скорости оружия),
+   * иначе мерили бы ещё и то, кто чаще садится отдыхать.
+   */
+  restThreshold?: number
   // Экипировка эталонного героя. 'average' — все слоты заняты СРЕДНИМ по
   // рулетке предметом (см. AVERAGE_RARITY): это не «повезло» и не «не
   // повезло», а то, во что игрок одет обычно. 'none' — голый герой.
@@ -514,6 +520,7 @@ export function buildSimState(build: SimBuild, zoneId: string, seed: number): Ga
     abilitySettings: settingsFor(build.autocast, base.classId),
     // Прогон меряет ЗАДАННЫЙ билд: автонадевание подменило бы его на середине.
     autoEquip: false,
+    restHpThreshold: build.restThreshold ?? base.restHpThreshold,
     currentZoneId: zone.id,
     // Смерть отбрасывает в последнюю зону, где герой выживал. Ставим её сразу:
     // иначе первая же смерть увела бы прогон в безопасную зону и он мерил бы

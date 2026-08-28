@@ -18,6 +18,8 @@ import type { ModelAsset, PropAsset } from '../assets'
 import type { DungeonDef } from '../dungeons'
 import type { ShieldTemplate, WeaponTemplate } from '../items'
 import type { ClassDef } from '../classes'
+import type { MaterialDef } from '../materials'
+import type { ProfessionDef, RecipeDef } from '../recipes'
 import type { RarityDef } from '../rarity'
 import type { SoundCue } from '../sounds'
 import {
@@ -51,6 +53,9 @@ export interface Content {
   shields: readonly ShieldTemplate[]
   sounds: readonly SoundCue[]
   classes: readonly ClassDef[]
+  materials: readonly MaterialDef[]
+  recipes: readonly RecipeDef[]
+  professions: readonly ProfessionDef[]
   props: readonly PropAsset[]
   /** Имена файлов в public/models/props. */
   propFiles: readonly string[]
@@ -789,6 +794,116 @@ export const SHIELD_SCHEMA: EntitySchema<ShieldTemplate> = {
   },
 }
 
+export const MATERIAL_SCHEMA: EntitySchema<MaterialDef> = {
+  kind: 'материал',
+  file: 'data/materials.ts',
+  entities: (c) => c.materials,
+  id: (m) => m.id,
+  name: (m) => m.name,
+  icon: (m) => m.icon,
+  numbers: [
+    {
+      field: 'weight',
+      get: (m) => m.weight,
+      min: 0,
+      exclusiveMin: true,
+      why: 'нулевой вес рулетки означал бы, что материал не падает никогда',
+    },
+  ],
+  extra: (material, content, report) => {
+    const where = `материал ${material.id}`
+    // Материал без зоны — недостижимый контент: рецепт с ним не собрать никогда.
+    report.need(
+      Array.isArray(material.zoneIds) && material.zoneIds.length > 0,
+      where,
+      'не падает ни в одной зоне — рецепты с ним недостижимы (data/materials.ts)',
+    )
+    for (const id of material.zoneIds ?? []) {
+      report.need(
+        content.zones.some((z) => z.id === id),
+        where,
+        `падает в зоне «${id}», которой нет в data/zones.ts`,
+      )
+    }
+  },
+}
+
+export const RECIPE_SCHEMA: EntitySchema<RecipeDef> = {
+  kind: 'рецепт',
+  file: 'data/recipes.ts',
+  entities: (c) => c.recipes,
+  id: (r) => r.id,
+  name: (r) => r.name,
+  icon: (r) => r.icon,
+  extra: (recipe, content, report) => {
+    const where = `рецепт ${recipe.id}`
+    report.need(
+      content.professions.some((p) => p.id === recipe.profession),
+      where,
+      `ссылается на профессию «${recipe.profession}», которой нет в data/recipes.ts`,
+    )
+    report.need(
+      Array.isArray(recipe.inputs) && recipe.inputs.length > 0,
+      where,
+      'нет ни одного материала на входе — рецепт собирается из ничего (data/recipes.ts)',
+    )
+    for (const input of recipe.inputs ?? []) {
+      report.need(
+        content.materials.some((m) => m.id === input.materialId),
+        where,
+        `требует материал «${input.materialId}», которого нет в data/materials.ts`,
+      )
+      report.need(
+        Number.isInteger(input.count) && input.count > 0,
+        where,
+        `количество материала «${input.materialId}» должно быть целым и больше нуля ` +
+          '(data/recipes.ts)',
+      )
+    }
+    // ДОСТИЖИМОСТЬ: все материалы рецепта должны падать хоть где-то вместе с
+    // прогрессом. Достаточно, чтобы каждый падал хотя бы в одной зоне.
+    for (const input of recipe.inputs ?? []) {
+      const material = content.materials.find((m) => m.id === input.materialId)
+      if (material && material.zoneIds.length === 0) {
+        report.add(
+          where,
+          `материал «${input.materialId}» не падает ни в одной зоне — рецепт ` +
+            'недостижим (data/materials.ts)',
+        )
+      }
+    }
+    const output = recipe.output
+    if (output.kind === 'item') {
+      report.need(
+        content.slots.includes(output.slot),
+        where,
+        `делает предмет в слот «${output.slot}», которого нет в data/slots.ts`,
+      )
+      report.need(
+        content.rarities.some((r) => r.id === output.rarity),
+        where,
+        `делает предмет редкости «${output.rarity}», которой нет в data/rarity.ts`,
+      )
+      if (output.slot === 'mainHand' || output.slot === 'offHand') {
+        const known =
+          content.weapons.some((w) => w.id === output.templateId) ||
+          content.shields.some((sh) => sh.id === output.templateId)
+        report.need(
+          known,
+          where,
+          `предмет в руку без шаблона: «${output.templateId ?? '—'}» не найден в data/items.ts`,
+        )
+      }
+    } else {
+      report.need(
+        output.id.startsWith('food:'),
+        where,
+        `id еды «${output.id}» должен начинаться с «food:» — по нему привал её и находит`,
+      )
+    }
+  },
+}
+
 export const CLASS_SCHEMA: EntitySchema<ClassDef> = {
   kind: 'класс',
   file: 'data/classes.ts',
@@ -1072,6 +1187,8 @@ export const SCHEMAS = [
   SOUND_SCHEMA,
   PROP_SCHEMA,
   CLASS_SCHEMA,
+  MATERIAL_SCHEMA,
+  RECIPE_SCHEMA,
   RARITY_SCHEMA,
   UPGRADE_SCHEMA,
   MODEL_SCHEMA,

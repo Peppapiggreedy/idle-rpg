@@ -5,6 +5,8 @@
   import { formatNumber } from '../game'
   import { gameState } from '../stores/game'
   import { ABILITY_BY_ID } from '../data/abilities'
+  import { MATERIAL_BY_ID } from '../data/materials'
+  import { RECIPE_BY_ID } from '../data/recipes'
   import { rarityName, rarityStyle } from './kit'
   import { Icon } from './icons'
   import type { IconName } from './icons'
@@ -46,6 +48,10 @@
           ? `КРИТ! ${name}: ${formatNumber(e.damage)} урона`
           : `${name}: ${formatNumber(e.damage)} урона`
       }
+      case 'material':
+        return `Собрано: ${MATERIAL_BY_ID[e.materialId]?.name ?? e.materialId}`
+      case 'craft':
+        return `Готово: ${RECIPE_BY_ID[e.recipeId]?.name ?? e.recipeId}`
       case 'rest-start':
         return 'Привал: восстанавливаешься'
       case 'rest-end':
@@ -104,6 +110,8 @@
     enrage: 'stat-critMultiplier',
     // Костёр уже есть в реестре — это иконка регенерации вне боя, и привал
     // ровно про неё. Заводить вторую такую же незачем.
+    material: 'material-ore',
+    craft: 'profession-smithing',
     'rest-start': 'stat-hpRegenOutOfCombat',
     'rest-end': 'stat-hpRegenOutOfCombat',
   }

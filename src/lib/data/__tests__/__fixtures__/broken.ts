@@ -201,6 +201,32 @@ export function brokenCases(): BrokenCase[] {
       expect: [first(real.branches).id, 'ряды идут'],
     },
     {
+      title: 'рецепт требует материал, которого нет в игре',
+      content: {
+        ...real,
+        recipes: patch(real.recipes, first(real.recipes).id, {
+          inputs: [{ materialId: 'нет-такого', count: 1 }],
+        }),
+      },
+      expect: [first(real.recipes).id, 'нет-такого', 'data/materials.ts'],
+    },
+    {
+      title: 'материал не падает ни в одной зоне — рецепты с ним недостижимы',
+      content: {
+        ...real,
+        materials: patch(real.materials, first(real.materials).id, { zoneIds: [] }),
+      },
+      expect: [first(real.materials).id, 'не падает ни в одной зоне'],
+    },
+    {
+      title: 'материал падает в зоне, которой нет',
+      content: {
+        ...real,
+        materials: patch(real.materials, first(real.materials).id, { zoneIds: ['нет-зоны'] }),
+      },
+      expect: [first(real.materials).id, 'нет-зоны'],
+    },
+    {
       title: 'класс ссылается на несуществующее умение',
       content: {
         ...real,

@@ -62,6 +62,7 @@ describe('фикстуры сейвов', () => {
     ['save-v14.json'],
     ['save-v15.json'],
     ['save-v16.json'],
+    ['save-v17.json'],
   ])('%s мигрирует до текущей версии', (name) => {
     const payload = migrateSave(JSON.parse(fixture(name)))
     expect(payload).not.toBeNull()
@@ -332,6 +333,28 @@ describe('фикстуры сейвов', () => {
     // Ресурс ведёт себя по-другому: ярость не капает сама и не ждёт паузы.
     expect(s.stats.manaRegen.toNumber()).toBe(0)
     expect(s.stats.regenDelay).toBe(0)
+  })
+
+  it('save-v16 -> v17: мешок материалов у старого героя пуст, прогресс цел', () => {
+    const s = loadFixture('save-v16.json')
+    expect(s.materials).toEqual({})
+    expect(s.restSpeedupSource).toBeNull()
+    expect(s.gold.toNumber()).toBe(760000)
+  })
+
+  it('save-v17: материалы и еда переживают загрузку, чужие id отбрасываются', () => {
+    const s = loadFixture('save-v17.json')
+    expect(s.materials['quarry-ore'].toNumber()).toBe(7)
+    expect(s.materials['food:herb-broth'].toNumber()).toBe(2)
+    // Мусор в сейве не должен превращаться в материал, которого в игре нет.
+    const dirty = stateFromPayload(
+      migrateSave({
+        ...JSON.parse(fixture('save-v17.json')),
+        materials: { 'нет-такого': '99', 'quarry-ore': '3' },
+      })!,
+    )
+    expect(dirty.materials['нет-такого']).toBeUndefined()
+    expect(dirty.materials['quarry-ore'].toNumber()).toBe(3)
   })
 
   it('save-v10 -> v11: старый сейв получает пустое дерево и заработанные очки', () => {

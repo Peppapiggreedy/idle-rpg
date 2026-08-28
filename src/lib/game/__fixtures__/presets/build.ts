@@ -13,7 +13,7 @@ import { equipItem } from '../../equipment'
 import { rollBossLoot, rollLoot } from '../../loot'
 import { investTalent } from '../../talents'
 import { travelToZone } from '../../zones'
-import { payloadFromState, type SavePayloadV16 } from '../../save'
+import { payloadFromState, type SavePayloadV17 } from '../../save'
 import { DUNGEONS } from '../../../data/dungeons'
 import { TALENTS } from '../../../data/talents'
 import { SLOT_IDS } from '../../../data/slots'
@@ -132,6 +132,6 @@ export function buildPreset(name: PresetName): GameState {
   return BUILDERS[name]()
 }
 
-export function presetPayload(name: PresetName): SavePayloadV16 {
+export function presetPayload(name: PresetName): SavePayloadV17 {
   return payloadFromState(buildPreset(name), FROZEN_TIMESTAMP)
 }

@@ -13,6 +13,7 @@ import { REST_FOOD_SPEEDUP } from '../data/balance'
 import { zoneMonsterVariants, type Zone } from '../data/zones'
 import type { StatBlock } from './stats'
 import { restCooldownMultiplier } from './talents'
+import { takeFood } from './crafting'
 import type { GameState } from './state'
 
 /**
@@ -40,11 +41,19 @@ export function needsRest(state: GameState): boolean {
   return false
 }
 
-/** Уход на привал. Очередь и эффекты снимаются: они висели на прежнем мобе. */
+/**
+ * Уход на привал. Очередь и эффекты снимаются: они висели на прежнем мобе.
+ *
+ * Порция еды, если она есть, тратится ЗДЕСЬ и сокращает именно этот привал.
+ * Еда не обязательна: без неё привал просто дольше — и это всё, что она даёт.
+ */
 export function startRest(state: GameState): GameState {
-  const total = restDurationMs(state)
+  const fed = takeFood(state)
+  const withFood: GameState =
+    fed.foodId === null ? state : { ...fed.state, restSpeedupSource: fed.foodId }
+  const total = restDurationMs(withFood)
   return {
-    ...state,
+    ...withFood,
     heroState: 'resting',
     restMsLeft: total,
     restTotalMs: total,

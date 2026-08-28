@@ -73,6 +73,9 @@ export type CombatEvent =
   // и восстановление вышло частичным.
   // Блок щитом: `damage` — что прошло, `blocked` — что снял щит.
   | { type: 'block'; damage: Decimal; blocked: Decimal; monsterName: string }
+  // Материал с моба и собранный рецепт: id, текст рендерит UI.
+  | { type: 'material'; materialId: string }
+  | { type: 'craft'; recipeId: string }
   | { type: 'rest-start' }
   | { type: 'rest-end'; interrupted: boolean }
 

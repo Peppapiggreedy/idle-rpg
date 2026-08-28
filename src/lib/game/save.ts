@@ -33,6 +33,8 @@ import {
 } from '../data/balance'
 import { ABILITIES, ABILITY_BY_ID } from '../data/abilities'
 import { DEFAULT_CLASS, classById } from '../data/classes'
+import { MATERIAL_BY_ID } from '../data/materials'
+import { FOOD_BY_ID } from '../data/recipes'
 import { TALENTS } from '../data/talents'
 import { DUNGEONS, DUNGEON_BY_ID, buildBoss } from '../data/dungeons'
 import { currentBoss } from './dungeons'
@@ -43,7 +45,7 @@ import { SAFE_ZONE, ZONE_BY_ID } from '../data/zones'
 import { currentZone, zoneRate } from './zones'
 
 export const SAVE_KEY = 'idle-rpg-save'
-export const SAVE_VERSION = 16
+export const SAVE_VERSION = 17
 export const AUTOSAVE_INTERVAL_MS = AUTOSAVE_INTERVAL_S * 1000
 // Потолок оффлайн-прогресса: дольше отсутствовать можно, но не оплачивается.
 export const OFFLINE_CAP_MS = OFFLINE_CAP_HOURS * 60 * 60 * 1000
@@ -85,8 +87,12 @@ export interface SavedDungeonRun {
   fightMs: number
 }
 
-export interface SavePayloadV16 {
-  version: 16
+export interface SavePayloadV17 {
+  version: 17
+  /** Материалы и готовая еда: id -> количество строкой (величина растущая). */
+  materials: Record<string, string>
+  /** Порция еды, уже потраченная на текущий привал. */
+  restSpeedupSource: string | null
   /** Класс героя. Выбирается один раз при новой игре и не меняется. */
   classId: string
   lastTimestamp: number
@@ -171,7 +177,7 @@ function savedFromItem(item: Item): SavedItem {
   }
 }
 
-export function payloadFromState(state: GameState, lastTimestamp: number): SavePayloadV16 {
+export function payloadFromState(state: GameState, lastTimestamp: number): SavePayloadV17 {
   const upgrades: Record<string, string> = {}
   for (const [id, owned] of Object.entries(state.upgrades)) upgrades[id] = owned.toString()
   const equipment: Record<string, SavedItem | null> = {}
@@ -201,8 +207,14 @@ export function payloadFromState(state: GameState, lastTimestamp: number): SaveP
     if (state.dungeonsCleared[dungeon.id] === true) dungeonsCleared[dungeon.id] = true
   }
   return {
-    version: 16,
+    version: 17,
     classId: state.classId,
+    materials: Object.fromEntries(
+      Object.entries(state.materials)
+        .filter(([, count]) => count.gt(0))
+        .map(([id, count]) => [id, count.toString()]),
+    ),
+    restSpeedupSource: state.restSpeedupSource,
     lastTimestamp,
     inventory: state.inventory.map(savedFromItem),
     equipment,
@@ -247,6 +259,21 @@ function modifierFromSaved(raw: SavedModifier): StatModifier | null {
     value: parseDec(raw.value, '0'),
     source: typeof raw.source === 'string' ? raw.source : 'equipment',
   }
+}
+
+/**
+ * Материалы из сейва: чужие id и мусорные числа отбрасываем, иначе рецепт
+ * собрался бы из того, чего в игре нет.
+ */
+function materialsFromSaved(raw: unknown): Record<string, Decimal> {
+  const result: Record<string, Decimal> = {}
+  if (typeof raw !== 'object' || raw === null) return result
+  for (const [id, count] of Object.entries(raw as Record<string, unknown>)) {
+    if (!(id in MATERIAL_BY_ID) && !(id in FOOD_BY_ID)) continue
+    const value = parseDec(count, '0')
+    if (value.gt(0)) result[id] = value.floor()
+  }
+  return result
 }
 
 function itemFromSaved(raw: SavedItem, index: number): Item {
@@ -384,7 +411,7 @@ function clearedFromSaved(raw: unknown): Record<string, boolean> {
   return cleared
 }
 
-export function stateFromPayload(p: SavePayloadV16): GameState {
+export function stateFromPayload(p: SavePayloadV17): GameState {
   const level = Decimal.max(parseDec(p.level, '1'), new Decimal(1))
   const upgrades: Record<string, Decimal> = {}
   for (const [id, owned] of Object.entries(p.upgrades ?? {})) upgrades[id] = parseDec(owned, '0')
@@ -409,6 +436,13 @@ export function stateFromPayload(p: SavePayloadV16): GameState {
     totalTicks: parseDec(p.totalTicks, '0'),
     playtimeMs: parseDec(p.playtimeMs, '0'),
     inventory: Array.isArray(p.inventory) ? p.inventory.map(itemFromSaved) : [],
+    materials: materialsFromSaved(p.materials),
+    // Порция, потраченная на прерванный привал, не возвращается: перезагрузка
+    // не должна становиться способом сэкономить еду.
+    restSpeedupSource:
+      typeof p.restSpeedupSource === 'string' && p.restSpeedupSource in FOOD_BY_ID
+        ? p.restSpeedupSource
+        : null,
     equipment: equipmentFromSaved(p.equipment),
     autoEquip: typeof p.autoEquip === 'boolean' ? p.autoEquip : true,
     dungeonRun: dungeonRunFromSaved(p.dungeonRun),
@@ -507,6 +541,9 @@ function handItemV14toV15(raw: unknown): unknown {
 }
 
 const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
+  // 16 -> 17: появились профессии. Мешок материалов у старого героя пуст —
+  // собирать он начнёт с ближайшего убитого моба. Прогресс не затронут.
+  16: (raw) => ({ ...raw, version: 17, materials: {}, restSpeedupSource: null }),
   // 15 -> 16: появились классы. Все прежние герои — Стражи: ресурс маны,
   // правило задержки и те же три умения, что у них и были. Прогресс не
   // теряется: класс дописывается полем, всё остальное остаётся как есть.
@@ -523,7 +560,7 @@ const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
     delete equipment.weapon
     return {
       ...raw,
-      version: 16,
+      version: 17,
       inventory: Array.isArray(raw.inventory) ? raw.inventory.map(handItemV14toV15) : [],
       equipment: {
         ...equipment,
@@ -623,7 +660,7 @@ const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
 }
 
 // null = сейв непригоден (не объект или из более новой версии игры).
-export function migrateSave(raw: unknown): SavePayloadV16 | null {
+export function migrateSave(raw: unknown): SavePayloadV17 | null {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null
   let data = raw as RawSave
   let version = typeof data.version === 'number' ? data.version : 0
@@ -634,7 +671,7 @@ export function migrateSave(raw: unknown): SavePayloadV16 | null {
     data = step(data)
     version = typeof data.version === 'number' ? data.version : version + 1
   }
-  return data as unknown as SavePayloadV16
+  return data as unknown as SavePayloadV17
 }
 
 export interface OfflineReport {
@@ -779,7 +816,7 @@ export function encodeSaveString(state: GameState, now: () => number = Date.now)
 }
 
 // Понимает base64 от экспорта и, на всякий случай, голый JSON.
-export function decodeSaveString(input: string): SavePayloadV16 | null {
+export function decodeSaveString(input: string): SavePayloadV17 | null {
   const attempts = [
     () => JSON.parse(fromBase64(input.trim())),
     () => JSON.parse(input.trim()),

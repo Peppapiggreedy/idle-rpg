@@ -92,6 +92,8 @@ export interface GameState {
   stats: StatBlock
   statsDirty: boolean // источники изменились -> ensureStats пересчитает
   inventory: Item[]
+  /** Материалы и готовая еда: id -> количество. Свой мешок, вне инвентаря. */
+  materials: Record<string, Decimal>
   itemSeq: number // служебный счётчик для уникальных id предметов
   rngSeed: number // служебный сид потока случайности (в сейв пока не пишется)
   // Активный забег по данжу; null — герой снаружи. Прогресс цепочки живёт
@@ -251,6 +253,7 @@ export function createInitialState(
     currentZoneId: SAFE_ZONE.id,
     lastSurvivedZoneId: null,
     inventory: [],
+    materials: {},
     itemSeq: 0,
     rngSeed,
     // Первый моб — из безопасной зоны; поток случайности берём от того же сида,

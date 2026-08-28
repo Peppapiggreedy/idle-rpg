@@ -12,6 +12,7 @@ import { xpToNextLevel } from '../game/formulas'
 import { Decimal } from '../game/numbers'
 import { applyOfflineProgress } from '../game/save'
 import { sellItem } from '../game/loot'
+import { craft as craftAction } from '../game/crafting'
 import { equipItem, setAutoEquip, unequipItem } from '../game/equipment'
 import { currentZone, travelToZone as travelAction } from '../game/zones'
 import { useAbility as useAbilityAction } from '../game/abilities'
@@ -237,6 +238,11 @@ export function setRestHpThreshold(share: number): void {
   state.update((s) =>
     ensureStats({ ...s, restHpThreshold: Math.min(1, Math.max(0, share)), statsDirty: true }),
   )
+}
+
+/** Собрать рецепт. Не хватает материалов или места — состояние не меняется. */
+export function craftRecipe(recipeId: string): void {
+  state.update((s) => craftAction(s, recipeId))
 }
 
 /** Порог ухода на привал по ресурсу. */
