@@ -8,14 +8,15 @@ import { RARITIES, RARITY_BY_ID, type RarityDef } from '../data/rarity'
 import { DROP_CHANCE, ITEM_BASE_SELL_PRICE, LOOT_ADJECTIVES } from '../data/loot'
 import { SLOT_DROP_WEIGHTS, SLOT_IDS, type SlotId } from '../data/slots'
 import {
+  ARMOR_ATTRIBUTES,
   ARMOR_BASE_PRIMARY,
   ARMOR_BASE_VITALITY,
   ARMOR_NOUNS,
-  ARMOR_PRIMARY,
   ONE_HANDED,
   SHIELDS,
   WEAPONS,
   type ArmorSlot,
+  type AttributeId,
   type ShieldTemplate,
   type WeaponTemplate,
 } from '../data/items'
@@ -112,29 +113,55 @@ export function shieldMods(template: ShieldTemplate, rarity: RarityDef, level = 
   ]
 }
 
-// Экспортируется ради эталонных сборок прогона баланса: «средняя броня»
-// обязана строиться теми же правилами, что и выпавшая, иначе прогон мерил бы
-// не ту игру.
-export function armorMods(slot: ArmorSlot, rarity: RarityDef, level = 1): StatModifier[] {
+// Главный атрибут приходит ПАРАМЕТРОМ: дроп его разыгрывает, крафт берёт из
+// данных рецепта. Внутри armorMods случайности нет — функция детерминирована
+// и одинакова для всех путей появления предмета.
+export function armorMods(
+  slot: ArmorSlot,
+  rarity: RarityDef,
+  level: number,
+  primary: AttributeId,
+): StatModifier[] {
   const source = `equipment:${slot}`
   const power = itemLevelScale(level).times(rarity.bonusMult)
-  const primary = ARMOR_PRIMARY[slot]
-  const mods: StatModifier[] = [
-    { stat: primary, kind: 'flat', value: ARMOR_BASE_PRIMARY.times(power), source },
-  ]
-  // Грудь — про живучесть дважды: главный атрибут и общий довесок сливаются
-  // в одну строку, а не спорят двумя записями об одном стате.
+  // Выпавшая живучесть и общий довесок сливаются в одну строку, а не спорят
+  // двумя записями об одном стате.
   if (primary === 'vitality') {
-    mods[0] = { ...mods[0], value: ARMOR_BASE_PRIMARY.plus(ARMOR_BASE_VITALITY).times(power) }
-    return mods
+    return [
+      {
+        stat: 'vitality',
+        kind: 'flat',
+        value: ARMOR_BASE_PRIMARY.plus(ARMOR_BASE_VITALITY).times(power),
+        source,
+      },
+    ]
   }
-  mods.push({ stat: 'vitality', kind: 'flat', value: ARMOR_BASE_VITALITY.times(power), source })
-  return mods
+  return [
+    { stat: primary, kind: 'flat', value: ARMOR_BASE_PRIMARY.times(power), source },
+    { stat: 'vitality', kind: 'flat', value: ARMOR_BASE_VITALITY.times(power), source },
+  ]
+}
+
+/**
+ * Средняя броня для эталонных сборок прогона баланса: матожидание случайного
+ * главного атрибута — четверть бюджета в каждый из четырёх. Строится теми же
+ * константами, что и настоящий дроп, иначе прогон мерил бы не ту игру.
+ */
+export function averageArmorMods(slot: ArmorSlot, rarity: RarityDef, level = 1): StatModifier[] {
+  const source = `equipment:${slot}`
+  const power = itemLevelScale(level).times(rarity.bonusMult)
+  const share = ARMOR_BASE_PRIMARY.div(ARMOR_ATTRIBUTES.length)
+  return ARMOR_ATTRIBUTES.map((attr) => ({
+    stat: attr,
+    kind: 'flat' as const,
+    value: (attr === 'vitality' ? share.plus(ARMOR_BASE_VITALITY) : share).times(power),
+    source,
+  }))
 }
 
 // Бросок дропа с убитого моба: null — не повезло. itemSeq нумерует id предметов.
 // Порядок бросков фиксирован: шанс -> редкость -> слот -> прилагательное ->
-// существительное (у оружия — модель).
+// существительное (у оружия — модель) -> главный атрибут брони.
 //
 // level — УРОВЕНЬ УБИТОГО МОБА: предмет наследует его и растёт от него линейно
 // (itemLevelScale). Это двигатель прогрессии: вещи из глубокой зоны сильнее,
@@ -147,13 +174,27 @@ export function rollLoot(rng: Rng, itemSeq: number, level = 1): Item | null {
   if (slot === 'mainHand' || slot === 'offHand') {
     return handItem(slot, rarity, adjective, rng, itemSeq, level)
   }
+  return armorItem(slot, rarity, adjective, rng, itemSeq, level)
+}
+
+/** Броня: имя из существительных слота, главный атрибут — отдельный бросок. */
+function armorItem(
+  slot: ArmorSlot,
+  rarity: RarityDef,
+  adjective: string,
+  rng: Rng,
+  itemSeq: number,
+  level: number,
+): Item {
+  const noun = pick(ARMOR_NOUNS[slot], rng)
+  const primary = pick(ARMOR_ATTRIBUTES, rng)
   return {
     id: `item-${itemSeq}`,
-    name: `${adjective} ${pick(ARMOR_NOUNS[slot], rng)}`,
+    name: `${adjective} ${noun}`,
     rarity: rarity.id,
     slot,
     level,
-    mods: armorMods(slot, rarity, level),
+    mods: armorMods(slot, rarity, level, primary),
   }
 }
 
@@ -209,14 +250,7 @@ export function rollBossLoot(loot: BossLoot, rng: Rng, itemSeq: number, level = 
     if (slot === 'mainHand' || slot === 'offHand') {
       return handItem(slot, rarity, adjective, rng, itemSeq + index, level)
     }
-    return {
-      id: `item-${itemSeq + index}`,
-      name: `${adjective} ${pick(ARMOR_NOUNS[slot], rng)}`,
-      rarity: rarity.id,
-      slot,
-      level,
-      mods: armorMods(slot, rarity, level),
-    }
+    return armorItem(slot, rarity, adjective, rng, itemSeq + index, level)
   })
 }
 

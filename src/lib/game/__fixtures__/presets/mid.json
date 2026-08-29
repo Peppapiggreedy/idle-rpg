@@ -7,80 +7,126 @@
   "inventory": [
     {
       "id": "item-4",
-      "name": "Сумрачный Наруч",
-      "rarity": "uncommon",
-      "slot": "hands",
-      "level": 8,
-      "mods": [
-        {
-          "stat": "agility",
-          "kind": "flat",
-          "value": "16.96",
-          "source": "equipment:hands"
-        },
-        {
-          "stat": "vitality",
-          "kind": "flat",
-          "value": "8.48",
-          "source": "equipment:hands"
-        }
-      ]
-    },
-    {
-      "id": "item-5",
-      "name": "Сумрачный Капюшон",
-      "rarity": "common",
-      "slot": "head",
-      "level": 8,
-      "mods": [
-        {
-          "stat": "intellect",
-          "kind": "flat",
-          "value": "8.48",
-          "source": "equipment:head"
-        },
-        {
-          "stat": "vitality",
-          "kind": "flat",
-          "value": "4.24",
-          "source": "equipment:head"
-        }
-      ]
-    },
-    {
-      "id": "item-6",
       "name": "Звёздный Нагрудник",
       "rarity": "common",
       "slot": "chest",
       "level": 8,
       "mods": [
         {
+          "stat": "agility",
+          "kind": "flat",
+          "value": "8.48",
+          "source": "equipment:chest"
+        },
+        {
           "stat": "vitality",
           "kind": "flat",
-          "value": "12.72",
+          "value": "4.24",
           "source": "equipment:chest"
         }
       ]
     },
     {
-      "id": "item-8",
+      "id": "item-6",
       "name": "Пастуший Нагрудник",
       "rarity": "common",
       "slot": "chest",
       "level": 8,
       "mods": [
         {
+          "stat": "strength",
+          "kind": "flat",
+          "value": "8.48",
+          "source": "equipment:chest"
+        },
+        {
           "stat": "vitality",
           "kind": "flat",
-          "value": "12.72",
+          "value": "4.24",
           "source": "equipment:chest"
+        }
+      ]
+    },
+    {
+      "id": "item-7",
+      "name": "Ржавый Налокотник",
+      "rarity": "common",
+      "slot": "hands",
+      "level": 8,
+      "mods": [
+        {
+          "stat": "intellect",
+          "kind": "flat",
+          "value": "8.48",
+          "source": "equipment:hands"
+        },
+        {
+          "stat": "vitality",
+          "kind": "flat",
+          "value": "4.24",
+          "source": "equipment:hands"
+        }
+      ]
+    },
+    {
+      "id": "item-8",
+      "name": "Сумрачный Крушитель",
+      "rarity": "rare",
+      "slot": "mainHand",
+      "level": 8,
+      "hands": 2,
+      "mods": [
+        {
+          "stat": "weaponSpeed",
+          "kind": "base",
+          "value": "3.4",
+          "source": "equipment:mainHand"
+        },
+        {
+          "stat": "weaponDamageMin",
+          "kind": "base",
+          "value": "216.23999999999998",
+          "source": "equipment:mainHand"
+        },
+        {
+          "stat": "weaponDamageMax",
+          "kind": "base",
+          "value": "432.47999999999996",
+          "source": "equipment:mainHand"
+        },
+        {
+          "stat": "strength",
+          "kind": "percent",
+          "value": "0.1",
+          "source": "equipment:mainHand"
+        }
+      ]
+    },
+    {
+      "id": "item-0",
+      "name": "Сумрачный Хват",
+      "rarity": "common",
+      "slot": "hands",
+      "level": 8,
+      "mods": [
+        {
+          "stat": "agility",
+          "kind": "flat",
+          "value": "8.48",
+          "source": "equipment:hands"
+        },
+        {
+          "stat": "vitality",
+          "kind": "flat",
+          "value": "4.24",
+          "source": "equipment:hands"
         }
       ]
     }
   ],
   "equipment": {
     "mainHand": {
-      "id": "item-7",
+      "id": "item-5",
       "name": "Ржавый Полуторник",
       "rarity": "uncommon",
       "slot": "mainHand",
@@ -115,7 +161,7 @@
     },
     "offHand": null,
     "head": {
-      "id": "item-3",
+      "id": "item-2",
       "name": "Гремящий Капюшон",
       "rarity": "common",
       "slot": "head",
@@ -143,56 +189,42 @@
       "level": 8,
       "mods": [
         {
+          "stat": "strength",
+          "kind": "flat",
+          "value": "8.48",
+          "source": "equipment:chest"
+        },
+        {
           "stat": "vitality",
           "kind": "flat",
-          "value": "12.72",
+          "value": "4.24",
           "source": "equipment:chest"
         }
       ]
     },
     "hands": {
-      "id": "item-0",
-      "name": "Сумрачный Хват",
-      "rarity": "common",
+      "id": "item-3",
+      "name": "Сумрачный Наруч",
+      "rarity": "uncommon",
       "slot": "hands",
-      "level": 8,
-      "mods": [
-        {
-          "stat": "agility",
-          "kind": "flat",
-          "value": "8.48",
-          "source": "equipment:hands"
-        },
-        {
-          "stat": "vitality",
-          "kind": "flat",
-          "value": "4.24",
-          "source": "equipment:hands"
-        }
-      ]
-    },
-    "legs": null,
-    "trinket": {
-      "id": "item-2",
-      "name": "Верный Амулет",
-      "rarity": "common",
-      "slot": "trinket",
       "level": 8,
       "mods": [
         {
           "stat": "strength",
           "kind": "flat",
-          "value": "8.48",
-          "source": "equipment:trinket"
+          "value": "16.96",
+          "source": "equipment:hands"
         },
         {
           "stat": "vitality",
           "kind": "flat",
-          "value": "4.24",
-          "source": "equipment:trinket"
+          "value": "8.48",
+          "source": "equipment:hands"
         }
       ]
-    }
+    },
+    "legs": null,
+    "trinket": null
   },
   "autoEquip": true,
   "currentZoneId": "hollow-quarry",
@@ -228,7 +260,7 @@
   "gold": "4820",
   "level": "10",
   "currentXp": "429",
-  "currentHp": "250",
+  "currentHp": "213",
   "currentMana": "61",
   "heroState": "alive",
   "reviveMsLeft": 0,

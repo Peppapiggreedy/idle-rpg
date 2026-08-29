@@ -104,6 +104,9 @@ export function craftedItem(output: ItemOutput, seq: number): Item | null {
       mods: weaponMods(template, rarity, output.slot, output.level),
     }
   }
+  // Атрибут кованой брони обязан быть назван в рецепте — это держит
+  // content:check; без него рецепт не собирается, а не куёт что-то молча.
+  if (!output.attribute) return null
   const nouns = ARMOR_NOUNS[output.slot]
   return {
     id,
@@ -111,7 +114,7 @@ export function craftedItem(output: ItemOutput, seq: number): Item | null {
     rarity: rarity.id,
     slot: output.slot,
     level: output.level,
-    mods: armorMods(output.slot, rarity, output.level),
+    mods: armorMods(output.slot, rarity, output.level, output.attribute),
   }
 }
 

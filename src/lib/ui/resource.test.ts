@@ -49,4 +49,8 @@ describe('причина отказа умения', () => {
       )
     }
   })
+
+  it('«заперто» называет уровень разблокировки', () => {
+    expect(abilityReasonText('locked', resourceWords('warden'), 4)).toBe('Откроется на 4 уровне')
+  })
 })

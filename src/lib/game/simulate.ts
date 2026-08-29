@@ -22,7 +22,7 @@ import {
 } from './state'
 import { ensureStats } from './stats'
 import { tick } from './tick'
-import { armorMods, sellItem, sellPrice, shieldMods, weaponMods } from './loot'
+import { averageArmorMods, sellItem, sellPrice, shieldMods, weaponMods } from './loot'
 import { estimateZoneTtk, type TtkEstimate } from './combat'
 
 import {
@@ -500,7 +500,9 @@ export function averageGear(level = 1): Equipment {
       rarity: AVERAGE_RARITY.id,
       slot,
       level,
-      mods: armorMods(slot, AVERAGE_RARITY, level),
+      // Матожидание случайного главного атрибута, а не чей-то конкретный
+      // бросок: эталон меряет среднюю броню, а не везение.
+      mods: averageArmorMods(slot, AVERAGE_RARITY, level),
     }
   }
   return gear as Equipment

@@ -8,6 +8,7 @@
 //                крафт — это подстраховка от невезения, а не обход лута.
 import type { IconName } from '../ui/icons/manifest'
 import type { SlotId } from './slots'
+import type { AttributeId } from './items'
 import type { Rarity } from '../types'
 
 export type ProfessionId = 'cooking' | 'smithing'
@@ -60,6 +61,10 @@ export interface ItemOutput {
   level: number
   /** Шаблон оружия или щита; для брони не нужен. */
   templateId?: string
+  /** Главный атрибут кованой брони. У дропа он случайный, у рецепта — данные:
+   *  кузнец куёт то, что обещал. Для оружия и щита не нужен — атрибуты там
+   *  из шаблона. */
+  attribute?: AttributeId
   /** Прилагательное в имени: «Кованый Панцирь». */
   adjective: string
 }
@@ -116,7 +121,14 @@ export const RECIPES: RecipeDef[] = [
       { materialId: 'quarry-ore', count: 4 },
       { materialId: 'bog-hide', count: 2 },
     ],
-    output: { kind: 'item', slot: 'head', rarity: 'uncommon', level: 13, adjective: 'Кованый' },
+    output: {
+      kind: 'item',
+      slot: 'head',
+      rarity: 'uncommon',
+      level: 13,
+      attribute: 'intellect',
+      adjective: 'Кованый',
+    },
   },
   {
     id: 'forged-cuirass',
@@ -127,7 +139,14 @@ export const RECIPES: RecipeDef[] = [
       { materialId: 'quarry-ore', count: 6 },
       { materialId: 'bog-hide', count: 3 },
     ],
-    output: { kind: 'item', slot: 'chest', rarity: 'uncommon', level: 13, adjective: 'Кованый' },
+    output: {
+      kind: 'item',
+      slot: 'chest',
+      rarity: 'uncommon',
+      level: 13,
+      attribute: 'vitality',
+      adjective: 'Кованый',
+    },
   },
   {
     id: 'forged-greaves',
@@ -138,7 +157,14 @@ export const RECIPES: RecipeDef[] = [
       { materialId: 'quarry-ore', count: 5 },
       { materialId: 'ember-shard', count: 1 },
     ],
-    output: { kind: 'item', slot: 'legs', rarity: 'uncommon', level: 23, adjective: 'Кованый' },
+    output: {
+      kind: 'item',
+      slot: 'legs',
+      rarity: 'uncommon',
+      level: 23,
+      attribute: 'strength',
+      adjective: 'Кованый',
+    },
   },
   {
     id: 'forged-fang',

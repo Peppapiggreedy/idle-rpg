@@ -77,6 +77,21 @@ test('на 390px подсказка не вылезает за края окна
   expect(box!.x + box!.width, 'правый край').toBeLessThanOrEqual(390)
 })
 
+test('у верхнего края экрана подсказка переворачивается вниз', async ({ page }) => {
+  // Низкое окно и кнопка, прокрученная к самому верху: пузырю над ней места
+  // нет, и без переворота длинное описание умения уезжает за верх экрана.
+  await page.setViewportSize({ width: 390, height: 480 })
+  await page.goto('?debug=1&state=rich&scene=off')
+  await expect(page.locator('html')).toHaveAttribute('data-ready', 'preset')
+  await ability(page).evaluate((el) => el.scrollIntoView({ block: 'start' }))
+  await tap(page, ability(page))
+  const bubble = bubbleOf(ability(page))
+  await expect(bubble).toBeVisible()
+  const box = await bubble.boundingBox()
+  expect(box!.y, 'верхний край').toBeGreaterThanOrEqual(0)
+  expect(box!.y + box!.height, 'нижний край').toBeLessThanOrEqual(480)
+})
+
 test('подсказка умения показывает посчитанное число, а не формулу', async ({ page }) => {
   await open(page, 1280)
   await tap(page, ability(page))
