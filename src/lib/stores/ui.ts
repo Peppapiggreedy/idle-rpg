@@ -1,4 +1,4 @@
-// Настройки интерфейса: раздел, текстовый режим, лимит кадров.
+// Настройки интерфейса: раздел, текстовый режим, лимит кадров, громкости.
 //
 // Живут ОТДЕЛЬНО от игрового сейва и намеренно: это настройки конкретной
 // машины, а не прогресс. Утащить их вместе с экспортом сейва на другой
@@ -6,6 +6,7 @@
 // текстовый режим машины без WebGL. Поэтому свой ключ в localStorage,
 // своя версия и никакого влияния на формат сейва.
 import { get, readonly, writable } from 'svelte/store'
+import { SOUND_DEFAULT_VOLUMES } from '../data/balance'
 
 export const UI_SETTINGS_KEY = 'idle-rpg:ui'
 
@@ -36,12 +37,25 @@ export type FpsLimit = number | null
 // пятнадцать — для слабых машин.
 export const FPS_LIMITS: FpsLimit[] = [60, 30, 15]
 
+/** Громкости: общая и по категориям звука. Доли 0..1. */
+export type VolumeId = 'master' | 'combat' | 'loot' | 'ui'
+
+export const VOLUME_IDS: VolumeId[] = ['master', 'combat', 'loot', 'ui']
+
 export interface UiSettings {
   textMode: TextModeSetting
   fpsLimit: FpsLimit
+  // Громкость — свойство машины и наушников, а не прогресс: место ей здесь,
+  // а не в сейве. Экспорт сейва не должен увозить на чужой компьютер
+  // выключенный звук.
+  volumes: Record<VolumeId, number>
 }
 
-const DEFAULTS: UiSettings = { textMode: 'auto', fpsLimit: 30 }
+const DEFAULTS: UiSettings = {
+  textMode: 'auto',
+  fpsLimit: 30,
+  volumes: { ...SOUND_DEFAULT_VOLUMES },
+}
 
 // --- Доступность WebGL -------------------------------------------------
 
@@ -106,7 +120,19 @@ export function sanitizeUiSettings(raw: unknown): UiSettings {
     data.fpsLimit === null || FPS_LIMITS.includes(data.fpsLimit ?? null)
       ? (data.fpsLimit ?? null)
       : DEFAULTS.fpsLimit
-  return { textMode, fpsLimit }
+  // Громкость принимаем только числом из 0..1: мусор из localStorage не
+  // должен ни оглушить, ни выключить звук навсегда.
+  const volumes = { ...DEFAULTS.volumes }
+  const raw2 = (data as { volumes?: unknown }).volumes
+  if (typeof raw2 === 'object' && raw2 !== null) {
+    for (const id of VOLUME_IDS) {
+      const value = (raw2 as Record<string, unknown>)[id]
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        volumes[id] = Math.min(1, Math.max(0, value))
+      }
+    }
+  }
+  return { textMode, fpsLimit, volumes }
 }
 
 function load(): UiSettings {
@@ -151,6 +177,28 @@ export function setFpsLimit(limit: FpsLimit): void {
     persist(next)
     return next
   })
+}
+
+export function setVolume(id: VolumeId, value: number): void {
+  const clamped = Math.min(1, Math.max(0, value))
+  settings.update((s) => {
+    const next = { ...s, volumes: { ...s.volumes, [id]: clamped } }
+    persist(next)
+    return next
+  })
+}
+
+// --- Жест игрока -------------------------------------------------------
+
+// Звук молчит до первого жеста. Это не только требование браузеров: игра,
+// которая начинает шуметь сама, — это игра, которую закрывают. Флаг живёт
+// в памяти и в localStorage не пишется: «я уже кликал» — свойство ЭТОЙ
+// вкладки, а не машины.
+const gestured = writable(false)
+export const soundUnlocked = readonly(gestured)
+
+export function reportUserGesture(): void {
+  if (!get(gestured)) gestured.set(true)
 }
 
 // --- Активный раздел ---------------------------------------------------

@@ -13,9 +13,10 @@ import { equipItem } from '../../equipment'
 import { rollBossLoot, rollLoot } from '../../loot'
 import { investTalent } from '../../talents'
 import { travelToZone } from '../../zones'
-import { payloadFromState, type SavePayloadV12 } from '../../save'
+import { payloadFromState, type SavePayloadV17 } from '../../save'
 import { DUNGEONS } from '../../../data/dungeons'
 import { TALENTS } from '../../../data/talents'
+import { SLOT_IDS } from '../../../data/slots'
 import type { Item } from '../../../types'
 
 export type PresetName = 'fresh' | 'mid' | 'rich'
@@ -75,10 +76,16 @@ function mid(): GameState {
   let state = createInitialState(202)
   state = atLevel(state, 10)
   state = withUpgrade(state, 24)
-  // Оружие и пара вещей — надеваем через обычный equipItem.
-  const loot = rollItems(state, 2024, 6)
+  // Оружие и пара вещей — надеваем через обычный equipItem. Оружие берём
+  // ЯВНО, а не первым по порядку: без него герой на снимке дерётся кулаками,
+  // и «урон оружия 8–12» в статах читается как поломка, а не как пустая рука.
+  const loot = rollItems(state, 2024, 9)
   state = addToInventory(state, loot)
-  for (const item of loot.slice(0, 3)) state = equipItem(state, item.id)
+  const weapon = loot.find((i) => i.slot === 'mainHand')
+  const rest = loot.filter((i) => i !== weapon).slice(0, 4)
+  for (const item of [weapon, ...rest]) {
+    if (item) state = equipItem(state, item.id)
+  }
   state = travelToZone(state, 'hollow-quarry', createRng(303))
   // Первое очко таланта приходит как раз на десятом уровне.
   state = investTalent(state, 'honed-edge')
@@ -103,8 +110,12 @@ function rich(): GameState {
     rollBossLoot(boss.loot, createRng(500 + index), 100 + index * 10),
   )
   state = addToInventory(state, [...rollItems(state, 606, 5), ...bossLoot])
-  // Надеваем по одному предмету на слот: берём первый подходящий.
-  for (const slot of ['weapon', 'head', 'chest', 'hands', 'legs', 'trinket'] as const) {
+  // Надеваем по одному предмету на слот: берём первый подходящий. Левую руку
+  // пропускаем, если в правой двуручное: по правилам игры вещь в левой руке
+  // выбивает двуручное обратно в сумку, и слепой обход слотов оставил бы
+  // героя с пустой правой рукой — то есть с голыми кулаками на 22 уровне.
+  for (const slot of SLOT_IDS) {
+    if (slot === 'offHand' && state.equipment.mainHand?.hands === 2) continue
     const item = state.inventory.find((i) => i.slot === slot)
     if (item) state = equipItem(state, item.id)
   }
@@ -129,6 +140,6 @@ export function buildPreset(name: PresetName): GameState {
   return BUILDERS[name]()
 }
 
-export function presetPayload(name: PresetName): SavePayloadV12 {
+export function presetPayload(name: PresetName): SavePayloadV17 {
   return payloadFromState(buildPreset(name), FROZEN_TIMESTAMP)
 }

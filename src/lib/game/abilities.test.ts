@@ -20,6 +20,8 @@ import { expectedAbilityDamage, expectedSwingDamage } from './combat'
 import { GCD_MS } from '../data/balance'
 import { WEAPONS } from '../data/items'
 import { COMMON, buildMonster } from '../data/monsters'
+import { CLASSES } from '../data/classes'
+import { abilitiesOf } from './state'
 import type { AttackEvent, Item, MonsterTemplate } from '../types'
 
 const NO_LUCK = () => 1 // без критов и без дропа
@@ -77,8 +79,13 @@ function run(state: GameState, ms: number, rng = NO_LUCK): GameState {
 }
 
 describe('данные умений', () => {
-  it('три умения, у каждого своя цена, кулдаун и доля удара', () => {
-    expect(ABILITIES).toHaveLength(3)
+  it('у каждого класса свои три умения, у каждого цена, кулдаун и доля удара', () => {
+    for (const hero of CLASSES) {
+      expect(abilitiesOf(hero.id), hero.id).toHaveLength(3)
+    }
+    // Наборы классов не пересекаются: иначе «своё умение» было бы формальностью.
+    const ids = CLASSES.flatMap((c) => c.abilityIds)
+    expect(new Set(ids).size).toBe(ids.length)
     for (const a of ABILITIES) {
       expect(a.manaCost.gt(0)).toBe(true)
       expect(a.cooldownSec).toBeGreaterThan(0)
@@ -337,16 +344,17 @@ describe('умения масштабируются от оружия', () => {
   // для умений — размер ОДНОГО удара.
   function withWeapon(index: number): GameState {
     const w = WEAPONS[index]
-    const source = 'equipment:weapon'
+    const source = 'equipment:mainHand'
     return ensureStats({
       ...hero(),
       equipment: {
         ...hero().equipment,
-        weapon: {
+        mainHand: {
           id: `w${index}`,
           name: w.noun,
           rarity: 'common',
-          slot: 'weapon',
+          slot: 'mainHand',
+          hands: w.hands,
           mods: [
             { stat: 'weaponSpeed', kind: 'base', value: w.weaponSpeed, source },
             { stat: 'weaponDamageMin', kind: 'base', value: w.damageMin, source },

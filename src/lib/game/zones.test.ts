@@ -19,10 +19,13 @@ import {
   representativeMonster,
 } from '../data/zones'
 import { MONSTER_BASE, buildMonster, COMMON, RUNT, BRUTE } from '../data/monsters'
+import { PACING_MAX_LEVEL } from './simulate'
 import { WEAPON_SHARPENING } from '../data/upgrades'
 
 const QUARRY = ZONE_BY_ID['hollow-quarry']
 const RIDGE = ZONE_BY_ID['ashen-ridge']
+// Последняя ступень лестницы: до неё новичку не дожить ни при каком раскладе.
+const LAST = ZONES[ZONES.length - 1]
 
 function heroAt(level: number, sharpenings: number): GameState {
   return ensureStats({
@@ -46,7 +49,10 @@ describe('данные зон', () => {
       const prev = ZONES[i - 1]
       const zone = ZONES[i]
       expect(zone.unlockRequirement).toBeGreaterThan(prev.unlockRequirement)
-      expect(zone.monsterLevelRange.min).toBeGreaterThan(prev.monsterLevelRange.max)
+      // Растёт СРЕДНИЙ уровень пула, а полосы соседних зон могут и
+      // перекрываться — так у каждого уровня героя есть и «полегче», и
+      // «потяжелее», а не одна ступень на всю игру.
+      expect(averageMonsterLevel(zone)).toBeGreaterThan(averageMonsterLevel(prev))
       expect(zone.rewardMultiplier.gt(prev.rewardMultiplier)).toBe(true)
     }
   })
@@ -170,11 +176,11 @@ describe('честный прогноз опасности', () => {
   it('новичок в стартовой зоне выживает, в дальней — нет', () => {
     const rookie = heroAt(1, 0)
     expect(forecastZone(rookie, SAFE_ZONE).verdict).not.toBe('hopeless')
-    const ridge = forecastZone(rookie, RIDGE)
-    expect(ridge.verdict).toBe('hopeless')
-    expect(ridge.unlocked).toBe(false)
+    const far = forecastZone(rookie, LAST)
+    expect(far.verdict).toBe('hopeless')
+    expect(far.unlocked).toBe(false)
     // Разрыв в уровнях считается, а не берётся из текста в данных.
-    expect(ridge.levelGap).toBe(averageMonsterLevel(RIDGE) - 1)
+    expect(far.levelGap).toBe(averageMonsterLevel(LAST) - 1)
   })
 
   it('прокачка превращает смертельную зону в безопасную', () => {
@@ -186,7 +192,8 @@ describe('честный прогноз опасности', () => {
   })
 
   it('каждая зона в свой срок становится безопасной — мёртвого контента нет', () => {
-    const veteran = heroAt(30, 400)
+    // Ветеран — герой конца лестницы: до последних зон он и должен дорасти.
+    const veteran = heroAt(PACING_MAX_LEVEL, 400)
     for (const zone of ZONES) {
       const f = forecastZone(veteran, zone)
       expect(f.unlocked).toBe(true)
@@ -196,7 +203,7 @@ describe('честный прогноз опасности', () => {
   })
 
   it('дальняя зона платит больше, когда герой её тянет', () => {
-    const veteran = heroAt(30, 400)
+    const veteran = heroAt(PACING_MAX_LEVEL, 400)
     const near = forecastZone(veteran, SAFE_ZONE)
     const far = forecastZone(veteran, RIDGE)
     expect(far.goldPerHour.gt(near.goldPerHour)).toBe(true)

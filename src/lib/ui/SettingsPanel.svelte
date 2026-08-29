@@ -10,9 +10,13 @@
     setFpsLimit,
     sceneUnavailable,
     setTextMode,
+    setVolume,
+    soundUnlocked,
     uiSettings,
+    VOLUME_IDS,
     type FpsLimit,
     type TextModeSetting,
+    type VolumeId,
   } from '../stores/ui'
   import { Button, Panel, Tag } from './kit'
   import { isSceneDisabled } from './route'
@@ -57,6 +61,14 @@
   const TEXT_MODES: TextModeSetting[] = ['auto', 'off', 'on']
 
   const fpsLabel = (limit: FpsLimit) => (limit === null ? 'Без лимита' : `${limit} кадров`)
+
+  // Весь текст про звук живёт здесь: реестр отдаёт только id категорий.
+  const VOLUME_LABEL: Record<VolumeId, string> = {
+    master: 'Общая',
+    combat: 'Бой',
+    loot: 'Находки',
+    ui: 'Интерфейс',
+  }
 </script>
 
 <Panel title="Настройки">
@@ -124,6 +136,35 @@
   </section>
 
   <section class="group">
+    <h3>Звук</h3>
+    <p class="hint">
+      Звук молчит до первого нажатия — игра не начинает шуметь сама.
+      {#if $soundUnlocked}
+        Сейчас он включён.
+      {:else}
+        Нажми в любом месте страницы, чтобы включить.
+      {/if}
+      Молчит он и на ускорении отладки, в спрятанной вкладке и в текстовом
+      режиме. Редкость находки закодирована дважды: цветом и звуком — верхние
+      тиры слышно, не глядя на экран.
+    </p>
+    {#each VOLUME_IDS as id (id)}
+      <label class="volume">
+        <span class="volume-name">{VOLUME_LABEL[id]}</span>
+        <input
+          type="range"
+          min="0"
+          max="1"
+          step="0.05"
+          value={$uiSettings.volumes[id]}
+          oninput={(e) => setVolume(id, Number(e.currentTarget.value))}
+        />
+        <span class="volume-value">{Math.round($uiSettings.volumes[id] * 100)}%</span>
+      </label>
+    {/each}
+  </section>
+
+  <section class="group">
     <h3>Об игре</h3>
     <div class="row">
       <a class="link" href={CREDITS_URL} target="_blank" rel="noopener noreferrer">
@@ -165,6 +206,25 @@
     gap: var(--space-2);
     flex-wrap: wrap;
     align-items: center;
+  }
+  .volume {
+    display: grid;
+    grid-template-columns: 7rem 1fr 3rem;
+    gap: var(--space-2);
+    align-items: center;
+    min-height: var(--tap-min);
+    font-size: var(--text-sm);
+  }
+  .volume-name {
+    color: var(--c-text-muted);
+  }
+  .volume-value {
+    text-align: right;
+    color: var(--c-text-faint);
+  }
+  .volume input {
+    accent-color: var(--c-accent);
+    width: 100%;
   }
   /* Ссылка выглядит и нажимается как кнопка: на мобильном по ней надо попасть. */
   .link {

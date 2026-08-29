@@ -6,6 +6,7 @@ import ShowcasePage from './lib/ui/ShowcasePage.svelte'
 import { debugRoute, presetName } from './lib/ui/route'
 import { loadPreset } from './lib/ui/preset'
 import { applyFpsLimit, initGame, persistNow, startGameLoop } from './lib/stores/game'
+import { attachUiSounds, startAudio, unlockAudioOnGesture } from './lib/audio'
 import { uiSettings } from './lib/stores/ui'
 
 const target = document.getElementById('app')!
@@ -21,6 +22,12 @@ function startGame(): void {
   // Настройки экрана и игровой цикл сводятся здесь, в точке входа: сам
   // стор настроек про цикл не знает, а цикл — про настройки.
   uiSettings.subscribe((s) => applyFpsLimit(s.fpsLimit))
+  // Звук поднимается вместе с игрой, но МОЛЧИТ до первого жеста игрока.
+  // Тот же довод, что и у настроек: игра, которая начинает шуметь сама, —
+  // это игра, которую закрывают.
+  startAudio(import.meta.env.BASE_URL)
+  unlockAudioOnGesture()
+  attachUiSounds()
   startGameLoop()
   // Сохраняемся, когда вкладка уходит в фон: на мобильных это надёжнее beforeunload.
   document.addEventListener('visibilitychange', () => {

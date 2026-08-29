@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { Decimal } from './numbers'
 import {
   autoEquipIfBetter,
+  equipmentWith,
   compareItem,
   equipItem,
   isEquipped,
@@ -12,23 +13,41 @@ import { estimateCombatRate } from './combat'
 import { createInitialState, manualOnlySettings, type GameState } from './state'
 import { ensureStats } from './stats'
 import { UNARMED } from '../data/balance'
-import { WEAPONS, type WeaponTemplate } from '../data/items'
+import { OFFHAND_PENALTY } from '../data/balance'
+import { ONE_HANDED, SHIELDS, WEAPONS, type ShieldTemplate, type WeaponTemplate } from '../data/items'
 import { SLOT_IDS } from '../data/slots'
 import type { Item, Rarity } from '../types'
 
 // Оружие «как из лута», но без побочных статов: для инварианта важна только
 // база боя (скорость и диапазон урона).
-function bareWeapon(t: WeaponTemplate): Item {
-  const source = 'equipment:weapon'
+function bareWeapon(t: WeaponTemplate, slot: 'mainHand' | 'offHand' = 'mainHand'): Item {
+  const source = `equipment:${slot}`
+  const off = slot === 'offHand'
   return {
-    id: `w-${t.id}`,
+    id: `w-${slot}-${t.id}`,
     name: t.noun,
     rarity: 'common' as Rarity,
-    slot: 'weapon',
+    slot,
+    hands: t.hands,
     mods: [
-      { stat: 'weaponSpeed', kind: 'base', value: t.weaponSpeed, source },
-      { stat: 'weaponDamageMin', kind: 'base', value: t.damageMin, source },
-      { stat: 'weaponDamageMax', kind: 'base', value: t.damageMax, source },
+      { stat: off ? 'offhandSpeed' : 'weaponSpeed', kind: 'base', value: t.weaponSpeed, source },
+      { stat: off ? 'offhandDamageMin' : 'weaponDamageMin', kind: 'base', value: t.damageMin, source },
+      { stat: off ? 'offhandDamageMax' : 'weaponDamageMax', kind: 'base', value: t.damageMax, source },
+    ],
+  }
+}
+
+// Щит «как из лута», но без побочных статов: важен только блок.
+function bareShield(t: ShieldTemplate): Item {
+  const source = 'equipment:offHand'
+  return {
+    id: `sh-${t.id}`,
+    name: t.noun,
+    rarity: 'common' as Rarity,
+    slot: 'offHand',
+    mods: [
+      { stat: 'blockChance', kind: 'base', value: t.blockChance, source },
+      { stat: 'blockValue', kind: 'base', value: t.blockValue, source },
     ],
   }
 }
@@ -56,18 +75,18 @@ function withItems(items: Item[], patch: Partial<GameState> = {}): GameState {
 
 describe('оружие задаёт базу боя', () => {
   it('надетое оружие заменяет безоружные значения, снятое — возвращает', () => {
-    const weapon = bareWeapon(WEAPONS[2]) // Крушитель: 3.4 c, 17-34
+    const weapon = bareWeapon(WEAPONS[2]) // Крушитель: 3.4 c, 25.5-51
     const s = withItems([weapon])
     expect(s.stats.weaponSpeed).toBe(UNARMED.weaponSpeed.toNumber())
 
     const equipped = equipItem(s, weapon.id)
     expect(equipped.stats.weaponSpeed).toBeCloseTo(3.4, 9)
-    expect(equipped.stats.weaponDamageMin.toNumber()).toBe(17)
-    expect(equipped.stats.weaponDamageMax.toNumber()).toBe(34)
+    expect(equipped.stats.weaponDamageMin.toNumber()).toBe(25.5)
+    expect(equipped.stats.weaponDamageMax.toNumber()).toBe(51)
     expect(equipped.inventory).toEqual([]) // предмет ушёл из сумки на героя
     expect(isEquipped(equipped, weapon.id)).toBe(true)
 
-    const bare = unequipItem(equipped, 'weapon')
+    const bare = unequipItem(equipped, 'mainHand')
     expect(bare.stats.weaponSpeed).toBe(UNARMED.weaponSpeed.toNumber())
     expect(bare.stats.weaponDamageMin.eq(UNARMED.weaponDamageMin)).toBe(true)
     expect(bare.stats.weaponDamageMax.eq(UNARMED.weaponDamageMax)).toBe(true)
@@ -93,8 +112,26 @@ describe('оружие задаёт базу боя', () => {
   })
 })
 
-describe('инвариант: равное (средний урон / weaponSpeed) — равный урон в секунду', () => {
-  // Все три оружия из data/items.ts построены с отношением 7.5.
+describe('инвариант: равный урон оружия в секунду — равный урон в секунду', () => {
+  // Инвариант из итерации 2 пережил вторую руку, но мерить его теперь надо на
+  // СВЯЗКАХ, а не на предметах: правая рука одноручного оружия честно даёт
+  // половину связки, и сравнивать её с двуручным — сравнивать полруки с двумя.
+  //
+  //   два одноручных: 7.5 + 7.5 * OFFHAND_PENALTY = 11.25;
+  //   двуручное:      11.25.
+  //
+  // Одноручное со щитом сюда не входит намеренно: у него 7.5, и это плата.
+  const bundles = (): Array<{ name: string; items: Item[] }> => [
+    ...ONE_HANDED.map((t) => ({
+      name: `два ${t.noun}`,
+      items: [bareWeapon(t, 'mainHand'), bareWeapon(t, 'offHand')],
+    })),
+    ...WEAPONS.filter((t) => t.hands === 2).map((t) => ({
+      name: t.noun,
+      items: [bareWeapon(t, 'mainHand')],
+    })),
+  ]
+
   it.each([
     [0, 0],
     [500, 0],
@@ -102,9 +139,8 @@ describe('инвариант: равное (средний урон / weaponSpee
     [1234, 1.75],
   ])('сила атаки %s, ускорение %s', (attackPower, haste) => {
     const source = 'test:harness'
-    const dps = WEAPONS.map((template) => {
-      const weapon = bareWeapon(template)
-      // Дополнительные статы вешаем на второй слот, чтобы оружие осталось голым.
+    const dps = bundles().map((bundle) => {
+      // Дополнительные статы вешаем на талисман, чтобы руки остались голыми.
       const buff: Item = {
         id: 'buff',
         name: 'buff',
@@ -115,24 +151,50 @@ describe('инвариант: равное (средний урон / weaponSpee
           { stat: 'haste', kind: 'flat', value: new Decimal(haste), source },
         ],
       }
-      let s = withItems([weapon, buff])
-      s = equipItem(s, weapon.id)
-      s = equipItem(s, buff.id)
+      let s = withItems([...bundle.items, buff])
+      for (const item of [...bundle.items, buff]) s = equipItem(s, item.id)
       // Инвариант — про УДАР ОРУЖИЯ. Умения намеренно любят медленное оружие
       // (доля от крупного удара больше), поэтому берём автоатаку отдельно.
       return estimateCombatRate(s).autoDamagePerSecond.toNumber()
     })
-    // Три разные скорости (1.4 / 2.2 / 3.4 c) — один и тот же урон в секунду.
-    expect(dps[1]).toBeCloseTo(dps[0], 9)
-    expect(dps[2]).toBeCloseTo(dps[0], 9)
+    // Разные скорости и разные стили — один и тот же урон в секунду.
+    for (let i = 1; i < dps.length; i += 1) expect(dps[i]).toBeCloseTo(dps[0], 6)
+  })
+
+  it('щит стоит урона ровно столько, сколько отдаёт вторая рука', () => {
+    const one = ONE_HANDED[0]
+    // Силу атаки обнуляем базовым модификатором: она делится между руками и
+    // одинакова у обоих стилей, а мерить здесь надо вклад именно второй руки.
+    const noAp: Item = {
+      id: 'no-ap',
+      name: 'no-ap',
+      rarity: 'common',
+      slot: 'trinket',
+      mods: [{ stat: 'attackPower', kind: 'base', value: new Decimal(0), source: 'test:harness' }],
+    }
+    const build = (items: Item[]): GameState => {
+      let s = withItems(items)
+      for (const item of items) s = equipItem(s, item.id)
+      return s
+    }
+    const dual = build([bareWeapon(one, 'mainHand'), bareWeapon(one, 'offHand'), noAp])
+    const shielded = build([bareWeapon(one, 'mainHand'), bareShield(SHIELDS[0]), noAp])
+    const dualDps = estimateCombatRate(dual).autoDamagePerSecond
+    const shieldDps = estimateCombatRate(shielded).autoDamagePerSecond
+    expect(shieldDps.lt(dualDps)).toBe(true)
+    // Ровно доля второй руки — не «примерно меньше», а именно она.
+    expect(dualDps.div(shieldDps).toNumber()).toBeCloseTo(1 + OFFHAND_PENALTY, 6)
+    // И плата возвращается живучестью: блок и запас HP.
+    expect(shielded.stats.blockChance).toBeGreaterThan(0)
+    expect(dual.stats.blockChance).toBe(0)
   })
 })
 
 describe('автонадевание', () => {
   it('сравнивает по урону в секунду, а не по сумме силы атаки', () => {
     // По автоатаке два оружия равны: отношение урона к скорости одинаково.
-    const fast = bareWeapon(WEAPONS[0])
-    const slow = bareWeapon(WEAPONS[2])
+    const fast = bareWeapon(ONE_HANDED[0])
+    const slow = bareWeapon(ONE_HANDED[1])
     let s = withItems([fast, slow])
     s = equipItem(s, fast.id)
     expect(slow.mods[2].value.gt(fast.mods[2].value)).toBe(true) // урон выше
@@ -152,9 +214,9 @@ describe('автонадевание', () => {
     const weapon = bareWeapon(WEAPONS[1])
     const s = withItems([weapon])
     expect(isUpgrade(s, weapon)).toBe(true) // против голых рук — лучше
-    expect(autoEquipIfBetter(s, weapon).equipment.weapon?.id).toBe(weapon.id)
+    expect(autoEquipIfBetter(s, weapon).equipment.mainHand?.id).toBe(weapon.id)
     const off = { ...s, autoEquip: false }
-    expect(autoEquipIfBetter(off, weapon).equipment.weapon).toBeNull()
+    expect(autoEquipIfBetter(off, weapon).equipment.mainHand).toBeNull()
   })
 
   it('броня без прироста урона в секунду апгрейдом не считается', () => {
@@ -164,12 +226,92 @@ describe('автонадевание', () => {
   })
 })
 
+describe('две руки: правила связки', () => {
+  const equipAll = (items: Item[]): GameState => {
+    let s = withItems(items)
+    for (const item of items) s = equipItem(s, item.id)
+    return s
+  }
+
+  it('двуручное занимает обе руки и освобождает левую', () => {
+    const main = bareWeapon(ONE_HANDED[0], 'mainHand')
+    const off = bareWeapon(ONE_HANDED[0], 'offHand')
+    const two = bareWeapon(WEAPONS.find((w) => w.hands === 2)!, 'mainHand')
+    let s = equipAll([main, off])
+    expect(s.equipment.offHand?.id).toBe(off.id)
+    s = equipItem({ ...s, inventory: [two] }, two.id)
+    expect(s.equipment.mainHand?.id).toBe(two.id)
+    expect(s.equipment.offHand).toBeNull()
+    // Освобождённая рука вернулась в сумку, а не растворилась.
+    expect(s.inventory.map((i) => i.id).sort()).toEqual([main.id, off.id].sort())
+  })
+
+  it('предмет в левую руку снимает надетое двуручное', () => {
+    const two = bareWeapon(WEAPONS.find((w) => w.hands === 2)!, 'mainHand')
+    const off = bareWeapon(ONE_HANDED[0], 'offHand')
+    let s = equipAll([two])
+    s = equipItem({ ...s, inventory: [off] }, off.id)
+    expect(s.equipment.offHand?.id).toBe(off.id)
+    expect(s.equipment.mainHand).toBeNull()
+    expect(s.inventory.map((i) => i.id)).toEqual([two.id])
+  })
+
+  it('щит и оружие в левой руке одновременно невозможны', () => {
+    const off = bareWeapon(ONE_HANDED[0], 'offHand')
+    const shield = bareShield(SHIELDS[0])
+    let s = equipAll([off])
+    s = equipItem({ ...s, inventory: [shield] }, shield.id)
+    expect(s.equipment.offHand?.id).toBe(shield.id)
+    expect(s.inventory.map((i) => i.id)).toEqual([off.id])
+    // И обратно: оружие вытесняет щит тем же правилом одного слота.
+    s = equipItem({ ...s, inventory: [off] }, off.id)
+    expect(s.equipment.offHand?.id).toBe(off.id)
+  })
+
+  it('правило связки — чистая функция, её же зовёт и оценка «а если надеть»', () => {
+    const main = bareWeapon(ONE_HANDED[0], 'mainHand')
+    const off = bareWeapon(ONE_HANDED[0], 'offHand')
+    const two = bareWeapon(WEAPONS.find((w) => w.hands === 2)!, 'mainHand')
+    const worn = equipAll([main, off]).equipment
+    const { equipment, removed } = equipmentWith(worn, two)
+    expect(equipment.offHand).toBeNull()
+    expect(removed.map((i) => i.id).sort()).toEqual([main.id, off.id].sort())
+  })
+
+  it('автоэкипировка сравнивает СВЯЗКУ, а не отдельный предмет', () => {
+    // Двуручное сильнее ЛЮБОЙ одной руки, но ровно равно двум. Слепое
+    // сравнение «предмет против предмета в том же слоте» показало бы
+    // громадный апгрейд и молча отобрало бы вторую руку.
+    const main = bareWeapon(ONE_HANDED[0], 'mainHand')
+    const off = bareWeapon(ONE_HANDED[0], 'offHand')
+    const two = bareWeapon(WEAPONS.find((w) => w.hands === 2)!, 'mainHand')
+    const dual = { ...equipAll([main, off]), abilitySettings: manualOnlySettings() }
+    const single = { ...equipAll([main]), abilitySettings: manualOnlySettings() }
+    const share = (state: GameState) =>
+      compareItem(state, two)
+        .damagePerSecondDelta.div(estimateCombatRate(state).damagePerSecond)
+        .toNumber()
+    // По урону оружия в секунду связки в точности равны.
+    expect(estimateCombatRate(dual).autoDamagePerSecond.toNumber()).toBeCloseTo(
+      estimateCombatRate(equipAll([two])).autoDamagePerSecond.toNumber(),
+      6,
+    )
+    // Поэтому смена связки почти ничего не меняет: остаток — перебой
+    // (крупный замах чаще бьёт мимо остатка HP), а не выигрыш стиля.
+    expect(Math.abs(share(dual))).toBeLessThan(0.08)
+    // А без второй руки то же двуручное — настоящий апгрейд, и разница
+    // на порядок больше: именно её показало бы сравнение «предмет к предмету».
+    expect(share(single)).toBeGreaterThan(0.2)
+    expect(isUpgrade(single, two)).toBe(true)
+  })
+})
+
 describe('сравнение для UI', () => {
   it('отдаёт производные числа и разницу по урону в секунду', () => {
     const weapon = bareWeapon(WEAPONS[1]) // Полуторник 2.2 c, 11-22
     const s = withItems([weapon])
     const c = compareItem(s, weapon)
-    expect(c.slot).toBe('weapon')
+    expect(c.slot).toBe('mainHand')
     expect(c.currentItem).toBeNull() // слот пуст — сравниваем с голыми руками
     expect(c.withItem.swingTime).toBeCloseTo(2.2, 9)
     // Урон удара = урон оружия + сила атаки * weaponSpeed / 14.
@@ -214,6 +356,6 @@ describe('слоты', () => {
     let s = withItems([weapon])
     s = equipItem(s, weapon.id)
     s = { ...s, inventory: filler }
-    expect(unequipItem(s, 'weapon')).toBe(s)
+    expect(unequipItem(s, 'mainHand')).toBe(s)
   })
 })

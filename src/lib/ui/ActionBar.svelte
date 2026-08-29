@@ -14,9 +14,13 @@
   } from '../game'
   import { GCD_MS } from '../data/balance'
   import { activateAbility, gameState } from '../stores/game'
-  import { ABILITY_REASON_TEXT } from './abilityText'
+  import { abilityReasonText } from './abilityText'
+  import { resourceWords } from './resource'
   import { NumberText, Tooltip } from './kit'
   import { Icon } from './icons'
+
+  // Ресурс называется так, как у класса: у изувера кнопка стоит ярость.
+  const resource = $derived(resourceWords($gameState.classId))
 
   // Порядок кнопок = порядок приоритета: слева то, что автокаст жмёт первым.
   const ordered = $derived(abilitiesByPriority($gameState.abilitySettings, false))
@@ -42,10 +46,10 @@
     const status = statuses[index]
     const parts = [
       `${ability.name} (${hotkey(index)})`,
-      `${formatNumber(ability.manaCost)} маны · кулдаун ${ability.cooldownSec}с`,
+      `${formatNumber(ability.manaCost)} ${resource.genitive} · кулдаун ${ability.cooldownSec}с`,
       `Урон: ${Math.round(ability.weaponDamagePercent.toNumber() * 100)}% удара оружия ≈ ${formatNumber(expectedAbilityDamage($gameState.stats, ability.weaponDamagePercent))}`,
       ability.type === 'onNextSwing'
-        ? 'Заменяет следующую автоатаку; мана спишется в момент удара. Нажми ещё раз — снимется.'
+        ? `Заменяет следующую автоатаку; ${resource.genitive} спишется в момент удара. Нажми ещё раз — снимется.`
         : 'Бьёт сразу, тратит общую задержку. Замах автоатаки не сбивает.',
     ]
     if (ability.effect) {
@@ -54,7 +58,7 @@
       )
     }
     if (status.queued) parts.push('В очереди на следующий замах — нажми, чтобы снять')
-    else if (status.reason) parts.push(ABILITY_REASON_TEXT[status.reason])
+    else if (status.reason) parts.push(abilityReasonText(status.reason, resource))
     return parts.join('\n')
   }
 
@@ -87,13 +91,16 @@
         <span class="key">{hotkey(i)}</span>
         <Icon name={ability.icon} size="lg" />
         <span class="name">{ability.name}</span>
-        <span class="cost"><NumberText value={ability.manaCost} tone="mana" size="sm" /> маны</span>
+        <span class="cost">
+          <NumberText value={ability.manaCost} tone="mana" size="sm" />
+          {resource.genitive}
+        </span>
         {#if status.cooldownMsLeft > 0}
           <span class="timer">{seconds(status.cooldownMsLeft)}с</span>
         {:else if status.queued}
           <span class="timer">в очереди</span>
         {:else if status.reason}
-          <span class="timer reason">{ABILITY_REASON_TEXT[status.reason]}</span>
+          <span class="timer reason">{abilityReasonText(status.reason, resource)}</span>
         {:else}
           <span class="timer ready">готово</span>
         {/if}

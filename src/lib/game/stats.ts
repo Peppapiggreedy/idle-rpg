@@ -13,10 +13,11 @@
 // множители перемножаются. Менять порядок нельзя — это баланс.
 import { Decimal } from './numbers'
 import type { GameState } from './state'
-import { BASE_STATS, PER_LEVEL } from '../data/balance'
+import { BASE_STATS, MAX_REST_THRESHOLD, MIN_REST_DURATION_S, PER_LEVEL } from '../data/balance'
 import { UPGRADES } from '../data/upgrades'
 import { SLOT_IDS } from '../data/slots'
 import { talentModifiers } from '../data/talents'
+import { classById } from '../data/classes'
 
 // Модифицируемые статы. swingTime сюда НЕ входит намеренно: это производная
 // величина, её нельзя модифицировать напрямую — только через weaponSpeed/haste.
@@ -24,6 +25,24 @@ export type StatId =
   | 'attackPower'
   | 'weaponDamageMin'
   | 'weaponDamageMax'
+  // Левая рука — СВОЯ база боя: своя скорость и свой диапазон урона. Без
+  // отдельных статов дуалвилд пришлось бы считать мимо конвейера, а правило
+  // «итоговые статы меняются только модификатором» запрещает такие обходы.
+  // Ноль в offhandDamageMax означает «левая рука пуста»: она не бьёт.
+  | 'offhandSpeed'
+  | 'offhandDamageMin'
+  | 'offhandDamageMax'
+  // Щит: шанс блока и сколько урона он снимает.
+  | 'blockChance'
+  | 'blockValue'
+  // Доля урона, которую наносит ЛЕВАЯ рука. Стат, а не константа: талант на
+  // дуалвилд обязан выражаться модификатором, как и всё остальное.
+  | 'offhandPenalty'
+  // Секунд паузы до старта восстановления маны после траты.
+  | 'regenDelay'
+  // Секунд привала и порог, ниже которого герой на него уходит.
+  | 'restDuration'
+  | 'restThreshold'
   | 'maxHp'
   | 'maxMana'
   | 'weaponSpeed'
@@ -39,6 +58,15 @@ export const STAT_IDS: StatId[] = [
   'attackPower',
   'weaponDamageMin',
   'weaponDamageMax',
+  'offhandSpeed',
+  'offhandDamageMin',
+  'offhandDamageMax',
+  'blockChance',
+  'blockValue',
+  'offhandPenalty',
+  'regenDelay',
+  'restDuration',
+  'restThreshold',
   'maxHp',
   'maxMana',
   'weaponSpeed',
@@ -60,7 +88,7 @@ export interface StatModifier {
   // percent — доля (0.2 = +20%); multiplier — множитель.
   value: Decimal
   // Обязательный человекочитаемый источник: 'upgrade:weapon-sharpening',
-  // 'equipment:weapon', 'talent:heavy_blows', 'zone:ashen_wastes'. UI показывает
+  // 'equipment:mainHand', 'talent:heavy_blows', 'zone:ashen_wastes'. UI показывает
   // раскладку по source построчно.
   source: string
 }
@@ -76,6 +104,17 @@ export interface StatBlock {
   weaponSpeed: number // секунд между ударами оружия (меньше = быстрее)
   haste: number // ускорение в долях: 0.2 = +20% скорости (больше = быстрее)
   swingTime: number // ПРОИЗВОДНАЯ: weaponSpeed / (1 + haste), секунд на замах
+  // Левая рука. offhandDamageMax === 0 означает «рука пуста»: замаха нет.
+  offhandSpeed: number
+  offhandDamageMin: Decimal
+  offhandDamageMax: Decimal
+  offhandSwingTime: number // ПРОИЗВОДНАЯ, тот же haste на обе руки
+  blockChance: number // вероятность 0..1
+  blockValue: Decimal // сколько урона снимает удачный блок
+  offhandPenalty: number // доля 0..1: во столько раз слабее удар левой руки
+  regenDelay: number // секунд паузы регенерации маны после траты
+  restDuration: number // секунд полного привала
+  restThreshold: number // доля HP, ниже которой герой уходит на привал
   critChance: number // вероятность 0..1
   critMultiplier: Decimal
   hpRegen: Decimal // в бою
@@ -89,6 +128,11 @@ export interface StatBlock {
 // пересчёт, и в раскладку на панели статов.
 export function collectModifiers(state: GameState): StatModifier[] {
   const mods: StatModifier[] = []
+  // Класс: стартовые статы приходят ПЕРВЫМИ, чтобы его base-модификаторы
+  // (у ярости — свой запас и нулевой реген) могли быть перекрыты предметом,
+  // а не наоборот. Порядок здесь — часть контракта ступени base.
+  const hero = classById(state.classId)
+  for (const mod of hero.baseMods) mods.push({ ...mod, source: `class:${hero.id}` })
   // Уровень персонажа: живучесть и мана. Урон уровень НЕ даёт — его копят
   // апгрейдами и экипировкой; уровень открывает зоны и позволяет в них выжить.
   const levelsGained = Decimal.max(state.level.minus(1), new Decimal(0))
@@ -102,13 +146,22 @@ export function collectModifiers(state: GameState): StatModifier[] {
     )
   }
   // Экипировка: модификаторы лежат прямо в предмете, source уже проставлен
-  // генератором ('equipment:weapon' и т.д.). Оружие среди них задаёт БАЗУ
+  // генератором ('equipment:mainHand' и т.д.). Оружие среди них задаёт БАЗУ
   // weaponSpeed / weaponDamageMin / weaponDamageMax через kind 'base' —
   // сняли оружие, и значения вернулись к UNARMED из data/balance.ts.
   for (const slot of SLOT_IDS) {
     const item = state.equipment?.[slot]
     if (item) mods.push(...item.mods)
   }
+  // Порог привала — НАСТРОЙКА игрока, и в конвейер она входит базой: талант
+  // тогда сдвигает выбранный порог, а не спорит с ним. Ровно один base-источник
+  // на стат, как и у оружия.
+  mods.push({
+    stat: 'restThreshold',
+    kind: 'base',
+    value: new Decimal(state.restHpThreshold ?? 0),
+    source: 'settings:rest',
+  })
   // Таланты: значение модификатора множится на вложенный ранг, source —
   // 'talent:<id>', поэтому раскладка на панели статов показывает их построчно.
   mods.push(...talentModifiers(state.talents))
@@ -149,6 +202,8 @@ function computeStat(stat: StatId, mods: StatModifier[]): Decimal {
   return effectiveBase(stat, mods).plus(flat).times(percent.plus(1)).times(multiplier)
 }
 
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
+
 // Время замаха: скорость оружия, ускоренная haste. Меньше = чаще бьём.
 export function computeSwingTime(weaponSpeed: number, haste: number): number {
   return weaponSpeed / (1 + haste)
@@ -158,10 +213,25 @@ export function computeSwingTime(weaponSpeed: number, haste: number): number {
 export function applyModifiers(mods: StatModifier[]): StatBlock {
   const weaponSpeed = computeStat('weaponSpeed', mods).toNumber()
   const haste = computeStat('haste', mods).toNumber()
+  // Ускорение одно на героя, а не на предмет: haste ускоряет обе руки.
+  const offhandSpeed = computeStat('offhandSpeed', mods).toNumber()
   return {
     attackPower: computeStat('attackPower', mods),
     weaponDamageMin: computeStat('weaponDamageMin', mods),
     weaponDamageMax: computeStat('weaponDamageMax', mods),
+    offhandSpeed,
+    offhandDamageMin: computeStat('offhandDamageMin', mods),
+    offhandDamageMax: computeStat('offhandDamageMax', mods),
+    offhandSwingTime: computeSwingTime(offhandSpeed, haste),
+    blockChance: computeStat('blockChance', mods).toNumber(),
+    blockValue: computeStat('blockValue', mods),
+    // Границы у этих четырёх — не вкусовщина, а защита от вырожденных
+    // значений: левая рука сильнее правой, мгновенный привал вместо привала,
+    // отрицательная пауза регенерации и порог, с которого не выйти.
+    offhandPenalty: clamp(computeStat('offhandPenalty', mods).toNumber(), 0, 1),
+    regenDelay: Math.max(0, computeStat('regenDelay', mods).toNumber()),
+    restDuration: Math.max(MIN_REST_DURATION_S, computeStat('restDuration', mods).toNumber()),
+    restThreshold: clamp(computeStat('restThreshold', mods).toNumber(), 0, MAX_REST_THRESHOLD),
     maxHp: computeStat('maxHp', mods),
     maxMana: computeStat('maxMana', mods),
     weaponSpeed,

@@ -10,6 +10,10 @@ async function openLiveGame(page: Page): Promise<void> {
   // ЖИВАЯ игра, а не пресет: бюджеты меряются на работающем цикле.
   await page.goto('?debug=1')
   await expect(page.locator('html')).toHaveAttribute('data-ready', 'game')
+  // Новая игра начинается с выбора класса, и до выбора экран закрыт им же.
+  // Берём первый класс: бюджеты слоя представления от класса не зависят,
+  // а вот незакрытый выбор перехватил бы все нажатия теста.
+  await page.getByRole('button', { name: /^Играть за/ }).first().click()
   await expect(page.locator(SCENE_READY)).toBeAttached({ timeout: 30_000 })
 }
 
@@ -21,7 +25,7 @@ async function probe(page: Page, label: string): Promise<number> {
 }
 
 test('за полчаса игрового времени сцена и DOM не разрастаются', async ({ page }) => {
-  test.setTimeout(180_000)
+  test.setTimeout(240_000)
   await openLiveGame(page)
 
   // ×100 отладочного ускорения. Потолок шагов за кадр (10) и лимит кадров
@@ -29,11 +33,17 @@ test('за полчаса игрового времени сцена и DOM не
   // полчаса игрового времени — это около минуты реального.
   await page.getByRole('button', { name: '×100', exact: true }).click()
 
-  // ПРОГРЕВ перед замером. Первые секунды лог наполняется с нуля до своего
-  // потолка в 50 строк — это законный рост на полторы сотни узлов, и мерить
-  // его как утечку значит мерить не то. Точка отсчёта — установившееся
-  // состояние, а не пустой экран.
-  await page.waitForTimeout(20_000)
+  // ПРОГРЕВ перед замером. С нуля растут ДВЕ вещи, и обе законно: лог до
+  // своего потолка в 50 строк и сумка до 12 предметов — вместе это под три
+  // сотни узлов. Мерить их как утечку значит мерить не то, поэтому точка
+  // отсчёта — установившееся состояние, а не пустой экран.
+  //
+  // Сумку ждём по счётчику на вкладке, а не по таймеру: сколько реального
+  // времени уйдёт на двенадцать находок, зависит от машины, и таймер здесь
+  // означал бы «иногда успело, иногда нет».
+  const bagTab = page.locator('nav[aria-label="Разделы"] button', { hasText: 'Сумка' })
+  await expect(bagTab).toContainText('12/12', { timeout: 60_000 })
+  await page.waitForTimeout(5_000)
   const nodesBefore = await domNodes(page)
   const geometriesBefore = await probe(page, 'geometries')
 

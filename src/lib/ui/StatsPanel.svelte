@@ -18,28 +18,49 @@
   import { gameState } from '../stores/game'
   import { Panel } from './kit'
   import { STAT_ICONS } from '../data/stats'
+  import { resourceWords } from './resource'
   import { Icon } from './icons'
 
+  // Три строки называют ресурс, а он у классов разный: у изувера это ярость,
+  // и «Восст. маны» в его статах было бы просто неправдой.
+  const resource = $derived(resourceWords($gameState.classId))
+
   // Весь текст панели статов живёт здесь; логика отдаёт только раскладку.
-  const STAT_NAMES: Record<StatId, string> = {
+  const STAT_NAMES: Record<StatId, string> = $derived({
     attackPower: 'Сила атаки',
     weaponDamageMin: 'Урон оружия (мин)',
     weaponDamageMax: 'Урон оружия (макс)',
     maxHp: 'Здоровье',
-    maxMana: 'Мана',
+    maxMana: resource.name,
     weaponSpeed: 'Скорость оружия',
+    offhandSpeed: 'Скорость левой руки',
+    offhandDamageMin: 'Урон левой руки (мин)',
+    offhandDamageMax: 'Урон левой руки (макс)',
+    blockChance: 'Шанс блока',
+    blockValue: 'Сила блока',
+    offhandPenalty: 'Сила левой руки',
+    regenDelay: `Пауза восст. ${resource.genitive}`,
+    restDuration: 'Длина привала',
+    restThreshold: 'Порог привала',
     haste: 'Ускорение',
     critChance: 'Шанс крита',
     critMultiplier: 'Множитель крита',
     hpRegen: 'Восст. здоровья (бой)',
     hpRegenOutOfCombat: 'Восст. здоровья (отдых)',
-    manaRegen: 'Восст. маны',
+    manaRegen: `Восст. ${resource.genitive}`,
     damageReduction: 'Снижение урона',
-  }
+  })
 
   // Проценты и секунды читаются иначе, чем растущие величины.
-  const PERCENT_STATS: StatId[] = ['critChance', 'damageReduction', 'haste']
-  const SECONDS_STATS: StatId[] = ['weaponSpeed']
+  const PERCENT_STATS: StatId[] = [
+    'critChance',
+    'damageReduction',
+    'haste',
+    'blockChance',
+    'offhandPenalty',
+    'restThreshold',
+  ]
+  const SECONDS_STATS: StatId[] = ['weaponSpeed', 'offhandSpeed', 'regenDelay', 'restDuration']
 
   // 'swingTime' — производная строка, не модифицируемый стат.
   type RowId = StatId | 'swingTime' | 'swingDamage' | 'dps'

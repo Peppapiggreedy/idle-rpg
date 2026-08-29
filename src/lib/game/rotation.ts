@@ -11,7 +11,7 @@
 import { Decimal } from './numbers'
 import { critFactor, expectedAbilityDamage } from './combat'
 import { ABILITIES, type AbilityDef } from '../data/abilities'
-import { AUTOCAST_DELAY_MS } from '../data/balance'
+import { AUTOCAST_DELAY_MS, REGEN_TICK_S } from '../data/balance'
 import type { StatBlock } from './stats'
 import type { AbilitySettings } from './state'
 
@@ -54,7 +54,11 @@ export function abilitiesByPriority(
   settings: AbilitySettings,
   onlyAutocast: boolean,
 ): AbilityDef[] {
-  return ABILITIES.filter((a) => !onlyAutocast || settings[a.id]?.autocast).sort(
+  // Умения ЧУЖОГО класса в настройках не лежат, поэтому фильтр по наличию
+  // настройки и есть фильтр по классу — второго списка заводить не нужно.
+  return ABILITIES.filter(
+    (a) => settings[a.id] !== undefined && (!onlyAutocast || settings[a.id]?.autocast),
+  ).sort(
     (a, b) => (settings[a.id]?.priority ?? 0) - (settings[b.id]?.priority ?? 0),
   )
 }
@@ -68,20 +72,143 @@ export function rotationRate(
   stats: StatBlock,
   settings: AbilitySettings,
   plan: RotationPlan,
+  /**
+   * Сколько ресурса приходит в секунду. По умолчанию — реген из статов
+   * (класс на мане). Класс на ярости передаёт сюда доход ОТ БОЯ: формула
+   * ниже одна на оба случая, различаются только числа.
+   */
+  income: Decimal = stats.manaRegen,
+  /**
+   * Пауза после траты, секунд. У маны это задержка плюс полломтя порции;
+   * у ярости ноль — она приходит с каждым ударом, а не порциями по таймеру.
+   */
+  pauseSec: number = stats.regenDelay + REGEN_TICK_S / 2,
 ): RotationRate {
-  const rate = castPlan(stats, settings, plan)
+  const rate = castPlan(stats, settings, plan, income, pauseSec)
   if (plan.delayed) return rate
   // Игрок в ЛЮБОЙ момент может повторить то, что делает автокаст: подождать
   // и ударить позже. Значит игра руками не бывает хуже авто. Когда мана
   // впритык, реже бить иногда выгоднее — тогда рука повторяет план авто.
   // Это не поблажка руке, а определение: ручная игра — лучшая из доступных.
-  const delayed = castPlan(stats, settings, { ...plan, delayed: true })
+  const delayed = castPlan(stats, settings, { ...plan, delayed: true }, income, pauseSec)
   return rate.damagePerSecond.gte(delayed.damagePerSecond) ? rate : delayed
 }
 
-function castPlan(stats: StatBlock, settings: AbilitySettings, plan: RotationPlan): RotationRate {
+/** Сколько трат в секунду в этой ротации: таймер задержки взводят только они. */
+function spendEvents(rate: RotationRate): Decimal {
+  return rate.casts.reduce(
+    (sum, cast) => (cast.ability.manaCost.gt(0) ? sum.plus(cast.castsPerSecond) : sum),
+    new Decimal(0),
+  )
+}
+
+/**
+ * Какую долю желаемой ротации ресурс выдерживает вдолгую.
+ *
+ * Правило задержки делает выгодным ВСПЛЕСК: таймер сбрасывается каждой тратой,
+ * поэтому десять трат подряд стоят одной паузы, а десять равномерных — десяти.
+ * Герой так и играет: жжёт запас, потом молчит и восстанавливается. Считаем
+ * оба уклада и берём лучший — игрока незачем штрафовать за то, что он не
+ * обязан выбирать худший:
+ *
+ *   равномерно: доход R*(1 - DELAY*E) должен покрыть трату S;
+ *   всплеском:  цикл = прожечь запас (d/S) + пауза DELAY + налить обратно (d/R),
+ *               и доля боевого времени в нём и есть ответ.
+ *
+ * d — глубина запаса до РЕЗЕРВА: чем выше резерв, тем короче всплеск, тем
+ * чаще платится фиксированная пауза и тем ниже урон. Это и есть цена
+ * автономности, за которую игрок получает умение, готовое в нужный момент.
+ */
+function dutyCycle(
+  stats: StatBlock,
+  settings: AbilitySettings,
+  desired: RotationRate,
+  income: Decimal,
+  pauseSec: number,
+): Decimal {
+  const spend = desired.manaPerSecond
+  if (spend.lte(0)) return new Decimal(1)
+  const events = spendEvents(desired)
+  const regen = income
+  if (regen.lte(0)) return new Decimal(0)
+  // Пауза до первой порции — не только DELAY: мана приходит ЛОМТЯМИ раз в
+  // REGEN_TICK_S, и окно почти никогда не заканчивается ровно по границе
+  // ломтя. В среднем полломтя пропадает, и для расчёта это та же пауза.
+  const pause = pauseSec
+
+  // Равномерный уклад: сколько от желаемого покрывает доход с паузами.
+  const uniform = regen.div(spend.plus(regen.times(pause).times(events)))
+
+  // Всплеск: запас срабатывает до самого низкого резерва среди тех умений,
+  // которые вообще жмутся, — дальше молчат все.
+  const reserves = desired.casts
+    .filter((c) => c.ability.manaCost.gt(0))
+    .map((c) => settings[c.ability.id]?.reserve ?? 0)
+  const floor = reserves.length > 0 ? Math.min(...reserves) : 0
+  // Запас срабатывает не до нуля, а до самого дешёвого умения: ниже него
+  // жать уже нечего. На первых уровнях, где весь запас — несколько применений,
+  // эта поправка заметная.
+  const cheapest = desired.casts
+    .filter((c) => c.ability.manaCost.gt(0))
+    .reduce((min, c) => Decimal.min(min, c.ability.manaCost), stats.maxMana)
+  const depth = Decimal.max(
+    stats.maxMana.times(Math.max(0, 1 - floor)).minus(cheapest),
+    new Decimal(0),
+  )
+  const burst = depth.lte(0)
+    ? new Decimal(0)
+    : new Decimal(1).div(
+        new Decimal(1)
+          .plus(spend.times(pause).div(depth))
+          .plus(spend.div(regen)),
+      )
+
+  return Decimal.min(new Decimal(1), Decimal.max(uniform, burst))
+}
+
+function castPlan(
+  stats: StatBlock,
+  settings: AbilitySettings,
+  plan: RotationPlan,
+  income: Decimal,
+  pauseSec: number,
+): RotationRate {
+  // Сперва — чего ротация хочет, если о мане не думать: это упирается в
+  // кулдауны, GCD и очередь замаха. Потом — сколько из этого выдерживает
+  // ресурс с правилом задержки.
+  const desired = fundPlan(stats, settings, plan, UNLIMITED_MANA)
+  const duty = dutyCycle(stats, settings, desired, income, pauseSec)
+  if (duty.gte(1)) return desired
+  // Долю применяем ко ВСЕЙ ротации разом, а не отдаём бюджет по приоритету.
+  // Так герой и играет: жмёт всё, что доступно, а когда запас кончился —
+  // молчат все умения сразу. Приоритет решает, кто уйдёт в дело первым в
+  // конкретный момент, но не то, сколько ротация выдерживает вдолгую.
+  return scaleRate(desired, duty)
+}
+
+/** Ротация, замедленная в общей доле: и темп, и урон, и расход маны. */
+function scaleRate(rate: RotationRate, factor: Decimal): RotationRate {
+  return {
+    damagePerSecond: rate.damagePerSecond.times(factor),
+    manaPerSecond: rate.manaPerSecond.times(factor),
+    casts: rate.casts.map((cast) => ({
+      ...cast,
+      castsPerSecond: factor.times(cast.castsPerSecond).toNumber(),
+    })),
+  }
+}
+
+/** Заведомо недостижимый бюджет: «посчитай, чего хочется, без оглядки на ману». */
+const UNLIMITED_MANA = new Decimal(Number.MAX_SAFE_INTEGER)
+
+function fundPlan(
+  stats: StatBlock,
+  settings: AbilitySettings,
+  plan: RotationPlan,
+  budget: Decimal,
+): RotationRate {
   const delaySec = plan.delayed ? AUTOCAST_DELAY_MS / 1000 : 0
-  let manaBudget = stats.manaRegen
+  let manaBudget = budget
   // Второй ограничитель, кроме маны: умения «на следующий удар» ЖДУТ замаха,
   // и очередь на него одна. Значит вместе они не могут срабатывать чаще, чем
   // герой замахивается, — сколько бы маны ни было. Без этого потолка модель

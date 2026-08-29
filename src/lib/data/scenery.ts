@@ -15,7 +15,14 @@
 export type PropShape = 'tree' | 'rock' | 'stump' | 'crystal'
 
 export interface PropCluster {
+  /**
+   * Форма-примитив. ОБЯЗАТЕЛЬНА даже там, где есть модель: примитив встаёт
+   * сразу, модель заменяет его, когда доедет. Не доехала — зона всё равно
+   * выглядит зоной. То же правило, что у бойцов.
+   */
   shape: PropShape
+  /** Id пропса из data/assets.ts. Нет — кластер так и останется примитивом. */
+  model?: string
   count: number
   /** Разброс размера: множитель к базовому размеру формы. */
   scaleRange: [number, number]
@@ -122,6 +129,123 @@ export const DUNGEON_SCENE: SceneConfig = {
     { shape: 'crystal', count: 6, scaleRange: [0.5, 1.2], color: 0x3d4a72 },
   ],
   seed: 5150,
+}
+
+// --- Зоны второй половины лестницы -------------------------------------
+// Один набор примитивов плюс пропсы из KayKit дают одиннадцать разных мест,
+// не рисуя ни одной картинки. Цвет и плотность тумана — главное, что их
+// различает: место узнаётся раньше, чем прочитано его название.
+
+/** Ржавые борозды: рыжая глина, брошенные бочки. */
+export const FURROWS_SCENE: SceneConfig = {
+  fogColor: 0x2b2118,
+  fogDensity: 0.055,
+  groundColor: 0x4a3826,
+  lightColor: 0xffdca8,
+  lightIntensity: 2,
+  lightAngleDeg: 70,
+  ambientIntensity: 0.6,
+  props: [
+    { shape: 'stump', model: 'prop-barrel', count: 12, scaleRange: [0.8, 1.3], color: 0x6b4a2c },
+    { shape: 'rock', count: 8, scaleRange: [0.4, 1.0], color: 0x5a4636 },
+  ],
+  seed: 6120,
+}
+
+/** Стеклянная пустошь: холодный свет, битые кристаллы. */
+export const GLASSWASTE_SCENE: SceneConfig = {
+  fogColor: 0x1b2030,
+  fogDensity: 0.05,
+  groundColor: 0x2b3242,
+  lightColor: 0xcfe0ff,
+  lightIntensity: 2.1,
+  lightAngleDeg: 150,
+  ambientIntensity: 0.55,
+  props: [
+    { shape: 'crystal', count: 16, scaleRange: [0.6, 1.8], color: 0x5f7fae },
+    { shape: 'rock', model: 'prop-rubble', count: 8, scaleRange: [0.7, 1.4], color: 0x3f4757 },
+  ],
+  seed: 6420,
+}
+
+/** Обвал старой шахты: пыль, обломки, брошенные ящики. */
+export const COLLAPSE_SCENE: SceneConfig = {
+  fogColor: 0x211d1a,
+  fogDensity: 0.085,
+  groundColor: 0x332e28,
+  lightColor: 0xffd9a8,
+  lightIntensity: 1.5,
+  lightAngleDeg: 250,
+  ambientIntensity: 0.4,
+  props: [
+    { shape: 'rock', model: 'prop-rubble', count: 16, scaleRange: [0.6, 1.6], color: 0x5c554a },
+    { shape: 'stump', model: 'prop-crates', count: 6, scaleRange: [0.7, 1.2], color: 0x6a5334 },
+  ],
+  seed: 6733,
+}
+
+/** Затопленный ярус: вода по щиколотку, колонны в тумане. */
+export const FLOODED_SCENE: SceneConfig = {
+  fogColor: 0x101d24,
+  fogDensity: 0.105,
+  groundColor: 0x1c2e36,
+  lightColor: 0x9fd0e8,
+  lightIntensity: 1.3,
+  lightAngleDeg: 20,
+  ambientIntensity: 0.42,
+  props: [
+    { shape: 'stump', model: 'prop-column', count: 10, scaleRange: [0.9, 1.5], color: 0x4a5460 },
+    { shape: 'rock', count: 10, scaleRange: [0.4, 1.1], color: 0x28363c },
+  ],
+  seed: 7014,
+}
+
+/** Пепельная терраса: выше гребня, жарче и суше. */
+export const TERRACE_SCENE: SceneConfig = {
+  fogColor: 0x33170f,
+  fogDensity: 0.07,
+  groundColor: 0x46281d,
+  lightColor: 0xff9a5c,
+  lightIntensity: 2.6,
+  lightAngleDeg: 300,
+  ambientIntensity: 0.4,
+  props: [
+    { shape: 'crystal', count: 10, scaleRange: [0.8, 1.9], color: 0xa8452c },
+    { shape: 'stump', model: 'prop-pillar', count: 6, scaleRange: [0.8, 1.3], color: 0x6b4234 },
+  ],
+  seed: 7311,
+}
+
+/** Соляной провал: белёсая земля, глухая тишина. */
+export const SALTPIT_SCENE: SceneConfig = {
+  fogColor: 0x2b2c2a,
+  fogDensity: 0.09,
+  groundColor: 0x50514c,
+  lightColor: 0xf2f0e4,
+  lightIntensity: 1.7,
+  lightAngleDeg: 190,
+  ambientIntensity: 0.5,
+  props: [
+    { shape: 'rock', count: 18, scaleRange: [0.5, 1.5], color: 0x6f7069 },
+    { shape: 'stump', model: 'prop-keg', count: 5, scaleRange: [0.7, 1.2], color: 0x585a52 },
+  ],
+  seed: 7620,
+}
+
+/** Стылая гряда: последняя зона лестницы, темнее и холоднее всех. */
+export const RIMEBACK_SCENE: SceneConfig = {
+  fogColor: 0x121a26,
+  fogDensity: 0.115,
+  groundColor: 0x1f2a38,
+  lightColor: 0xb9d6ff,
+  lightIntensity: 1.1,
+  lightAngleDeg: 130,
+  ambientIntensity: 0.32,
+  props: [
+    { shape: 'crystal', count: 14, scaleRange: [0.7, 2.0], color: 0x6c86b8 },
+    { shape: 'stump', model: 'prop-chest', count: 4, scaleRange: [0.8, 1.2], color: 0x4a3a28 },
+  ],
+  seed: 7911,
 }
 
 /**

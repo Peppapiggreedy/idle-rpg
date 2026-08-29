@@ -5,7 +5,7 @@
 // нельзя было бы прогнать на заведомо битой фикстуре.
 import { readFileSync, readdirSync } from 'node:fs'
 import { ABILITIES } from '../abilities'
-import { MODEL_ASSETS } from '../assets'
+import { MODEL_ASSETS, PROP_ASSETS } from '../assets'
 import {
   AUTOCAST_MAX_LOSS,
   BASE_STATS,
@@ -18,13 +18,15 @@ import {
   TTK_HARD_FLOOR,
   TTK_TARGET_MAX,
   TTK_TARGET_MIN,
-  ZONE_AHEAD_GAP,
-  ZONE_BEHIND_GAP,
 } from '../balance'
 import { DUNGEONS } from '../dungeons'
-import { ARMOR_NOUNS, WEAPONS } from '../items'
+import { ARMOR_NOUNS, SHIELDS, WEAPONS } from '../items'
 import { DROP_CHANCE } from '../loot'
 import { RARITIES } from '../rarity'
+import { SOUNDS } from '../sounds'
+import { CLASSES } from '../classes'
+import { MATERIALS } from '../materials'
+import { PROFESSIONS, RECIPES } from '../recipes'
 import { SLOT_DROP_WEIGHTS, SLOT_ICONS, SLOT_IDS, SLOT_NAMES } from '../slots'
 import { BRANCHES, TALENTS } from '../talents'
 import { UPGRADES } from '../upgrades'
@@ -35,6 +37,8 @@ import type { Content } from './schema'
 
 const SPRITE = new URL('../../ui/icons/sprite.svg', import.meta.url)
 const MODELS_DIR = new URL('../../../../public/models/', import.meta.url)
+const AUDIO_DIR = new URL('../../../../public/audio/', import.meta.url)
+const PROPS_DIR = new URL('../../../../public/models/props/', import.meta.url)
 
 /** Имена иконок, у которых в спрайте реально есть symbol. */
 function spriteIconNames(): string[] {
@@ -47,6 +51,26 @@ function modelFiles(): string[] {
   return readdirSync(MODELS_DIR)
 }
 
+/**
+ * Что лежит в public/audio — пути в реестре звуков сверяются с ним.
+ * Раскладка ровно двухуровневая (`audio/<пак>/<файл>`), поэтому обход
+ * тоже двухуровневый: рекурсия здесь была бы сложнее самой задачи.
+ */
+function audioFiles(): string[] {
+  const files: string[] = []
+  for (const entry of readdirSync(AUDIO_DIR)) {
+    try {
+      for (const file of readdirSync(new URL(`${entry}/`, AUDIO_DIR))) {
+        files.push(`audio/${entry}/${file}`)
+      }
+    } catch {
+      // Не каталог, а файл рядом (тексты лицензий) — в реестр они не входят.
+      files.push(`audio/${entry}`)
+    }
+  }
+  return files
+}
+
 /** Живой контент игры целиком. */
 export function realContent(): Content {
   return {
@@ -56,6 +80,7 @@ export function realContent(): Content {
     zones: ZONES,
     dungeons: DUNGEONS,
     weapons: WEAPONS,
+    shields: SHIELDS,
     rarities: RARITIES,
     upgrades: UPGRADES,
     models: MODEL_ASSETS,
@@ -68,6 +93,14 @@ export function realContent(): Content {
     iconNames: ICON_NAMES,
     spriteIconNames: spriteIconNames(),
     modelFiles: modelFiles(),
+    sounds: SOUNDS,
+    classes: CLASSES,
+    materials: MATERIALS,
+    recipes: RECIPES,
+    professions: PROFESSIONS,
+    props: PROP_ASSETS,
+    propFiles: readdirSync(PROPS_DIR),
+    audioFiles: audioFiles(),
     balance: {
       dropChance: DROP_CHANCE,
       baseCritChance: BASE_STATS.critChance.toNumber(),
@@ -82,8 +115,6 @@ export function realContent(): Content {
       ttkBehindMax: TTK_BEHIND_MAX,
       ttkAheadMin: TTK_AHEAD_MIN,
       ttkDriftMax: TTK_DRIFT_MAX,
-      zoneBehindGap: ZONE_BEHIND_GAP,
-      zoneAheadGap: ZONE_AHEAD_GAP,
     },
   }
 }

@@ -6,6 +6,9 @@ import { SLOT_ICONS, SLOT_IDS } from '../../data/slots'
 import { STAT_ICONS } from '../../data/stats'
 import { TALENTS } from '../../data/talents'
 import { WEAPON_SHARPENING } from '../../data/upgrades'
+import { CLASSES } from '../../data/classes'
+import { MATERIALS } from '../../data/materials'
+import { PROFESSIONS, RECIPES } from '../../data/recipes'
 import { ZONES } from '../../data/zones'
 import { STAT_IDS } from '../../game/stats'
 import { ICONS, ICON_NAMES, type IconName } from './manifest'
@@ -21,6 +24,10 @@ const used: IconName[] = [
   WEAPON_SHARPENING.icon,
   ...SLOT_IDS.map((s) => SLOT_ICONS[s]),
   ...Object.values(STAT_ICONS),
+  ...CLASSES.map((c) => c.icon),
+  ...MATERIALS.map((m) => m.icon),
+  ...PROFESSIONS.map((p) => p.icon),
+  ...RECIPES.map((r) => r.icon),
   'gold',
   'xp',
 ]

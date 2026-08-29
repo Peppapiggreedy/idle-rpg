@@ -25,6 +25,7 @@ import {
   TALENTS,
   TALENT_BY_ID,
   talentsInBranch,
+  type BranchId,
   type TalentDef,
 } from '../data/talents'
 import {
@@ -36,9 +37,9 @@ import {
 
 const EDGE = TALENT_BY_ID['honed-edge'] // ярость, ряд 1, до 5 рангов
 const EYE = TALENT_BY_ID['keen-eye'] // ярость, ряд 2, нужно 5 очков в ветке
-const RUPTURE = TALENT_BY_ID['rupture'] // ярость, ряд 4, флаг
+const RUPTURE = TALENT_BY_ID['rupture'] // ярость, последний ряд, флаг
 const HIDE = TALENT_BY_ID['thick-hide'] // стойкость, ряд 1
-const RETURN = TALENT_BY_ID['swift-return'] // стойкость, ряд 4, флаг
+const RETURN = TALENT_BY_ID['swift-return'] // стойкость, последний ряд, флаг
 
 function hero(level: number, patch: Partial<GameState> = {}): GameState {
   return ensureStats({
@@ -55,15 +56,30 @@ function invest(state: GameState, talentId: string, times: number): GameState {
   return state
 }
 
+/**
+ * Вкладывает ветку целиком, по рядам сверху вниз. Списком id это делать
+ * нельзя: ветки растут, и тест ломался бы от каждого нового таланта.
+ */
+function fillBranch(state: GameState, branch: BranchId): GameState {
+  let next = state
+  for (const talent of talentsInBranch(branch)) {
+    next = invest(next, talent.id, talent.maxRank)
+  }
+  return next
+}
+
 describe('данные дерева', () => {
-  it('две ветки по четыре таланта, ряды не повторяются', () => {
-    expect(BRANCHES).toHaveLength(2)
+  it('три ветки по 5-6 талантов, ряды идут подряд и не повторяются', () => {
+    // Ветки — это СТИЛИ игры, а не три способа поднять один и тот же урон:
+    // урон, живучесть, автономность. Их ровно три, и все три полноценные.
+    expect(BRANCHES).toHaveLength(3)
     for (const branch of BRANCHES) {
       const talents = talentsInBranch(branch.id)
-      expect(talents).toHaveLength(4)
-      expect(talents.map((t) => t.row)).toEqual([1, 2, 3, 4])
+      expect(talents.length, branch.id).toBeGreaterThanOrEqual(5)
+      expect(talents.length, branch.id).toBeLessThanOrEqual(6)
+      expect(talents.map((t) => t.row)).toEqual(talents.map((_, i) => i + 1))
     }
-    expect(TALENTS).toHaveLength(8)
+    expect(TALENTS.length).toBe(BRANCHES.reduce((n, b) => n + talentsInBranch(b.id).length, 0))
   })
 
   it('требование по ветке растёт вместе с рядом и достижимо', () => {
@@ -183,9 +199,7 @@ describe('эффекты талантов', () => {
   it('флаг поднимается с первого ранга и не раньше', () => {
     const s = hero(TALENT_FIRST_LEVEL + 20)
     expect(talentFlags(s.talents).size).toBe(0)
-    const opened = invest(invest(s, EDGE.id, EDGE.maxRank), EYE.id, EYE.maxRank)
-    const deep = invest(invest(opened, 'savage-blows', 3), RUPTURE.id, 1)
-    expect(talentFlags(deep.talents).has('quick-strike-bleeds')).toBe(true)
+    expect(talentFlags(fillBranch(s, 'fury').talents).has('quick-strike-bleeds')).toBe(true)
   })
 
   it('«Рваный выпад» учит Скорый выпад накладывать урон по времени', () => {
@@ -197,11 +211,7 @@ describe('эффекты талантов', () => {
     const plain = useAbility(base, 'quick-strike', () => 1, () => {})
     expect(plain.activeEffects).toEqual([])
 
-    const talented = invest(
-      invest(invest(invest(base, EDGE.id, 5), EYE.id, 3), 'savage-blows', 3),
-      RUPTURE.id,
-      1,
-    )
+    const talented = fillBranch(base, 'fury')
     const bleeding = useAbility(talented, 'quick-strike', () => 1, () => {})
     expect(bleeding.activeEffects).toHaveLength(1)
     expect(bleeding.activeEffects[0].abilityId).toBe('quick-strike')
@@ -211,19 +221,22 @@ describe('эффекты талантов', () => {
   it('«Скорое возвращение» вдвое сокращает простой после смерти', () => {
     const s = hero(TALENT_FIRST_LEVEL + 20)
     expect(reviveMultiplier(s.talents)).toBe(1)
-    const swift = invest(
-      invest(invest(invest(s, HIDE.id, 5), 'second-wind', 3), 'clear-mind', 3),
-      RETURN.id,
-      1,
-    )
+    const swift = fillBranch(s, 'endurance')
     expect(reviveMultiplier(swift.talents)).toBe(0.5)
 
     // Проверяем на живом тике: герой с нулевым HP уходит в простой.
-    const dying: GameState = {
+    // Порог привала снят намеренно — тест про воскрешение, а с порогом герой
+    // ушёл бы отдыхать и до смерти не дожил.
+    // statsDirty обязателен: порог привала входит в конвейер базой стата
+    // restThreshold, и без пересчёта герой ушёл бы отдыхать по старому порогу.
+    const dying: GameState = ensureStats({
       ...swift,
+      restHpThreshold: 0,
+      restResourceThreshold: 0,
+      statsDirty: true,
       currentHp: new Decimal(0.01),
       monster: { ...swift.monster, damageMin: new Decimal(1e6), damageMax: new Decimal(1e6) },
-    }
+    })
     let dead = dying
     for (let i = 0; i < 40 && dead.heroState !== 'dead'; i++) {
       dead = tick(dead, STEP_MS, () => 1, () => {})
@@ -302,7 +315,7 @@ describe('ускорение: талант и предмет неразличи�
   // (haste стартует с нуля, и процентный модификатор от нуля даст ноль).
   const weapon = WEAPONS[2] // Крушитель, 3.4 c — на медленном разница виднее
   const weaponBase: StatModifier[] = [
-    { stat: 'weaponSpeed', kind: 'base', value: weapon.weaponSpeed, source: 'equipment:weapon' },
+    { stat: 'weaponSpeed', kind: 'base', value: weapon.weaponSpeed, source: 'equipment:mainHand' },
   ]
   const hasteMod = (source: string): StatModifier => ({
     stat: 'haste',

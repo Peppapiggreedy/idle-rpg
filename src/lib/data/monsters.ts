@@ -56,7 +56,7 @@ export interface MonsterArchetype {
 // секунд. Это НЕ «сколько не жалко» — это первое число коридора 8-15 секунд,
 // от которого пляшет весь остальной масштаб.
 export const MONSTER_BASE = {
-  maxHp: new Decimal(488),
+  maxHp: new Decimal(284),
   damage: new Decimal(2.6),
   goldReward: new Decimal(26),
   xpReward: new Decimal(44),
@@ -75,22 +75,40 @@ export const MONSTER_BASE = {
 //   reward между ними — дальняя зона выгоднее, но не настолько, чтобы
 //          сидеть в ней было единственно верным решением.
 export const MONSTER_GROWTH = {
-  hp: new Decimal(1.072),
-  damage: new Decimal(1.14),
-  reward: new Decimal(1.074),
+  // ВСЁ РАСТЁТ ЛИНЕЙНО ПО УРОВНЮ МОБА. Это главное решение баланса, и оно
+  // не про вкус, а про арифметику.
+  //
+  // Сила героя растёт линейно и иначе расти не может: заточка дорожает
+  // геометрически, поэтому их число — логарифм накопленного золота, а золото
+  // растёт экспоненциально; логарифм экспоненты и есть прямая. Экспонента в
+  // HP моба рано или поздно обгоняет прямую при ЛЮБЫХ числах: на лестнице из
+  // четырёх зон это было незаметно, на одиннадцати бой к концу растягивался
+  // впятеро. Прямая против прямой сходится по построению.
+  //
+  // Награда тоже линейна, и это второе следствие: расти она обязана НЕ БЫСТРЕЕ
+  // HP, иначе «золота в час» в дальней зоне всегда больше, сколько бы герой
+  // там ни лежал, и выбор зоны вырождается в «лезь так глубоко, как
+  // переживёшь». Единственная экспонента в игре — rewardMultiplier зоны
+  // (data/zones.ts): она и двигает экономику заточек, из которой растёт та
+  // самая прямая силы героя.
+  hpPerLevel: new Decimal(0.26),
+  // Урон растёт КРУЧЕ HP: запас здоровья героя тоже растёт с уровнем, и без
+  // этого дальняя зона переставала бы быть опасной.
+  damagePerLevel: new Decimal(0.5),
+  rewardPerLevel: new Decimal(0.26),
 }
 
 // Множители уровня: у моба 1 уровня все равны 1.
 export function hpScale(level: number): Decimal {
-  return MONSTER_GROWTH.hp.pow(level - 1)
+  return MONSTER_GROWTH.hpPerLevel.times(level - 1).plus(1)
 }
 
 export function damageScale(level: number): Decimal {
-  return MONSTER_GROWTH.damage.pow(level - 1)
+  return MONSTER_GROWTH.damagePerLevel.times(level - 1).plus(1)
 }
 
 export function rewardScale(level: number): Decimal {
-  return MONSTER_GROWTH.reward.pow(level - 1)
+  return MONSTER_GROWTH.rewardPerLevel.times(level - 1).plus(1)
 }
 
 // Готовый шаблон моба: база * роль * уровень, награды ещё и на множитель зоны.

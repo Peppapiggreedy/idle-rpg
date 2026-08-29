@@ -35,14 +35,40 @@ describe('целостность контента', () => {
     for (const file of [
       'data/abilities.ts',
       'data/assets.ts',
+      'data/classes.ts',
+      'data/materials.ts',
+      'data/recipes.ts',
       'data/dungeons.ts',
       'data/items.ts',
       'data/rarity.ts',
+      'data/sounds.ts',
       'data/talents.ts',
       'data/upgrades.ts',
       'data/zones.ts',
     ]) {
       expect(covered, `${file} без схемы`).toContain(file)
+    }
+    // Файла мало: в одном файле живёт несколько ТИПОВ сущностей (в items.ts —
+    // оружие и щиты), и новый тип рядом со старым проскочил бы незамеченным.
+    const kinds = SCHEMAS.map((s) => s.kind)
+    for (const kind of [
+      'умение',
+      'ветка талантов',
+      'талант',
+      'зона',
+      'данж',
+      'оружие',
+      'щит',
+      'звук',
+      'пропс',
+      'класс',
+      'материал',
+      'рецепт',
+      'редкость',
+      'улучшение',
+      'модель',
+    ]) {
+      expect(kinds, `тип «${kind}» без схемы`).toContain(kind)
     }
   })
 })

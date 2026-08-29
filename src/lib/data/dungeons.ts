@@ -49,7 +49,7 @@ export const DUNGEONS: DungeonDef[] = [
     icon: 'dungeon-sunken-barrow',
     name: 'Затонувший курган',
     zoneId: 'mirefen-hollows',
-    unlockRequirement: 10,
+    unlockRequirement: 16,
     bosses: [
       {
         id: 'barrow-warden',
@@ -85,7 +85,7 @@ export const DUNGEONS: DungeonDef[] = [
         goldMult: new Decimal(35),
         xpMult: new Decimal(28),
         enrageAfterSec: 35,
-        loot: { slots: ['weapon', 'trinket'], minRarity: 'epic' },
+        loot: { slots: ['mainHand', 'trinket'], minRarity: 'epic' },
       },
     ],
   },

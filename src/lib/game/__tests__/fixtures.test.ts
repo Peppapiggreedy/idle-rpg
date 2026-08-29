@@ -10,7 +10,7 @@ import { buyUpgrade } from '../upgrades'
 import { WEAPON_SHARPENING } from '../../data/upgrades'
 import { SAFE_ZONE, ZONE_BY_ID } from '../../data/zones'
 import { ABILITY_BY_ID } from '../../data/abilities'
-import { GCD_MS } from '../../data/balance'
+import { GCD_MS, REST_HP_THRESHOLD_DEFAULT } from '../../data/balance'
 import { TALENT_BY_ID } from '../../data/talents'
 import { availablePoints, earnedPoints, spentPoints } from '../talents'
 import { clearedXpBonus } from '../dungeons'
@@ -25,6 +25,7 @@ import {
   stateFromPayload,
   type SaveStorage,
 } from '../save'
+import { CLASS_BY_ID, DEFAULT_CLASS, classById } from '../../data/classes'
 
 function fixture(name: string): string {
   return readFileSync(new URL(`../__fixtures__/${name}`, import.meta.url), 'utf8')
@@ -57,6 +58,11 @@ describe('фикстуры сейвов', () => {
     ['save-v10.json'],
     ['save-v11.json'],
     ['save-v12.json'],
+    ['save-v13.json'],
+    ['save-v14.json'],
+    ['save-v15.json'],
+    ['save-v16.json'],
+    ['save-v17.json'],
   ])('%s мигрирует до текущей версии', (name) => {
     const payload = migrateSave(JSON.parse(fixture(name)))
     expect(payload).not.toBeNull()
@@ -151,7 +157,7 @@ describe('фикстуры сейвов', () => {
     expect(SAFE_ZONE.monsterPool.map((a) => a.id)).toContain(s.monster.id)
     // Прогресс не потерян.
     expect(s.gold.toNumber()).toBe(9000)
-    expect(s.equipment.weapon?.name).toBe('Закалённый Крушитель')
+    expect(s.equipment.mainHand?.name).toBe('Закалённый Крушитель')
   })
 
   it('save-v8: зона восстанавливается, моб берётся из её пула', () => {
@@ -227,10 +233,128 @@ describe('фикстуры сейвов', () => {
     const s = stateFromPayload(
       migrateSave({ ...raw, abilitySettings: { 'quick-strike': { autocast: false, priority: 5 } } })!,
     )
-    expect(s.abilitySettings['quick-strike']).toEqual({ autocast: false, priority: 5 })
+    // Резерв появился позже галки и приоритета: в старом сейве его нет,
+    // и ноль — то самое поведение, к которому игрок привык.
+    expect(s.abilitySettings['quick-strike']).toEqual({
+      autocast: false,
+      priority: 5,
+      reserve: 0,
+    })
     // Остальные умения получили дефолтные настройки, а не исчезли.
     expect(s.abilitySettings['rending-wound']).toBeDefined()
     expect(s.abilitySettings['shattering-blow']).toBeDefined()
+  })
+
+  it('save-v12 -> v13: старый сейв просыпается с нулевым резервом и живым регеном', () => {
+    // Правило задержки регенерации появилось в v13. Герой из v12 про резерв
+    // ничего не знал: ноль — ровно то поведение, к которому он привык, а
+    // пауза до старта восстановления у него не тикала, значит её и нет.
+    const s = loadFixture('save-v12.json')
+    for (const ability of Object.values(s.abilitySettings)) {
+      expect(ability.reserve).toBe(0)
+    }
+    expect(s.regenDelayMsLeft).toBe(0)
+    expect(s.gold.toNumber()).toBeGreaterThan(0) // прогресс не потерян
+  })
+
+  it('save-v13: резерв и пауза регенерации переживают загрузку', () => {
+    const s = loadFixture('save-v13.json')
+    expect(s.abilitySettings['quick-strike'].reserve).toBe(0.3)
+    expect(s.regenDelayMsLeft).toBe(2500)
+  })
+
+  it('save-v13 -> v14: старый сейв получает порог привала по умолчанию', () => {
+    // До v14 единственной паузой была смерть. Старый герой просыпается с
+    // порогом: теперь он уйдёт отдыхать, не дожидаясь её.
+    const s = loadFixture('save-v13.json')
+    expect(s.restHpThreshold).toBe(REST_HP_THRESHOLD_DEFAULT)
+    expect(s.heroState).not.toBe('resting')
+    expect(s.gold.toNumber()).toBeGreaterThan(0)
+  })
+
+  it('save-v14: пороги привала переживают загрузку, а сам привал — нет', () => {
+    const s = loadFixture('save-v14.json')
+    expect(s.restHpThreshold).toBe(0.6)
+    expect(s.restResourceThreshold).toBe(0.2)
+    // Привал не досиживается через перезагрузку: герой просыпается на ногах.
+    expect(s.restMsLeft).toBe(0)
+  })
+
+  it('save-v14 -> v15: оружие переезжает в правую руку, левая остаётся пустой', () => {
+    // Рук стало две. Прогресс терять нельзя: тот же предмет, те же
+    // модификаторы, та же база боя — меняется только имя слота.
+    const s = loadFixture('save-v14.json')
+    expect(s.equipment.mainHand?.name).toBe('Закалённый Крушитель')
+    expect(s.equipment.mainHand?.slot).toBe('mainHand')
+    // Одноручное по нынешним меркам: всё сохранённое оружие строилось с одним
+    // отношением урона к скорости. Вторая рука у старого героя свободна.
+    expect(s.equipment.mainHand?.hands).toBe(1)
+    expect(s.equipment.offHand).toBeNull()
+    expect(s.stats.weaponSpeed).toBeCloseTo(3.4, 9)
+    expect(s.stats.weaponDamageMin.toNumber()).toBe(68)
+    expect(s.gold.toNumber()).toBe(760000) // прогресс не потерян
+  })
+
+  it('save-v15: связка двух рук переживает загрузку', () => {
+    const s = loadFixture('save-v15.json')
+    expect(s.equipment.mainHand?.name).toBe('Закалённый Крушитель')
+    expect(s.equipment.offHand?.name).toBe('Дубовый Заслон')
+    // Щит работает через конвейер статов, как и всё остальное.
+    expect(s.stats.blockChance).toBeCloseTo(0.25, 9)
+    expect(s.stats.blockValue.toNumber()).toBe(24)
+    // Левая рука урона не даёт: щит — не оружие.
+    expect(s.stats.offhandDamageMax.toNumber()).toBe(0)
+  })
+
+  it('save-v15 -> v16: старый герой становится Стражем и ничего не теряет', () => {
+    // Классы появились в v16. Прежний герой играл на мане с правилом
+    // задержки — это ровно Страж, поэтому миграция ничего не переносит,
+    // а только называет то, чем он и был.
+    const s = loadFixture('save-v15.json')
+    expect(s.classId).toBe(DEFAULT_CLASS.id)
+    expect(classById(s.classId).resource.kind).toBe('mana')
+    expect(s.gold.toNumber()).toBe(760000) // прогресс не потерян
+    expect(s.equipment.mainHand?.name).toBe('Закалённый Крушитель')
+    // Умения — свои, стражевые, и настройки автокаста к ним прицепились.
+    expect(Object.keys(s.abilitySettings).sort()).toEqual(
+      [...DEFAULT_CLASS.abilityIds].sort(),
+    )
+  })
+
+  it('save-v16: класс, его умения и ресурс переживают загрузку', () => {
+    const s = loadFixture('save-v16.json')
+    expect(s.classId).toBe('reaver')
+    expect(classById(s.classId).resource.kind).toBe('rage')
+    expect(Object.keys(s.abilitySettings).sort()).toEqual(
+      [...CLASS_BY_ID.reaver.abilityIds].sort(),
+    )
+    // Настройки автокаста именно этого класса, а не дефолтные.
+    expect(s.abilitySettings['gut-rip'].reserve).toBeCloseTo(0.3, 9)
+    // Ресурс ведёт себя по-другому: ярость не капает сама и не ждёт паузы.
+    expect(s.stats.manaRegen.toNumber()).toBe(0)
+    expect(s.stats.regenDelay).toBe(0)
+  })
+
+  it('save-v16 -> v17: мешок материалов у старого героя пуст, прогресс цел', () => {
+    const s = loadFixture('save-v16.json')
+    expect(s.materials).toEqual({})
+    expect(s.restSpeedupSource).toBeNull()
+    expect(s.gold.toNumber()).toBe(760000)
+  })
+
+  it('save-v17: материалы и еда переживают загрузку, чужие id отбрасываются', () => {
+    const s = loadFixture('save-v17.json')
+    expect(s.materials['quarry-ore'].toNumber()).toBe(7)
+    expect(s.materials['food:herb-broth'].toNumber()).toBe(2)
+    // Мусор в сейве не должен превращаться в материал, которого в игре нет.
+    const dirty = stateFromPayload(
+      migrateSave({
+        ...JSON.parse(fixture('save-v17.json')),
+        materials: { 'нет-такого': '99', 'quarry-ore': '3' },
+      })!,
+    )
+    expect(dirty.materials['нет-такого']).toBeUndefined()
+    expect(dirty.materials['quarry-ore'].toNumber()).toBe(3)
   })
 
   it('save-v10 -> v11: старый сейв получает пустое дерево и заработанные очки', () => {
@@ -319,7 +443,7 @@ describe('фикстуры сейвов', () => {
   it('save-v7: надетая экипировка задаёт базу боя после загрузки', () => {
     const s = loadFixture('save-v7.json')
     expect(s.gold.toNumber()).toBe(9000)
-    expect(s.equipment.weapon?.name).toBe('Закалённый Крушитель')
+    expect(s.equipment.mainHand?.name).toBe('Закалённый Крушитель')
     expect(s.equipment.chest?.name).toBe('Пастуший Кафтан')
     // Три base-модификатора оружия перебили безоружные значения из баланса.
     expect(s.stats.weaponSpeed).toBeCloseTo(3.4, 9)

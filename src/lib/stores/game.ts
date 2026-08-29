@@ -2,14 +2,18 @@
 // и вызывают экшены, цикл и экшены пишут в состояние.
 import { get, readonly, writable } from 'svelte/store'
 import { createGameLoop, STEP_MS, type GameLoop, type LoopMetrics } from '../game/loop'
-import { createInitialState, spawnMonster, type GameState } from '../game/state'
+import { createInitialState, pushEvent, spawnMonster, type GameState } from '../game/state'
+import { finishRest, restProgress } from '../game/rest'
 import { tick } from '../game/tick'
+import { ensureStats } from '../game/stats'
 import { createRng, type Rng } from '../game/rng'
 import { buyUpgrade } from '../game/upgrades'
 import { xpToNextLevel } from '../game/formulas'
 import { Decimal } from '../game/numbers'
 import { applyOfflineProgress } from '../game/save'
 import { sellItem } from '../game/loot'
+import { craft as craftAction } from '../game/crafting'
+import { recordDecision } from './telemetry'
 import { equipItem, setAutoEquip, unequipItem } from '../game/equipment'
 import { currentZone, travelToZone as travelAction } from '../game/zones'
 import { useAbility as useAbilityAction } from '../game/abilities'
@@ -19,7 +23,7 @@ import {
   enterDungeon as enterDungeonAction,
   leaveDungeon as leaveDungeonAction,
 } from '../game/dungeons'
-import { emit as emitAttack } from '../game/events'
+import { emit as emitAttack, emitLog, freshEvents } from '../game/events'
 import type { SlotId } from '../data/slots'
 import {
   AUTOSAVE_INTERVAL_MS,
@@ -86,12 +90,28 @@ export function persistNow(): void {
   }
 }
 
+// Есть ли уже начатая игра. Пока её нет, показывается выбор класса: класс
+// выбирается ОДИН раз и не меняется никогда, поэтому спрашивать надо до того,
+// как накопился прогресс, а не после.
+const started = writable(false)
+export const gameStarted = readonly(started)
+
+/** Начать новую игру выбранным классом. Работает только до первого сейва. */
+export function startNewGame(classId: string): void {
+  if (get(started)) return
+  state.set(createInitialState(undefined, classId))
+  started.set(true)
+  persistNow()
+  sessionStart.set(0)
+}
+
 /** Загружает сейв до старта цикла; битый сейв не роняет игру. */
 export function initGame(): void {
   try {
     const result = loadGame()
     if (result.kind === 'loaded') {
       state.set(result.state)
+      started.set(true)
       if (result.offline && result.offline.elapsedMs >= OFFLINE_MODAL_MIN_MS) {
         offline.set(result.offline)
       }
@@ -101,9 +121,13 @@ export function initGame(): void {
   } catch {
     notice.set('save-load-failed')
   }
-  // Фиксируем свежий lastTimestamp (в т.ч. после перевода часов назад).
-  persistNow()
-  sessionStart.set(get(state).playtimeMs.toNumber())
+  // Пока класс не выбран, сейва не создаём: иначе первый же заход записал бы
+  // Стража, и выбор превратился бы в формальность.
+  if (get(started)) {
+    // Фиксируем свежий lastTimestamp (в т.ч. после перевода часов назад).
+    persistNow()
+    sessionStart.set(get(state).playtimeMs.toNumber())
+  }
 }
 
 /** Запускает единственный игровой цикл. Повторный вызов ничего не делает. */
@@ -113,7 +137,13 @@ export function startGameLoop(): void {
   const stream = rng()
   loop = createGameLoop({
     step: (dtMs) => {
-      state.update((s) => tick(s, dtMs, stream))
+      state.update((s) => {
+        const next = tick(s, dtMs, stream)
+        // События лога уходят НА ШИНУ, а не кому-то напрямую: звук и лента —
+        // равноправные подписчики, и ни один из них логике не известен.
+        emitLog(freshEvents(next.combatLog, s.combatLog[0] ?? null))
+        return next
+      })
       // Счётчик копит applyAutosaveCounter внутри тика; стор сохраняет и сбрасывает.
       if (get(state).msSinceAutosave >= AUTOSAVE_INTERVAL_MS) {
         persistNow()
@@ -163,11 +193,13 @@ export function sellInventoryItem(itemId: string): void {
 
 /** Надеть предмет из инвентаря; снятое возвращается в инвентарь. */
 export function equipInventoryItem(itemId: string): void {
+  recordDecision('equip')
   state.update((s) => equipItem(s, itemId))
 }
 
 /** Снять предмет из слота в инвентарь; при полном инвентаре ничего не делает. */
 export function unequipSlot(slot: SlotId): void {
+  recordDecision('equip')
   state.update((s) => unequipItem(s, slot))
 }
 
@@ -178,6 +210,7 @@ export function toggleAutoEquip(enabled: boolean): void {
 
 /** Переход в зону по клику. В закрытую зону экшен не пустит — состояние как было. */
 export function travelToZone(zoneId: string): void {
+  recordDecision('zone')
   state.update((s) => travelAction(s, zoneId, rng()))
 }
 
@@ -193,6 +226,7 @@ export function leaveDungeonRun(): void {
 
 /** Вложить очко в талант. Недоступный талант состояние не меняет. */
 export function investTalentPoint(talentId: string): void {
+  recordDecision('talent')
   state.update((s) => investTalentAction(s, talentId))
 }
 
@@ -202,7 +236,57 @@ export function resetTalentTree(): void {
 }
 
 /** Галка «использовать автоматически» у умения. */
+/** Порог ухода на привал по HP. 0 — не уходить: герой будет фармить до смерти. */
+export function setRestHpThreshold(share: number): void {
+  recordDecision('rest-threshold')
+  // statsDirty: порог входит в конвейер базой стата restThreshold —
+  // без пересчёта талант на порог увидел бы старое значение.
+  state.update((s) =>
+    ensureStats({ ...s, restHpThreshold: Math.min(1, Math.max(0, share)), statsDirty: true }),
+  )
+}
+
+/** Собрать рецепт. Не хватает материалов или места — состояние не меняется. */
+export function craftRecipe(recipeId: string): void {
+  recordDecision('craft')
+  state.update((s) => craftAction(s, recipeId))
+}
+
+/** Порог ухода на привал по ресурсу. */
+export function setRestResourceThreshold(share: number): void {
+  recordDecision('rest-threshold')
+  state.update((s) => ({ ...s, restResourceThreshold: Math.min(1, Math.max(0, share)) }))
+}
+
+/**
+ * Прервать привал руками. Восстановление частичное — ровно та доля, которую
+ * герой успел отсидеть. Бесплатным прерывание быть не должно: иначе порог
+ * перестаёт что-либо значить, а привал превращается в кнопку «полный запас».
+ */
+export function interruptRest(): void {
+  state.update((s) => {
+    if (s.heroState !== 'resting') return s
+    const done = finishRest(s, restProgress(s))
+    return { ...done, combatLog: pushEvent(done.combatLog, { type: 'rest-end', interrupted: true }) }
+  })
+}
+
+/** Резерв маны умения: не жать автокастом, если после траты останется меньше. */
+export function setAbilityReserve(abilityId: string, reserve: number): void {
+  recordDecision('autocast')
+  state.update((s) => {
+    const setting = s.abilitySettings[abilityId]
+    if (!setting) return s
+    const clamped = Math.min(1, Math.max(0, reserve))
+    return {
+      ...s,
+      abilitySettings: { ...s.abilitySettings, [abilityId]: { ...setting, reserve: clamped } },
+    }
+  })
+}
+
 export function setAbilityAutocast(abilityId: string, autocast: boolean): void {
+  recordDecision('autocast')
   state.update((s) => {
     const setting = s.abilitySettings[abilityId]
     if (!setting) return s
@@ -215,6 +299,7 @@ export function setAbilityAutocast(abilityId: string, autocast: boolean): void {
 
 /** Стрелки вверх/вниз: меняет умение приоритетом с соседом по списку. */
 export function moveAbilityPriority(abilityId: string, direction: -1 | 1): void {
+  recordDecision('autocast')
   state.update((s) => {
     const order = abilitiesByPriority(s.abilitySettings, false)
     const index = order.findIndex((a) => a.id === abilityId)
@@ -288,6 +373,9 @@ export function applyScreenshotState(preset: GameState): void {
   let s = seeded
   for (let i = 0; i < SCREENSHOT_TICKS; i++) s = tick(s, STEP_MS, stream, emitAttack)
   state.set(s)
+  // Пресет — это НАЧАТАЯ игра: класс в нём уже выбран. Без этой строки поверх
+  // снимка встаёт выбор класса и закрывает собой всё, что снимают.
+  started.set(true)
   sessionStart.set(s.playtimeMs.toNumber())
 }
 

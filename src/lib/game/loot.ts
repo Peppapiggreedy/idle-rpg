@@ -11,7 +11,10 @@ import {
   ARMOR_BASE_ATTACK_POWER,
   ARMOR_BASE_MAX_HP,
   ARMOR_NOUNS,
+  ONE_HANDED,
+  SHIELDS,
   WEAPONS,
+  type ShieldTemplate,
   type WeaponTemplate,
 } from '../data/items'
 import type { StatModifier } from './stats'
@@ -48,15 +51,45 @@ export function rollSlot(rng: Rng): SlotId {
   return SLOT_IDS[SLOT_IDS.length - 1]
 }
 
-// Оружие: три модификатора kind 'base' задают БАЗУ боя (скорость и диапазон
-// урона), побочные статы идут обычными модификаторами. Снятое оружие перестаёт
-// давать base — значения возвращаются к UNARMED из data/balance.ts.
-export function weaponMods(template: WeaponTemplate, rarity: RarityDef): StatModifier[] {
-  const source = 'equipment:weapon'
+/**
+ * Оружие: три модификатора kind 'base' задают БАЗУ боя (скорость и диапазон
+ * урона), побочные статы идут обычными модификаторами. Снятое оружие перестаёт
+ * давать base — значения возвращаются к UNARMED из data/balance.ts.
+ *
+ * У левой руки СВОЯ тройка статов: базы у рук разные, иначе второе оружие
+ * подменяло бы базу первого, и дуалвилд считался бы одним замахом.
+ */
+export function weaponMods(
+  template: WeaponTemplate,
+  rarity: RarityDef,
+  slot: 'mainHand' | 'offHand' = 'mainHand',
+): StatModifier[] {
+  const source = `equipment:${slot}`
+  const off = slot === 'offHand'
   return [
-    { stat: 'weaponSpeed', kind: 'base', value: template.weaponSpeed, source },
-    { stat: 'weaponDamageMin', kind: 'base', value: template.damageMin.times(rarity.bonusMult), source },
-    { stat: 'weaponDamageMax', kind: 'base', value: template.damageMax.times(rarity.bonusMult), source },
+    { stat: off ? 'offhandSpeed' : 'weaponSpeed', kind: 'base', value: template.weaponSpeed, source },
+    {
+      stat: off ? 'offhandDamageMin' : 'weaponDamageMin',
+      kind: 'base',
+      value: template.damageMin.times(rarity.bonusMult),
+      source,
+    },
+    {
+      stat: off ? 'offhandDamageMax' : 'weaponDamageMax',
+      kind: 'base',
+      value: template.damageMax.times(rarity.bonusMult),
+      source,
+    },
+    ...template.extra.map((mod) => ({ ...mod, source })),
+  ]
+}
+
+/** Щит: урона не даёт, зато даёт блок. Тоже через конвейер, без исключений. */
+export function shieldMods(template: ShieldTemplate, rarity: RarityDef): StatModifier[] {
+  const source = 'equipment:offHand'
+  return [
+    { stat: 'blockChance', kind: 'base', value: template.blockChance, source },
+    { stat: 'blockValue', kind: 'base', value: template.blockValue.times(rarity.bonusMult), source },
     ...template.extra.map((mod) => ({ ...mod, source })),
   ]
 }
@@ -64,7 +97,10 @@ export function weaponMods(template: WeaponTemplate, rarity: RarityDef): StatMod
 // Экспортируется ради эталонных сборок прогона баланса: «средняя броня»
 // обязана строиться теми же правилами, что и выпавшая, иначе прогон мерил бы
 // не ту игру.
-export function armorMods(slot: Exclude<SlotId, 'weapon'>, rarity: RarityDef): StatModifier[] {
+export function armorMods(
+  slot: Exclude<SlotId, 'mainHand' | 'offHand'>,
+  rarity: RarityDef,
+): StatModifier[] {
   const source = `equipment:${slot}`
   return [
     { stat: 'attackPower', kind: 'flat', value: ARMOR_BASE_ATTACK_POWER.times(rarity.bonusMult), source },
@@ -80,16 +116,7 @@ export function rollLoot(rng: Rng, itemSeq: number): Item | null {
   const rarity = rollRarity(rng)
   const slot = rollSlot(rng)
   const adjective = pick(LOOT_ADJECTIVES, rng)
-  if (slot === 'weapon') {
-    const template = pick(WEAPONS, rng)
-    return {
-      id: `item-${itemSeq}`,
-      name: `${adjective} ${template.noun}`,
-      rarity: rarity.id,
-      slot,
-      mods: weaponMods(template, rarity),
-    }
-  }
+  if (slot === 'mainHand' || slot === 'offHand') return handItem(slot, rarity, adjective, rng, itemSeq)
   return {
     id: `item-${itemSeq}`,
     name: `${adjective} ${pick(ARMOR_NOUNS[slot], rng)}`,
@@ -98,6 +125,43 @@ export function rollLoot(rng: Rng, itemSeq: number): Item | null {
     mods: armorMods(slot, rarity),
   }
 }
+
+/**
+ * Предмет в руку. В правую падает любое оружие, в левую — одноручное или щит:
+ * порядок бросков фиксирован (сперва «щит или оружие», потом сам образец),
+ * иначе прогоны перестанут воспроизводиться.
+ */
+function handItem(
+  slot: 'mainHand' | 'offHand',
+  rarity: RarityDef,
+  adjective: string,
+  rng: Rng,
+  itemSeq: number,
+): Item {
+  const shield = slot === 'offHand' && rng() < SHIELD_SHARE
+  if (shield) {
+    const template = pick(SHIELDS, rng)
+    return {
+      id: `item-${itemSeq}`,
+      name: `${adjective} ${template.noun}`,
+      rarity: rarity.id,
+      slot,
+      mods: shieldMods(template, rarity),
+    }
+  }
+  const template = pick(slot === 'offHand' ? ONE_HANDED : WEAPONS, rng)
+  return {
+    id: `item-${itemSeq}`,
+    name: `${adjective} ${template.noun}`,
+    rarity: rarity.id,
+    slot,
+    hands: template.hands,
+    mods: weaponMods(template, rarity, slot),
+  }
+}
+
+/** Какая доля находок в левую руку — щиты, а не вторые клинки. */
+const SHIELD_SHARE = 0.4
 
 // Лут босса: слоты заданы данными, а редкость — обычная рулетка, но не ниже
 // порога босса. Отсюда и растущее качество по цепочке: порог поднимается.
@@ -108,15 +172,8 @@ export function rollBossLoot(loot: BossLoot, rng: Rng, itemSeq: number): Item[] 
     const rolledIndex = RARITIES.findIndex((r) => r.id === rolled.id)
     const rarity = RARITIES[Math.max(rolledIndex, floor)]
     const adjective = pick(LOOT_ADJECTIVES, rng)
-    if (slot === 'weapon') {
-      const template = pick(WEAPONS, rng)
-      return {
-        id: `item-${itemSeq + index}`,
-        name: `${adjective} ${template.noun}`,
-        rarity: rarity.id,
-        slot,
-        mods: weaponMods(template, rarity),
-      }
+    if (slot === 'mainHand' || slot === 'offHand') {
+      return handItem(slot, rarity, adjective, rng, itemSeq + index)
     }
     return {
       id: `item-${itemSeq + index}`,

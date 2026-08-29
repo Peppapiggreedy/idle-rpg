@@ -38,13 +38,13 @@ describe('rollLoot', () => {
   })
 
   it('оружие задаёт базу боя тремя модификаторами kind base', () => {
-    // Броски: шанс, редкость (почти 1 = legendary), слот (0 = оружие),
+    // Броски: шанс, редкость (почти 1 = legendary), слот (0 = правая рука),
     // прилагательное, модель оружия.
     const item = rollLoot(seqRng([0, 0.999999, 0, 0, 0]), 7)
     expect(item).not.toBeNull()
     expect(item!.id).toBe('item-7')
     expect(item!.rarity).toBe('legendary')
-    expect(item!.slot).toBe('weapon')
+    expect(item!.slot).toBe('mainHand')
     expect(item!.name).toBe('Щербатый Змеезуб')
     const base = item!.mods.filter((m) => m.kind === 'base')
     expect(base.map((m) => m.stat).sort()).toEqual([
@@ -52,7 +52,7 @@ describe('rollLoot', () => {
       'weaponDamageMin',
       'weaponSpeed',
     ])
-    expect(base.every((m) => m.source === 'equipment:weapon')).toBe(true)
+    expect(base.every((m) => m.source === 'equipment:mainHand')).toBe(true)
     const by = (stat: string) => base.find((m) => m.stat === stat)!.value.toNumber()
     expect(by('weaponSpeed')).toBeCloseTo(1.4, 9)
     expect(by('weaponDamageMin')).toBe(112) // 7 * bonusMult 16
@@ -60,8 +60,8 @@ describe('rollLoot', () => {
   })
 
   it('броня даёт обычные модификаторы, без base', () => {
-    // Слот 0.25 попадает в отрезок головы (вес оружия 20 из 100).
-    const item = rollLoot(seqRng([0, 0, 0.25, 0, 0]), 1)
+    // Слот 0.35 попадает в отрезок головы (за двумя руками, 34 из 114).
+    const item = rollLoot(seqRng([0, 0, 0.35, 0, 0]), 1)
     expect(item!.slot).toBe('head')
     expect(item!.name).toBe('Щербатый Шлем')
     expect(item!.mods.some((m) => m.kind === 'base')).toBe(false)
@@ -71,9 +71,49 @@ describe('rollLoot', () => {
   })
 })
 
+describe('левая рука: щит или второй клинок', () => {
+  // Порядок бросков фиксирован: слот -> прилагательное -> «щит или оружие»
+  // -> сам образец. Поменяется порядок — разъедутся все прогоны с сидом.
+  it('бросок ниже доли щитов даёт щит с блоком через конвейер', () => {
+    const item = rollLoot(seqRng([0, 0, 0.2, 0, 0.1, 0]), 3)
+    expect(item!.slot).toBe('offHand')
+    expect(item!.name).toBe('Щербатый Заслон')
+    // Щит — не оружие: поля hands у него нет вовсе.
+    expect(item!.hands).toBeUndefined()
+    const base = item!.mods.filter((m) => m.kind === 'base')
+    expect(base.map((m) => m.stat).sort()).toEqual(['blockChance', 'blockValue'])
+    expect(base.every((m) => m.source === 'equipment:offHand')).toBe(true)
+    // Урона щит не даёт ни в каком виде.
+    expect(item!.mods.some((m) => String(m.stat).startsWith('offhandDamage'))).toBe(false)
+  })
+
+  it('бросок выше доли щитов даёт ОДНОРУЧНОЕ оружие со своей базой', () => {
+    const item = rollLoot(seqRng([0, 0, 0.2, 0, 0.9, 0]), 4)
+    expect(item!.slot).toBe('offHand')
+    expect(item!.hands).toBe(1)
+    const base = item!.mods.filter((m) => m.kind === 'base')
+    // База у левой руки СВОЯ: иначе второе оружие подменяло бы базу первого.
+    expect(base.map((m) => m.stat).sort()).toEqual([
+      'offhandDamageMax',
+      'offhandDamageMin',
+      'offhandSpeed',
+    ])
+    expect(base.every((m) => m.source === 'equipment:offHand')).toBe(true)
+  })
+
+  it('двуручное в левую руку не падает никогда', () => {
+    // Прогоняем всю рулетку образцов: двуручное туда попасть не должно.
+    for (let i = 0; i < 20; i += 1) {
+      const item = rollLoot(seqRng([0, 0, 0.2, 0, 0.9, i / 20]), i)
+      expect(item!.slot).toBe('offHand')
+      expect(item!.hands).toBe(1)
+    }
+  })
+})
+
 describe('rollSlot', () => {
   it('края рулетки: 0 — оружие, почти 1 — последний слот', () => {
-    expect(rollSlot(() => 0)).toBe('weapon')
+    expect(rollSlot(() => 0)).toBe('mainHand')
     expect(rollSlot(() => 0.999999)).toBe(SLOT_IDS[SLOT_IDS.length - 1])
   })
 })
@@ -101,17 +141,17 @@ describe('дроп в бою', () => {
   it('с включённым автонадеванием предмет сразу уходит в слот', () => {
     // rng 0 -> слот оружия: безоружный герой обязан счесть его апгрейдом.
     const s = untilLoot(createInitialState(1), () => 0)
-    expect(s.equipment.weapon).not.toBeNull()
+    expect(s.equipment.mainHand).not.toBeNull()
     expect(s.inventory).toEqual([]) // из инвентаря предмет ушёл на героя
     expect(s.stats.weaponSpeed).toBeCloseTo(1.4, 9) // база боя от оружия
   })
 
   it('автонадевание не трогает предмет, который хуже надетого', () => {
     const s = untilLoot(createInitialState(1), () => 0)
-    const equipped = s.equipment.weapon!
+    const equipped = s.equipment.mainHand!
     // Второй такой же дроп не лучше первого — остаётся в инвентаре.
     const after = untilLoot({ ...s, combatLog: [] }, () => 0)
-    expect(after.equipment.weapon?.id).toBe(equipped.id)
+    expect(after.equipment.mainHand?.id).toBe(equipped.id)
     expect(after.inventory.length).toBe(1)
   })
 

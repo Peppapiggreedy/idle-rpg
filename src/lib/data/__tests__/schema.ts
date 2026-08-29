@@ -14,10 +14,20 @@
 // Модуль лежит в __tests__, а не в data/: в data/ живут ДАННЫЕ, а это код.
 import { Decimal } from '../../game/numbers'
 import type { AbilityDef } from '../abilities'
-import type { ModelAsset } from '../assets'
+import type { ModelAsset, PropAsset } from '../assets'
 import type { DungeonDef } from '../dungeons'
-import type { WeaponTemplate } from '../items'
+import type { ShieldTemplate, WeaponTemplate } from '../items'
+import type { ClassDef } from '../classes'
+import type { MaterialDef } from '../materials'
+import type { ProfessionDef, RecipeDef } from '../recipes'
 import type { RarityDef } from '../rarity'
+import type { SoundCue } from '../sounds'
+import {
+  SOUND_GAIN_MAX_DB,
+  SOUND_MIN_VARIATIONS,
+  SOUND_PITCH_MAX_SEMITONES,
+  SOUND_PITCH_MIN_SEMITONES,
+} from '../balance'
 import type { SlotId } from '../slots'
 import type { BranchDef, TalentDef } from '../talents'
 import type { Zone } from '../zones'
@@ -40,6 +50,17 @@ export interface Content {
   zones: readonly Zone[]
   dungeons: readonly DungeonDef[]
   weapons: readonly WeaponTemplate[]
+  shields: readonly ShieldTemplate[]
+  sounds: readonly SoundCue[]
+  classes: readonly ClassDef[]
+  materials: readonly MaterialDef[]
+  recipes: readonly RecipeDef[]
+  professions: readonly ProfessionDef[]
+  props: readonly PropAsset[]
+  /** Имена файлов в public/models/props. */
+  propFiles: readonly string[]
+  /** Пути звуковых файлов, реально лежащих в public/. */
+  audioFiles: readonly string[]
   rarities: readonly RarityDef[]
   upgrades: readonly UpgradeDef[]
   models: readonly ModelAsset[]
@@ -47,7 +68,7 @@ export interface Content {
   slotNames: Record<SlotId, string>
   slotIcons: Record<SlotId, string>
   slotDropWeights: Record<SlotId, number>
-  armorNouns: Record<Exclude<SlotId, 'weapon'>, readonly string[]>
+  armorNouns: Record<Exclude<SlotId, 'mainHand' | 'offHand'>, readonly string[]>
   statIds: readonly StatId[]
   /** Имена из реестра иконок (ui/icons/manifest.ts). */
   iconNames: readonly string[]
@@ -73,8 +94,6 @@ export interface BalanceNumbers {
   ttkBehindMax: number
   ttkAheadMin: number
   ttkDriftMax: number
-  zoneBehindGap: number
-  zoneAheadGap: number
 }
 
 // ---------------------------------------------------------------------------
@@ -340,6 +359,48 @@ export const BRANCH_SCHEMA: EntitySchema<BranchDef> = {
   entities: (c) => c.branches,
   id: (b) => b.id,
   name: (b) => b.name,
+  extra: (branch, content, report) => {
+    const where = `ветка ${branch.id}`
+    const talents = content.talents
+      .filter((t) => t.branch === branch.id)
+      .sort((a, b) => a.row - b.row)
+    // Ветка без талантов — вкладка, которая ничего не делает.
+    if (talents.length === 0) {
+      report.add(where, 'в ветке нет ни одного таланта (data/talents.ts)')
+      return
+    }
+    // Ряды идут подряд с первого: дырка в нумерации означает, что талант
+    // потеряли при правке, и на панели останется пустая строка.
+    const rows = talents.map((t) => t.row)
+    const expected = talents.map((_, i) => i + 1)
+    if (rows.join(',') !== expected.join(',')) {
+      report.add(
+        where,
+        `ряды идут как ${rows.join(', ')}, а должны подряд с первого ` +
+          `(${expected.join(', ')}) — data/talents.ts`,
+      )
+    }
+    // Первый ряд обязан быть открыт сразу: иначе в ветку не войти вовсе.
+    if (talents[0].requiredPointsInBranch !== 0) {
+      report.add(
+        where,
+        `первый ряд требует ${talents[0].requiredPointsInBranch} очков в ветке — ` +
+          'в ветку невозможно войти (data/talents.ts)',
+      )
+    }
+    // Требование ряда не может быть больше, чем реально можно вложить выше.
+    let reachable = 0
+    for (const talent of talents) {
+      if (talent.requiredPointsInBranch > reachable) {
+        report.add(
+          `талант ${talent.id}`,
+          `требует ${talent.requiredPointsInBranch} очков в ветке, а выше него ` +
+            `можно вложить только ${reachable} — талант недостижим (data/talents.ts)`,
+        )
+      }
+      reachable += talent.maxRank
+    }
+  },
 }
 
 export const TALENT_SCHEMA: EntitySchema<TalentDef> = {
@@ -401,6 +462,21 @@ export const TALENT_SCHEMA: EntitySchema<TalentDef> = {
           )
         }
       }
+    }
+    if (talent.effect.kind === 'flag' && talent.effect.flag === 'rest-clears-cooldowns') {
+      checkNumber(
+        talent.effect,
+        {
+          field: 'effect.cooldownShare',
+          get: (e) => e.cooldownShare,
+          min: 0,
+          max: 1,
+          why: 'доля, на которую множатся кулдауны после привала: больше единицы — талант-наказание',
+        },
+        where,
+        'data/talents.ts',
+        report,
+      )
     }
     if (talent.effect.kind === 'flag' && talent.effect.flag === 'halved-revive') {
       checkNumber(
@@ -665,6 +741,342 @@ export const WEAPON_SCHEMA: EntitySchema<WeaponTemplate> = {
   },
 }
 
+export const SHIELD_SCHEMA: EntitySchema<ShieldTemplate> = {
+  kind: 'щит',
+  file: 'data/items.ts',
+  entities: (c) => c.shields,
+  id: (s) => s.id,
+  name: (s) => s.noun,
+  numbers: [
+    {
+      field: 'blockChance',
+      get: (s) => s.blockChance,
+      min: 0,
+      max: 1,
+      exclusiveMin: true,
+      why: 'вероятность блока — доля 0..1; ноль означал бы щит, который не блокирует',
+    },
+    {
+      field: 'blockValue',
+      get: (s) => s.blockValue,
+      min: 0,
+      exclusiveMin: true,
+      why: 'щит с нулевой силой блока не снимает урона и не отличим от пустой руки',
+    },
+  ],
+  extra: (shield, content, report) => {
+    const where = `щит ${shield.id}`
+    for (const mod of shield.extra ?? []) {
+      if (!content.statIds.includes(mod.stat)) {
+        report.add(
+          where,
+          `побочный стат «${mod.stat}» не входит в StatId из game/stats.ts ` +
+            '(шаблон щита — data/items.ts)',
+        )
+      }
+      if (mod.kind === 'base') {
+        report.add(
+          where,
+          `побочный стат «${mod.stat}» помечен kind: 'base' — блок задаёт ` +
+            'shieldMods в game/loot.ts, второй базы быть не должно',
+        )
+      }
+      // Щит НЕ оружие: урона он не даёт ни в каком виде, иначе стиль «щит»
+      // перестал бы быть платой за живучесть.
+      if (String(mod.stat).startsWith('offhandDamage') || String(mod.stat).startsWith('weaponDamage')) {
+        report.add(
+          where,
+          `щит даёт урон статом «${mod.stat}» — щит не оружие, его вклад ` +
+            'это блок и живучесть (data/items.ts)',
+        )
+      }
+    }
+  },
+}
+
+export const MATERIAL_SCHEMA: EntitySchema<MaterialDef> = {
+  kind: 'материал',
+  file: 'data/materials.ts',
+  entities: (c) => c.materials,
+  id: (m) => m.id,
+  name: (m) => m.name,
+  icon: (m) => m.icon,
+  numbers: [
+    {
+      field: 'weight',
+      get: (m) => m.weight,
+      min: 0,
+      exclusiveMin: true,
+      why: 'нулевой вес рулетки означал бы, что материал не падает никогда',
+    },
+  ],
+  extra: (material, content, report) => {
+    const where = `материал ${material.id}`
+    // Материал без зоны — недостижимый контент: рецепт с ним не собрать никогда.
+    report.need(
+      Array.isArray(material.zoneIds) && material.zoneIds.length > 0,
+      where,
+      'не падает ни в одной зоне — рецепты с ним недостижимы (data/materials.ts)',
+    )
+    for (const id of material.zoneIds ?? []) {
+      report.need(
+        content.zones.some((z) => z.id === id),
+        where,
+        `падает в зоне «${id}», которой нет в data/zones.ts`,
+      )
+    }
+  },
+}
+
+export const RECIPE_SCHEMA: EntitySchema<RecipeDef> = {
+  kind: 'рецепт',
+  file: 'data/recipes.ts',
+  entities: (c) => c.recipes,
+  id: (r) => r.id,
+  name: (r) => r.name,
+  icon: (r) => r.icon,
+  extra: (recipe, content, report) => {
+    const where = `рецепт ${recipe.id}`
+    report.need(
+      content.professions.some((p) => p.id === recipe.profession),
+      where,
+      `ссылается на профессию «${recipe.profession}», которой нет в data/recipes.ts`,
+    )
+    report.need(
+      Array.isArray(recipe.inputs) && recipe.inputs.length > 0,
+      where,
+      'нет ни одного материала на входе — рецепт собирается из ничего (data/recipes.ts)',
+    )
+    for (const input of recipe.inputs ?? []) {
+      report.need(
+        content.materials.some((m) => m.id === input.materialId),
+        where,
+        `требует материал «${input.materialId}», которого нет в data/materials.ts`,
+      )
+      report.need(
+        Number.isInteger(input.count) && input.count > 0,
+        where,
+        `количество материала «${input.materialId}» должно быть целым и больше нуля ` +
+          '(data/recipes.ts)',
+      )
+    }
+    // ДОСТИЖИМОСТЬ: все материалы рецепта должны падать хоть где-то вместе с
+    // прогрессом. Достаточно, чтобы каждый падал хотя бы в одной зоне.
+    for (const input of recipe.inputs ?? []) {
+      const material = content.materials.find((m) => m.id === input.materialId)
+      if (material && material.zoneIds.length === 0) {
+        report.add(
+          where,
+          `материал «${input.materialId}» не падает ни в одной зоне — рецепт ` +
+            'недостижим (data/materials.ts)',
+        )
+      }
+    }
+    const output = recipe.output
+    if (output.kind === 'item') {
+      report.need(
+        content.slots.includes(output.slot),
+        where,
+        `делает предмет в слот «${output.slot}», которого нет в data/slots.ts`,
+      )
+      report.need(
+        content.rarities.some((r) => r.id === output.rarity),
+        where,
+        `делает предмет редкости «${output.rarity}», которой нет в data/rarity.ts`,
+      )
+      if (output.slot === 'mainHand' || output.slot === 'offHand') {
+        const known =
+          content.weapons.some((w) => w.id === output.templateId) ||
+          content.shields.some((sh) => sh.id === output.templateId)
+        report.need(
+          known,
+          where,
+          `предмет в руку без шаблона: «${output.templateId ?? '—'}» не найден в data/items.ts`,
+        )
+      }
+    } else {
+      report.need(
+        output.id.startsWith('food:'),
+        where,
+        `id еды «${output.id}» должен начинаться с «food:» — по нему привал её и находит`,
+      )
+    }
+  },
+}
+
+export const CLASS_SCHEMA: EntitySchema<ClassDef> = {
+  kind: 'класс',
+  file: 'data/classes.ts',
+  entities: (c) => c.classes,
+  id: (c) => c.id,
+  name: (c) => c.name,
+  icon: (c) => c.icon,
+  numbers: [
+    { field: 'resource.perSwingDealt', get: (c) => c.resource?.perSwingDealt, min: 0 },
+    { field: 'resource.perHitTaken', get: (c) => c.resource?.perHitTaken, min: 0 },
+    { field: 'resource.decayPerSecond', get: (c) => c.resource?.decayPerSecond, min: 0 },
+  ],
+  extra: (hero, content, report) => {
+    const where = `класс ${hero.id}`
+    report.need(!!hero.tagline?.trim(), where, 'нет строки о том, как в него играют (data/classes.ts)')
+    // Умения: без них у класса нет ни одной кнопки.
+    report.need(
+      Array.isArray(hero.abilityIds) && hero.abilityIds.length > 0,
+      where,
+      'ни одного умения — играть будет нечем (data/classes.ts)',
+    )
+    for (const id of hero.abilityIds ?? []) {
+      report.need(
+        content.abilities.some((a) => a.id === id),
+        where,
+        `ссылается на умение «${id}», которого нет в data/abilities.ts`,
+      )
+    }
+    // Ветки: без них дерево талантов у класса пустое.
+    report.need(
+      Array.isArray(hero.branchIds) && hero.branchIds.length > 0,
+      where,
+      'ни одной ветки талантов — очки некуда вкладывать (data/classes.ts)',
+    )
+    for (const id of hero.branchIds ?? []) {
+      report.need(
+        content.branches.some((b) => b.id === id),
+        where,
+        `ссылается на ветку «${id}», которой нет в data/talents.ts (BRANCHES)`,
+      )
+    }
+    // Стартовая экипировка ссылается на настоящие шаблоны.
+    for (const item of hero.startingEquipment ?? []) {
+      const known =
+        item.kind === 'shield'
+          ? content.shields.some((sh) => sh.id === item.templateId)
+          : content.weapons.some((w) => w.id === item.templateId)
+      report.need(
+        known,
+        where,
+        `стартовый предмет «${item.templateId}» не найден среди ${item.kind === 'shield' ? 'щитов' : 'оружия'} (data/items.ts)`,
+      )
+      report.need(
+        item.slot === 'mainHand' || item.slot === 'offHand',
+        where,
+        `стартовый предмет лежит в слоте «${item.slot}»: класс раздаёт только руки (data/classes.ts)`,
+      )
+    }
+    // Ресурс обязан хоть как-то пополняться: либо временем, либо боем.
+    const resource = hero.resource
+    if (!resource) {
+      report.add(where, 'нет описания ресурса (data/classes.ts)')
+      return
+    }
+    const fromCombat = resource.perSwingDealt?.gt(0) || resource.perHitTaken?.gt(0)
+    const fromTime = hero.baseMods?.every((m) => m.stat !== 'manaRegen' || !m.value.eq(0)) ?? true
+    report.need(
+      fromCombat || fromTime,
+      where,
+      'ресурс не пополняется ни временем, ни боем — умения не применить ни разу ' +
+        '(data/classes.ts)',
+    )
+    // Ярость без утечки — копилка на потом, а не ресурс непрерывного боя.
+    if (fromCombat) {
+      report.need(
+        resource.decayPerSecond?.gt(0) ?? false,
+        where,
+        'ресурс копится боем, но не тает вне боя: его можно накопить впрок, ' +
+          'и ритм класса пропадает (data/classes.ts)',
+      )
+    }
+  },
+}
+
+export const PROP_SCHEMA: EntitySchema<PropAsset> = {
+  kind: 'пропс',
+  file: 'data/assets.ts',
+  entities: (c) => c.props,
+  id: (p) => p.id,
+  name: (p) => p.id,
+  numbers: [
+    {
+      field: 'targetHeight',
+      get: (p) => p.targetHeight,
+      min: 0,
+      exclusiveMin: true,
+      max: 20,
+      why: 'высота пропса на площадке в метрах: ноль не видно, двадцать закроет бой',
+    },
+  ],
+  extra: (prop, content, report) => {
+    const where = `пропс ${prop.id}`
+    const file = prop.path?.split('/').pop() ?? ''
+    // Ассет → файл: та же проверка, что у моделей бойцов. Промах даёт не
+    // ошибку, а вечную коробку вместо бочки, и этого никто не заметит.
+    report.need(
+      content.propFiles.includes(file),
+      where,
+      `файла «${prop.path}» нет в public/models/props (data/assets.ts)`,
+    )
+    report.need(!!prop.license?.trim(), where, 'не указана лицензия (data/assets.ts)')
+    report.need(!!prop.author?.trim(), where, 'не указан автор (data/assets.ts)')
+    report.need(!!prop.sourceUrl?.trim(), where, 'не указан источник (data/assets.ts)')
+  },
+}
+
+export const SOUND_SCHEMA: EntitySchema<SoundCue> = {
+  kind: 'звук',
+  file: 'data/sounds.ts',
+  entities: (c) => c.sounds,
+  id: (s) => s.id,
+  name: (s) => s.id,
+  numbers: [
+    {
+      field: 'pitchSemitones',
+      get: (s) => s.pitchSemitones,
+      min: 0,
+      max: SOUND_PITCH_MAX_SEMITONES,
+      why: 'разброс больше трёх полутонов читается как ДРУГОЙ звук, а не как вариация',
+    },
+    { field: 'gainDb', get: (s) => s.gainDb, min: 0, max: SOUND_GAIN_MAX_DB },
+    { field: 'priority', get: (s) => s.priority, min: 0 },
+    { field: 'duckMs', get: (s) => s.duckMs, min: 0, max: 3000 },
+  ],
+  extra: (cue, content, report) => {
+    const where = `звук ${cue.id}`
+    if (!Array.isArray(cue.files) || cue.files.length === 0) {
+      report.add(where, 'нет ни одного файла — кью не прозвучит никогда (data/sounds.ts)')
+      return
+    }
+    for (const file of cue.files) {
+      if (!content.audioFiles.includes(file)) {
+        report.add(
+          where,
+          `файл «${file}» не найден в public/ — промах даёт не ошибку, ` +
+            'а тишину, которую никто не заметит (data/sounds.ts)',
+        )
+      }
+    }
+    if (new Set(cue.files).size !== cue.files.length) {
+      report.add(where, 'один и тот же файл записан вариантом дважды (data/sounds.ts)')
+    }
+    // Правило против усталости слуха: час в одной зоне — тысячи ударов.
+    const varied = cue.files.length >= SOUND_MIN_VARIATIONS
+    const jittered = cue.pitchSemitones > 0 && cue.gainDb > 0
+    if (!varied && !jittered) {
+      report.add(
+        where,
+        `${cue.files.length} вариант(а) и нулевой разброс: нужно либо ` +
+          `${SOUND_MIN_VARIATIONS} файла, либо разброс высоты И громкости ` +
+          '(data/sounds.ts)',
+      )
+    }
+    if (cue.pitchSemitones > 0 && cue.pitchSemitones < SOUND_PITCH_MIN_SEMITONES) {
+      report.add(
+        where,
+        `разброс ${cue.pitchSemitones} полутона на слух неотличим от нуля — ` +
+          `минимум ${SOUND_PITCH_MIN_SEMITONES} (data/sounds.ts)`,
+      )
+    }
+  },
+}
+
 export const RARITY_SCHEMA: EntitySchema<RarityDef> = {
   kind: 'редкость',
   file: 'data/rarity.ts',
@@ -771,6 +1183,12 @@ export const SCHEMAS = [
   ZONE_SCHEMA,
   DUNGEON_SCHEMA,
   WEAPON_SCHEMA,
+  SHIELD_SCHEMA,
+  SOUND_SCHEMA,
+  PROP_SCHEMA,
+  CLASS_SCHEMA,
+  MATERIAL_SCHEMA,
+  RECIPE_SCHEMA,
   RARITY_SCHEMA,
   UPGRADE_SCHEMA,
   MODEL_SCHEMA,
@@ -844,8 +1262,8 @@ function checkReachable(content: Content, report: Report): void {
       `слот ${slot}`,
       `иконка «${icon}» не найдена в реестре ui/icons/manifest.ts (SLOT_ICONS в data/slots.ts)`,
     )
-    if (slot === 'weapon') continue
-    const nouns = content.armorNouns[slot as Exclude<SlotId, 'weapon'>]
+    if (slot === 'mainHand' || slot === 'offHand') continue
+    const nouns = content.armorNouns[slot as Exclude<SlotId, 'mainHand' | 'offHand'>]
     report.need(
       Array.isArray(nouns) && nouns.length > 0,
       `слот ${slot}`,
@@ -927,8 +1345,6 @@ function checkBalance(content: Content, report: Report): void {
     { field: 'AUTOCAST_MAX_LOSS', get: (x) => x.autocastMaxLoss, min: 0, max: 1, why: 'это доля' },
     { field: 'TALENT_FIRST_LEVEL', get: (x) => x.talentFirstLevel, min: 1, integer: true },
     { field: 'TTK_DRIFT_MAX', get: (x) => x.ttkDriftMax, min: 0, exclusiveMin: true, max: 1, why: 'это доля разброса' },
-    { field: 'ZONE_BEHIND_GAP', get: (x) => x.zoneBehindGap, min: 1 },
-    { field: 'ZONE_AHEAD_GAP', get: (x) => x.zoneAheadGap, min: 1 },
   ]
   for (const rule of rules) checkNumber(b, rule, where, 'data/balance.ts', report)
 

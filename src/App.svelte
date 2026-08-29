@@ -3,7 +3,7 @@
   // в каком бы разделе игрок ни находился. Панели разъехались по вкладкам,
   // но всё, что относится к бою, осталось наверху вместе со сценой.
   import { INVENTORY_SIZE, availablePoints } from './lib/game'
-  import { gameState } from './lib/stores/game'
+  import { gameStarted, gameState } from './lib/stores/game'
   import { activeSection } from './lib/stores/ui'
   import { isTextMode, sceneUnavailable, uiSettings } from './lib/stores/ui'
   import { isSceneDisabled } from './lib/ui/route'
@@ -24,6 +24,7 @@
   import TalentPanel from './lib/ui/TalentPanel.svelte'
   import UpgradePanel from './lib/ui/UpgradePanel.svelte'
   import InventoryPanel from './lib/ui/InventoryPanel.svelte'
+  import CraftPanel from './lib/ui/CraftPanel.svelte'
   import ZonePanel from './lib/ui/ZonePanel.svelte'
   import DungeonPanel from './lib/ui/DungeonPanel.svelte'
   import SettingsPanel from './lib/ui/SettingsPanel.svelte'
@@ -32,6 +33,8 @@
   import DebugPanel from './lib/ui/DebugPanel.svelte'
   import NoticeBar from './lib/ui/NoticeBar.svelte'
   import OfflineModal from './lib/ui/OfflineModal.svelte'
+  import LootReveal from './lib/ui/LootReveal.svelte'
+  import ClassPicker from './lib/ui/ClassPicker.svelte'
 
   // ?scene=off убирает сцену и оставляет только DOM — так снимаются
   // стабильные эталоны интерфейса. Текстовый режим приводит к тому же виду,
@@ -95,6 +98,7 @@
       <UpgradePanel />
     {:else if $activeSection === 'bag'}
       <InventoryPanel />
+      <CraftPanel />
     {:else if $activeSection === 'world'}
       <ZonePanel />
       <DungeonPanel />
@@ -109,6 +113,11 @@
 </main>
 
 <OfflineModal />
+<LootReveal />
+{#if !$gameStarted}
+  <!-- Игра идёт под ним: цикл уже крутится, но экран закрыт выбором класса. -->
+  <ClassPicker />
+{/if}
 
 <DebugOverlay />
 

@@ -48,15 +48,16 @@ function richState(): GameState {
     ],
     equipment: {
       ...emptyEquipment(),
-      weapon: {
+      mainHand: {
         id: 'item-1',
         name: 'Верный Полуторник',
         rarity: 'rare',
-        slot: 'weapon',
+        slot: 'mainHand',
+        hands: 1,
         mods: [
-          { stat: 'weaponSpeed', kind: 'base', value: new Decimal(2.2), source: 'equipment:weapon' },
-          { stat: 'weaponDamageMin', kind: 'base', value: new Decimal(44), source: 'equipment:weapon' },
-          { stat: 'weaponDamageMax', kind: 'base', value: new Decimal(88), source: 'equipment:weapon' },
+          { stat: 'weaponSpeed', kind: 'base', value: new Decimal(2.2), source: 'equipment:mainHand' },
+          { stat: 'weaponDamageMin', kind: 'base', value: new Decimal(44), source: 'equipment:mainHand' },
+          { stat: 'weaponDamageMax', kind: 'base', value: new Decimal(88), source: 'equipment:mainHand' },
         ],
       },
     },
@@ -142,7 +143,7 @@ describe('save/load', () => {
     const result = loadGame({ storage, now: () => 0 })
     expect(result.kind).toBe('loaded')
     if (result.kind !== 'loaded') return
-    const weapon = result.state.equipment.weapon
+    const weapon = result.state.equipment.mainHand
     expect(weapon?.name).toBe('Верный Полуторник')
     // Три base-модификатора оружия снова задают базу конвейера статов.
     expect(result.state.stats.weaponSpeed).toBeCloseTo(2.2, 9)

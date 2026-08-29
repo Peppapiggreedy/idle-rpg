@@ -12,6 +12,7 @@ import { Decimal } from '../../../game/numbers'
 import type { IconName } from '../../../ui/icons/manifest'
 import type { StatId } from '../../../game/stats'
 import type { SlotId } from '../../slots'
+import { CLASS_BY_ID } from '../../classes'
 import { realContent } from '../content'
 import type { Content } from '../schema'
 
@@ -176,6 +177,153 @@ export function brokenCases(): BrokenCase[] {
         }),
       },
       expect: [first(real.weapons).id, 'damageMax', 'damageMin'],
+    },
+    {
+      title: 'в ветку талантов невозможно войти: первый ряд требует очков',
+      content: {
+        ...real,
+        talents: real.talents.map((t) =>
+          t.row === 1 && t.branch === first(real.branches).id
+            ? { ...t, requiredPointsInBranch: 3 }
+            : t,
+        ),
+      },
+      expect: [first(real.branches).id, 'невозможно войти'],
+    },
+    {
+      title: 'ряды ветки идут с дыркой — на панели останется пустая строка',
+      content: {
+        ...real,
+        talents: real.talents.map((t) =>
+          t.branch === first(real.branches).id && t.row === 2 ? { ...t, row: 9 } : t,
+        ),
+      },
+      expect: [first(real.branches).id, 'ряды идут'],
+    },
+    {
+      title: 'рецепт требует материал, которого нет в игре',
+      content: {
+        ...real,
+        recipes: patch(real.recipes, first(real.recipes).id, {
+          inputs: [{ materialId: 'нет-такого', count: 1 }],
+        }),
+      },
+      expect: [first(real.recipes).id, 'нет-такого', 'data/materials.ts'],
+    },
+    {
+      title: 'материал не падает ни в одной зоне — рецепты с ним недостижимы',
+      content: {
+        ...real,
+        materials: patch(real.materials, first(real.materials).id, { zoneIds: [] }),
+      },
+      expect: [first(real.materials).id, 'не падает ни в одной зоне'],
+    },
+    {
+      title: 'материал падает в зоне, которой нет',
+      content: {
+        ...real,
+        materials: patch(real.materials, first(real.materials).id, { zoneIds: ['нет-зоны'] }),
+      },
+      expect: [first(real.materials).id, 'нет-зоны'],
+    },
+    {
+      title: 'класс ссылается на несуществующее умение',
+      content: {
+        ...real,
+        classes: patch(real.classes, first(real.classes).id, { abilityIds: ['нет-такого'] }),
+      },
+      expect: [first(real.classes).id, 'нет-такого', 'data/abilities.ts'],
+    },
+    {
+      title: 'класс без веток талантов: очки некуда вкладывать',
+      content: {
+        ...real,
+        classes: patch(real.classes, first(real.classes).id, { branchIds: [] }),
+      },
+      expect: [first(real.classes).id, 'ни одной ветки'],
+    },
+    {
+      title: 'ресурс копится боем, но не тает — это копилка, а не ярость',
+      content: {
+        ...real,
+        classes: patch(real.classes, 'reaver', {
+          resource: {
+            ...CLASS_BY_ID.reaver.resource,
+            decayPerSecond: new Decimal(0),
+          },
+        }),
+      },
+      expect: ['reaver', 'не тает вне боя'],
+    },
+    {
+      title: 'пропс ссылается на модель, которой нет в public/models/props',
+      content: {
+        ...real,
+        props: patch(real.props, first(real.props).id, { path: 'models/props/нету.glb' }),
+      },
+      expect: [first(real.props).id, 'нету.glb'],
+    },
+    {
+      title: 'у пропса не указан автор — это нарушение лицензии',
+      content: {
+        ...real,
+        props: patch(real.props, first(real.props).id, { author: '' }),
+      },
+      expect: [first(real.props).id, 'автор'],
+    },
+    {
+      title: 'звук ссылается на файл, которого нет в public/',
+      content: {
+        ...real,
+        sounds: patch(real.sounds, first(real.sounds).id, { files: ['audio/ui/нету.ogg'] }),
+      },
+      expect: [first(real.sounds).id, 'нету.ogg', 'не найден'],
+    },
+    {
+      title: 'один сэмпл без разброса: через час игры это дрель',
+      content: {
+        ...real,
+        sounds: patch(real.sounds, first(real.sounds).id, {
+          files: [first(real.sounds).files[0]],
+          pitchSemitones: 0,
+          gainDb: 0,
+        }),
+      },
+      expect: [first(real.sounds).id, 'разброс'],
+    },
+    {
+      title: 'разброс высоты вывернут за границы слышимой вариации',
+      content: {
+        ...real,
+        sounds: patch(real.sounds, first(real.sounds).id, { pitchSemitones: 12 }),
+      },
+      expect: [first(real.sounds).id, 'pitchSemitones'],
+    },
+    {
+      title: 'щит не блокирует: вероятность блока ушла в ноль',
+      content: {
+        ...real,
+        shields: patch(real.shields, first(real.shields).id, { blockChance: new Decimal(0) }),
+      },
+      expect: [first(real.shields).id, 'blockChance', 'больше 0'],
+    },
+    {
+      title: 'щит блокирует чаще, чем всегда',
+      content: {
+        ...real,
+        shields: patch(real.shields, first(real.shields).id, { blockChance: new Decimal(1.4) }),
+      },
+      expect: [first(real.shields).id, 'blockChance', 'не больше 1'],
+    },
+    {
+      title: 'щит выдаёт себя за оружие и даёт урон',
+      content: {
+        ...real,
+        shields: patch(real.shields, first(real.shields).id, {
+          extra: [{ stat: 'offhandDamageMax', kind: 'flat', value: new Decimal(9) }],
+        }),
+      },
+      expect: [first(real.shields).id, 'offhandDamageMax', 'не оружие'],
     },
     {
       title: 'лут босса ссылается на несуществующий слот',

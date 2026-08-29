@@ -30,6 +30,29 @@ Idle RPG собрана на чужих плечах. Здесь перечис�
 
 Исходники: https://github.com/Peppapiggreedy/idle-rpg
 
+## Звук
+
+Звуки взяты из паков Kenney и распространяются под лицензией
+[CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/): она не требует
+указания авторства, но мы его указываем.
+
+| Пак | Что оттуда | Автор | Лицензия |
+|---|---|---|---|
+| [UI Audio](https://kenney.nl/assets/ui-audio) | щелчки интерфейса, переключатели, звук блока | Kenney Vleugels | CC0 1.0 |
+| [Digital Audio](https://kenney.nl/assets/digital-audio) | удары, умения, смерть, уровень, находки по тирам | Kenney Vleugels | CC0 1.0 |
+
+Файлы лежат в `public/audio/` без изменений; игра меняет только высоту
+(±1–3 полутона) и громкость (±3 дБ) при воспроизведении. Оригинальные тексты
+лицензий — `public/audio/LICENSE-Kenney-UI-Audio.txt` и
+`LICENSE-Kenney-Digital-Audio.txt`.
+
+Реестр `src/lib/data/sounds.ts` описывает каждый кью вместе с категорией,
+разбросом и тем, ЧТО звук сообщает игроку (`valence`). Последнее — не
+украшение: на нём держится запрет на победный звук у потери. Правила против
+усталости слуха (варианты, разброс, склейка залпов, потолок голосов,
+приглушение фона) живут в `src/lib/audio/mixer.ts` и проверяются числами
+в `mixer.test.ts`, а не на слух.
+
 ## Модели
 
 Персонажи взяты из паков KayKit за авторством Kay Lousberg и распространяются
@@ -40,6 +63,7 @@ Idle RPG собрана на чужих плечах. Здесь перечис�
 |---|---|---|---|---|
 | Герой | `public/models/Knight.glb` | [KayKit Character Pack: Adventurers 1.0](https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0) | Kay Lousberg | CC0 1.0 |
 | Моб | `public/models/Skeleton_Minion.glb` | [KayKit Character Pack: Skeletons 1.0](https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Skeletons-1.0) | Kay Lousberg | CC0 1.0 |
+| Пропсы зон (бочка, ящики, обломки, колонна, столб, бочонок, сундук) | `public/models/props/` | [KayKit Dungeon Remastered 1.0](https://github.com/KayKit-Game-Assets/KayKit-Dungeon-Remastered-1.0) | Kay Lousberg | CC0 1.0 |
 
 Оригинальные тексты лицензий лежат рядом с моделями:
 `public/models/LICENSE-KayKit-Adventurers.txt` и
@@ -78,15 +102,16 @@ Idle RPG собрана на чужих плечах. Здесь перечис�
 текста; иконки собраны в один встроенный SVG-спрайт
 (`src/lib/ui/icons/sprite.svg`, собирается `npm run icons:build`).
 
-Всего иконок в игре: 39.
+Всего иконок в игре: 82.
 
 | Автор | Иконок |
 |---|---|
 | DarkZaitzev | 1 |
-| Delapouite | 13 |
+| Delapouite | 32 |
+| FaithToken | 1 |
 | GeneralAce135 | 1 |
-| Lorc | 19 |
-| Sbed | 2 |
+| Lorc | 41 |
+| Sbed | 3 |
 | Skoll | 2 |
 | Zeromancer | 1 |
 
