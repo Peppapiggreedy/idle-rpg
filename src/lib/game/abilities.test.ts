@@ -206,7 +206,9 @@ describe('умение на следующий замах', () => {
   })
 
   it('не хватило маны к моменту удара — очередь снимается, бьёт автоатака', () => {
-    const poor = hero({ currentMana: new Decimal(1) })
+    // Пауза восстановления взведена надолго: иначе за время замаха ресурс
+    // накапает, умение сработает, и проверять будет нечего.
+    const poor = hero({ currentMana: new Decimal(1), regenDelayMsLeft: 999_999 })
     const queued = useAbility(poor, BLOW.id, NO_LUCK, () => {})
     expect(queued.queuedAbilityId).toBe(BLOW.id) // поставить можно: мана ещё капает
     const after = run(queued, poor.stats.swingTime * 1000 + STEP_MS)

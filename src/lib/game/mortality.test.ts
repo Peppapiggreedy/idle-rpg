@@ -3,6 +3,7 @@ import { Decimal } from './numbers'
 import { STEP_MS } from './loop'
 import {
   createInitialState,
+  emptyEquipment,
   manualOnlySettings,
   monsterFromTemplate,
   tick,
@@ -37,13 +38,18 @@ const BRUTE: MonsterTemplate = {
   swingTime: 1,
 }
 
-// Автокаст выключен: тесты про смертность героя, а не про умения.
+// Автокаст выключен, экипировка снята: тесты про смертность героя, а не про
+// умения и не про стартовый комплект. Со щитом и бронёй новобранца свирепый
+// секач перестал бы убивать за две секунды — и мерили бы мы уже не смерть.
 function inZone(template: MonsterTemplate): GameState {
-  return {
-    ...createInitialState(1),
+  const bare = createInitialState(1)
+  return ensureStats({
+    ...bare,
     abilitySettings: manualOnlySettings(),
+    equipment: emptyEquipment(),
     monster: monsterFromTemplate(template),
-  }
+    statsDirty: true,
+  })
 }
 
 describe('ответные удары моба', () => {
@@ -133,25 +139,19 @@ describe('оффлайн моделирует цикл фарм -> смерть 
 
   it('смертность режет оффлайн-награду в той же зоне', () => {
     const HOURS8 = 8 * 3_600_000
-    // Зона глубоко за пределами новичка: на лестнице из двадцати ступеней
-    // «пепельный гребень» — уже середина, и новичок там просто мало живёт,
-    // а нужна разница между «почти не живёт» и «живёт спокойно».
-    // Зона глубокая, но не край мира: ветеран здесь БЕЗ ЭКИПИРОВКИ, а на
-    // двадцатиступенчатой лестнице последние зоны голым уровнем не тянутся.
-    const RIDGE = ZONES[ZONES.length - 8]
-    // Одна и та же зона, одни и те же награды за моба — разница только в том,
-    // сколько времени герой в ней жив.
-    const rookie: GameState = { ...createInitialState(1), currentZoneId: RIDGE.id }
+    // Одна и та же зона, одни и те же награды за моба — разница только
+    // в том, сколько времени герой в ней жив.
+    const zone = ZONES[2]
+    const rookie: GameState = { ...createInitialState(1), currentZoneId: zone.id }
     const veteran: GameState = ensureStats({
       ...rookie,
       level: new Decimal(PACING_MAX_LEVEL),
-      // Ветеран одет по своей глубине: сила теперь на вещах, а не в счётчике.
+      // Ветеран одет по своей глубине: сила теперь на вещах.
       equipment: averageGear(83),
       statsDirty: true,
     })
-    const rookieUptime = zoneRate(rookie, RIDGE).uptime
-    expect(rookieUptime).toBeLessThan(0.25)
-    expect(zoneRate(veteran, RIDGE).uptime).toBeGreaterThan(0.9)
+    expect(zoneRate(rookie, zone).uptime).toBeLessThan(0.95)
+    expect(zoneRate(veteran, zone).uptime).toBe(1)
 
     const weak = applyOfflineProgress(rookie, HOURS8).report
     const strong = applyOfflineProgress(veteran, HOURS8).report
@@ -159,18 +159,37 @@ describe('оффлайн моделирует цикл фарм -> смерть 
     expect(weak!.gold.lt(strong!.gold.times(0.5))).toBe(true)
   })
 
-  it('в стартовой зоне герой тоже смертен: uptime < 1 учтён в оффлайне', () => {
-    // Без умений герой в стартовой зоне тает: uptime строго между 0 и 1.
-    const rate = zoneRate(
-      { ...createInitialState(1), abilitySettings: manualOnlySettings() },
-      SAFE_ZONE,
-    )
-    expect(rate.uptime).toBeGreaterThan(0.5)
+  it('из зоны не по зубам новичок не приносит НИЧЕГО', () => {
+    // Привал теперь между боями, и это меняет цену ошибки: в глубокой зоне
+    // герой не доживает даже до первого убийства, а значит и отдохнуть ему
+    // не с чего. Оффлайн обязан честно вернуть пустоту, а не «немножко».
+    const HOURS8 = 8 * 3_600_000
+    const deep = ZONES[ZONES.length - 8]
+    const rookie: GameState = { ...createInitialState(1), currentZoneId: deep.id }
+    expect(zoneRate(rookie, deep).uptime).toBe(0)
+    expect(applyOfflineProgress(rookie, HOURS8).report).toBeNull()
+  })
+
+  it('на ступень выше своей новичок тает: uptime < 1 учтён в оффлайне', () => {
+    // Стартовую зону одетый новобранец проходит спокойно — так и задумано.
+    // Через пару ступеней он ещё выживает, но уже умирает: uptime строго
+    // между нулём и единицей, и оффлайн обязан это видеть.
+    const rookie = { ...createInitialState(1), abilitySettings: manualOnlySettings() }
+    expect(zoneRate(rookie, SAFE_ZONE).uptime).toBe(1)
+    const rate = zoneRate(rookie, ZONES[2])
+    expect(rate.uptime).toBeGreaterThan(0.3)
     expect(rate.uptime).toBeLessThan(1)
   })
 
   it('мёртвый герой сперва досиживает воскрешение из оффлайн-времени', () => {
-    let s = run(inZone(BRUTE), 2000)
+    // Герой одет (иначе после воскрешения он и дальше ничего не наберёт),
+    // но лежит мёртвым: проверяется именно учёт времени на воскрешение.
+    const s: GameState = {
+      ...createInitialState(1),
+      heroState: 'dead',
+      reviveMsLeft: 30_000,
+      currentHp: new Decimal(0),
+    }
     expect(s.heroState).toBe('dead')
     const { state: after, report } = applyOfflineProgress(s, 3_600_000)
     expect(after.heroState).toBe('alive')

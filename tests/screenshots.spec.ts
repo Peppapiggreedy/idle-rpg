@@ -89,14 +89,13 @@ for (const preset of PRESETS) {
   }
 }
 
-// Разделы, кроме «Персонажа»: он и так на каждом снимке пресета выше.
-// Индекс — позиция вкладки в SECTION_IDS; берём именно индекс, потому что
-// подпись «Сумки» несёт счётчик и меняется вместе с пресетом.
+// Все четыре раздела. Индекс — позиция вкладки в SECTION_IDS; берём именно
+// индекс, потому что подпись «Сумки» несёт счётчик и меняется с пресетом.
 const SECTIONS = [
-  { index: 1, name: 'progress' },
-  { index: 2, name: 'bag' },
-  { index: 3, name: 'world' },
-  { index: 4, name: 'settings' },
+  { index: 0, name: 'progress' },
+  { index: 1, name: 'bag' },
+  { index: 2, name: 'world' },
+  { index: 3, name: 'settings' },
 ] as const
 // Узкий и широкий: между ними лежит единственный брейкпоинт игры.
 const SECTION_WIDTHS = [390, 1280] as const
@@ -186,11 +185,20 @@ test('вкладки разделов держат 44px на нажатие', as
   await openPreset(page, 'rich', true)
   const tabs = page.locator('nav[aria-label="Разделы"] button')
   const count = await tabs.count()
-  expect(count).toBe(5)
+  expect(count).toBe(4)
   for (let i = 0; i < count; i += 1) {
     const box = await tabs.nth(i).boundingBox()
     expect(box?.height ?? 0).toBeGreaterThanOrEqual(44)
   }
+})
+
+// Характеристики и экипировка уехали из вкладок в выдвижку «Герой», и без
+// отдельного снимка они выпали бы из визуальной проверки целиком.
+test('выдвижка героя', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await openPreset(page, 'rich', true)
+  await page.getByRole('button', { name: 'Герой', exact: true }).click()
+  expect(await capture(page, 'drawer-hero-1280')).toMatchSnapshot('drawer-hero-1280.png')
 })
 
 test('витрина интерфейса', async ({ page }) => {

@@ -141,14 +141,19 @@ export function isEquipped(state: GameState, itemId: string): boolean {
   return Object.values(state.equipment).some((i) => i?.id === itemId)
 }
 
-/** Переключатель автонадевания; сам ничего не надевает — только флаг. */
-export function setAutoEquip(state: GameState, enabled: boolean): GameState {
-  return { ...state, autoEquip: enabled }
-}
-
-/** Автонадевание: надевает предмет, только если он повышает урон в секунду. */
-export function autoEquipIfBetter(state: GameState, item: Item): GameState {
-  if (!state.autoEquip) return state
-  if (!isUpgrade(state, item)) return state
-  return equipItem(state, item.id)
+/**
+ * Насколько предмет лучше надетого — ДОЛЯ прироста урона в секунду.
+ *
+ * Именно доля, а не разница: «+340 урона» на двадцатом уровне и на
+ * восьмидесятом значат совершенно разное, а «+12%» значит одно и то же
+ * везде. Это то число, ради которого игрок вообще смотрит на находку.
+ * Пустой слот — прирост от нуля, поэтому доля не считается вовсе
+ * (делить не на что): такой предмет лучше по определению.
+ */
+export function upgradeShare(state: GameState, item: Item): number | null {
+  const cmp = compareItem(state, item)
+  if (!cmp.isUpgrade) return null
+  const base = cmp.current.damagePerSecond
+  if (base.lte(0)) return Number.POSITIVE_INFINITY
+  return cmp.damagePerSecondDelta.div(base).toNumber()
 }

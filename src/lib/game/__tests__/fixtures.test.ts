@@ -130,7 +130,9 @@ describe('фикстуры сейвов', () => {
     const s = loadFixture('save-v0.json')
     expect(s.gold.toNumber()).toBe(150)
     expect(s.level.toNumber()).toBe(4)
-    expect(s.currentXp.toNumber()).toBe(11)
+    // Абсолютное число опыта пересчитала миграция v19 под новую кривую:
+    // сохраняется ДОЛЯ пройденного уровня (старая кривая: 40 * 4^1.5 = 320).
+    expect(s.currentXp.div(s.xpToNext).toNumber()).toBeCloseTo(11 / 320, 2)
     // Заточки v0 снесла миграция v18; остались база и сила с уровней.
     expect(expectedSwingDamage(s.stats).toNumber()).toBeCloseTo(apSwing(4), 9)
   })
@@ -192,7 +194,6 @@ describe('фикстуры сейвов', () => {
     )
     // Экипировки в v6 не было: предмет ждёт в инвентаре, слоты пусты.
     expect(Object.values(s.equipment).every((i) => i === null)).toBe(true)
-    expect(s.autoEquip).toBe(true)
   })
 
   it('save-v7 -> v8: старый сейв просыпается в безопасной зоне', () => {

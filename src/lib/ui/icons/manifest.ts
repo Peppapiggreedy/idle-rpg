@@ -132,7 +132,30 @@ export const ICONS = {
   'zone-mute-bluff': { file: 'delapouite/sea-cliff.svg', author: 'Delapouite' },
 
   // --- Данжи ---
-  'dungeon-sunken-barrow': { file: 'delapouite/dungeon-gate.svg', author: 'Delapouite' },
+  // Общая иконка данжа: ею лог помечает события забега, у которых своего
+  // данжа под рукой нет (вход, выход, прохождение).
+  dungeon: { file: 'delapouite/dungeon-gate.svg', author: 'Delapouite' },
+  'dungeon-sunken-barrow': { file: 'delapouite/crypt-entrance.svg', author: 'Delapouite' },
+  'dungeon-ninth-drift': { file: 'delapouite/hole-ladder.svg', author: 'Delapouite' },
+  'dungeon-tier-cisterns': { file: 'delapouite/well.svg', author: 'Delapouite' },
+  'dungeon-boiling-adits': { file: 'delapouite/cave-entrance.svg', author: 'Delapouite' },
+  'dungeon-wind-galleries': { file: 'delapouite/ancient-ruins.svg', author: 'Delapouite' },
+  'dungeon-salt-womb': { file: 'delapouite/dungeon-light.svg', author: 'Delapouite' },
+  'dungeon-rime-catacombs': { file: 'lorc/coffin.svg', author: 'Lorc' },
+  'dungeon-bluff-hollow': { file: 'delapouite/temple-gate.svg', author: 'Delapouite' },
+
+  // --- Реагенты данжей ---
+  'reagent-silt-clot': { file: 'lorc/dripping-goo.svg', author: 'Lorc' },
+  'reagent-drift-sinter': { file: 'delapouite/coal-pile.svg', author: 'Delapouite' },
+  'reagent-sediment-core': { file: 'lorc/stone-sphere.svg', author: 'Lorc' },
+  'reagent-sulfur-growth': { file: 'lorc/crystal-growth.svg', author: 'Lorc' },
+  'reagent-wind-glass': { file: 'lorc/glass-heart.svg', author: 'Lorc' },
+  'reagent-brine-crystal': { file: 'lorc/gems.svg', author: 'Lorc' },
+  'reagent-rime-vein': { file: 'lorc/frozen-block.svg', author: 'Lorc' },
+  'reagent-mute-shard': { file: 'lorc/rune-stone.svg', author: 'Lorc' },
+
+  // --- Интерфейс ---
+  log: { file: 'lorc/scroll-unfurled.svg', author: 'Lorc' },
 
   // --- Улучшения и валюты ---
   gold: { file: 'delapouite/coins.svg', author: 'Delapouite' },

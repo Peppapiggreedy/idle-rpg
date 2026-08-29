@@ -8,8 +8,8 @@ import { SAFE_ZONE, type Zone } from '../data/zones'
 import { ABILITY_BY_ID, type AbilityDef } from '../data/abilities'
 import { CLASS_BY_ID, DEFAULT_CLASS, classById, type ClassDef } from '../data/classes'
 import { RARITY_BY_ID } from '../data/rarity'
-import { SHIELD_BY_ID, WEAPON_BY_ID } from '../data/items'
-import { shieldMods, weaponMods } from './loot'
+import { ARMOR_NOUNS, SHIELD_BY_ID, WEAPON_BY_ID } from '../data/items'
+import { armorMods, shieldMods, weaponMods } from './loot'
 import {
   AUTOCAST_DELAY_MS,
   REGEN_TICK_S,
@@ -85,7 +85,6 @@ export interface GameState {
   talents: Record<string, number>
   talentResets: number // сколько раз игрок сбрасывал таланты; от этого цена
   equipment: Equipment // надетые предметы по слотам (источник статов)
-  autoEquip: boolean // автонадевание, если предмет лучше по урону в секунду
   // Производные статы из конвейера stats.ts. Прямых полей урона/скорости/критов
   // в состоянии НЕТ — только пересчёт из источников (упгрейды, позже экипировка).
   stats: StatBlock
@@ -164,9 +163,31 @@ export function emptyEquipment(): Equipment {
  */
 export function startingEquipment(hero: ClassDef): Equipment {
   const equipment = emptyEquipment()
-  const rarity = RARITY_BY_ID.common
+  // НЕОБЫЧНЫЙ тир, а не обычный, и это не щедрость. Контракт темпа меряется
+  // от героя «в средней вещи своего уровня» (AVERAGE_RARITY, множитель 1.8),
+  // и стартовый комплект обязан стоять примерно там же — иначе первые минуты
+  // игры идут по совсем другой кривой, чем всё остальное. Ближайший НАСТОЯЩИЙ
+  // тир к среднему — необычный (множитель 2): ярлык на предмете при этом не
+  // врёт, а числа совпадают с точкой отсчёта.
+  const rarity = RARITY_BY_ID.uncommon
   for (const entry of hero.startingEquipment) {
+    if (entry.kind === 'armor') {
+      // Броня собирается той же armorMods, что и находка: стартовая вещь —
+      // обычный предмет, его можно снять, продать и заменить лучшим.
+      if (entry.slot === 'mainHand' || entry.slot === 'offHand') continue
+      if (!entry.attribute) continue
+      equipment[entry.slot] = {
+        id: `start-${entry.slot}`,
+        name: ARMOR_NOUNS[entry.slot][0],
+        rarity: rarity.id,
+        slot: entry.slot,
+        level: 1,
+        mods: armorMods(entry.slot, rarity, 1, entry.attribute),
+      }
+      continue
+    }
     if (entry.slot !== 'mainHand' && entry.slot !== 'offHand') continue
+    if (!entry.templateId) continue
     if (entry.kind === 'shield') {
       const template = SHIELD_BY_ID[entry.templateId]
       if (!template) continue
@@ -246,7 +267,6 @@ export function createInitialState(
     talents: {},
     talentResets: 0,
     equipment: startingEquipment(hero),
-    autoEquip: true,
     statsDirty: false,
     dungeonRun: null,
     dungeonsCleared: {},

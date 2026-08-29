@@ -16,6 +16,7 @@ import {
   manualOnlySettings,
   spawnMonster,
   emptyEquipment,
+  startingEquipment,
   type AbilitySettings,
   type Equipment,
   type GameState,
@@ -23,6 +24,7 @@ import {
 import { ensureStats } from './stats'
 import { tick } from './tick'
 import { averageArmorMods, sellItem, sellPrice, shieldMods, weaponMods } from './loot'
+import { upgradeShare } from './equipment'
 import { estimateZoneTtk, type TtkEstimate } from './combat'
 
 import {
@@ -41,7 +43,7 @@ import { ARMOR_NOUNS, ONE_HANDED, SHIELDS, WEAPONS, WEAPON_BY_ID } from '../data
 import { SLOT_IDS, type SlotId } from '../data/slots'
 import { ZONES, averageMonsterLevel } from '../data/zones'
 import { BRANCHES, talentsInBranch, type BranchId } from '../data/talents'
-import { CLASSES, DEFAULT_CLASS } from '../data/classes'
+import { CLASSES, DEFAULT_CLASS, classById } from '../data/classes'
 import { TALENT_FIRST_LEVEL } from '../data/balance'
 import type { AttackEvent, Item, Rarity } from '../types'
 
@@ -513,7 +515,18 @@ export function averageGear(level = 1): Equipment {
  * левую руку пустой, одноручное пускает туда щит или второй клинок.
  */
 function buildEquipment(build: SimBuild, weapon: Item | null): Equipment {
-  const base = build.gear === 'average' ? averageGear(build.gearLevel ?? 1) : emptyEquipment()
+  // ЧТО ЗНАЧИТ «ПО УМОЛЧАНИЮ». Прибор обязан мерить ту игру, в которую играют:
+  // свежий герой в игре одет в стартовый комплект класса, а не гол. Раньше
+  // разницы не было — автонадевание одевало его в первые же минуты, — но
+  // автонадевания больше нет, и голый герой в прогоне мерил бы игру, которой
+  // не существует. 'none' по-прежнему раздевает явно: измерения про чистую
+  // формулу удара этого и хотят.
+  const base =
+    build.gear === 'average'
+      ? averageGear(build.gearLevel ?? 1)
+      : build.gear === 'none'
+        ? emptyEquipment()
+        : startingEquipment(classById(build.classId))
   const equipment: Equipment = { ...base }
   if (weapon) {
     equipment.mainHand = weapon
@@ -558,7 +571,6 @@ export function buildSimState(build: SimBuild, zoneId: string, seed: number): Ga
     equipment: buildEquipment(build, weapon),
     abilitySettings: settingsFor(build.autocast, base.classId),
     // Прогон меряет ЗАДАННЫЙ билд: автонадевание подменило бы его на середине.
-    autoEquip: false,
     restHpThreshold: build.restThreshold ?? base.restHpThreshold,
     currentZoneId: zone.id,
     // Смерть отбрасывает в последнюю зону, где герой выживал. Ставим её сразу:
@@ -668,14 +680,19 @@ export function simulate(options: SimOptions): SimResult {
     // Привал виден снаружи так же, как убийство: по переходу состояния.
     if (prev.heroState !== 'resting' && state.heroState === 'resting') rests += 1
     if (state.heroState === 'resting') restingMs += STEP_MS
-    // Точки решения по находкам. Считается находка ВЫШЕ ОБЫЧНОЙ: обычный
-    // хлам игрок не обдумывает, он его продаёт не глядя. Материалы не
-    // считаются вовсе — они складываются в мешок сами.
+    // Точки решения по находкам. Решение — это находка, над которой игрок
+    // ОСТАНАВЛИВАЕТСЯ: либо она лучше надетого (её надо надеть — автонадевания
+    // больше нет, и это теперь главный вид решения), либо она выше обычной
+    // редкости и её стоит хотя бы рассмотреть. Обычный хлам, который не
+    // апгрейд, игрок продаёт не глядя, и решением он не является.
+    // Материалы не считаются вовсе — они складываются в мешок сами.
     //
     // Считаем ДО уборки сумки: продажа в том же шаге обнулила бы разницу,
     // и находка перестала бы считаться решением.
     for (let i = prev.inventory.length; i < state.inventory.length; i += 1) {
-      if (state.inventory[i]?.rarity !== 'common') {
+      const found = state.inventory[i]
+      if (!found) continue
+      if (found.rarity !== 'common' || upgradeShare(state, found) !== null) {
         decisions += 1
         dropDecisions += 1
       }

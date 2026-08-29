@@ -31,6 +31,7 @@ import {
   OFFLINE_CHUNK_MIN,
   OFFLINE_EFFICIENCY,
   itemLevelScale,
+  LEVEL_CAP,
 } from '../data/balance'
 import { ABILITIES, ABILITY_BY_ID } from '../data/abilities'
 import { DEFAULT_CLASS, classById } from '../data/classes'
@@ -46,7 +47,7 @@ import { SAFE_ZONE, ZONE_BY_ID } from '../data/zones'
 import { currentZone, zoneRate } from './zones'
 
 export const SAVE_KEY = 'idle-rpg-save'
-export const SAVE_VERSION = 18
+export const SAVE_VERSION = 19
 export const AUTOSAVE_INTERVAL_MS = AUTOSAVE_INTERVAL_S * 1000
 // Потолок оффлайн-прогресса: дольше отсутствовать можно, но не оплачивается.
 export const OFFLINE_CAP_MS = OFFLINE_CAP_HOURS * 60 * 60 * 1000
@@ -90,8 +91,8 @@ export interface SavedDungeonRun {
   fightMs: number
 }
 
-export interface SavePayloadV18 {
-  version: 18
+export interface SavePayloadV19 {
+  version: 19
   /** Материалы и готовая еда: id -> количество строкой (величина растущая). */
   materials: Record<string, string>
   /** Порция еды, уже потраченная на текущий привал. */
@@ -116,7 +117,6 @@ export interface SavePayloadV18 {
   talentResets: number
   inventory: SavedItem[]
   equipment: Record<string, SavedItem | null>
-  autoEquip: boolean
   currentZoneId: string
   lastSurvivedZoneId: string | null
   // Забег по данжу переживает перезагрузку, но не смерть внутри.
@@ -181,7 +181,7 @@ function savedFromItem(item: Item): SavedItem {
   }
 }
 
-export function payloadFromState(state: GameState, lastTimestamp: number): SavePayloadV18 {
+export function payloadFromState(state: GameState, lastTimestamp: number): SavePayloadV19 {
   const equipment: Record<string, SavedItem | null> = {}
   for (const slot of SLOT_IDS) {
     const item = state.equipment[slot]
@@ -209,7 +209,7 @@ export function payloadFromState(state: GameState, lastTimestamp: number): SaveP
     if (state.dungeonsCleared[dungeon.id] === true) dungeonsCleared[dungeon.id] = true
   }
   return {
-    version: 18,
+    version: 19,
     classId: state.classId,
     materials: Object.fromEntries(
       Object.entries(state.materials)
@@ -220,7 +220,6 @@ export function payloadFromState(state: GameState, lastTimestamp: number): SaveP
     lastTimestamp,
     inventory: state.inventory.map(savedFromItem),
     equipment,
-    autoEquip: state.autoEquip,
     currentZoneId: state.currentZoneId,
     lastSurvivedZoneId: state.lastSurvivedZoneId,
     dungeonRun: state.dungeonRun ? { ...state.dungeonRun } : null,
@@ -416,7 +415,7 @@ function clearedFromSaved(raw: unknown): Record<string, boolean> {
   return cleared
 }
 
-export function stateFromPayload(p: SavePayloadV18): GameState {
+export function stateFromPayload(p: SavePayloadV19): GameState {
   const level = Decimal.max(parseDec(p.level, '1'), new Decimal(1))
 
   // Класс восстанавливается ПЕРВЫМ: от него зависят стартовые статы, набор
@@ -447,7 +446,6 @@ export function stateFromPayload(p: SavePayloadV18): GameState {
         ? p.restSpeedupSource
         : null,
     equipment: equipmentFromSaved(p.equipment),
-    autoEquip: typeof p.autoEquip === 'boolean' ? p.autoEquip : true,
     dungeonRun: dungeonRunFromSaved(p.dungeonRun),
     dungeonsCleared: clearedFromSaved(p.dungeonsCleared),
     currentZoneId: zoneIdFromSaved(p.currentZoneId, SAFE_ZONE.id),
@@ -549,7 +547,39 @@ function handItemV14toV15(raw: unknown): unknown {
  * Экспортируется ради теста, который это и стережёт, — однажды 14-я миграция
  * прыгнула сразу на 17 и лишила старых героев и класса, и мешка материалов.
  */
+// Кривая опыта до v19: `40 * L^1.5`. Заморожена здесь навсегда — миграция
+// обязана уметь прочитать сейв ТОЙ игры, а не текущей. Живая кривая теперь
+// задаётся таблицей убийств (data/balance.ts) и с этой формулой не связана.
+const LEGACY_V18_XP_BASE = 40
+const LEGACY_V18_XP_EXPONENT = 1.5
+function legacyXpToNext(level: number): number {
+  return Math.floor(LEGACY_V18_XP_BASE * Math.pow(level, LEGACY_V18_XP_EXPONENT) * (1 + 1e-9))
+}
+
 export const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
+  // 18 -> 19: игра стала КОНЕЧНОЙ. Появился потолок сотого уровня, кривая
+  // опыта переехала с формулы на таблицу убийств, а автонадевание снесено —
+  // предметы надевает игрок.
+  //
+  // Уровень и опыт пересчитываются так, чтобы сохранилась ДОЛЯ пройденного
+  // уровня: полоска после обновления стоит там же, где стояла. Абсолютное
+  // число опыта переносить нельзя — оно считалось по другой кривой и на
+  // новой значило бы другое место на полоске.
+  18: (raw) => {
+    const next: RawSave = { ...raw, version: 19 }
+    delete next.autoEquip
+    const rawLevel = Number(raw.level)
+    const level = Number.isFinite(rawLevel) ? Math.max(1, Math.floor(rawLevel)) : 1
+    const capped = Math.min(level, LEVEL_CAP)
+    const oldNeed = legacyXpToNext(level)
+    const rawXp = Number(raw.currentXp)
+    const share = oldNeed > 0 && Number.isFinite(rawXp) ? Math.min(1, Math.max(0, rawXp / oldNeed)) : 0
+    const newNeed = xpToNextLevel(new Decimal(capped))
+    next.level = String(capped)
+    // На потолке копить нечего: опыт обнуляется вместе с полоской.
+    next.currentXp = capped >= LEVEL_CAP ? '0' : newNeed.times(share).floor().toString()
+    return next
+  },
   // 16 -> 17: появились профессии. Мешок материалов у старого героя пуст —
   // собирать он начнёт с ближайшего убитого моба. Прогресс не затронут.
   // 17 -> 18: заточка снесена, у предметов появился уровень. Прогресс героя
@@ -675,7 +705,6 @@ export const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
     version: 7,
     inventory: Array.isArray(raw.inventory) ? raw.inventory.map(itemV6toV7) : [],
     equipment: {},
-    autoEquip: true,
   }),
   // 5 -> 6: сменилась МОДЕЛЬ урона (диапазон оружия + сила атаки через
   // AP_NORMALIZATION), но набор полей формата не изменился: урон и раньше был
@@ -724,7 +753,7 @@ export const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
 }
 
 // null = сейв непригоден (не объект или из более новой версии игры).
-export function migrateSave(raw: unknown): SavePayloadV18 | null {
+export function migrateSave(raw: unknown): SavePayloadV19 | null {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null
   let data = raw as RawSave
   let version = typeof data.version === 'number' ? data.version : 0
@@ -735,7 +764,7 @@ export function migrateSave(raw: unknown): SavePayloadV18 | null {
     data = step(data)
     version = typeof data.version === 'number' ? data.version : version + 1
   }
-  return data as unknown as SavePayloadV18
+  return data as unknown as SavePayloadV19
 }
 
 export interface OfflineReport {
@@ -891,7 +920,7 @@ export function encodeSaveString(state: GameState, now: () => number = Date.now)
 }
 
 // Понимает base64 от экспорта и, на всякий случай, голый JSON.
-export function decodeSaveString(input: string): SavePayloadV18 | null {
+export function decodeSaveString(input: string): SavePayloadV19 | null {
   const attempts = [
     () => JSON.parse(fromBase64(input.trim())),
     () => JSON.parse(input.trim()),

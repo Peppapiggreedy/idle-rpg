@@ -1,7 +1,7 @@
 // Тик — конвейер чистых шагов (state, ctx) => state. Порядок фиксирован и важен:
 //   1. applyRevive          — мёртвый герой: отсчёт воскрешения; по нулю — полный HP
 //                             и откат в последнюю зону, где он выживал
-//   1a. applyRest           — привал: отсчёт отдыха либо уход на него по порогу
+//   1a. applyRest           — привал: отсчёт отдыха (уход — в applyRestCheck)
 //   2. applyCooldowns       — кулдауны умений и GCD идут игровым временем
 //   2a. applyEnrage         — время боя с боссом; по нему растёт его урон
 //   2a. applyAutocast       — таймер реакции и применение умения по приоритету
@@ -21,9 +21,8 @@
 // rng потребляют: удар героя (урон + крит), дроп, удар моба и спавн (уровень + архетип).
 import { Decimal } from './numbers'
 import { applyXp } from './formulas'
-import { rollLoot } from './loot'
+import { rollLoot, stashLoot } from './loot'
 import { hasOffhand, rollBlock, rollMonsterDamage, rollSwing } from './combat'
-import { autoEquipIfBetter } from './equipment'
 import type { Rng } from './rng'
 import { pushEvent, spawnMonster, type ActiveEffect, type GameState } from './state'
 import { ensureStats } from './stats'
@@ -95,23 +94,59 @@ const applyRevive: TickStep = (s, ctx) => {
 }
 
 /**
- * Привал. Сидит ДО кулдаунов и боя: пока герой отдыхает, он не бьёт, не
- * получает по себе и не жмёт умений — тик для него сводится к отсчёту.
+ * Привал: ТОЛЬКО ОТСЧЁТ. Пока герой отдыхает, он не бьёт, не получает по себе
+ * и не жмёт умений — тик для него сводится к тиканью таймера.
  *
- * Уход на привал проверяется здесь же, но ПОСЛЕ отсчёта: порог мерится по
- * состоянию, с которым герой пришёл в тик.
+ * Решение «пора отдыхать» здесь больше НЕ принимается: оно переехало в
+ * applyRestCheck, за убийство моба (см. там же почему).
+ *
+ * Возврат из привала — это НОВАЯ СХВАТКА, а не продолжение старой: герой
+ * получает свежего моба с полным здоровьем. Иначе отдых был бы способом
+ * долечиться посреди боя, только оформленным иначе.
  */
 const applyRest: TickStep = (s, ctx) => {
-  if (s.heroState === 'dead') return s
-  if (s.heroState === 'resting') {
-    const restMsLeft = s.restMsLeft - ctx.dtMs
-    if (restMsLeft > 0) return { ...s, restMsLeft }
-    const done = finishRest(s)
-    return { ...done, combatLog: pushEvent(done.combatLog, { type: 'rest-end', interrupted: false }) }
+  if (s.heroState !== 'resting') return s
+  const restMsLeft = s.restMsLeft - ctx.dtMs
+  if (restMsLeft > 0) return { ...s, restMsLeft }
+  const done = finishRest(s)
+  const log = pushEvent(done.combatLog, { type: 'rest-end', interrupted: false })
+  // В данже цепочка боссов своя: там моба назначает забег, а не зона.
+  if (done.dungeonRun) return { ...done, combatLog: log }
+  const monster = spawnMonster(currentZone(done), ctx.rng)
+  return {
+    ...done,
+    monster,
+    swingProgress: 0,
+    offhandSwingProgress: 0,
+    respawnMsLeft: 0,
+    combatLog: pushEvent(log, { type: 'spawn', monsterName: monster.name }),
   }
+}
+
+/**
+ * Пора ли на привал. Проверяется ТОЛЬКО ПОСЛЕ УБИЙСТВА и никогда в середине
+ * схватки — в этом вся суть шага.
+ *
+ * Раньше герой выходил из боя, едва просев ниже порога, и бой поэтому был
+ * безопасен: до смерти дело не доходило вовсе, а порог был не решением, а
+ * страховкой. Теперь он доводит бой до конца, а решение отдохнуть принимает
+ * между схватками. Отсюда риск, ради которого всё и делалось: войти в бой
+ * на низком здоровье — значит, возможно, из него не выйти.
+ *
+ * Вход в привал снимает и текущего моба, и таймер респауна: возвращаться
+ * герою будет не к кому — его встретит новый (см. applyRest).
+ */
+const applyRestCheck: TickStep = (s) => {
+  if (s.heroState !== 'alive') return s
+  // Только между боями: пока моб жив, порог ничего не запускает.
+  if (s.monster.currentHp.gt(0)) return s
   if (!needsRest(s)) return s
   const resting = startRest(s)
-  return { ...resting, combatLog: pushEvent(resting.combatLog, { type: 'rest-start' }) }
+  return {
+    ...resting,
+    respawnMsLeft: 0,
+    combatLog: pushEvent(resting.combatLog, { type: 'rest-start' }),
+  }
 }
 
 // Кулдауны умений и GCD идут ИГРОВЫМ временем: множитель скорости из
@@ -307,35 +342,19 @@ const applyLootDrop: TickStep = (s, ctx) => {
   // Босс роняет свой пул целиком, а не по общему шансу дропа.
   const boss = currentBoss(s)
   if (boss) return dropBossLoot(s, boss, ctx)
-  // Дроп только при свободном слоте; rng при полном инвентаре не трогаем.
-  if (s.inventory.length >= INVENTORY_SIZE) return s
-  // Предмет наследует уровень убитого моба: находки растут вместе с зоной.
+  // Бросок идёт ВСЕГДА, независимо от заполненности сумки: раньше полная
+  // сумка глушила дроп целиком, и герой переставал находить вещи, пока
+  // игрок не продаст. Куда девать находку — решает stashLoot.
   const item = rollLoot(ctx.rng, s.itemSeq, s.monster.level)
   if (!item) return s
-  const withItem: GameState = {
-    ...s,
-    inventory: [...s.inventory, item],
-    itemSeq: s.itemSeq + 1,
-    combatLog: pushEvent(s.combatLog, { type: 'loot', item }),
-  }
-  // Автонадевание сравнивает предметы по оценочному урону в секунду.
-  return autoEquipIfBetter(withItem, item)
+  return stashLoot({ ...s, itemSeq: s.itemSeq + 1 }, item)
 }
 
-// Лут босса: сколько влезет в инвентарь, остальное пропадает.
+// Лут босса: те же правила разбора, что и у обычной находки.
 function dropBossLoot(s: GameState, boss: BossDef, ctx: TickContext): GameState {
-  const free = INVENTORY_SIZE - s.inventory.length
-  if (free <= 0) return s
-  const items = rollBossLoot(boss.loot, ctx.rng, s.itemSeq, boss.level).slice(0, free)
+  const items = rollBossLoot(boss.loot, ctx.rng, s.itemSeq, boss.level)
   let next: GameState = { ...s, itemSeq: s.itemSeq + items.length }
-  for (const item of items) {
-    next = {
-      ...next,
-      inventory: [...next.inventory, item],
-      combatLog: pushEvent(next.combatLog, { type: 'loot', item }),
-    }
-    next = autoEquipIfBetter(next, item)
-  }
+  for (const item of items) next = stashLoot(next, item)
   return next
 }
 
@@ -499,6 +518,9 @@ const applyResourceGain: TickStep = (s, ctx) => {
 }
 
 const applyRespawn: TickStep = (s, ctx) => {
+  // На привале респауна нет: герой ушёл отдыхать, и встретит его новый моб
+  // в момент возвращения (applyRest), а не тот, что стоял бы тут без него.
+  if (s.heroState === 'resting') return s
   // Смерть моба на этом тике — взводим таймер; отсчёт начнётся со следующего тика.
   if (ctx.killedMonster) return { ...s, respawnMsLeft: RESPAWN_DELAY_MS }
   // В данже пауза ведёт не к респауну, а к следующему боссу цепочки.
@@ -538,6 +560,9 @@ const PIPELINE: TickStep[] = [
   applyLevelUps,
   applyMaterialDrop,
   applyLootDrop,
+  // Решение об отдыхе — здесь, за наградами и добычей: моб уже мёртв,
+  // и это единственный момент, когда герой волен уйти.
+  applyRestCheck,
   applyMonsterAttack,
   applyResourceGain,
   applyRegen,

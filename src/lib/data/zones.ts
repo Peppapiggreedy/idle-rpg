@@ -390,6 +390,39 @@ export function averageMonsterLevel(zone: Zone): number {
   return (zone.monsterLevelRange.min + zone.monsterLevelRange.max) / 2
 }
 
+/**
+ * Куда игра ведёт героя на этом уровне: САМАЯ ДАЛЬНЯЯ открытая зона.
+ *
+ * Живёт в ДАННЫХ, а не в game/zones.ts, чтобы ею могли пользоваться и
+ * данные, и логика без кольца импортов. Логика зон переиспользует её под
+ * именем `intendedZone`, второй копии правила нет.
+ */
+export function zoneForLevel(level: number): Zone {
+  let intended = SAFE_ZONE
+  for (const zone of ZONES) if (level >= zone.unlockRequirement) intended = zone
+  return intended
+}
+
+/**
+ * Зона ПО СВОЕМУ УРОВНЮ: та, чья полоса мобов накрывает этот уровень.
+ *
+ * Это НЕ то же самое, что самая дальняя открытая (`zoneForLevel`), и разница
+ * принципиальная. Зоны открываются быстрее, чем герой успевает в них
+ * выживать: на девятом уровне открыта уже полоса 11–15, но драться герою
+ * по силам с мобами 6–10. По этой функции считается кривая опыта — стоимость
+ * уровня должна опираться на награду мобов, которых герой РЕАЛЬНО бьёт.
+ * Возьми здесь самую дальнюю открытую — и кривая потребовала бы впятеро
+ * больше убийств, чем игрок способен набрать.
+ */
+export function zoneForMonsterLevel(level: number): Zone {
+  const target = Math.max(1, Math.floor(level))
+  for (const zone of ZONES) {
+    if (target >= zone.monsterLevelRange.min && target <= zone.monsterLevelRange.max) return zone
+  }
+  // За краем лестницы — последняя зона: дальше мобов не бывает.
+  return ZONES[ZONES.length - 1]
+}
+
 // Усреднённая роль пула — нужна ровно для одной вещи: показать игроку,
 // сколько ударов «типичного» моба зоны он держит.
 function averageRole(zone: Zone): MonsterRole {

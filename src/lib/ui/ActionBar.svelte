@@ -1,10 +1,18 @@
 <script lang="ts">
-  // Панель действий: кнопки умений с заливкой кулдауна и хоткеями 1 / 2 / 3.
+  // Ряд действий под сценой: ОДИНАКОВЫЕ КВАДРАТНЫЕ ИКОНКИ, номер хоткея
+  // в углу, заливка кулдауна поверх иконки.
   //
-  // Живёт рядом со сценой и видна ВСЕГДА, в любом разделе, и это не украшение:
-  // здесь единственный на всю игру глобальный слушатель клавиатуры. Спрячь её
+  // Одинаковый размер — не косметика: глаз находит нужную кнопку по месту
+  // и рисунку, а разъезжающиеся по ширине подписи заставляют читать. Текст
+  // ушёл в подсказку, на кнопке остались иконка, хоткей и таймер.
+  //
+  // В этот же ряд встают зелья: они такие же кнопки с кулдауном, и стоять
+  // им положено рядом с умениями, а не в отдельном углу экрана.
+  //
+  // Бар живёт рядом со сценой и СМОНТИРОВАН ВСЕГДА, в любом разделе: здесь
+  // единственный на всю игру глобальный слушатель клавиатуры. Спрячь его
   // в неактивную вкладку — Svelte размонтирует компонент, и хоткеи умрут
-  // по всей игре. Настройки автокаста живут отдельно, в разделе «Развитие».
+  // по всей игре.
   import {
     abilitiesByPriority,
     abilityStatus,
@@ -16,17 +24,16 @@
   import { activateAbility, gameState } from '../stores/game'
   import { abilityReasonText } from './abilityText'
   import { resourceWords } from './resource'
-  import { NumberText, Tooltip } from './kit'
+  import { Tooltip } from './kit'
   import { Icon } from './icons'
 
-  // Ресурс называется так, как у класса: у изувера кнопка стоит ярость.
   const resource = $derived(resourceWords($gameState.classId))
 
   // Порядок кнопок = порядок приоритета: слева то, что автокаст жмёт первым.
   const ordered = $derived(abilitiesByPriority($gameState.abilitySettings, false))
   const statuses = $derived(ordered.map((a) => abilityStatus($gameState, a)))
 
-  // Хоткеи 1 / 2 / 3 по порядку умений.
+  // Хоткеи: умения — 1..N, зелья продолжают тот же счёт.
   function hotkey(index: number): string {
     return String(index + 1)
   }
@@ -42,7 +49,7 @@
     activateAbility(ordered[index].id)
   }
 
-  function tooltip(ability: AbilityDef, index: number): string {
+  function abilityTooltip(ability: AbilityDef, index: number): string {
     const status = statuses[index]
     const parts = [
       `${ability.name} (${hotkey(index)})`,
@@ -58,7 +65,9 @@
       )
     }
     if (status.queued) parts.push('В очереди на следующий замах — нажми, чтобы снять')
-    else if (status.reason) parts.push(abilityReasonText(status.reason, resource, ability.unlockLevel))
+    else if (status.reason) {
+      parts.push(abilityReasonText(status.reason, resource, ability.unlockLevel))
+    }
     return parts.join('\n')
   }
 
@@ -72,16 +81,17 @@
 
 <svelte:window onkeydown={onKey} />
 
-<div class="bar" role="group" aria-label="Умения">
+<div class="bar" role="group" aria-label="Действия">
   {#each ordered as ability, i (ability.id)}
     {@const status = statuses[i]}
-    <Tooltip text={tooltip(ability, i)} block width="wide">
+    <Tooltip text={abilityTooltip(ability, i)} width="wide">
       <button
         type="button"
-        class="ability"
+        class="slot"
         class:queued={status.queued}
         class:blocked={!status.usable}
         disabled={!status.usable}
+        aria-label={ability.name}
         onclick={() => activateAbility(ability.id)}
       >
         <span class="fill" style="height: {Math.min(100, status.cooldownFraction * 100)}%"></span>
@@ -90,68 +100,63 @@
         {/if}
         <span class="key">{hotkey(i)}</span>
         <Icon name={ability.icon} size="lg" />
-        <span class="name">{ability.name}</span>
-        <span class="cost">
-          <NumberText value={ability.manaCost} tone="mana" size="sm" />
-          {resource.genitive}
-        </span>
         {#if status.cooldownMsLeft > 0}
-          <span class="timer">{seconds(status.cooldownMsLeft)}с</span>
+          <span class="timer">{seconds(status.cooldownMsLeft)}</span>
         {:else if status.queued}
-          <span class="timer">в очереди</span>
-        {:else if status.reason}
-          <span class="timer reason">
-            {abilityReasonText(status.reason, resource, ability.unlockLevel)}
-          </span>
-        {:else}
-          <span class="timer ready">готово</span>
+          <span class="timer queued-mark">▲</span>
+        {:else if status.reason === 'locked'}
+          <span class="timer">🔒{ability.unlockLevel}</span>
         {/if}
       </button>
     </Tooltip>
   {/each}
+
 </div>
 
 <style>
   .bar {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    display: flex;
+    flex-wrap: nowrap;
     gap: var(--space-2);
+    /* На узком экране ряд скроллится вбок, а не переносится и не жмёт
+       иконки: размер кнопки — константа, до которой должен доставать палец. */
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    padding-bottom: var(--space-1);
   }
-  /* Кнопка умения — не примитив Button: у неё заливка кулдауна под текстом
-     и четыре строки внутри. Цвета и отступы всё равно из токенов. */
-  .ability {
+  /* Квадрат со стороной не меньше области нажатия. Размер ОДИН на все
+     кнопки ряда — и на умения, и на зелья; тест меряет боксы и падает
+     при расхождении. */
+  .slot {
     position: relative;
     overflow: hidden;
     isolation: isolate;
-    width: 100%;
+    flex: none;
+    width: var(--action-slot);
+    height: var(--action-slot);
     font: inherit;
     color: inherit;
     background: var(--c-surface-sunken);
     border: 1px solid var(--c-border-strong);
     border-radius: var(--radius-md);
-    padding: var(--space-2);
-    /* Заметно выше --tap-min: под кнопкой умения помещаются имя, стоимость
-       и кулдаун, и промахнуться по ней в бою нельзя. */
-    min-height: 4.5rem;
+    padding: 0;
     cursor: pointer;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: var(--space-1);
-    text-align: center;
     transition: border-color var(--dur-fast) ease;
   }
-  .ability:hover:not(:disabled) {
-    border-color: var(--c-xp);
+  .slot:hover:not(:disabled) {
+    border-color: var(--c-accent);
   }
-  .ability:disabled {
+  .slot:disabled {
     cursor: not-allowed;
   }
-  .ability.blocked {
+  .slot.blocked {
     opacity: 0.55;
   }
-  .ability.queued {
+  .slot.queued {
     border-color: var(--c-xp);
     box-shadow: inset 0 0 var(--space-2) color-mix(in srgb, var(--c-xp) var(--tint-strong), transparent);
   }
@@ -166,7 +171,7 @@
     background: var(--c-xp);
     z-index: 1;
   }
-  /* Заливка кулдауна: растёт снизу, под текстом. */
+  /* Заливка кулдауна: растёт снизу, под иконкой. */
   .fill {
     position: absolute;
     inset: auto 0 0 0;
@@ -181,22 +186,15 @@
     font-size: var(--text-2xs);
     color: var(--c-text-faint);
   }
-  .name {
-    font-weight: var(--weight-bold);
-    font-size: var(--text-sm);
-  }
-  .cost {
-    font-size: var(--text-xs);
-    color: var(--c-mana);
-  }
   .timer {
+    position: absolute;
+    bottom: var(--space-1);
+    right: var(--space-1);
     font-size: var(--text-2xs);
+    font-variant-numeric: tabular-nums;
     color: var(--c-text-muted);
   }
-  .timer.reason {
-    color: var(--c-text-faint);
-  }
-  .timer.ready {
-    color: var(--c-accent);
+  .queued-mark {
+    color: var(--c-xp);
   }
 </style>

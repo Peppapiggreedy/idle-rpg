@@ -169,21 +169,38 @@ describe('нет доминирующей зоны', () => {
 })
 
 describe('темп прокачки', () => {
-  it('десятый уровень с нуля берётся за 20-60 минут игрового времени', () => {
-    header('Свежий герой без снаряжения, от первого уровня.', 'поведение                    ур.10   за 2 часа   зона в конце')
+  it('десятый уровень берётся за 15-25 минут у того, кто идёт по лестнице', () => {
+    header('Свежий герой в стартовом комплекте, от первого уровня.', 'поведение                    ур.10   за 2 часа   зона в конце')
     // Два крайних игрока: один так и остался на стартовом лугу, другой
-    // переезжает в лучшую зону, как только она открывается. Требование должно
-    // выполняться для обоих — иначе оно про стиль игры, а не про темп.
+    // переезжает в лучшую зону, как только она открывается.
+    //
+    // ТРЕБОВАНИЕ РАЗНОЕ, и это следствие новой кривой. Стоимость уровня
+    // считается по награде зоны, ПОДХОДЯЩЕЙ ПО УРОВНЮ (см. xpToNextLevel):
+    // кривая привязана к реальной награде, а не к отдельному допущению.
+    // Значит тот, кто остался на старте, бьёт мобов дешевле расчётных и
+    // растёт медленнее — это цена решения сидеть на месте, а не поломка.
+    // Контракт «первые девять уровней за 15-25 минут» — про того, кто идёт.
+    const results: Record<string, number> = {}
     for (const travel of ['stay', 'best'] as const) {
       const result = simulate({ hours: 2, zoneId: ZONES[0].id, travel })
       const seconds = result.levelReachedAtSec[10]
+      results[travel] = seconds
       const label = travel === 'stay' ? 'фармит стартовую зону' : 'переезжает по мере открытия'
       log(
         `${label.padEnd(28)} ${(seconds / 60).toFixed(1).padStart(5)}м ${String(result.finalLevel).padStart(11)}   ${result.zoneId}`,
       )
-      expect(seconds).toBeGreaterThanOrEqual(20 * 60)
-      expect(seconds).toBeLessThanOrEqual(60 * 60)
     }
+    for (const travel of ['stay', 'best'] as const) {
+      expect(results[travel], travel).toBeGreaterThanOrEqual(15 * 60)
+      expect(results[travel], travel).toBeLessThanOrEqual(25 * 60)
+    }
+    // На первых уровнях оба стиля дают ОДНО И ТО ЖЕ, и это не совпадение:
+    // «лучшая зона» выбирается по опыту в час, а стартовый луг для новичка
+    // ещё и есть лучшая — соседняя полоса мобов тяжелее ровно настолько,
+    // насколько богаче. Выбор становится настоящим позже, когда герой
+    // перерастает свою полосу. Здесь важно, что игра не наказывает ни за
+    // осторожность, ни за спешку в первые двадцать минут.
+    expect(Math.abs(results.stay - results.best)).toBeLessThan(5 * 60)
   }, 300_000)
 })
 
@@ -233,6 +250,11 @@ describe('стиль боя', () => {
   // удачу спавна: разброс скачет до шести процентов, не меняя ни строчки кода.
   function meanGold(runs: SimResult[]): Decimal {
     return runs.reduce((sum, r) => sum.plus(r.goldPerHour), new Decimal(0)).div(runs.length)
+  }
+
+  /** Средний урон АВТОАТАКИ: им щит и платит за живучесть. */
+  function meanAuto(runs: SimResult[]): Decimal {
+    return runs.reduce((sum, r) => sum.plus(r.autoDamage), new Decimal(0)).div(runs.length)
   }
 
   function runStyle(style: SimStyle, autocast: 'none' | 'all' = 'none'): SimResult[] {
@@ -312,7 +334,13 @@ describe('стиль боя', () => {
     // Простой обязан заметно упасть, а не просто «не вырасти»: щит покупает
     // живучесть, и покупка должна быть видна.
     expect(idle(shield)).toBeLessThan(idle(dual) * 0.9)
-    expect(meanGold(shield).lt(meanGold(dual))).toBe(true)
+    // А вот золото со щитом теперь может оказаться и БОЛЬШЕ, и это не сбой
+    // баланса, а следствие шага 35: привал переехал между боями, и в тяжёлой
+    // зоне живучесть напрямую превращается во время под мобами. Платит щит
+    // именно УРОНОМ — это и проверяется отдельно, ниже и выше по файлу.
+    const damageLoss = 1 - meanAuto(shield).div(meanAuto(dual)).toNumber()
+    log(`Щит стоит ${pct(damageLoss)} урона автоатаки.`)
+    expect(damageLoss).toBeGreaterThan(0.15)
   }, 300_000)
 
   it('перебой: чем короче бой, тем сильнее расходится итог', () => {

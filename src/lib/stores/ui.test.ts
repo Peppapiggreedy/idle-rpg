@@ -15,6 +15,7 @@ describe('настройки интерфейса: разбор сохранён
         textMode: 'auto',
         fpsLimit: 30,
         volumes: SOUND_DEFAULT_VOLUMES,
+        drawers: { hero: false, log: false },
       })
     }
   })
@@ -24,11 +25,13 @@ describe('настройки интерфейса: разбор сохранён
       textMode: 'on',
       fpsLimit: 30,
       volumes: SOUND_DEFAULT_VOLUMES,
+      drawers: { hero: false, log: false },
     })
     expect(sanitizeUiSettings({ textMode: 'off', fpsLimit: 60 })).toEqual({
       textMode: 'off',
       fpsLimit: 60,
       volumes: SOUND_DEFAULT_VOLUMES,
+      drawers: { hero: false, log: false },
     })
     // null допустим: так записаны настройки, сохранённые до появления
     // значения по умолчанию 30. Терять их из-за смены списка нельзя.
@@ -65,6 +68,7 @@ describe('текстовый режим', () => {
     textMode,
     fpsLimit: null,
     volumes: { ...SOUND_DEFAULT_VOLUMES },
+    drawers: { hero: false, log: false },
   })
 
   it('явный выбор игрока сильнее автоопределения', () => {
@@ -83,7 +87,27 @@ describe('текстовый режим', () => {
 
 describe('разделы', () => {
   it('порядок вкладок фиксирован и без повторов', () => {
-    expect(SECTION_IDS).toEqual(['character', 'progress', 'bag', 'world', 'settings'])
+    // «Персонажа» среди вкладок нет: статы и экипировка живут в выдвижке
+    // «Герой», к ним обращаются постоянно, а вкладка — про «уйти надолго».
+    expect(SECTION_IDS).toEqual(['progress', 'bag', 'world', 'settings'])
     expect(new Set(SECTION_IDS).size).toBe(SECTION_IDS.length)
+  })
+})
+
+describe('выдвижки', () => {
+  it('журнал свёрнут по умолчанию', () => {
+    // Лента событий полезна, когда её спросили; постоянно занимать ею
+    // экран не за что.
+    expect(sanitizeUiSettings({}).drawers).toEqual({ hero: false, log: false })
+  })
+
+  it('состояние выдвижек переживает перезагрузку и чинится от мусора', () => {
+    expect(sanitizeUiSettings({ drawers: { hero: true, log: true } }).drawers).toEqual({
+      hero: true,
+      log: true,
+    })
+    // Мусор в localStorage не должен оставить наполовину открытую панель.
+    const junk = sanitizeUiSettings({ drawers: { hero: 'да', log: 1 } })
+    expect(junk.drawers).toEqual({ hero: false, log: false })
   })
 })

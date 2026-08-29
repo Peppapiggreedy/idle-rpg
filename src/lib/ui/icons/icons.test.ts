@@ -7,7 +7,9 @@ import { STAT_ICONS } from '../../data/stats'
 import { TALENTS } from '../../data/talents'
 import { CLASSES } from '../../data/classes'
 import { MATERIALS } from '../../data/materials'
+import { REAGENTS } from '../../data/reagents'
 import { PROFESSIONS, RECIPES } from '../../data/recipes'
+import { PROGRESSION } from '../../data/progression'
 import { ZONES } from '../../data/zones'
 import { STAT_IDS } from '../../game/stats'
 import { ICONS, ICON_NAMES, type IconName } from './manifest'
@@ -24,10 +26,15 @@ const used: IconName[] = [
   ...Object.values(STAT_ICONS),
   ...CLASSES.map((c) => c.icon),
   ...MATERIALS.map((m) => m.icon),
+  ...REAGENTS.map((r) => r.icon),
+  ...PROGRESSION.map((s) => s.icon),
   ...PROFESSIONS.map((p) => p.icon),
   ...RECIPES.map((r) => r.icon),
   'gold',
   'xp',
+  // Иконки интерфейса: их не перечисляют данные — они стоят прямо
+  // в компонентах (ручка выдвижки «Журнал»).
+  'log',
 ]
 
 describe('спрайт иконок', () => {

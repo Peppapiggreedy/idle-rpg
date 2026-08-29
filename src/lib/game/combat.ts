@@ -172,34 +172,97 @@ export interface CombatRate {
   uptime: number
   // Секунд от полного HP до смерти при отрицательном балансе HP; null — не умирает.
   timeToDeathSec: number | null
+  // Сколько мобов герой добивает между привалами; бесконечность — не тает.
+  killsPerCycle: number
+  // Цикл кончается смертью, а не привалом: порог выставлен слишком низко
+  // для этой зоны, и в последнюю схватку герой входит без запаса.
+  diesInCycle: boolean
+}
+
+/** Что выходит из череды боёв между двумя привалами (или до смерти). */
+export interface FarmCycle {
+  /** Сколько мобов герой успевает добить за цикл. */
+  kills: number
+  /** Сколько секунд длится весь цикл вместе с привалом или воскрешением. */
+  cycleSec: number
+  /** Доля времени цикла, потраченная на сам фарм. */
+  uptime: number
+  /** Герой не доживает до привала: цикл кончается смертью, а не отдыхом. */
+  dies: boolean
 }
 
 /**
- * Доля времени, которую герой что-то приносит.
+ * Череда боёв между привалами.
  *
- * Цикл теперь один из двух, и выбирает между ними ПОРОГ ПРИВАЛА:
- *   порог выставлен — герой фармит до порога, потом сидит restDuration
- *                     и возвращается целым; простой короткий и управляемый;
- *   порога нет      — герой фармит до нуля и платит полным воскрешением.
+ * ПРИВАЛ ТЕПЕРЬ МЕЖДУ БОЯМИ, а не посреди схватки, и это меняет саму форму
+ * цикла. Раньше герой выходил из боя, едва просев по здоровью, — и умереть
+ * при аккуратном пороге было нельзя вовсе. Теперь он доводит бой до конца,
+ * а на привал уходит только после убийства. Отсюда риск: в последнюю схватку
+ * цикла герой входит с запасом чуть выше порога, и если моб снимает больше —
+ * он оттуда не выйдет.
  *
- * Оффлайн обязан считать по тому же правилу: время привалов вычитается из
- * полезного времени, иначе оффлайн обещал бы больше, чем даёт живая игра.
+ * Модель считает именно это:
+ *   сколько боёв герой выдерживает до порога (kRest),
+ *   на каком бою у него кончается здоровье (kDeath),
+ * и что из двух наступает раньше. Своей формулы урона здесь нет — потеря
+ * за бой приходит из уже посчитанного баланса HP.
+ */
+export function farmCycle(params: {
+  maxHp: Decimal
+  /** Чистая потеря HP в секунду: входящий урон минус реген. */
+  lossPerSecond: Decimal
+  /** Секунд на один цикл убийства: бой плюс пауза респауна. */
+  cycleSec: number
+  /** Порог привала, доля запаса. 0 — привалов нет вовсе. */
+  hpThreshold: number
+  restSec: number
+}): FarmCycle {
+  const { maxHp, lossPerSecond, cycleSec, hpThreshold, restSec } = params
+  const reviveSec = REVIVE_DELAY_MS / 1000
+  if (lossPerSecond.lte(0) || cycleSec <= 0) {
+    return { kills: Number.POSITIVE_INFINITY, cycleSec, uptime: 1, dies: false }
+  }
+  const lossPerFight = lossPerSecond.times(cycleSec)
+  const hp = maxHp.toNumber()
+  const loss = lossPerFight.toNumber()
+  if (loss <= 0) return { kills: Number.POSITIVE_INFINITY, cycleSec, uptime: 1, dies: false }
+  // На каком бою здоровья уже не хватит: входит герой с hp - (k-1)*loss.
+  const kDeath = Math.ceil(hp / loss)
+  // После какого боя он уходит на привал (порог мерится ПОСЛЕ убийства).
+  const kRest =
+    hpThreshold > 0 ? Math.floor((hp * (1 - hpThreshold)) / loss) + 1 : Number.POSITIVE_INFINITY
+  const dies = kDeath <= kRest
+  if (dies) {
+    // Последний бой не дожит: убийства с него нет, а время потрачено.
+    const kills = Math.max(0, kDeath - 1)
+    const total = kills * cycleSec + cycleSec + reviveSec
+    return { kills, cycleSec: total, uptime: (kills * cycleSec) / total, dies: true }
+  }
+  const kills = Math.max(1, kRest)
+  const total = kills * cycleSec + restSec
+  return { kills, cycleSec: total, uptime: (kills * cycleSec) / total, dies: false }
+}
+
+/**
+ * Доля времени, которую герой что-то приносит. Тонкая обёртка над farmCycle
+ * для тех, кому нужна только доля: зоны и оффлайн-агрегат.
  */
 export function uptimeFromHpLoss(
   maxHp: Decimal,
   hpLossPerSecond: Decimal,
-  rest?: { hpThreshold: number; durationMs: number },
+  rest?: { hpThreshold: number; durationMs: number; cycleSec: number },
 ): number {
   if (hpLossPerSecond.lte(0)) return 1
-  if (rest && rest.hpThreshold > 0) {
-    // Падать герою есть куда только до порога: ниже он уходит отдыхать.
-    const usableHp = maxHp.times(1 - rest.hpThreshold)
-    if (usableHp.lte(0)) return 0
-    const farmSec = usableHp.div(hpLossPerSecond)
-    return farmSec.div(farmSec.plus(rest.durationMs / 1000)).toNumber()
-  }
-  const timeToDeathSec = maxHp.div(hpLossPerSecond)
-  return timeToDeathSec.div(timeToDeathSec.plus(REVIVE_DELAY_MS / 1000)).toNumber()
+  // Без данных о длине боя цикл выродится в один бой: это запасной путь для
+  // вызовов, где длина схватки неизвестна.
+  const cycleSec = rest?.cycleSec ?? maxHp.div(hpLossPerSecond).toNumber()
+  return farmCycle({
+    maxHp,
+    lossPerSecond: hpLossPerSecond,
+    cycleSec,
+    hpThreshold: rest?.hpThreshold ?? 0,
+    restSec: (rest?.durationMs ?? 0) / 1000,
+  }).uptime
 }
 
 /**
@@ -517,17 +580,32 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
       hpLossPerSecond: new Decimal(0),
       uptime: 1,
       timeToDeathSec: null,
+      killsPerCycle: Number.POSITIVE_INFINITY,
+      diesInCycle: false,
     }
   }
-  const uptime = uptimeFromHpLoss(stats.maxHp, netLossPerSec)
+  // Цикл фарма считается ПО БОЯМ ЦЕЛИКОМ: герой доводит схватку до конца и
+  // уходит на привал только после убийства (см. farmCycle). Порог берётся
+  // из конвейера статов — настройка игрока плюс таланты.
+  const cycle = farmCycle({
+    maxHp: stats.maxHp,
+    lossPerSecond: netLossPerSec,
+    cycleSec: killCycleSec.toNumber(),
+    hpThreshold: stats.restThreshold,
+    restSec: stats.restDuration,
+  })
   return {
     damagePerSecond,
     autoDamagePerSecond: autoDps,
     abilityDamagePerSecond: rotation.damagePerSecond,
-    killsPerSecond: idealKillsPerSecond.times(uptime),
+    killsPerSecond: idealKillsPerSecond.times(cycle.uptime),
     idealKillsPerSecond,
     hpLossPerSecond: netLossPerSec,
-    uptime,
+    uptime: cycle.uptime,
+    // Сколько герой продержится, если никуда не уходить: по этому числу
+    // прогноз зоны понимает, переживает ли он бой вообще.
     timeToDeathSec: stats.maxHp.div(netLossPerSec).toNumber(),
+    killsPerCycle: cycle.kills,
+    diesInCycle: cycle.dies,
   }
 }

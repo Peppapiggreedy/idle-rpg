@@ -131,6 +131,81 @@ export const DUNGEON_SCENE: SceneConfig = {
   seed: 5150,
 }
 
+// --- Интерьеры данжей ---------------------------------------------------
+//
+// Данжей восемь, а интерьеров ЧЕТЫРЕ, и это то же решение, что у зон: место
+// узнаётся палитрой и туманом, а не собственной геометрией. Восемь наборов
+// пропсов пришлось бы держать руками, и они всё равно читались бы как один
+// и тот же подвал — под землёй смотреть, кроме цвета и плотности воздуха,
+// не на что.
+//
+// Общее у всех четырёх: света меньше и туман плотнее, чем в ЛЮБОЙ зоне
+// поверхности. Это не украшение, а признак: игрок обязан видеть, что он
+// под землёй, до того как прочитает название.
+
+/** Каменный склеп: сухо, глухо, синий отсвет. Интерьер по умолчанию. */
+export const DUNGEON_VAULT_SCENE: SceneConfig = DUNGEON_SCENE
+
+/** Затопленный подвал: вода по щиколотку, зелень, туман гуще всех. */
+export const DUNGEON_CISTERN_SCENE: SceneConfig = {
+  fogColor: 0x0a1414,
+  fogDensity: 0.16,
+  groundColor: 0x14232a,
+  lightColor: 0x6fb8b0,
+  lightIntensity: 1.1,
+  lightAngleDeg: 30,
+  ambientIntensity: 0.26,
+  props: [
+    { shape: 'stump', model: 'prop-column', count: 10, scaleRange: [0.8, 1.5], color: 0x2b3c40 },
+    { shape: 'rock', count: 10, scaleRange: [0.5, 1.3], color: 0x1c2a2e },
+  ],
+  seed: 5211,
+}
+
+/** Жаркий подземный ход: серный чад, багровый свет, дышать нечем. */
+export const DUNGEON_FORGE_SCENE: SceneConfig = {
+  fogColor: 0x1a0c08,
+  fogDensity: 0.145,
+  groundColor: 0x2b1811,
+  lightColor: 0xff8a4a,
+  lightIntensity: 1.25,
+  lightAngleDeg: 300,
+  ambientIntensity: 0.24,
+  props: [
+    { shape: 'crystal', count: 10, scaleRange: [0.5, 1.5], color: 0x8f3320 },
+    { shape: 'rock', count: 12, scaleRange: [0.5, 1.5], color: 0x3a221a },
+  ],
+  seed: 5308,
+}
+
+/** Стылые своды: наледь, белёсый свет, воздух звенит. */
+export const DUNGEON_RIME_SCENE: SceneConfig = {
+  fogColor: 0x101720,
+  fogDensity: 0.135,
+  groundColor: 0x1d2733,
+  lightColor: 0xcfe4ff,
+  lightIntensity: 1.15,
+  lightAngleDeg: 210,
+  ambientIntensity: 0.28,
+  props: [
+    { shape: 'crystal', count: 12, scaleRange: [0.6, 1.7], color: 0x6d8fc4 },
+    { shape: 'rock', count: 9, scaleRange: [0.5, 1.4], color: 0x27313d },
+  ],
+  seed: 5407,
+}
+
+/** Ключ интерьера. Данж называет его строкой, а не тащит конфиг сам. */
+export type DungeonSceneKey = 'vault' | 'cistern' | 'forge' | 'rime'
+
+export const DUNGEON_SCENES: Record<DungeonSceneKey, SceneConfig> = {
+  vault: DUNGEON_VAULT_SCENE,
+  cistern: DUNGEON_CISTERN_SCENE,
+  forge: DUNGEON_FORGE_SCENE,
+  rime: DUNGEON_RIME_SCENE,
+}
+
+export const DUNGEON_SCENE_KEYS = Object.keys(DUNGEON_SCENES) as DungeonSceneKey[]
+
 // --- Зоны второй половины лестницы -------------------------------------
 // Один набор примитивов плюс пропсы из KayKit дают двадцать разных мест,
 // не рисуя ни одной картинки. Цвет и плотность тумана — главное, что их

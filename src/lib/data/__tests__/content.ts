@@ -26,6 +26,9 @@ import { RARITIES } from '../rarity'
 import { SOUNDS } from '../sounds'
 import { CLASSES } from '../classes'
 import { MATERIALS } from '../materials'
+import { PROGRESSION } from '../progression'
+import { REAGENTS } from '../reagents'
+import { DUNGEON_SCENE_KEYS } from '../scenery'
 import { PROFESSIONS, RECIPES } from '../recipes'
 import { SLOT_DROP_WEIGHTS, SLOT_ICONS, SLOT_IDS, SLOT_NAMES } from '../slots'
 import { BRANCHES, TALENTS } from '../talents'
@@ -94,6 +97,9 @@ export function realContent(): Content {
     sounds: SOUNDS,
     classes: CLASSES,
     materials: MATERIALS,
+    progression: PROGRESSION,
+    reagents: REAGENTS,
+    dungeonSceneKeys: DUNGEON_SCENE_KEYS,
     recipes: RECIPES,
     professions: PROFESSIONS,
     props: PROP_ASSETS,

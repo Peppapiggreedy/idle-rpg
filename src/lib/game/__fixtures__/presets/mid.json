@@ -1,5 +1,5 @@
 {
-  "version": 18,
+  "version": 19,
   "classId": "warden",
   "materials": {},
   "restSpeedupSource": null,
@@ -103,6 +103,97 @@
       ]
     },
     {
+      "id": "start-mainHand-bastard",
+      "name": "Полуторник",
+      "rarity": "uncommon",
+      "slot": "mainHand",
+      "level": 1,
+      "hands": 1,
+      "mods": [
+        {
+          "stat": "weaponSpeed",
+          "kind": "base",
+          "value": "2.2",
+          "source": "equipment:mainHand"
+        },
+        {
+          "stat": "weaponDamageMin",
+          "kind": "base",
+          "value": "22",
+          "source": "equipment:mainHand"
+        },
+        {
+          "stat": "weaponDamageMax",
+          "kind": "base",
+          "value": "44",
+          "source": "equipment:mainHand"
+        },
+        {
+          "stat": "strength",
+          "kind": "flat",
+          "value": "14",
+          "source": "equipment:mainHand"
+        }
+      ]
+    },
+    {
+      "id": "start-hands",
+      "name": "Наруч",
+      "rarity": "uncommon",
+      "slot": "hands",
+      "level": 1,
+      "mods": [
+        {
+          "stat": "agility",
+          "kind": "flat",
+          "value": "8",
+          "source": "equipment:hands"
+        },
+        {
+          "stat": "vitality",
+          "kind": "flat",
+          "value": "4",
+          "source": "equipment:hands"
+        }
+      ]
+    },
+    {
+      "id": "start-chest",
+      "name": "Панцирь",
+      "rarity": "uncommon",
+      "slot": "chest",
+      "level": 1,
+      "mods": [
+        {
+          "stat": "vitality",
+          "kind": "flat",
+          "value": "12",
+          "source": "equipment:chest"
+        }
+      ]
+    },
+    {
+      "id": "start-head",
+      "name": "Шлем",
+      "rarity": "uncommon",
+      "slot": "head",
+      "level": 1,
+      "mods": [
+        {
+          "stat": "intellect",
+          "kind": "flat",
+          "value": "8",
+          "source": "equipment:head"
+        },
+        {
+          "stat": "vitality",
+          "kind": "flat",
+          "value": "4",
+          "source": "equipment:head"
+        }
+      ]
+    },
+    {
       "id": "item-0",
       "name": "Сумрачный Хват",
       "rarity": "common",
@@ -159,7 +250,33 @@
         }
       ]
     },
-    "offHand": null,
+    "offHand": {
+      "id": "start-offHand-bulwark",
+      "name": "Заслон",
+      "rarity": "uncommon",
+      "slot": "offHand",
+      "level": 1,
+      "mods": [
+        {
+          "stat": "blockChance",
+          "kind": "base",
+          "value": "0.25",
+          "source": "equipment:offHand"
+        },
+        {
+          "stat": "blockValue",
+          "kind": "base",
+          "value": "24",
+          "source": "equipment:offHand"
+        },
+        {
+          "stat": "vitality",
+          "kind": "flat",
+          "value": "8",
+          "source": "equipment:offHand"
+        }
+      ]
+    },
     "head": {
       "id": "item-2",
       "name": "Гремящий Капюшон",
@@ -223,10 +340,49 @@
         }
       ]
     },
-    "legs": null,
-    "trinket": null
+    "legs": {
+      "id": "start-legs",
+      "name": "Наголенник",
+      "rarity": "uncommon",
+      "slot": "legs",
+      "level": 1,
+      "mods": [
+        {
+          "stat": "strength",
+          "kind": "flat",
+          "value": "8",
+          "source": "equipment:legs"
+        },
+        {
+          "stat": "vitality",
+          "kind": "flat",
+          "value": "4",
+          "source": "equipment:legs"
+        }
+      ]
+    },
+    "trinket": {
+      "id": "start-trinket",
+      "name": "Амулет",
+      "rarity": "uncommon",
+      "slot": "trinket",
+      "level": 1,
+      "mods": [
+        {
+          "stat": "strength",
+          "kind": "flat",
+          "value": "8",
+          "source": "equipment:trinket"
+        },
+        {
+          "stat": "vitality",
+          "kind": "flat",
+          "value": "4",
+          "source": "equipment:trinket"
+        }
+      ]
+    }
   },
-  "autoEquip": true,
   "currentZoneId": "hollow-quarry",
   "lastSurvivedZoneId": null,
   "dungeonRun": null,
@@ -259,8 +415,8 @@
   "itemSeq": 9,
   "gold": "4820",
   "level": "10",
-  "currentXp": "429",
-  "currentHp": "213",
+  "currentXp": "546",
+  "currentHp": "283",
   "currentMana": "61",
   "heroState": "alive",
   "reviveMsLeft": 0,

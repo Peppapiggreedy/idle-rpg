@@ -11,6 +11,7 @@ import type { IconName } from '../ui/icons/manifest'
 import { Decimal } from '../game/numbers'
 import type { TalentModifier, BranchId } from './talents'
 import type { SlotId } from './slots'
+import type { AttributeId } from './items'
 
 export type ResourceKind = 'mana' | 'rage'
 
@@ -47,10 +48,31 @@ export interface ResourceDef {
 
 export interface StartingItem {
   slot: SlotId
-  /** Id шаблона из data/items.ts: оружие или щит. */
-  templateId: string
-  kind: 'weapon' | 'shield'
+  /** Id шаблона из data/items.ts: оружие или щит. Броне шаблон не нужен. */
+  templateId?: string
+  kind: 'weapon' | 'shield' | 'armor'
+  /** Главный атрибут стартовой брони: у дропа он случайный, здесь — данные. */
+  attribute?: AttributeId
 }
+
+/**
+ * Стартовый комплект брони — общий для всех классов и намеренно ровный:
+ * по одному атрибуту в каждый слот. Это не подарок, а ТОЧКА ОТСЧЁТА
+ * контракта темпа: эталонный герой первого уровня одет в среднюю вещь
+ * своего уровня, и коридор 8–15 секунд меряется именно от него.
+ *
+ * Раньше пустые слоты прятало автонадевание — оно затыкало их первой же
+ * находкой за несколько минут. Автонадевания больше нет, и голый старт
+ * означал бы сорокасекундные бои в первые минуты игры, то есть провал
+ * контракта темпа ровно там, где игрок game видит впервые.
+ */
+export const STARTING_ARMOR: StartingItem[] = [
+  { slot: 'head', kind: 'armor', attribute: 'intellect' },
+  { slot: 'chest', kind: 'armor', attribute: 'vitality' },
+  { slot: 'hands', kind: 'armor', attribute: 'agility' },
+  { slot: 'legs', kind: 'armor', attribute: 'strength' },
+  { slot: 'trinket', kind: 'armor', attribute: 'strength' },
+]
 
 export interface ClassDef {
   id: string
@@ -85,7 +107,16 @@ export const CLASSES: ClassDef[] = [
     baseMods: [],
     abilityIds: ['quick-strike', 'rending-wound', 'shattering-blow'],
     branchIds: ['fury', 'endurance', 'composure'],
-    startingEquipment: [],
+    startingEquipment: [
+      // Одноручное и щит: стражу они и по смыслу, и по делу. Голыми руками
+      // бой первого моба длился бы сорок секунд вместо десяти — раньше это
+      // прятало автонадевание, которое надевало первую же находку. Его
+      // больше нет: предметы надевает игрок, и стартовать он обязан
+      // с оружием, а не с обещания найти его через пять минут.
+      { slot: 'mainHand', templateId: 'bastard', kind: 'weapon' },
+      { slot: 'offHand', templateId: 'bulwark', kind: 'shield' },
+      ...STARTING_ARMOR,
+    ],
   },
   {
     id: 'reaver',
@@ -130,9 +161,11 @@ export const CLASSES: ClassDef[] = [
     branchIds: ['fury', 'endurance', 'composure'],
     startingEquipment: [
       // Изувер начинает с двумя клинками: ярость копится от ударов, а два
-      // клинка бьют чаще. Страж начинает голым — его ресурс от боя не зависит.
+      // клинка бьют чаще. У стража вместо второго клинка щит — тот же
+      // стартовый уровень силы, но другой стиль.
       { slot: 'mainHand', templateId: 'fang', kind: 'weapon' },
       { slot: 'offHand', templateId: 'fang', kind: 'weapon' },
+      ...STARTING_ARMOR,
     ],
   },
 ]

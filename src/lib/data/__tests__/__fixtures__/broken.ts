@@ -277,6 +277,42 @@ export function brokenCases(): BrokenCase[] {
       expect: [first(real.classes).id, 'ни одной ветки'],
     },
     {
+      title: 'ступень лестницы ссылается на несуществующий данж',
+      content: {
+        ...real,
+        progression: real.progression.map((step) =>
+          step.unlocks.some((u) => u.kind === 'dungeon')
+            ? { ...step, unlocks: [{ kind: 'dungeon' as const, id: 'нет-такого-данжа' }] }
+            : step,
+        ),
+      },
+      expect: ['нет-такого-данжа', 'data/dungeons.ts'],
+    },
+    {
+      title: 'ступень лестницы ссылается на несуществующую механику',
+      content: {
+        ...real,
+        progression: real.progression.map((step) =>
+          step.unlocks.some((u) => u.kind === 'mechanic')
+            ? { ...step, unlocks: [{ kind: 'mechanic' as const, id: 'телепортация' as never }] }
+            : step,
+        ),
+      },
+      expect: ['телепортация', 'MECHANIC_IDS'],
+    },
+    {
+      title: 'ступень-заглушка при этом что-то открывает',
+      content: {
+        ...real,
+        progression: real.progression.map((step) =>
+          step.placeholder
+            ? { ...step, unlocks: [{ kind: 'dungeon' as const, id: real.dungeons[0].id }] }
+            : step,
+        ),
+      },
+      expect: ['заглушкой', 'data/progression.ts'],
+    },
+    {
       title: 'кованая броня не называет главный атрибут',
       content: {
         ...real,
@@ -450,6 +486,81 @@ export function brokenCases(): BrokenCase[] {
         zones: real.zones.map((z) => ({ ...z, unlockRequirement: z.unlockRequirement + 5 })),
       },
       expect: ['негде начать', 'data/zones.ts'],
+    },
+    {
+      title: 'данж ссылается на реагент, которого нет в игре',
+      content: {
+        ...real,
+        dungeons: patch(real.dungeons, first(real.dungeons).id, {
+          reagentId: 'reagent-нет-такого',
+        }),
+      },
+      expect: [first(real.dungeons).id, 'reagent-нет-такого', 'data/reagents.ts'],
+    },
+    {
+      title: 'реагент данжа не своего тира: две ступени перепутаны',
+      content: {
+        ...real,
+        dungeons: patch(real.dungeons, first(real.dungeons).id, {
+          reagentId: real.dungeons[1].reagentId,
+          bosses: first(real.dungeons).bosses.map((boss, i, all) =>
+            i === all.length - 1 ? { ...boss, reagentId: real.dungeons[1].reagentId } : boss,
+          ),
+        }),
+      },
+      expect: [first(real.dungeons).id, 'своего тира', 'data/reagents.ts'],
+    },
+    {
+      title: 'у данжа нет обстановки: ключ интерьера промахнулся',
+      content: {
+        ...real,
+        dungeons: patch(real.dungeons, first(real.dungeons).id, {
+          scenery: 'подземелье' as never,
+        }),
+      },
+      expect: [first(real.dungeons).id, 'подземелье', 'data/scenery.ts'],
+    },
+    {
+      title: 'лестница данжей с дыркой: тира нет ни у кого',
+      content: {
+        ...real,
+        dungeons: patch(real.dungeons, real.dungeons[1].id, { tier: real.dungeons[1].tier + 1 }),
+      },
+      expect: [real.dungeons[1].id, 'подряд', 'data/dungeons.ts'],
+    },
+    {
+      title: 'уровень входа не вырос вместе с тиром',
+      content: {
+        ...real,
+        dungeons: patch(real.dungeons, real.dungeons[1].id, {
+          unlockRequirement: first(real.dungeons).unlockRequirement,
+        }),
+      },
+      expect: [real.dungeons[1].id, 'уровни входа обязаны расти', 'data/dungeons.ts'],
+    },
+    {
+      title: 'реагент, которого не роняет ни один данж',
+      content: {
+        ...real,
+        dungeons: real.dungeons.filter((d) => d.id !== real.dungeons[real.dungeons.length - 1].id),
+      },
+      expect: [
+        real.reagents[real.reagents.length - 1].id,
+        'не роняет ни один данж',
+        'data/dungeons.ts',
+      ],
+    },
+    {
+      title: 'реагент падает с первого босса, а не за пройденную цепочку',
+      content: {
+        ...real,
+        dungeons: patch(real.dungeons, first(real.dungeons).id, {
+          bosses: first(real.dungeons).bosses.map((boss, i) =>
+            i === 0 ? { ...boss, reagentId: first(real.dungeons).reagentId } : boss,
+          ),
+        }),
+      },
+      expect: [first(first(real.dungeons).bosses).id, 'не будучи последним', 'data/dungeons.ts'],
     },
     {
       title: 'данж открывается раньше своей зоны',

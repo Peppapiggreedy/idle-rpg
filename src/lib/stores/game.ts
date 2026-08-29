@@ -13,7 +13,7 @@ import { applyOfflineProgress } from '../game/save'
 import { sellItem } from '../game/loot'
 import { craft as craftAction } from '../game/crafting'
 import { recordDecision, resetTelemetry } from './telemetry'
-import { equipItem, setAutoEquip, unequipItem } from '../game/equipment'
+import { equipItem, unequipItem } from '../game/equipment'
 import { currentZone, travelToZone as travelAction } from '../game/zones'
 import { useAbility as useAbilityAction } from '../game/abilities'
 import { abilitiesByPriority } from '../game/rotation'
@@ -222,10 +222,6 @@ export function unequipSlot(slot: SlotId): void {
   state.update((s) => unequipItem(s, slot))
 }
 
-/** Галочка «надевать автоматически, если лучше». */
-export function toggleAutoEquip(enabled: boolean): void {
-  state.update((s) => setAutoEquip(s, enabled))
-}
 
 /** Переход в зону по клику. В закрытую зону экшен не пустит — состояние как было. */
 export function travelToZone(zoneId: string): void {

@@ -1,9 +1,20 @@
-// Данж — данные. Цепочка боссов в фиксированном порядке, вход из зоны,
-// требование по уровню. Числа боссов считаются от мобов зоны той же формулой
-// масштаба, что и обычные мобы: своей у боссов нет.
+// Данж — данные, и он ШАБЛОН, а не восемь рукописных наборов чисел.
+//
+// ПОЧЕМУ ШАБЛОН. Данжей восемь, боссов двадцать четыре, у каждого пять чисел
+// плюс отметка ярости — сто сорок четыре числа, выставленных руками. Такой
+// набор не сходится ни с чем: подвинули рост урона мобов — и половина
+// цепочек перестала проходиться, а заметить это можно только прогоном
+// каждой. Поэтому числа боссов ВЫВОДЯТСЯ, ровно как числа моба выводятся из
+// его уровня (data/monsters.ts): руками задан ТИР данжа, а формула
+// разворачивает его в цепочку. Поправка в формуле чинит все восемь сразу.
+//
+// Данж описывается ПАРАМЕТРАМИ (DungeonSpec): тир, уровень входа, зона
+// входа, тир лут-пула, реагент и ключ интерьера. Всё остальное — вывод.
 import type { IconName } from '../ui/icons/manifest'
 import { Decimal } from '../game/numbers'
 import { buildMonster, COMMON, type MonsterRole } from './monsters'
+import { DUNGEON_SCENES, type DungeonSceneKey, type SceneConfig } from './scenery'
+import { zoneForMonsterLevel } from './zones'
 import type { SlotId } from './slots'
 import type { MonsterTemplate, Rarity } from '../types'
 
@@ -26,6 +37,10 @@ export interface BossDef {
   // Через сколько игровых секунд боя начинается ярость.
   enrageAfterSec: number
   loot: BossLoot
+  // Реагент, который этот босс роняет ГАРАНТИРОВАННО, помимо лут-пула.
+  // Не null только у последнего босса цепочки: реагент — отметка о том,
+  // что данж пройден до конца, а не награда за первую же схватку.
+  reagentId: string | null
 }
 
 export interface DungeonDef {
@@ -33,8 +48,17 @@ export interface DungeonDef {
   name: string
   /** Иконка. Тип выведен из реестра: опечатка — ошибка проверки типов. */
   icon: IconName
+  /** Ступень лестницы данжей, 1..8. Уникален: по нему выводятся числа. */
+  tier: number
   zoneId: string // из какой зоны вход
   unlockRequirement: number // уровень персонажа
+  /** Реагент тира: его роняет последний босс цепочки. */
+  reagentId: string
+  /** Ключ интерьера. Держится рядом с самим конфигом ради проверки данных:
+   *  «обстановки key нет в DUNGEON_SCENES» читается, а сравнение объектов — нет. */
+  scenery: DungeonSceneKey
+  /** Как выглядит место. Интерьеров четыре на восемь данжей — см. scenery.ts. */
+  scene: SceneConfig
   bosses: BossDef[] // порядок фиксирован: цепочка идёт сверху вниз
 }
 
@@ -43,53 +67,317 @@ export interface DungeonDef {
 export const ENRAGE_STEP_SEC = 10
 export const ENRAGE_GROWTH = 0.5
 
-export const DUNGEONS: DungeonDef[] = [
+// ---------------------------------------------------------------------------
+// Формула цепочки
+// ---------------------------------------------------------------------------
+
+/**
+ * Место в цепочке. Три ступени одинаковы во ВСЕХ данжах — тир двигает их
+ * целиком, а не переставляет местами.
+ *
+ * Числа подобраны под одно правило и проверяются им же
+ * (game/__tests__/dungeon-ladder.test.ts):
+ * ОБЫЧНЫЕ УДАРЫ ГЕРОЙ ПЕРЕЖИВАЕТ, ДОГОНЯЕТ ЯРОСТЬ. То есть герой уровня
+ * входа в средней экипировке своей зоны проходит все три схватки подряд,
+ * не умерев (внутри данжа привала нет — цепочка идёт без перерыва), но
+ * запаса у него к концу остаётся треть, а не девять десятых. Кто отстал по
+ * урону в секунду — не укладывается в enrageAfterSec, и дальше его добивает
+ * ярость, а не сами удары.
+ */
+interface ChainStep {
+  hpMult: number
+  damageMult: number
+  goldMult: number
+  xpMult: number
+  swingTime: number
+  enrageAfterSec: number
+  /** Слоты лут-пула. Качество задаёт тир лут-пула данжа, а не эта строка. */
+  slots: SlotId[]
+}
+
+// hpMult растёт по цепочке быстрее damageMult: длиннее бой — больше времени
+// под ударами, и пресс копится сам. Разгонять ещё и урон значило бы считать
+// одно и то же дважды.
+const CHAIN: readonly ChainStep[] = [
   {
+    hpMult: 3.6,
+    damageMult: 1.4,
+    goldMult: 12,
+    xpMult: 10,
+    swingTime: 2.4,
+    enrageAfterSec: 50,
+    slots: ['chest', 'hands'],
+  },
+  {
+    hpMult: 4.6,
+    damageMult: 1.7,
+    goldMult: 20,
+    xpMult: 16,
+    swingTime: 2.0,
+    enrageAfterSec: 64,
+    slots: ['head', 'legs'],
+  },
+  {
+    hpMult: 6.0,
+    damageMult: 2.0,
+    goldMult: 34,
+    xpMult: 27,
+    swingTime: 1.8,
+    enrageAfterSec: 82,
+    slots: ['mainHand', 'trinket'],
+  },
+]
+
+/**
+ * Что тир добавляет поверх ступени цепочки. Ставки МАЛЕНЬКИЕ, и это не
+ * робость: главный рост сложности несёт УРОВЕНЬ босса, а он привязан к
+ * полосе мобов, на которой герой этого уровня и дерётся. Тир добавляет
+ * только то, чего уровень не даёт, — поправку на то, что сила героя после
+ * шестидесятого растёт уже не вещами (зон дальше нет), а одними атрибутами.
+ */
+export const TIER_GROWTH = {
+  hp: 1.03,
+  // ЕДИНИЦА — это решение, а не пропуск. Пресс тира и так растёт уровнем
+  // босса: у мобов damagePerLevel круче hpPerLevel (data/monsters.ts), то
+  // есть входящий урон с уровнем разгоняется сам. Вторая ставка сверху
+  // съедала бы запас героя, который после шестидесятого почти не растёт —
+  // зон дальше нет, вещи упираются в потолок. Старшие данжи становятся
+  // труднее ДРУГИМ: отметка ярости подступает раньше, и они превращаются
+  // в проверку урона в секунду, а не в мясорубку.
+  damage: 1,
+  reward: 1.12,
+  // Ярость подступает с тиром раньше: единственная ставка НИЖЕ единицы.
+  enrage: 0.97,
+}
+
+/** Тир лут-пула: с какого качества начинается цепочка находок данжа. */
+export type LootTier = 1 | 2
+
+// Качество растёт от первого босса к третьему ВНУТРИ цепочки, а тир пула
+// поднимает всю тройку разом. Второй тир — данжи второй половины лестницы:
+// эпик там уже обычная находка, и порог обязан ехать следом.
+const LOOT_FLOORS: Record<LootTier, readonly Rarity[]> = {
+  1: ['uncommon', 'rare', 'epic'],
+  2: ['rare', 'epic', 'legendary'],
+}
+
+/** Множитель тира: единица на первом, дальше степень ставки. */
+function tierScale(rate: number, tier: number): number {
+  return Math.pow(rate, tier - 1)
+}
+
+/**
+ * Уровень босса. Берётся НЕ от зоны входа, а от полосы мобов, КОТОРАЯ ПО
+ * СИЛАМ герою уровня входа (`zoneForMonsterLevel`), плюс шаг за место
+ * в цепочке.
+ *
+ * Разница принципиальна, и оба соседних варианта неверны. «Зона, где дверь» —
+ * это про место на карте, а не про силу противника: дверь первого данжа
+ * стоит в Топких лощинах, но открывается на двадцатом. А «самая дальняя
+ * ОТКРЫТАЯ зона» (zoneForLevel) уводит в другую крайность: зоны открываются
+ * заметно быстрее, чем герой начинает в них выживать, и на двадцатом уровне
+ * это дало бы боссов тридцать пятого — данж стал бы непроходим на своём же
+ * уровне входа. По силам герою полоса СВОЕГО уровня, от неё и считаем.
+ */
+function bossLevel(unlockRequirement: number, index: number): number {
+  return zoneForMonsterLevel(unlockRequirement).monsterLevelRange.max + index
+}
+
+// ---------------------------------------------------------------------------
+// Восемь данжей: только параметры
+// ---------------------------------------------------------------------------
+
+/** Всё, что у данжа задано руками. Остальное считает buildDungeon. */
+export interface DungeonSpec {
+  tier: number
+  id: string
+  name: string
+  icon: IconName
+  zoneId: string
+  unlockRequirement: number
+  lootTier: LootTier
+  reagentId: string
+  scenery: DungeonSceneKey
+  /** Три босса цепочки: только id и имя — числа приходят из формулы. */
+  bosses: readonly { id: string; name: string }[]
+}
+
+// Один данж на десяток уровней: 20, 30, ... 90. Зоны входа разнесены по
+// всей лестнице, а не свалены в последнюю: дверь стоит там, где по лору
+// стоит, а сила боссов приходит от тира.
+export const DUNGEON_SPECS: readonly DungeonSpec[] = [
+  {
+    tier: 1,
     id: 'sunken-barrow',
-    icon: 'dungeon-sunken-barrow',
     name: 'Затонувший курган',
+    icon: 'dungeon-sunken-barrow',
     zoneId: 'mirefen-hollows',
-    unlockRequirement: 10,
+    unlockRequirement: 20,
+    lootTier: 1,
+    reagentId: 'reagent-silt-clot',
+    scenery: 'cistern',
     bosses: [
-      {
-        id: 'barrow-warden',
-        name: 'Страж кургана',
-        level: 17,
-        hpMult: new Decimal(9),
-        damageMult: new Decimal(1.4),
-        swingTime: 2.4,
-        goldMult: new Decimal(12),
-        xpMult: new Decimal(10),
-        enrageAfterSec: 45,
-        loot: { slots: ['chest', 'hands'], minRarity: 'uncommon' },
-      },
-      {
-        id: 'silt-matron',
-        name: 'Тинная матрона',
-        level: 19,
-        hpMult: new Decimal(14),
-        damageMult: new Decimal(1.7),
-        swingTime: 2.0,
-        goldMult: new Decimal(20),
-        xpMult: new Decimal(16),
-        enrageAfterSec: 40,
-        loot: { slots: ['head', 'legs'], minRarity: 'rare' },
-      },
-      {
-        id: 'drowned-king',
-        name: 'Утопший король',
-        level: 20,
-        hpMult: new Decimal(22),
-        damageMult: new Decimal(2.1),
-        swingTime: 1.8,
-        goldMult: new Decimal(35),
-        xpMult: new Decimal(28),
-        enrageAfterSec: 35,
-        loot: { slots: ['mainHand', 'trinket'], minRarity: 'epic' },
-      },
+      { id: 'barrow-warden', name: 'Страж кургана' },
+      { id: 'silt-matron', name: 'Тинная матрона' },
+      { id: 'drowned-king', name: 'Утопший король' },
+    ],
+  },
+  {
+    tier: 2,
+    id: 'ninth-drift',
+    name: 'Девятая штольня',
+    icon: 'dungeon-ninth-drift',
+    zoneId: 'mine-collapse',
+    unlockRequirement: 30,
+    lootTier: 1,
+    reagentId: 'reagent-drift-sinter',
+    scenery: 'vault',
+    bosses: [
+      { id: 'collapse-shorer', name: 'Крепильщик обвала' },
+      { id: 'foreman-crag', name: 'Штейгер Кряж' },
+      { id: 'ninth-master', name: 'Хозяин Девятой' },
+    ],
+  },
+  {
+    tier: 3,
+    id: 'tier-cisterns',
+    name: 'Ярусные цистерны',
+    icon: 'dungeon-tier-cisterns',
+    zoneId: 'flooded-tier',
+    unlockRequirement: 40,
+    lootTier: 1,
+    reagentId: 'reagent-sediment-core',
+    scenery: 'cistern',
+    bosses: [
+      { id: 'bottom-keeper', name: 'Донный смотритель' },
+      { id: 'sluice-warden', name: 'Ключарь шлюзов' },
+      { id: 'stillwater-lord', name: 'Владыка стоячей воды' },
+    ],
+  },
+  {
+    tier: 4,
+    id: 'boiling-adits',
+    name: 'Кипящие штольни',
+    icon: 'dungeon-boiling-adits',
+    zoneId: 'sulfur-springs',
+    unlockRequirement: 50,
+    lootTier: 1,
+    reagentId: 'reagent-sulfur-growth',
+    scenery: 'forge',
+    bosses: [
+      { id: 'steam-scalder', name: 'Парильщик' },
+      { id: 'sulfur-bittern', name: 'Серная выпь' },
+      { id: 'cauldron-elder', name: 'Котельный старшой' },
+    ],
+  },
+  {
+    tier: 5,
+    id: 'wind-galleries',
+    name: 'Ветровые галереи',
+    icon: 'dungeon-wind-galleries',
+    zoneId: 'windswept-pass',
+    unlockRequirement: 60,
+    lootTier: 2,
+    reagentId: 'reagent-wind-glass',
+    scenery: 'rime',
+    bosses: [
+      { id: 'wall-draught', name: 'Стенной сквозняк' },
+      { id: 'pass-whistler', name: 'Свистун перевала' },
+      { id: 'booming-herald', name: 'Гулкий предвестник' },
+    ],
+  },
+  {
+    tier: 6,
+    id: 'salt-womb',
+    name: 'Соляная утроба',
+    icon: 'dungeon-salt-womb',
+    zoneId: 'salt-pit',
+    unlockRequirement: 70,
+    lootTier: 2,
+    reagentId: 'reagent-brine-crystal',
+    scenery: 'vault',
+    bosses: [
+      { id: 'brine-cleg', name: 'Рассольный слепень' },
+      { id: 'crust-keyman', name: 'Корковый ключник' },
+      { id: 'brine-pillar', name: 'Столп рассола' },
+    ],
+  },
+  {
+    tier: 7,
+    id: 'rime-catacombs',
+    name: 'Стылые катакомбы',
+    icon: 'dungeon-rime-catacombs',
+    zoneId: 'frozen-crookwood',
+    unlockRequirement: 80,
+    lootTier: 2,
+    reagentId: 'reagent-rime-vein',
+    scenery: 'rime',
+    bosses: [
+      { id: 'rime-acolyte', name: 'Изморозный служка' },
+      { id: 'brittle-overseer', name: 'Хрусткий надзиратель' },
+      { id: 'glaze-colossus', name: 'Наледный исполин' },
+    ],
+  },
+  {
+    tier: 8,
+    id: 'bluff-hollow',
+    name: 'Полость под кручей',
+    icon: 'dungeon-bluff-hollow',
+    zoneId: 'mute-bluff',
+    unlockRequirement: 90,
+    lootTier: 2,
+    reagentId: 'reagent-mute-shard',
+    scenery: 'vault',
+    bosses: [
+      { id: 'verge-gatekeeper', name: 'Кромочный привратник' },
+      { id: 'mute-bellringer', name: 'Немой звонарь' },
+      { id: 'bluff-frame', name: 'Костяк кручи' },
     ],
   },
 ]
+
+/** Развернуть параметры данжа в полное описание с числами боссов. */
+export function buildDungeon(spec: DungeonSpec): DungeonDef {
+  const floors = LOOT_FLOORS[spec.lootTier]
+  const hp = tierScale(TIER_GROWTH.hp, spec.tier)
+  const damage = tierScale(TIER_GROWTH.damage, spec.tier)
+  const reward = tierScale(TIER_GROWTH.reward, spec.tier)
+  const enrage = tierScale(TIER_GROWTH.enrage, spec.tier)
+  const last = spec.bosses.length - 1
+  return {
+    id: spec.id,
+    name: spec.name,
+    icon: spec.icon,
+    tier: spec.tier,
+    zoneId: spec.zoneId,
+    unlockRequirement: spec.unlockRequirement,
+    reagentId: spec.reagentId,
+    scenery: spec.scenery,
+    scene: DUNGEON_SCENES[spec.scenery],
+    bosses: spec.bosses.map((boss, index) => {
+      const step = CHAIN[Math.min(index, CHAIN.length - 1)]
+      return {
+        id: boss.id,
+        name: boss.name,
+        level: bossLevel(spec.unlockRequirement, index),
+        hpMult: new Decimal(step.hpMult * hp),
+        damageMult: new Decimal(step.damageMult * damage),
+        goldMult: new Decimal(step.goldMult * reward),
+        xpMult: new Decimal(step.xpMult * reward),
+        swingTime: step.swingTime,
+        enrageAfterSec: Math.round(step.enrageAfterSec * enrage),
+        loot: {
+          slots: [...step.slots],
+          minRarity: floors[Math.min(index, floors.length - 1)],
+        },
+        // Реагент — только за последнего: он и есть отметка «пройдено».
+        reagentId: index === last ? spec.reagentId : null,
+      }
+    }),
+  }
+}
+
+export const DUNGEONS: DungeonDef[] = DUNGEON_SPECS.map(buildDungeon)
 
 export const DUNGEON_BY_ID: Record<string, DungeonDef> = Object.fromEntries(
   DUNGEONS.map((d) => [d.id, d]),

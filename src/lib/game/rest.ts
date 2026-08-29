@@ -8,13 +8,14 @@
 //
 // Текста для игрока здесь нет: наружу идут числа и состояния, подписи рисует UI.
 import { Decimal } from './numbers'
-import { expectedMonsterDamage } from './combat'
+import { estimateCombatRate, expectedMonsterDamage } from './combat'
 import { REST_FOOD_SPEEDUP } from '../data/balance'
 import { zoneMonsterVariants, type Zone } from '../data/zones'
 import type { StatBlock } from './stats'
 import { restCooldownMultiplier } from './talents'
 import { takeFood } from './crafting'
 import type { GameState } from './state'
+import type { MonsterTemplate } from '../types'
 
 /**
  * Сколько длится привал прямо сейчас, мс.
@@ -124,29 +125,77 @@ export function maxMonsterHit(zone: Zone, stats: StatBlock): Decimal {
   }, new Decimal(0))
 }
 
+/**
+ * Квантиль нормального распределения, по которому меряется «не повезло».
+ * 1.645 — это 95-й процентиль: метка обещает безопасность в девятнадцати
+ * случаях из двадцати, а не «в среднем». Среднее здесь не годится вовсе:
+ * зона, убивающая ровно в половине боёв, по среднему выглядела бы безопасной.
+ */
+const UNLUCKY_Z = 1.645
+
+/**
+ * Сколько HP снимет ОДИН ПОЛНЫЙ БОЙ с этим мобом, если не повезёт.
+ *
+ * Считается по бою целиком, а не по одному удару, и это главное изменение
+ * шага: привал теперь между схватками, поэтому пережить нужно всю схватку,
+ * а не отдельный удар. Разброс учитывается верхним квантилем — среднее
+ * обещало бы безопасность зоне, которая убивает в половине случаев.
+ */
+export function fightLoss(state: GameState, template: MonsterTemplate): Decimal {
+  const monster = { ...template, currentHp: template.maxHp, swingProgress: 0 }
+  const facing: GameState = { ...state, monster }
+  const rate = estimateCombatRate(facing)
+  if (rate.idealKillsPerSecond.lte(0)) return state.stats.maxHp.times(2)
+  const cycleSec = new Decimal(1).div(rate.idealKillsPerSecond)
+  const hits = Math.max(0, Math.floor(cycleSec.div(template.swingTime).toNumber()))
+  if (hits === 0) return new Decimal(0)
+  const mean = expectedMonsterDamage(monster, state.stats)
+  // Разброс одного удара: равномерное распределение min..max даёт
+  // стандартное отклонение (max - min) / sqrt(12).
+  const spread = template.damageMax
+    .minus(template.damageMin)
+    .times(1 - state.stats.damageReduction)
+  const sigmaHit = spread.div(Math.sqrt(12))
+  // Сумма независимых ударов: отклонение растёт как корень из их числа.
+  const sigmaFight = sigmaHit.times(Math.sqrt(hits))
+  const gross = mean.times(hits).plus(sigmaFight.times(UNLUCKY_Z))
+  // Реген в бою работает всё это время и потерю уменьшает.
+  const regen = state.stats.hpRegen.times(cycleSec)
+  return Decimal.max(gross.minus(regen), new Decimal(0))
+}
+
 export interface ZoneSafety {
   /** Запас HP на пороге привала: с него герой уходит отдыхать. */
   thresholdHp: Decimal
-  /** Самый сильный удар зоны. */
+  /** Самый сильный удар зоны — показываем игроку для наглядности. */
   worstHit: Decimal
-  /** Смерть невозможна: даже худший удар не пробивает порог насквозь. */
+  /** Сколько снимет самый тяжёлый бой зоны, если не повезёт. */
+  worstFight: Decimal
+  /** Смерть невозможна: даже неудачный бой не пробивает порог насквозь. */
   safe: boolean
 }
 
 /**
  * Может ли герой погибнуть в этой зоне при текущем пороге привала.
  *
- * Если на пороге у героя больше HP, чем максимальный удар зоны, то любой удар
- * оставляет его живым, а следующий тик уже уводит на привал. Значит смерть
- * невозможна — и игрок вправе знать это ДО входа, а не выяснять опытом.
- * Именно это превращает выбор зоны из угадывания в расчёт.
+ * ПРАВИЛО ИЗМЕНИЛОСЬ ВМЕСТЕ С ПРИВАЛОМ. Раньше «безопасно» значило «порог
+ * выше одного удара»: герой выходил из боя, едва просев, и одного удара ему
+ * хватало, чтобы успеть уйти. Теперь он доводит бой до конца, и пережить
+ * нужно ВСЮ схватку — от первого удара до последнего. Порога должно хватать
+ * на неудачный бой целиком, иначе обещание «умереть нельзя» держится ровно
+ * до первого затяжного противника.
  */
 export function zoneSafety(state: GameState, zone: Zone): ZoneSafety {
   const thresholdHp = state.stats.maxHp.times(state.stats.restThreshold)
   const worstHit = maxMonsterHit(zone, state.stats)
+  const worstFight = zoneMonsterVariants(zone).reduce(
+    (max, template) => Decimal.max(max, fightLoss(state, template)),
+    new Decimal(0),
+  )
   return {
     thresholdHp,
     worstHit,
-    safe: state.stats.restThreshold > 0 && thresholdHp.gt(worstHit),
+    worstFight,
+    safe: state.stats.restThreshold > 0 && thresholdHp.gt(worstFight),
   }
 }

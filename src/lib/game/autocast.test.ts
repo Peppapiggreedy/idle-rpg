@@ -261,19 +261,21 @@ describe('железное правило: оффлайн <= автокаст <=
     }
   })
 
-  it('час оффлайна беднее часа реальной игры на автокасте', () => {
+  it('час оффлайна заметно беднее часа реальной игры на автокасте', () => {
+    // Разрыв между режимами — то, ради чего игрок держит вкладку открытой.
+    // При прежних девяти десятых «зайти вечером» и «играть весь вечер»
+    // приносили почти одно и то же, и играть было незачем. Проверяем, что
+    // разрыв есть и что он примерно тот, который назван игроку в модалке.
     const HOUR = 3_600_000
     for (const seed of [777, 4242]) {
       const rng = createRng(seed)
-      let sim = { ...createInitialState(seed), autoEquip: false }
+      let sim = createInitialState(seed)
       for (let t = 0; t < HOUR; t += STEP_MS) sim = tick(sim, STEP_MS, rng, () => {})
-      const { report } = applyOfflineProgress(
-        { ...createInitialState(seed), autoEquip: false },
-        HOUR,
-      )
-      expect(report!.gold.lt(sim.gold)).toBe(true)
-      // И не втрое беднее: оффлайн должен оставаться осмысленным.
-      expect(report!.gold.gt(sim.gold.times(0.8))).toBe(true)
+      const { report } = applyOfflineProgress(createInitialState(seed), HOUR)
+      const share = report!.gold.div(sim.gold).toNumber()
+      expect(share, `сид ${seed}`).toBeLessThan(0.5)
+      // И не ноль: оффлайн остаётся осмысленным, иначе его незачем считать.
+      expect(share, `сид ${seed}`).toBeGreaterThan(0.05)
     }
   })
 })

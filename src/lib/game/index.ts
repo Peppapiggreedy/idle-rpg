@@ -20,8 +20,7 @@ export {
   unequipItem,
   isEquipped,
   isUpgrade,
-  setAutoEquip,
-  autoEquipIfBetter,
+  upgradeShare,
   compareItem,
   damagePerSecondWith,
 } from './equipment'
@@ -142,7 +141,7 @@ export {
   OFFLINE_MODAL_MIN_MS,
 } from './save'
 export type {
-  SavePayloadV18,
+  SavePayloadV19,
   SavedDungeonRun,
   SavedItem,
   SavedModifier,

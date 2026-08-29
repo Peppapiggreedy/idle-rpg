@@ -4,6 +4,7 @@
     compareItem,
     formatNumber,
     sellPrice,
+    upgradeShare,
     INVENTORY_SIZE,
     type EquipComparison,
   } from '../game'
@@ -14,6 +15,25 @@
   import { Button, IconSlot, NumberText, Panel, Tag } from './kit'
 
   const emptySlots = $derived(Math.max(0, INVENTORY_SIZE - $gameState.inventory.length))
+
+  // МЕТКА АПГРЕЙДА — то, ради чего снесено автонадевание. Видно не только
+  // «лучше», но и НА СКОЛЬКО: доля прироста урона в секунду. Считается тем
+  // же estimateCombatRate, что и сравнение под курсором, — двух мер
+  // «хорошести» в игре нет.
+  const shares = $derived(
+    new Map($gameState.inventory.map((i) => [i.id, upgradeShare($gameState, i)])),
+  )
+  // Сортировка одна и по делу: сверху то, что сильнее всего поднимет урон.
+  const sorted = $derived(
+    [...$gameState.inventory].sort(
+      (a, b) => (shares.get(b.id) ?? -1) - (shares.get(a.id) ?? -1),
+    ),
+  )
+  function upgradeLabel(share: number | null | undefined): string | null {
+    if (share === null || share === undefined) return null
+    if (!Number.isFinite(share)) return 'слот пуст'
+    return `+${Math.round(share * 100)}%`
+  }
 
   // Сравнение считаем только для предмета под курсором: заглядывать в будущее
   // для всего инвентаря каждый кадр незачем.
@@ -31,7 +51,8 @@
 
 <Panel title="Инвентарь" subtitle="{$gameState.inventory.length} из {INVENTORY_SIZE} слотов">
   <div class="grid">
-    {#each $gameState.inventory as item (item.id)}
+    {#each sorted as item (item.id)}
+      {@const share = shares.get(item.id)}
       <IconSlot
         slotLabel={SLOT_NAMES[item.slot]}
         rarity={item.rarity}
@@ -45,6 +66,9 @@
         <!-- Уровень вещи — её главная сила: без него «Редкий» 3-го уровня
              выглядел бы равным «Редкому» 60-го. -->
         <Tag rarity={item.rarity} label="{RARITY_BY_ID[item.rarity].name} · {item.level} ур." />
+        {#if upgradeLabel(share)}
+          <span class="upgrade" data-upgrade>Апгрейд {upgradeLabel(share)}</span>
+        {/if}
         <ItemMods mods={item.mods} />
 
         {#if hovered === item.id && comparison}
@@ -99,6 +123,17 @@
   }
   .name {
     font-weight: var(--weight-bold);
+  }
+  /* Апгрейд обязан быть виден без наведения: ради этого мгновения лут
+     и существует. Цвет — здоровья: «стало лучше», а не «тут урон». */
+  .upgrade {
+    align-self: flex-start;
+    font-size: var(--text-2xs);
+    font-weight: var(--weight-bold);
+    color: var(--c-heal);
+    border: 1px solid var(--c-heal);
+    border-radius: var(--radius-sm);
+    padding: 0 var(--space-1);
   }
   .compare {
     margin-top: var(--space-1);

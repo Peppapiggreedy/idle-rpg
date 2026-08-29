@@ -2,7 +2,13 @@
 import { describe, expect, it } from 'vitest'
 import { Decimal } from './numbers'
 import { STEP_MS } from './loop'
-import { createInitialState, manualOnlySettings, tick, type GameState } from './tick'
+import {
+  createInitialState,
+  emptyEquipment,
+  manualOnlySettings,
+  tick,
+  type GameState,
+} from './tick'
 import { ensureStats } from './stats'
 import { finishRest, maxMonsterHit, needsRest, restDurationMs, restProgress, startRest, zoneSafety } from './rest'
 import { applyOfflineProgress } from './save'
@@ -26,13 +32,65 @@ function run(state: GameState, ms: number): GameState {
 }
 
 describe('уход на привал', () => {
-  it('падение HP ниже порога переводит в resting, а не в смерть', () => {
+  it('просадка НИЖЕ ПОРОГА В СЕРЕДИНЕ БОЯ схватку не прерывает', () => {
+    // Главное правило шага: герой доводит бой до конца. Раньше он выходил
+    // из схватки, едва просев, и умереть при аккуратном пороге было нельзя
+    // вовсе — порог был не решением, а страховкой.
     const s = hero({ restHpThreshold: 0.4 })
     const low = { ...s, currentHp: s.stats.maxHp.times(0.3) }
-    expect(needsRest(low)).toBe(true)
+    expect(needsRest(low)).toBe(true) // порог пройден…
     const after = tick(low, STEP_MS, NO_LUCK, () => {})
+    expect(after.heroState).toBe('alive') // …но моб ещё жив, и бой идёт
+  })
+
+  it('после убийства с HP ниже порога герой уходит на привал', () => {
+    const s = hero({ restHpThreshold: 0.4 })
+    // Моб добит: currentHp моба на нуле — ровно то состояние, в котором
+    // решение об отдыхе и принимается.
+    const afterKill = {
+      ...s,
+      currentHp: s.stats.maxHp.times(0.3),
+      monster: { ...s.monster, currentHp: new Decimal(0) },
+    }
+    const after = tick(afterKill, STEP_MS, NO_LUCK, () => {})
     expect(after.heroState).toBe('resting')
     expect(after.restMsLeft).toBeGreaterThan(0)
+    // Таймер респауна снят: возвращаться будет не к кому.
+    expect(after.respawnMsLeft).toBe(0)
+  })
+
+  it('после привала ждёт НОВЫЙ моб с полным здоровьем', () => {
+    // Возврат — это новая схватка, а не продолжение старой. Иначе привал
+    // был бы способом долечиться посреди боя, только оформленным иначе.
+    const s = hero({ restHpThreshold: 0.4 })
+    const started = startRest({
+      ...s,
+      currentHp: new Decimal(1),
+      monster: { ...s.monster, currentHp: new Decimal(0) },
+    })
+    const after = run(started, REST_DURATION_S * 1000 + STEP_MS)
+    expect(after.heroState).toBe('alive')
+    expect(after.monster.currentHp.eq(after.monster.maxHp)).toBe(true)
+    // И это именно появление нового противника, а не долеченный старый.
+    expect(after.combatLog.some((e) => e.type === 'spawn')).toBe(true)
+  })
+
+  it('войти в бой на низком запасе — значит, возможно, не выйти', () => {
+    // Оборотная сторона правила: смерть перестала быть невозможной, и это
+    // ожидаемо. Герой с третью запаса против моба, снимающего больше, гибнет.
+    let s = hero({ restHpThreshold: 0.3 })
+    s = ensureStats({ ...s, equipment: emptyEquipment(), statsDirty: true })
+    s = { ...s, currentHp: s.stats.maxHp.times(0.3), currentZoneId: ZONES[3].id }
+    s = { ...s, monster: { ...s.monster, currentHp: s.monster.maxHp } }
+    let died = false
+    for (let t = 0; t < 300_000; t += STEP_MS) {
+      s = tick(s, STEP_MS, NO_LUCK, () => {})
+      if (s.heroState === 'dead') {
+        died = true
+        break
+      }
+    }
+    expect(died).toBe(true)
   })
 
   it('с нулевым порогом привала нет вовсе — остаётся только смерть', () => {
@@ -101,26 +159,34 @@ describe('длительность и восстановление', () => {
 })
 
 describe('индикатор безопасности зоны', () => {
-  it('совпадает с фактическим сильнейшим ударом мобов зоны', () => {
+  it('метка считает БОЙ ЦЕЛИКОМ, а не один удар', () => {
     const s = hero({ restHpThreshold: 0.6 })
     for (const zone of ZONES) {
       const safety = zoneSafety(s, zone)
       expect(safety.worstHit.eq(maxMonsterHit(zone, s.stats))).toBe(true)
-      // Метка — это ровно сравнение порога с худшим ударом, без запаса и без
-      // округлений: обещание «умереть нельзя» обязано быть точным.
-      expect(safety.safe).toBe(safety.thresholdHp.gt(safety.worstHit))
+      // Метка — это ровно сравнение порога с потерей за неудачный бой, без
+      // запаса и без округлений: обещание «умереть нельзя» обязано быть точным.
+      expect(safety.safe).toBe(safety.thresholdHp.gt(safety.worstFight))
+      // И бой всегда тяжелее одного удара: за схватку прилетает не раз.
+      expect(safety.worstFight.gte(0)).toBe(true)
     }
   })
 
-  it('порог выше сильнейшего удара — в зоне действительно не умереть', () => {
-    // Проверяем не метку, а игру: с таким порогом герой уходит на привал
-    // раньше, чем моб успевает добить, сколько бы времени ни прошло.
-    const base = hero()
+  it('порога, которого хватало на удар, на бой уже не хватает', () => {
+    // Именно эта разница и есть смысл шага: раньше «безопасно» значило
+    // «переживу удар», теперь — «переживу схватку».
+    const s = hero({ restHpThreshold: 0.6, currentZoneId: ZONES[2].id })
+    const safety = zoneSafety(s, ZONES[2])
+    expect(safety.worstFight.gt(safety.worstHit)).toBe(true)
+  })
+
+  it('безопасная по метке зона действительно не убивает', () => {
+    // Проверяем не метку, а игру. Метка теперь считает БОЙ ЦЕЛИКОМ (см.
+    // zoneSafety): порога должно хватать не на один удар, а на всё, что
+    // моб успеет снять за схватку. Иначе обещание «умереть нельзя»
+    // держалось бы ровно до первого затяжного боя.
     const zone = ZONES[0]
-    const worst = maxMonsterHit(zone, base.stats)
-    // Порог с запасом: на нём HP больше сильнейшего удара.
-    const threshold = Math.min(0.95, worst.div(base.stats.maxHp).toNumber() + 0.2)
-    let s = hero({ restHpThreshold: threshold, currentZoneId: zone.id })
+    let s = hero({ restHpThreshold: 0.5, currentZoneId: zone.id })
     expect(zoneSafety(s, zone).safe).toBe(true)
     for (let t = 0; t < 600_000; t += STEP_MS) {
       s = tick(s, STEP_MS, () => 0.999, () => {})
@@ -133,15 +199,19 @@ describe('индикатор безопасности зоны', () => {
 describe('оффлайн знает про привалы', () => {
   it('высокий порог стоит времени: привалов больше — золота меньше', () => {
     const HOURS8 = 8 * 3_600_000
-    // Стартовая зона: герой в ней не умирает ни при каком пороге, поэтому
-    // разница в золоте — это ровно время, проведённое на привалах, и ничего
-    // больше. В опасной зоне сравнение мерило бы смерть против привала, а не
+    // Зона, где герой ещё не умирает, но уже теряет здоровье: разница
+    // в золоте — это ровно время, проведённое на привалах, и ничего больше.
+    // В смертельной зоне сравнение мерило бы смерть против привала, а не
     // цену самого привала: смерть стоит дороже, и привал на её фоне выгоден.
-    const zone = ZONES[0]
-    const idle = hero({ currentZoneId: zone.id, restHpThreshold: 0.95 })
+    //
+    // Сравниваем два ненулевых порога, а не порог с его отсутствием: привал
+    // теперь квантуется БОЯМИ, и «отдыхать после каждого убийства» — это
+    // тоже привал, просто самый частый.
+    const zone = ZONES[1]
+    const idle = hero({ currentZoneId: zone.id, restHpThreshold: 0.9 })
     const greedy = ensureStats({
       ...idle,
-      restHpThreshold: 0,
+      restHpThreshold: 0.2,
       restResourceThreshold: 0,
       statsDirty: true,
     })
@@ -156,7 +226,7 @@ describe('оффлайн знает про привалы', () => {
     // Оборотная сторона того же: тридцать секунд воскрешения дороже десяти
     // секунд привала, поэтому порог окупается там, где без него умирают.
     const HOURS8 = 8 * 3_600_000
-    const zone = ZONES[ZONES.length - 1]
+    const zone = ZONES[2]
     const careful = hero({ currentZoneId: zone.id, restHpThreshold: 0.6 })
     const reckless = ensureStats({
       ...careful,

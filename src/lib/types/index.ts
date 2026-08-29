@@ -52,6 +52,12 @@ export type CombatEvent =
   | { type: 'kill'; monsterName: string; gold: Decimal; xp: Decimal }
   | { type: 'levelup'; level: Decimal }
   | { type: 'loot'; item: Item }
+  // Находка не поместилась в сумку и ушла в золото сама. Отдельный код,
+  // а не «продажа»: игрок этого не выбирал, и знать об этом он обязан.
+  | { type: 'autosell'; item: Item; gold: Decimal }
+  // Сумка полна, но находка ЛУЧШЕ надетого: место освободил худший
+  // непригодный предмет. Апгрейд потерять нельзя ни при каких настройках.
+  | { type: 'loot-swap'; item: Item; dropped: Item; gold: Decimal }
   | { type: 'spawn'; monsterName: string }
   | { type: 'hurt'; damage: Decimal; monsterName: string }
   | { type: 'death' }

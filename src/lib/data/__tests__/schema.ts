@@ -19,6 +19,9 @@ import type { DungeonDef } from '../dungeons'
 import { ARMOR_ATTRIBUTES, type AttributeId, type ShieldTemplate, type WeaponTemplate } from '../items'
 import type { ClassDef } from '../classes'
 import type { MaterialDef } from '../materials'
+import { MECHANIC_IDS, type ProgressionStep } from '../progression'
+import type { ReagentDef } from '../reagents'
+import type { DungeonSceneKey } from '../scenery'
 import type { ProfessionDef, RecipeDef } from '../recipes'
 import type { RarityDef } from '../rarity'
 import type { SoundCue } from '../sounds'
@@ -53,6 +56,10 @@ export interface Content {
   sounds: readonly SoundCue[]
   classes: readonly ClassDef[]
   materials: readonly MaterialDef[]
+  progression: readonly ProgressionStep[]
+  reagents: readonly ReagentDef[]
+  /** Ключи интерьеров данжей из data/scenery.ts. */
+  dungeonSceneKeys: readonly DungeonSceneKey[]
   recipes: readonly RecipeDef[]
   professions: readonly ProfessionDef[]
   props: readonly PropAsset[]
@@ -623,7 +630,16 @@ export const DUNGEON_SCHEMA: EntitySchema<DungeonDef> = {
   id: (d) => d.id,
   name: (d) => d.name,
   icon: (d) => d.icon,
-  numbers: [{ field: 'unlockRequirement', get: (d) => d.unlockRequirement, min: 1, integer: true }],
+  numbers: [
+    { field: 'unlockRequirement', get: (d) => d.unlockRequirement, min: 1, integer: true },
+    {
+      field: 'tier',
+      get: (d) => d.tier,
+      min: 1,
+      integer: true,
+      why: 'ступень лестницы данжей: из неё выводятся все числа боссов',
+    },
+  ],
   refs: [
     {
       field: 'zoneId',
@@ -633,14 +649,71 @@ export const DUNGEON_SCHEMA: EntitySchema<DungeonDef> = {
       targetFile: 'data/zones.ts',
       ids: (c) => idsOf(c.zones, (z) => z.id),
     },
+    {
+      field: 'reagentId',
+      get: (d) => d.reagentId,
+      target: 'реагент',
+      which: 'которого',
+      targetFile: 'data/reagents.ts',
+      ids: (c) => idsOf(c.reagents, (r) => r.id),
+    },
   ],
   extra: (dungeon, content, report) => {
     const where = `данж ${dungeon.id}`
+    // Интерьер — ключ, а не собственный конфиг: восемь наборов пропсов руками
+    // держать нельзя, а промах по ключу дал бы пустую сцену без ошибки.
+    if (!content.dungeonSceneKeys.includes(dungeon.scenery)) {
+      report.add(
+        where,
+        `ссылается на обстановку «${dungeon.scenery}», которой нет в DUNGEON_SCENES ` +
+          '(data/scenery.ts)',
+      )
+    } else if (!dungeon.scene) {
+      report.add(where, 'ключ обстановки есть, а конфига нет — проверь DUNGEON_SCENES в data/scenery.ts')
+    }
+    // Реагент обязан быть СВОЕГО тира: перепутанные реагенты сделали бы
+    // два данжа взаимозаменяемыми, и никто бы этого не заметил.
+    const reagent = content.reagents.find((r) => r.id === dungeon.reagentId)
+    if (reagent && reagent.tier !== dungeon.tier) {
+      report.add(
+        where,
+        `тир ${dungeon.tier}, а реагент «${reagent.id}» помечен тиром ${reagent.tier}: ` +
+          'реагент обязан быть своего тира (data/reagents.ts)',
+      )
+    }
     report.need(
       Array.isArray(dungeon.bosses) && dungeon.bosses.length > 0,
       where,
       'пустая цепочка боссов — проходить нечего (data/dungeons.ts)',
     )
+    // Реагент падает ровно с ПОСЛЕДНЕГО босса: с первого он был бы наградой
+    // за одну схватку, а не за пройденную цепочку.
+    const bosses = dungeon.bosses ?? []
+    bosses.forEach((boss, index) => {
+      const isLast = index === bosses.length - 1
+      const carries = typeof boss?.reagentId === 'string' && boss.reagentId.length > 0
+      if (isLast && !carries) {
+        report.add(
+          `босс ${boss?.id ?? `№${index + 1}`} данжа ${dungeon.id}`,
+          'последний босс цепочки не роняет реагент — тир данжа станет недостижим ' +
+            '(data/dungeons.ts)',
+        )
+      }
+      if (!isLast && carries) {
+        report.add(
+          `босс ${boss.id} данжа ${dungeon.id}`,
+          `роняет реагент «${boss.reagentId}», не будучи последним в цепочке — ` +
+            'реагент это отметка о полном прохождении (data/dungeons.ts)',
+        )
+      }
+      if (carries && boss.reagentId !== dungeon.reagentId) {
+        report.add(
+          `босс ${boss.id} данжа ${dungeon.id}`,
+          `роняет реагент «${boss.reagentId}», а данж заявляет «${dungeon.reagentId}» ` +
+            '(data/dungeons.ts)',
+        )
+      }
+    })
     const slots = new Set<string>(content.slots)
     const rarities = idsOf(content.rarities, (r) => r.id)
     const seenBoss = new Set<string>()
@@ -696,6 +769,84 @@ export const DUNGEON_SCHEMA: EntitySchema<DungeonDef> = {
         )
       }
     }
+  },
+}
+
+export const REAGENT_SCHEMA: EntitySchema<ReagentDef> = {
+  kind: 'реагент',
+  file: 'data/reagents.ts',
+  entities: (c) => c.reagents,
+  id: (r) => r.id,
+  name: (r) => r.name,
+  icon: (r) => r.icon,
+  numbers: [
+    {
+      field: 'tier',
+      get: (r) => r.tier,
+      min: 1,
+      integer: true,
+      why: 'реагент принадлежит тиру данжа, а тиры нумеруются с первого',
+    },
+  ],
+  extra: (reagent, content, report) => {
+    // Реагент без данжа — недостижимый контент: уронить его будет некому.
+    report.need(
+      content.dungeons.some((d) => d.reagentId === reagent.id),
+      `реагент ${reagent.id}`,
+      'его не роняет ни один данж — рецепты с ним недостижимы (data/dungeons.ts)',
+    )
+  },
+}
+
+export const PROGRESSION_SCHEMA: EntitySchema<ProgressionStep> = {
+  kind: 'ступень лестницы',
+  file: 'data/progression.ts',
+  entities: (c) => c.progression,
+  id: (s) => s.id,
+  name: (s) => s.name,
+  icon: (s) => s.icon,
+  numbers: [
+    {
+      field: 'level',
+      get: (s) => s.level,
+      min: 1,
+      integer: true,
+      why: 'ступень открывается уровнем героя, а уровни начинаются с первого',
+    },
+  ],
+  extra: (step, content, report) => {
+    const where = `ступень ${step.id}`
+    report.need(
+      !!step.description?.trim(),
+      where,
+      'нет строки о том, что именно откроется (data/progression.ts)',
+    )
+    // Ссылки ступени обязаны вести на существующее. Пустой список законен:
+    // лестница живёт раньше содержимого, и механики может ещё не быть.
+    for (const unlock of step.unlocks ?? []) {
+      if (unlock.kind === 'dungeon') {
+        report.need(
+          content.dungeons.some((d) => d.id === unlock.id),
+          where,
+          `ссылается на данж «${unlock.id}», которого нет в data/dungeons.ts`,
+        )
+        continue
+      }
+      report.need(
+        MECHANIC_IDS.includes(unlock.id),
+        where,
+        `ссылается на механику «${unlock.id}», которой нет в списке MECHANIC_IDS ` +
+          '(data/progression.ts)',
+      )
+    }
+    // Ступень со ссылками не может быть заглушкой, и наоборот: «будет
+    // добавлено» и «вот вход» — взаимоисключающие обещания.
+    report.need(
+      !(step.placeholder && (step.unlocks?.length ?? 0) > 0),
+      where,
+      'помечена заглушкой, но что-то открывает — обещания противоречат друг другу ' +
+        '(data/progression.ts)',
+    )
   },
 }
 
@@ -969,8 +1120,23 @@ export const CLASS_SCHEMA: EntitySchema<ClassDef> = {
         `ссылается на ветку «${id}», которой нет в data/talents.ts (BRANCHES)`,
       )
     }
-    // Стартовая экипировка ссылается на настоящие шаблоны.
+    // Стартовая экипировка ссылается на настоящие шаблоны. Броне шаблон
+    // не нужен — у неё вместо него главный атрибут, как у кованой вещи.
     for (const item of hero.startingEquipment ?? []) {
+      if (item.kind === 'armor') {
+        report.need(
+          item.slot !== 'mainHand' && item.slot !== 'offHand',
+          where,
+          `стартовая броня лежит в слоте рук «${item.slot}» (data/classes.ts)`,
+        )
+        report.need(
+          ARMOR_ATTRIBUTES.includes(item.attribute as AttributeId),
+          where,
+          `стартовая броня в слоте «${item.slot}» не называет главный атрибут: ` +
+            `«${item.attribute ?? '—'}» не из ARMOR_ATTRIBUTES (data/classes.ts)`,
+        )
+        continue
+      }
       const known =
         item.kind === 'shield'
           ? content.shields.some((sh) => sh.id === item.templateId)
@@ -978,12 +1144,24 @@ export const CLASS_SCHEMA: EntitySchema<ClassDef> = {
       report.need(
         known,
         where,
-        `стартовый предмет «${item.templateId}» не найден среди ${item.kind === 'shield' ? 'щитов' : 'оружия'} (data/items.ts)`,
+        `стартовый предмет «${item.templateId ?? '—'}» не найден среди ${item.kind === 'shield' ? 'щитов' : 'оружия'} (data/items.ts)`,
       )
       report.need(
         item.slot === 'mainHand' || item.slot === 'offHand',
         where,
-        `стартовый предмет лежит в слоте «${item.slot}»: класс раздаёт только руки (data/classes.ts)`,
+        `стартовое оружие лежит в слоте «${item.slot}»: оружие бывает только в руках (data/classes.ts)`,
+      )
+    }
+    // Полный комплект: с голыми руками первые бои идут вдвое дольше коридора,
+    // а автонадевания, которое раньше это чинило, больше нет.
+    const startSlots = new Set((hero.startingEquipment ?? []).map((i) => i.slot))
+    for (const slot of content.slots) {
+      if (slot === 'offHand') continue // двуручным левая рука не нужна
+      report.need(
+        startSlots.has(slot),
+        where,
+        `в стартовом комплекте нет слота «${slot}»: первые бои пойдут дольше ` +
+          'коридора темпа, а надеть находку игроку будет ещё нечего (data/classes.ts)',
       )
     }
     // Ресурс обязан хоть как-то пополняться: либо временем, либо боем.
@@ -1192,6 +1370,8 @@ export const SCHEMAS = [
   PROP_SCHEMA,
   CLASS_SCHEMA,
   MATERIAL_SCHEMA,
+  REAGENT_SCHEMA,
+  PROGRESSION_SCHEMA,
   RECIPE_SCHEMA,
   RARITY_SCHEMA,
   MODEL_SCHEMA,
@@ -1272,6 +1452,33 @@ function checkReachable(content: Content, report: Report): void {
       'ни один материал в ней не падает — ремёсла в этой зоне мертвы (data/materials.ts)',
     )
   }
+
+  // --- Данжи: лестница тиров идёт подряд и по возрастанию уровня входа ---
+  //
+  // Данж — не украшение зоны, а ступень: тир задаёт числа боссов, а уровень
+  // входа — когда до неё доходит очередь. Дырка в тирах означала бы пропущенный
+  // реагент и данж, чьи числа выведены не из своего места в лестнице; равные
+  // или убывающие уровни входа — две ступени на одной высоте.
+  const ladder = [...content.dungeons].sort((a, b) => a.tier - b.tier)
+  ladder.forEach((dungeon, index) => {
+    if (dungeon.tier !== index + 1) {
+      report.add(
+        `данж ${dungeon.id}`,
+        `тир ${dungeon.tier} стоит ${index + 1}-м по счёту: тиры обязаны идти подряд ` +
+          'с первого и не повторяться (data/dungeons.ts)',
+      )
+    }
+    if (index === 0) return
+    const prev = ladder[index - 1]
+    if (dungeon.unlockRequirement <= prev.unlockRequirement) {
+      report.add(
+        `данж ${dungeon.id}`,
+        `открывается с ${dungeon.unlockRequirement} уровня, а данж тиром ниже ` +
+          `(${prev.id}) — с ${prev.unlockRequirement}: уровни входа обязаны расти ` +
+          'вместе с тиром (data/dungeons.ts)',
+      )
+    }
+  })
 
   // --- Данжи: вход из зоны, до которой игрок дорос раньше ---
   for (const dungeon of content.dungeons) {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { Decimal } from './numbers'
 import {
-  autoEquipIfBetter,
+  upgradeShare,
   equipmentWith,
   compareItem,
   equipItem,
@@ -10,13 +10,25 @@ import {
   unequipItem,
 } from './equipment'
 import { estimateCombatRate } from './combat'
-import { createInitialState, manualOnlySettings, type GameState } from './state'
+import { createInitialState, emptyEquipment, manualOnlySettings, type GameState } from './state'
 import { ensureStats } from './stats'
-import { UNARMED } from '../data/balance'
+import { INVENTORY_SIZE, UNARMED } from '../data/balance'
 import { OFFHAND_PENALTY } from '../data/balance'
 import { ONE_HANDED, SHIELDS, WEAPONS, type ShieldTemplate, type WeaponTemplate } from '../data/items'
 import { SLOT_IDS } from '../data/slots'
 import type { Item, Rarity } from '../types'
+
+// Голый герой: стартовый комплект снят. Эти тесты про КОНВЕЙЕР и формулы,
+// а не про то, во что игра одевает новобранца, — база должна быть чистой,
+// иначе они мерили бы ещё и стартовые вещи.
+function bareHero(seed = 1): GameState {
+  return ensureStats({
+    ...createInitialState(seed),
+    equipment: emptyEquipment(),
+    statsDirty: true,
+  })
+}
+
 
 // Оружие «как из лута», но без побочных статов: для инварианта важна только
 // база боя (скорость и диапазон урона).
@@ -73,7 +85,7 @@ function armor(id: string, slot: 'head' | 'chest', attackPower: number): Item {
 }
 
 function withItems(items: Item[], patch: Partial<GameState> = {}): GameState {
-  return ensureStats({ ...createInitialState(1), inventory: items, statsDirty: true, ...patch })
+  return ensureStats({ ...bareHero(1), inventory: items, statsDirty: true, ...patch })
 }
 
 describe('оружие задаёт базу боя', () => {
@@ -219,9 +231,24 @@ describe('автонадевание', () => {
     const weapon = bareWeapon(WEAPONS[1])
     const s = withItems([weapon])
     expect(isUpgrade(s, weapon)).toBe(true) // против голых рук — лучше
-    expect(autoEquipIfBetter(s, weapon).equipment.mainHand?.id).toBe(weapon.id)
-    const off = { ...s, autoEquip: false }
-    expect(autoEquipIfBetter(off, weapon).equipment.mainHand).toBeNull()
+    // Сам он никуда не денется: надевает предметы только игрок.
+    expect(s.equipment.mainHand).toBeNull()
+  })
+
+  it('доля прироста считается тем же estimateCombatRate, что и сравнение', () => {
+    // Метка «+12%» и подсказка под курсором обязаны говорить одно и то же:
+    // двух мер «хорошести» в игре нет.
+    const better = armor('добротный шлем', 'head', 40)
+    const s = withItems([better])
+    const cmp = compareItem(s, better)
+    const share = upgradeShare(s, better)!
+    expect(share).toBeCloseTo(
+      cmp.damagePerSecondDelta.div(cmp.current.damagePerSecond).toNumber(),
+      9,
+    )
+    // Не апгрейд — доли нет вовсе, а не «ноль процентов».
+    const zero = armor('пустышка', 'head', 0)
+    expect(upgradeShare(withItems([zero]), zero)).toBeNull()
   })
 
   it('броня без прироста урона в секунду апгрейдом не считается', () => {
@@ -340,7 +367,7 @@ describe('сравнение для UI', () => {
 
 describe('слоты', () => {
   it('у свежего героя все слоты пусты', () => {
-    const s = createInitialState(1)
+    const s = bareHero(1)
     expect(SLOT_IDS.every((slot) => s.equipment[slot] === null)).toBe(true)
   })
 
@@ -357,7 +384,7 @@ describe('слоты', () => {
 
   it('снять при полном инвентаре нельзя — предмету некуда лечь', () => {
     const weapon = bareWeapon(WEAPONS[0])
-    const filler = Array.from({ length: 12 }, (_, i) => armor(`м-${i}`, 'head', 1))
+    const filler = Array.from({ length: INVENTORY_SIZE }, (_, i) => armor(`м-${i}`, 'head', 1))
     let s = withItems([weapon])
     s = equipItem(s, weapon.id)
     s = { ...s, inventory: filler }

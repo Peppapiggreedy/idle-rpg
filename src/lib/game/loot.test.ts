@@ -3,7 +3,8 @@ import { Decimal } from './numbers'
 import { INVENTORY_SIZE, rollLoot, rollRarity, rollSlot, sellItem, sellPrice } from './loot'
 import { equipItem } from './equipment'
 import { SLOT_IDS } from '../data/slots'
-import { createInitialState, tick, type GameState } from './tick'
+import { createInitialState, emptyEquipment, tick, type GameState } from './tick'
+import { ensureStats } from './stats'
 import { STEP_MS } from './loop'
 import { DROP_CHANCE } from '../data/loot'
 import { RARITIES } from '../data/rarity'
@@ -157,43 +158,86 @@ describe('дроп в бою', () => {
   }
 
   it('с моба падает предмет и попадает в инвентарь с записью в лог', () => {
-    // Автонадевание выключено: проверяем путь «дроп -> инвентарь».
-    const s = untilLoot({ ...createInitialState(1), autoEquip: false }, () => 0)
+    const s = untilLoot(createInitialState(1), () => 0)
     expect(s.inventory.length).toBe(1)
     expect(s.combatLog.some((e) => e.type === 'loot')).toBe(true)
   })
 
-  it('с включённым автонадеванием предмет сразу уходит в слот', () => {
-    // rng 0 -> слот оружия: безоружный герой обязан счесть его апгрейдом.
-    const s = untilLoot(createInitialState(1), () => 0)
-    expect(s.equipment.mainHand).not.toBeNull()
-    expect(s.inventory).toEqual([]) // из инвентаря предмет ушёл на героя
-    expect(s.stats.weaponSpeed).toBeCloseTo(1.4, 9) // база боя от оружия
+  it('надетым предмет сам не становится: автонадевания больше нет', () => {
+    // rng 0 -> слот оружия. Раньше герой надел бы находку сам, и апгрейд
+    // проходил незамеченным. Теперь она ждёт в сумке, а в руке остаётся
+    // стартовое оружие, пока игрок не решит иначе.
+    const before = createInitialState(1)
+    const s = untilLoot(before, () => 0)
+    expect(s.equipment.mainHand?.id).toBe(before.equipment.mainHand?.id)
+    expect(s.inventory.length).toBe(1)
   })
 
-  it('автонадевание не трогает предмет, который хуже надетого', () => {
-    const s = untilLoot(createInitialState(1), () => 0)
-    const equipped = s.equipment.mainHand!
-    // Второй такой же дроп не лучше первого — остаётся в инвентаре.
-    const after = untilLoot({ ...s, combatLog: [] }, () => 0)
-    expect(after.equipment.mainHand?.id).toBe(equipped.id)
-    expect(after.inventory.length).toBe(1)
-  })
+  // Полная сумка раньше глушила дроп ЦЕЛИКОМ: герой переставал находить
+  // вещи, пока игрок не продаст. Это был техдолг №4, и вот его проверки.
+  describe('полная сумка', () => {
+    function junk(count: number, value = 1): Item[] {
+      return Array.from({ length: count }, (_, i) => ({
+        id: `item-${i}`,
+        name: 'Ржавый Хват',
+        rarity: 'common' as const,
+        slot: 'hands' as const,
+        level: 1,
+        mods: [
+          {
+            stat: 'attackPower' as const,
+            kind: 'flat' as const,
+            value: new Decimal(value),
+            source: 'equipment:hands',
+          },
+        ],
+      }))
+    }
 
-  it('при полном инвентаре предмет не падает', () => {
-    const full: Item[] = Array.from({ length: INVENTORY_SIZE }, (_, i) => ({
-      id: `item-${i}`,
-      name: 'Ржавый Хват',
-      rarity: 'common',
-      slot: 'hands',
-      level: 1,
-      mods: [
-        { stat: 'attackPower', kind: 'flat', value: new Decimal(1), source: 'equipment:hands' },
-      ],
-    }))
-    let s: GameState = { ...createInitialState(1), inventory: full, itemSeq: INVENTORY_SIZE }
-    for (let i = 0; i < 40; i++) s = tick(s, STEP_MS, () => 0)
-    expect(s.inventory.length).toBe(INVENTORY_SIZE)
+    it('дроп всё равно бросается, а находка уходит в золото', () => {
+      // Мусор в сумке лучше находки не бывает, но и находка не апгрейд:
+      // слот кистей уже занят таким же. Значит — автопродажа.
+      const full = junk(INVENTORY_SIZE, 999)
+      let s: GameState = {
+        ...createInitialState(1),
+        inventory: full,
+        equipment: { ...createInitialState(1).equipment, hands: junk(1, 999)[0] },
+        itemSeq: INVENTORY_SIZE,
+      }
+      s = ensureStats({ ...s, statsDirty: true })
+      const before = s.gold
+      for (let i = 0; i < 1200; i++) {
+        s = tick(s, STEP_MS, () => 0)
+        if (s.combatLog.some((e) => e.type === 'autosell')) break
+      }
+      expect(s.combatLog.some((e) => e.type === 'autosell')).toBe(true)
+      expect(s.gold.gt(before)).toBe(true)
+      expect(s.inventory.length).toBe(INVENTORY_SIZE)
+    })
+
+    it('апгрейд при полной сумке не теряется: вытесняется худшее', () => {
+      // Сумка забита слабым мусором, герой раздет — любая найденная вещь
+      // апгрейд. Потерять её из-за полной сумки нельзя.
+      let s: GameState = ensureStats({
+        ...createInitialState(1),
+        equipment: emptyEquipment(),
+        inventory: junk(INVENTORY_SIZE),
+        itemSeq: INVENTORY_SIZE,
+        statsDirty: true,
+      })
+      for (let i = 0; i < 1200; i++) {
+        s = tick(s, STEP_MS, () => 0)
+        if (s.combatLog.some((e) => e.type === 'loot-swap')) break
+      }
+      const swap = s.combatLog.find((e) => e.type === 'loot-swap')
+      expect(swap).toBeDefined()
+      expect(s.inventory.length).toBe(INVENTORY_SIZE)
+      // Находка в сумке, вытесненный мусор — нет.
+      if (swap?.type === 'loot-swap') {
+        expect(s.inventory.some((i) => i.id === swap.item.id)).toBe(true)
+        expect(s.inventory.some((i) => i.id === swap.dropped.id)).toBe(false)
+      }
+    })
   })
 })
 

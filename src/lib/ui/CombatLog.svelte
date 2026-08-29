@@ -64,6 +64,11 @@
         return `Новый уровень: ${formatNumber(e.level)}!`
       case 'loot':
         return `Выпало: ${e.item.name} [${rarityName(e.item.rarity)}]`
+      case 'autosell':
+        // Игрок этого не выбирал — значит, обязан об этом узнать.
+        return `Сумка полна: ${e.item.name} продан сам за ${formatNumber(e.gold)}`
+      case 'loot-swap':
+        return `${e.item.name} лучше надетого — освободил место, продав ${e.dropped.name} за ${formatNumber(e.gold)}`
       case 'spawn':
         return `Появился ${e.monsterName}`
       case 'hurt':
@@ -98,6 +103,8 @@
     kill: 'xp',
     levelup: 'xp',
     loot: 'slot-trinket',
+    autosell: 'gold',
+    'loot-swap': 'slot-trinket',
     spawn: 'zone-mirefen-hollows',
     hurt: 'stat-maxHp',
     block: 'slot-offhand',

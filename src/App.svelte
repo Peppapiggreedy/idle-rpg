@@ -1,11 +1,20 @@
 <script lang="ts">
-  // Экран собран вокруг боевой сцены: она главный элемент и видна ВСЕГДА,
-  // в каком бы разделе игрок ни находился. Панели разъехались по вкладкам,
-  // но всё, что относится к бою, осталось наверху вместе со сценой.
-  import { INVENTORY_SIZE, availablePoints } from './lib/game'
+  // Экран собран вокруг боевой сцены.
+  //
+  // ПОСТОЯННАЯ ЗОНА — ровно три блока, и больше в ней нет ничего:
+  //   1. боевая сцена во всю ширину колонки;
+  //   2. ряд одинаковых квадратных иконок действий (умения, дальше зелья);
+  //   3. одна строка: уровень и полоски здоровья, ресурса и опыта.
+  // Она видна всегда, в любом разделе, и ничем не перекрывается.
+  //
+  // Всё остальное про героя убрано за две кнопки-выдвижки: «Герой»
+  // (характеристики и экипировка) и «Журнал» (лог боя, свёрнут по
+  // умолчанию). Выдвижка открывается ПОВЕРХ нижней части экрана и не
+  // трогает сцену — ни размер, ни положение.
+  import { INVENTORY_SIZE, availablePoints, upgradeShare } from './lib/game'
   import { gameStarted, gameState } from './lib/stores/game'
   import { activeSection } from './lib/stores/ui'
-  import { isTextMode, sceneUnavailable, uiSettings } from './lib/stores/ui'
+  import { isTextMode, sceneUnavailable, toggleDrawer, uiSettings } from './lib/stores/ui'
   import { isSceneDisabled } from './lib/ui/route'
 
   import BattleScene from './lib/ui/BattleScene.svelte'
@@ -13,7 +22,8 @@
   import CombatLog from './lib/ui/CombatLog.svelte'
   import ActionBar from './lib/ui/ActionBar.svelte'
   import DungeonHud from './lib/ui/DungeonHud.svelte'
-  import HeroPanel from './lib/ui/HeroPanel.svelte'
+  import VitalsBar from './lib/ui/VitalsBar.svelte'
+  import Drawer from './lib/ui/Drawer.svelte'
   import SectionTabs from './lib/ui/SectionTabs.svelte'
   import SwingIndicator from './lib/ui/SwingIndicator.svelte'
   import { IconSprite } from './lib/ui/icons'
@@ -22,6 +32,7 @@
   import EquipmentPanel from './lib/ui/EquipmentPanel.svelte'
   import AbilityPanel from './lib/ui/AbilityPanel.svelte'
   import TalentPanel from './lib/ui/TalentPanel.svelte'
+  import ProgressionPanel from './lib/ui/ProgressionPanel.svelte'
   import InventoryPanel from './lib/ui/InventoryPanel.svelte'
   import CraftPanel from './lib/ui/CraftPanel.svelte'
   import ZonePanel from './lib/ui/ZonePanel.svelte'
@@ -45,6 +56,11 @@
   const sceneOff = isSceneDisabled()
   const textMode = $derived(sceneOff || $sceneUnavailable || isTextMode($uiSettings))
   const points = $derived(availablePoints($gameState))
+  const drawers = $derived($uiSettings.drawers)
+  // Апгрейд в сумке видно из любого раздела: точка на вкладке.
+  const hasUpgrade = $derived(
+    $gameState.inventory.some((item) => upgradeShare($gameState, item) !== null),
+  )
 </script>
 
 <!-- Спрайт иконок: один раз на страницу, до всего остального. -->
@@ -63,13 +79,9 @@
       <NoticeBar />
     </header>
 
-    <!-- Боевая часть. Видна в любом разделе: бой идёт всегда.
-         Порядок в разметке — десктопный (слева направо); на мобильном
-         сцена поднимается наверх через order, см. стили. -->
-    <div class="battle">
-      <div class="side hero">
-        <HeroPanel />
-      </div>
+    <!-- ПОСТОЯННАЯ ЗОНА: три блока и ничего больше. Одна колонка на любой
+         ширине — сцена главный элемент экрана и делить её место не с чем. -->
+    <div class="permanent" data-permanent>
       <div class="stage">
         {#if textMode}
           <BattlePanel />
@@ -78,14 +90,39 @@
         {/if}
         <SwingIndicator />
         <DungeonHud />
-        <CombatLog />
       </div>
-      <div class="side actions">
-        <ActionBar />
-      </div>
+      <ActionBar />
+      <VitalsBar />
     </div>
 
-    <SectionTabs bagCount={$gameState.inventory.length} bagLimit={INVENTORY_SIZE} hasPoints={points > 0} />
+    <!-- Ручки выдвижек стоят сразу под полосками: «что со мной» и «что
+         происходит» — два вопроса, на которые отвечают в одном месте. -->
+    <div class="handles">
+      <Drawer
+        title="Герой"
+        icon="stat-strength"
+        open={drawers.hero}
+        onToggle={() => toggleDrawer('hero')}
+      >
+        <StatsPanel />
+        <EquipmentPanel />
+      </Drawer>
+      <Drawer
+        title="Журнал"
+        icon="log"
+        open={drawers.log}
+        onToggle={() => toggleDrawer('log')}
+      >
+        <CombatLog />
+      </Drawer>
+    </div>
+
+    <SectionTabs
+      bagCount={$gameState.inventory.length}
+      bagLimit={INVENTORY_SIZE}
+      hasPoints={points > 0}
+      {hasUpgrade}
+    />
 
     <!-- Разделы из одной панели ведут себя иначе, чем из двух: сумке нужна
          вся ширина под сетку предметов, а настройкам — узкая колонка, иначе
@@ -95,12 +132,10 @@
       class:full={$activeSection === 'bag'}
       class:solo={$activeSection === 'settings'}
     >
-      {#if $activeSection === 'character'}
-        <StatsPanel />
-        <EquipmentPanel />
-      {:else if $activeSection === 'progress'}
-        <AbilityPanel />
+      {#if $activeSection === 'progress'}
         <TalentPanel />
+        <ProgressionPanel />
+        <AbilityPanel />
       {:else if $activeSection === 'bag'}
         <InventoryPanel />
         <CraftPanel />
@@ -157,29 +192,25 @@
     text-align: center;
   }
 
-  /* Мобильный: сцена занимает верх экрана целиком, остальное под ней.
-     В разметке она стоит второй (так задан порядок колонок на десктопе),
-     поэтому здесь её поднимает order. */
-  .battle {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: var(--space-3);
-    align-items: start;
+  /* Постоянная зона: три блока сверху вниз, одна колонка на любой ширине.
+     Раньше здесь было три колонки (герой / сцена / умения) — от них
+     отказались: сцена главный элемент экрана, и делить с ней ширину
+     панелями значило показывать бой в трети окна. */
+  .permanent {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
     min-width: 0;
   }
   .stage {
-    order: 1;
-  }
-  .hero {
-    order: 2;
-  }
-  .actions {
-    order: 3;
-  }
-  .stage,
-  .side {
     display: flex;
     flex-direction: column;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+  .handles {
+    display: flex;
+    flex-wrap: wrap;
     gap: var(--space-2);
     min-width: 0;
   }
@@ -211,16 +242,8 @@
       letter-spacing: normal;
       color: var(--c-text);
     }
-    /* Десктоп: сцена крупным блоком по центру, панели вокруг неё. */
-    .battle {
-      grid-template-columns: minmax(0, 1fr) minmax(0, 2.2fr) minmax(0, 1fr);
-      gap: var(--space-4);
-    }
-    /* Колонки идут в порядке разметки: герой, сцена, кнопки умений. */
-    .stage,
-    .hero,
-    .actions {
-      order: 0;
+    .permanent {
+      gap: var(--space-3);
     }
     .section {
       grid-template-columns: 1fr 1fr;

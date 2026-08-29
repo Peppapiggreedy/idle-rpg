@@ -55,11 +55,39 @@
     if (!Number.isFinite(f.hitsSurvived)) return 'урона не получаешь'
     return `держишь ${f.hitsSurvived.toFixed(1)} ударов`
   }
+
+  // Двадцать зон одним списком читаются как простыня, поэтому они сложены
+  // ДЕСЯТКАМИ УРОВНЕЙ ВХОДА. Раскрыта та группа, где герой стоит сейчас:
+  // список открывается на том месте, где игрок и находится.
+  interface ZoneGroup {
+    decade: number
+    label: string
+    zones: typeof ZONES
+  }
+  const groups = $derived.by((): ZoneGroup[] => {
+    const map = new Map<number, ZoneGroup>()
+    for (const zone of ZONES) {
+      const decade = Math.floor((zone.unlockRequirement - 1) / 10) * 10
+      let group = map.get(decade)
+      if (!group) {
+        group = { decade, label: `Уровни ${decade + 1}–${decade + 10}`, zones: [] }
+        map.set(decade, group)
+      }
+      group.zones.push(zone)
+    }
+    return [...map.values()].sort((a, b) => a.decade - b.decade)
+  })
+  const currentDecade = $derived(
+    Math.floor(((ZONE_BY_ID[$gameState.currentZoneId]?.unlockRequirement ?? 1) - 1) / 10) * 10,
+  )
 </script>
 
 <Panel title="Зоны">
+  {#each groups as group (group.decade)}
+  <details class="group" open={group.decade === currentDecade}>
+    <summary>{group.label} <span class="count">{group.zones.length}</span></summary>
   <ul>
-    {#each ZONES as zone (zone.id)}
+    {#each group.zones as zone (zone.id)}
       {@const f = byId.get(zone.id)}
       {@const safety = zoneSafety($gameState, zone)}
       {#if f}
@@ -79,18 +107,22 @@
             <NumberText value={f.xpPerHour} tone="xp" /> опыта/ч
           </div>
           <div class="warning">{warning(f)}, {toughness(f)}.</div>
+          <!-- Основание метки поменялось вместе с привалом: он теперь между
+               боями, поэтому пережить надо ВСЮ схватку, а не один удар. -->
           <div class="safety" class:safe={safety.safe}>
             {#if safety.safe}
-              Безопасно при пороге {restShare}%: сильнейший удар здесь —
-              <NumberText value={safety.worstHit} tone="damage" />, а на привал ты уходишь
-              с <NumberText value={safety.thresholdHp} tone="hp" /> HP. Умереть нельзя.
+              Безопасно при пороге {restShare}%: тяжёлый бой здесь снимает
+              <NumberText value={safety.worstFight} tone="damage" />, а на привал ты уходишь
+              с <NumberText value={safety.thresholdHp} tone="hp" /> HP — запаса хватает,
+              умереть нельзя.
             {:else if $gameState.stats.restThreshold <= 0}
               Порог привала снят — единственной паузой снова стала смерть.
             {:else}
-              Опасно при пороге {restShare}%: сильнейший удар здесь —
-              <NumberText value={safety.worstHit} tone="damage" />, а уходишь ты
-              с <NumberText value={safety.thresholdHp} tone="hp" /> HP. Один такой удар
-              с порога — и ты труп.
+              Опасно при пороге {restShare}%: тяжёлый бой здесь снимает
+              <NumberText value={safety.worstFight} tone="damage" />, а входишь ты
+              в него с <NumberText value={safety.thresholdHp} tone="hp" /> HP.
+              Из боя ты выходишь только победителем или мёртвым — отдохнуть
+              посреди схватки нельзя.
             {/if}
           </div>
           {#if zone.id === $gameState.currentZoneId}
@@ -104,6 +136,8 @@
       {/if}
     {/each}
   </ul>
+  </details>
+  {/each}
 
   <div class="rest">
     <span class="label">Уходить на привал при HP ниже:</span>
@@ -120,8 +154,10 @@
 
   {#snippet footer()}
     <p class="hint">
-      Привал длится {REST_DURATION_S} с и восстанавливает всё. Чем выше порог, тем
-      безопаснее и тем больше времени уходит на отдых, — это и есть выбор.
+      Привал длится {REST_DURATION_S} с и восстанавливает всё. Уйти на него
+      можно ТОЛЬКО МЕЖДУ БОЯМИ: начатую схватку герой доводит до конца. Чем
+      выше порог, тем безопаснее и тем больше времени уходит на отдых, —
+      это и есть выбор.
     </p>
     <p class="hint">
       Смерть отбрасывает в последнюю зону, где ты выживал
@@ -135,6 +171,34 @@
 </Panel>
 
 <style>
+  .group {
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius-md);
+    margin-bottom: var(--space-2);
+  }
+  summary {
+    cursor: pointer;
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--text-sm);
+    font-weight: var(--weight-medium);
+    color: var(--c-text-muted);
+    min-height: var(--tap-min);
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+  .count {
+    font-size: var(--text-2xs);
+    font-variant-numeric: tabular-nums;
+    color: var(--c-text-faint);
+  }
+  .group[open] summary {
+    color: var(--c-text);
+    border-bottom: 1px solid var(--c-border);
+  }
+  .group ul {
+    padding: var(--space-2);
+  }
   .safety {
     font-size: var(--text-sm);
     color: var(--c-warning);
