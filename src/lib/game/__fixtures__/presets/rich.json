@@ -4,6 +4,10 @@
   "materials": {},
   "activePotions": [],
   "enchantDust": "0",
+  "saveId": 404,
+  "templeRun": null,
+  "templeBestWave": 0,
+  "templeLastRunAtMs": 0,
   "procCooldownsMs": {},
   "restSpeedupSource": null,
   "lastTimestamp": 1700000000000,
@@ -465,6 +469,10 @@
   "dungeonRun": null,
   "dungeonsCleared": {
     "sunken-barrow": true
+  },
+  "questProgress": {
+    "done": {},
+    "counter": 0
   },
   "gcdMsLeft": 0,
   "abilityCooldownsMs": {},

@@ -107,6 +107,34 @@ export {
 } from './talents'
 export type { TalentStatus, TalentBlockReason, TalentRanks } from './talents'
 export {
+  TEMPLES,
+  TEMPLE_BY_ID,
+  activeTemple,
+  enterTemple,
+  leaveTemple,
+  msToNextAttempt,
+  templeById,
+  templeStatus,
+  TEMPLE,
+  TEMPLE_DAY_MS,
+  recipeUnlocked,
+  recipeUnlockWave,
+} from './temple'
+export type { TempleDef, TempleMilestone, TempleStatus, TempleBlockReason } from './temple'
+export {
+  QUEST_CHAIN,
+  activeQuest,
+  advanceQuests,
+  chainComplete,
+  chainUnlocked,
+  goalTarget,
+  isQuestDone,
+  progressionGateOpen,
+  questReward,
+  questStatuses,
+} from './quests'
+export type { QuestDef, QuestGoal, QuestReward, QuestStatus } from './quests'
+export {
   potionSlots,
   potionStatus,
   potionCount,

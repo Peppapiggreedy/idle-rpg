@@ -68,7 +68,7 @@ describe('ворота', () => {
 
   it('закрытые ворота доходят до движка: ни одного play', () => {
     const { player: p, played } = player({ ...OPEN, unlocked: false })
-    p.event({ type: 'kill', monsterName: 'моб', gold: new Decimal(1), xp: new Decimal(1) })
+    p.event({ type: 'kill', monsterId: 'test-monster', zoneId: 'shepherds-meadow', monsterName: 'моб', gold: new Decimal(1), xp: new Decimal(1) })
     p.ui('ui-click')
     expect(played).toEqual([])
   })
@@ -101,7 +101,7 @@ describe('события в звуки', () => {
     const { player: p, played } = player(OPEN, () => (t += 1000))
     const events: CombatEvent[] = [
       { type: 'hit', damage: new Decimal(1), isCrit: false },
-      { type: 'kill', monsterName: 'моб', gold: new Decimal(1), xp: new Decimal(1) },
+      { type: 'kill', monsterId: 'test-monster', zoneId: 'shepherds-meadow', monsterName: 'моб', gold: new Decimal(1), xp: new Decimal(1) },
       { type: 'loot', item: item('legendary') },
     ]
     p.events(events)

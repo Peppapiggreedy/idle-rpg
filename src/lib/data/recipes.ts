@@ -397,6 +397,64 @@ const CRAFT_RECIPES: RecipeDef[] = [
       adjective: 'Реликтовый',
     },
   },
+  // --- Награды Храма испытаний: открываются рубежами волн, а не материалами ---
+  // Материалы у них обычные, дальних зон: рубеж отпирает рецепт, а собирать
+  // его всё равно из того, что падает. Уровень предмета — уровень мобов той
+  // полосы, куда игрок к этому времени добрался.
+  {
+    id: 'trial-bracer',
+    name: 'Храмовый наруч',
+    icon: 'slot-hands',
+    profession: 'smithing',
+    inputs: [
+      { materialId: 'rime-salt', count: 4 },
+      { materialId: 'bog-hide', count: 3 },
+    ],
+    output: {
+      kind: 'item',
+      slot: 'hands',
+      rarity: 'rare',
+      level: 72,
+      attribute: 'agility',
+      adjective: 'Храмовый',
+    },
+  },
+  {
+    id: 'trial-helm',
+    name: 'Храмовый шлем',
+    icon: 'slot-head',
+    profession: 'smithing',
+    inputs: [
+      { materialId: 'rime-salt', count: 6 },
+      { materialId: 'ember-shard', count: 4 },
+    ],
+    output: {
+      kind: 'item',
+      slot: 'head',
+      rarity: 'epic',
+      level: 80,
+      attribute: 'vitality',
+      adjective: 'Храмовый',
+    },
+  },
+  {
+    id: 'trial-charm',
+    name: 'Храмовый амулет',
+    icon: 'slot-trinket',
+    profession: 'smithing',
+    inputs: [
+      { materialId: 'ember-shard', count: 8 },
+      { materialId: 'rime-salt', count: 8 },
+    ],
+    output: {
+      kind: 'item',
+      slot: 'trinket',
+      rarity: 'legendary',
+      level: 90,
+      attribute: 'strength',
+      adjective: 'Храмовый',
+    },
+  },
 ]
 
 /**

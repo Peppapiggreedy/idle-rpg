@@ -25,6 +25,7 @@ import {
   leaveDungeon as leaveDungeonAction,
   type DungeonDifficulty,
 } from '../game/dungeons'
+import { enterTemple as enterTempleAction, leaveTemple as leaveTempleAction } from '../game/temple'
 import { emit as emitAttack, emitLog, freshEvents } from '../game/events'
 import type { SlotId } from '../data/slots'
 import {
@@ -240,6 +241,20 @@ export function enterDungeonRun(
   // Сложность НИГДЕ не запоминается: это разовое решение при входе, а не
   // настройка. Кнопка передаёт её прямо сюда, и второго состояния для неё нет.
   state.update((s) => enterDungeonAction(s, dungeonId, difficulty))
+}
+
+/**
+ * Вход в храм испытаний. Часы берутся дефолтом инжектируемого параметра
+ * enterTemple: самой логике реальное время не принадлежит.
+ */
+export function enterTempleRun(): void {
+  recordDecision('temple')
+  state.update((s) => enterTempleAction(s))
+}
+
+/** Добровольный выход из храма: попытка уже потрачена, рекорд остаётся. */
+export function leaveTempleRun(): void {
+  state.update((s) => leaveTempleAction(s, rng(), false))
 }
 
 /** Добровольный выход из данжа: цепочка сбрасывается. */

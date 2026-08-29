@@ -18,6 +18,7 @@ import {
   recipesOf,
 } from '../data/recipes'
 import { LEVEL_CAP } from '../data/balance'
+import { TEMPLE } from '../data/temple'
 import { INVENTORY_SIZE, MATERIAL_DROP_CHANCE, REST_FOOD_SPEEDUP } from '../data/balance'
 import { ZONES } from '../data/zones'
 
@@ -42,9 +43,14 @@ function hero(patch: Partial<GameState> = {}): GameState {
 const BROTH = RECIPE_BY_ID['herb-broth']
 const HELM = RECIPE_BY_ID['forged-helm']
 
-/** Рядовые рецепты кузнеца: всё, что открыто до потолка уровней. */
+/**
+ * Рядовые рецепты кузнеца: те, что не заперты НИЧЕМ, кроме материалов.
+ * Кузнечное дело — подстраховка от невезения, и мерить его надо без наград:
+ * реликты стоят реагентов героики, а храмовые открываются рубежом волн.
+ */
+const rewardIds = new Set(TEMPLE.milestones.map((m) => m.recipeId))
 const everydaySmithing = () =>
-  recipesOf('smithing').filter((r) => recipeUnlockLevel(r) < LEVEL_CAP)
+  recipesOf('smithing').filter((r) => recipeUnlockLevel(r) < LEVEL_CAP && !rewardIds.has(r.id))
 /** Легендарные реликты: открываются на потолке и стоят реагентов героики. */
 const legendarySmithing = () =>
   recipesOf('smithing').filter((r) => recipeUnlockLevel(r) >= LEVEL_CAP)

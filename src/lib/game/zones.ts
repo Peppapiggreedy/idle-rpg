@@ -230,6 +230,9 @@ function enterZone(
 export function travelToZone(state: GameState, zoneId: string, rng: Rng): GameState {
   const zone = ZONE_BY_ID[zoneId]
   if (!zone) return state
+  // Из храма выходят выходом, а не переездом: иначе смена зоны оставила бы
+  // забег висеть, а героя — драться с мобами зоны под флагом храма.
+  if (state.templeRun) return state
   if (!isZoneUnlocked(state, zone)) return state
   if (zone.id === state.currentZoneId) return state
   return enterZone(state, zone, rng, 'travel')

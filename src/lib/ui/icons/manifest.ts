@@ -116,6 +116,13 @@ export const ICONS = {
   'recipe-relic-plate': { file: 'lorc/breastplate.svg', author: 'Lorc' },
   'recipe-relic-charm': { file: 'lorc/gem-chain.svg', author: 'Lorc' },
 
+  // --- Храм испытаний ---
+  temple: { file: 'delapouite/greek-temple.svg', author: 'Delapouite' },
+  'temple-wave': { file: 'lorc/wave-crest.svg', author: 'Lorc' },
+
+  // --- Преквесты и врата рейда ---
+  'raid-gate': { file: 'lorc/magic-gate.svg', author: 'Lorc' },
+
   // --- Классы ---
   'class-warden': { file: 'delapouite/spiked-shield.svg', author: 'Delapouite' },
   'class-reaver': { file: 'lorc/axe-swing.svg', author: 'Lorc' },

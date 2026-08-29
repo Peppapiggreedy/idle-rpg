@@ -33,6 +33,8 @@ import { HERBS } from '../herbs'
 import { DUST_BY_RARITY, ENCHANTS, ENCHANT_FLAT_STATS } from '../enchants'
 import { PROCS } from '../procs'
 import { BOSS_ABILITIES } from '../heroic'
+import { TEMPLES } from '../temple'
+import { QUESTS } from '../quests'
 import { PROGRESSION } from '../progression'
 import { REAGENTS } from '../reagents'
 import { DUNGEON_SCENE_KEYS } from '../scenery'
@@ -110,6 +112,8 @@ export function realContent(): Content {
     enchants: ENCHANTS,
     procs: PROCS,
     bossAbilities: BOSS_ABILITIES,
+    temples: TEMPLES,
+    quests: QUESTS,
     dustByRarity: DUST_BY_RARITY,
     enchantFlatStats: ENCHANT_FLAT_STATS,
     progression: PROGRESSION,

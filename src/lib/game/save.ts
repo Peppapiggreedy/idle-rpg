@@ -17,7 +17,8 @@ import {
   type GameState,
   type ActivePotion,
 } from './state'
-import { createRng } from './rng'
+import { createRng, randomSeed } from './rng'
+import { TEMPLE_BY_ID } from '../data/temple'
 import { advancePotions, gatherHerbs } from './potions'
 import { ENCHANT_BY_ID } from '../data/enchants'
 import { PROC_BY_ID } from '../data/procs'
@@ -51,7 +52,8 @@ import {
   type DungeonDifficulty,
 } from '../data/dungeons'
 import { currentBoss } from './dungeons'
-import type { DungeonRun } from '../types'
+import { QUEST_CHAIN } from '../data/quests'
+import type { DungeonRun, QuestProgress, TempleRun } from '../types'
 import { rankOf } from './talents'
 import { FALLBACK_ITEM_NAME } from '../data/loot'
 import { SAFE_ZONE, ZONE_BY_ID } from '../data/zones'
@@ -100,6 +102,14 @@ export interface SavedAbilitySetting {
   reserve: number
 }
 
+export interface SavedTempleRun {
+  templeId: string
+  wave: number
+  day: number
+  seed: number
+  level: number
+}
+
 export interface SavedDungeonRun {
   dungeonId: string
   /** Сложность забега: обычная и героическая — разные числа одной цепочки. */
@@ -114,6 +124,14 @@ export interface SavePayloadV19 {
   materials: Record<string, string>
   /** Пыль зачарования: величина растущая, поэтому строкой. */
   enchantDust: string
+  /** Идентификатор игры: из него и из даты считается сид забега по храму.
+   *  Терять его нельзя — вместе с ним поменялся бы и поток волн. */
+  saveId: number
+  /** Забег по храму переживает перезагрузку, но не смерть внутри. */
+  templeRun: SavedTempleRun | null
+  templeBestWave: number
+  /** Отметка последней попытки, реальное время. Часы назад её не отменяют. */
+  templeLastRunAtMs: number
   /** Внутренние кулдауны проков: id прока -> сколько мс осталось. */
   procCooldownsMs: Record<string, number>
   /** Действующие зелья. Переживают перезагрузку: склянка выпита и оплачена
@@ -146,6 +164,8 @@ export interface SavePayloadV19 {
   // Забег по данжу переживает перезагрузку, но не смерть внутри.
   dungeonRun: SavedDungeonRun | null
   dungeonsCleared: Record<string, boolean>
+  /** Цепочка преквестов: сданные задания и счётчик текущего. */
+  questProgress: { done: Record<string, boolean>; counter: number }
   // Умения: мана уже была, добавились кулдауны и глобальный кулдаун.
   // Очередь onNextSwing и наложенные эффекты НЕ сохраняются: они висели на
   // мобе, а моб при загрузке спавнится заново.
@@ -230,6 +250,12 @@ export function payloadFromState(state: GameState, lastTimestamp: number): SaveP
     const rank = rankOf(state.talents, talent.id)
     if (rank > 0) talents[talent.id] = rank
   }
+  // Чужой id задания в сейве — мусор, а не прогресс: то же правило, что
+  // и у пройденных данжей.
+  const questsDone: Record<string, boolean> = {}
+  for (const quest of QUEST_CHAIN.quests) {
+    if (state.questProgress.done[quest.id] === true) questsDone[quest.id] = true
+  }
   // Пишем только реально пройденные данжи — false в сейве это мусор.
   const dungeonsCleared: Record<string, boolean> = {}
   for (const dungeon of ALL_DUNGEONS) {
@@ -249,6 +275,10 @@ export function payloadFromState(state: GameState, lastTimestamp: number): SaveP
       .filter((p) => p.msLeft > 0 && p.recipeId in POTION_RECIPE_BY_ID)
       .map((p) => ({ recipeId: p.recipeId, msLeft: Math.max(0, p.msLeft) })),
     enchantDust: state.enchantDust.floor().toString(),
+    saveId: state.saveId >>> 0,
+    templeRun: state.templeRun ? { ...state.templeRun } : null,
+    templeBestWave: Math.max(0, Math.floor(state.templeBestWave)),
+    templeLastRunAtMs: Math.max(0, state.templeLastRunAtMs),
     // Нулевой кулдаун — мусор, а не прогресс: полная готовность это отсутствие
     // записи, ровно как у зарядов умений.
     procCooldownsMs: Object.fromEntries(
@@ -262,6 +292,10 @@ export function payloadFromState(state: GameState, lastTimestamp: number): SaveP
     lastSurvivedZoneId: state.lastSurvivedZoneId,
     dungeonRun: state.dungeonRun ? { ...state.dungeonRun } : null,
     dungeonsCleared,
+    questProgress: {
+      done: questsDone,
+      counter: Math.max(0, Math.floor(state.questProgress.counter)),
+    },
     gcdMsLeft: Math.max(0, state.gcdMsLeft),
     abilityCooldownsMs,
     regenDelayMsLeft: Math.max(0, state.regenDelayMsLeft),
@@ -542,6 +576,41 @@ function procCooldownsFromSaved(raw: unknown): Record<string, number> {
   return result
 }
 
+// Прогресс заданий из сейва: чужие id отбрасываем, счётчик режем по нулю —
+// правленый руками сейв не должен закрывать задание, которого нет в игре.
+function questsFromSaved(raw: unknown): QuestProgress {
+  const progress: QuestProgress = { done: {}, counter: 0 }
+  if (typeof raw !== 'object' || raw === null) return progress
+  const saved = raw as { done?: unknown; counter?: unknown }
+  const done =
+    typeof saved.done === 'object' && saved.done !== null
+      ? (saved.done as Record<string, unknown>)
+      : {}
+  for (const quest of QUEST_CHAIN.quests) {
+    if (done[quest.id] === true) progress.done[quest.id] = true
+  }
+  if (typeof saved.counter === 'number' && Number.isFinite(saved.counter) && saved.counter > 0) {
+    progress.counter = Math.floor(saved.counter)
+  }
+  return progress
+}
+
+// Забег по храму из сейва: чужой храм или мусорная волна — забега нет.
+// Лучше выйти наружу, чем застрять в волне, которой не бывает.
+function templeRunFromSaved(raw: unknown): TempleRun | null {
+  if (typeof raw !== 'object' || raw === null) return null
+  const { templeId, wave, day, seed, level } = raw as Record<string, unknown>
+  if (typeof templeId !== 'string' || !TEMPLE_BY_ID[templeId]) return null
+  const int = (v: unknown, min: number) =>
+    typeof v === 'number' && Number.isFinite(v) && v >= min ? Math.floor(v) : null
+  const w = int(wave, 1)
+  const d = int(day, 0)
+  const sd = int(seed, 0)
+  const lvl = int(level, 1)
+  if (w === null || d === null || sd === null || lvl === null) return null
+  return { templeId, wave: w, day: d, seed: sd, level: lvl }
+}
+
 // Забег из сейва: чужой данж или индекс за пределами цепочки — забега нет.
 // Лучше выйти наружу, чем застрять перед несуществующим боссом.
 function dungeonRunFromSaved(raw: unknown): DungeonRun | null {
@@ -598,6 +667,19 @@ export function stateFromPayload(p: SavePayloadV19): GameState {
     // же ветке писался ещё без пыли, и такие сейвы обязаны читаться.
     enchantDust: parseDec(p.enchantDust, '0').floor(),
     procCooldownsMs: procCooldownsFromSaved(p.procCooldownsMs),
+    // Сейв без saveId — из версии до храма: заводим новый, поток волн у него
+    // всё равно ещё не начинался.
+    saveId:
+      typeof p.saveId === 'number' && Number.isFinite(p.saveId) ? p.saveId >>> 0 : randomSeed(),
+    templeRun: templeRunFromSaved(p.templeRun),
+    templeBestWave:
+      typeof p.templeBestWave === 'number' && p.templeBestWave > 0
+        ? Math.floor(p.templeBestWave)
+        : 0,
+    templeLastRunAtMs:
+      typeof p.templeLastRunAtMs === 'number' && p.templeLastRunAtMs > 0
+        ? Math.floor(p.templeLastRunAtMs)
+        : 0,
     talentResets:
       typeof p.talentResets === 'number' && Number.isFinite(p.talentResets) && p.talentResets > 0
         ? Math.floor(p.talentResets)
@@ -615,6 +697,7 @@ export function stateFromPayload(p: SavePayloadV19): GameState {
     equipment: equipmentFromSaved(p.equipment),
     dungeonRun: dungeonRunFromSaved(p.dungeonRun),
     dungeonsCleared: clearedFromSaved(p.dungeonsCleared),
+    questProgress: questsFromSaved(p.questProgress),
     currentZoneId: zoneIdFromSaved(p.currentZoneId, SAFE_ZONE.id),
     lastSurvivedZoneId:
       p.lastSurvivedZoneId === null || p.lastSurvivedZoneId === undefined

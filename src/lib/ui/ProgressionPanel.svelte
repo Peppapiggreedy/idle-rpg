@@ -8,18 +8,24 @@
   // показывает будущие ступени вообще. Закреплено Playwright-тестом,
   // который ищет названия закрытых ступеней в разметке страницы.
   import { PROGRESSION } from '../data/progression'
+  import { progressionGateOpen } from '../game'
   import { gameState } from '../stores/game'
   import { Panel } from './kit'
   import { Icon } from './icons'
 
   const level = $derived($gameState.level.toNumber())
   const nextStep = $derived(PROGRESSION.find((s) => s.level > level) ?? null)
+  // Ступень может быть заперта не только уровнем: цепочка преквестов держит
+  // врата рейда. Какую именно ступень она держит, знают ДАННЫЕ цепочки —
+  // ветвления по id ступени здесь нет.
+  const isOpen = (stepId: string, stepLevel: number) =>
+    level >= stepLevel && progressionGateOpen($gameState, stepId)
 </script>
 
 <Panel title="Лестница открытий">
   <ul>
     {#each PROGRESSION as step (step.id)}
-      {@const open = level >= step.level}
+      {@const open = isOpen(step.id, step.level)}
       <li class="step" class:open class:next={step === nextStep}>
         <span class="level">{step.level}</span>
         {#if open}
@@ -37,7 +43,9 @@
           <span class="text">
             <span class="name unknown">???</span>
             <span class="desc">
-              {#if step === nextStep}
+              {#if level >= step.level}
+                Нужно пройти цепочку заданий
+              {:else if step === nextStep}
                 Осталось {step.level - level}
                 {step.level - level === 1 ? 'уровень' : 'уровней'}
               {:else}

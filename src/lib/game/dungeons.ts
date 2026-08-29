@@ -192,6 +192,7 @@ export function advanceDungeon(state: GameState, rng: Rng): GameState {
   const cleared = leaveDungeon(state, rng, false)
   const log = pushEvent(cleared.combatLog, {
     type: 'dungeon-clear',
+    dungeonId: dungeon.id,
     dungeonName: dungeon.name,
     difficulty: dungeon.difficulty,
     firstClear,

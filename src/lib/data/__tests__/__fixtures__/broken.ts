@@ -373,6 +373,48 @@ export function brokenCases(): BrokenCase[] {
       expect: ['hasteBonus'],
     },
     {
+      title: 'рубежи храма идут не по возрастанию',
+      content: {
+        ...real,
+        temples: real.temples.map((t) => ({
+          ...t,
+          milestones: [...t.milestones].reverse(),
+        })),
+      },
+      expect: ['рубежи обязаны'],
+    },
+    {
+      title: 'храм открывает рецепт, которого нет',
+      content: {
+        ...real,
+        temples: real.temples.map((t) => ({
+          ...t,
+          milestones: t.milestones.map((m) => ({ ...m, recipeId: 'нет-такого' })),
+        })),
+      },
+      expect: ['нет-такого', 'data/recipes.ts'],
+    },
+    {
+      title: 'задание требует убить того, кого нет в зоне',
+      content: {
+        ...real,
+        quests: real.quests.map((q) =>
+          q.goal.kind === 'kill' ? { ...q, goal: { ...q.goal, monsterId: 'нет-такого' } } : q,
+        ),
+      },
+      expect: ['нет-такого', 'невыполнимо'],
+    },
+    {
+      title: 'задание требует уровень выше потолка',
+      content: {
+        ...real,
+        quests: real.quests.map((q) =>
+          q.goal.kind === 'level' ? { ...q, goal: { ...q.goal, level: 1000 } } : q,
+        ),
+      },
+      expect: ['выше потолка'],
+    },
+    {
       title: 'класс ссылается на несуществующее умение',
       content: {
         ...real,

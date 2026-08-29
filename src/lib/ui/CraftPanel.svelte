@@ -18,6 +18,7 @@
 
   const REASON_TEXT: Record<CraftBlockReason, string> = {
     level: 'Рецепт откроется позже',
+    locked: 'Награда храма: дойди до своего рубежа волн',
     materials: 'Не хватает материалов',
     'inventory-full': 'Сумка полна — освободи место',
   }

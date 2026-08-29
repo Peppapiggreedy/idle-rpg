@@ -4,6 +4,10 @@
   "materials": {},
   "activePotions": [],
   "enchantDust": "0",
+  "saveId": 202,
+  "templeRun": null,
+  "templeBestWave": 0,
+  "templeLastRunAtMs": 0,
   "procCooldownsMs": {},
   "restSpeedupSource": null,
   "lastTimestamp": 1700000000000,
@@ -390,6 +394,10 @@
   "lastSurvivedZoneId": null,
   "dungeonRun": null,
   "dungeonsCleared": {},
+  "questProgress": {
+    "done": {},
+    "counter": 0
+  },
   "gcdMsLeft": 600,
   "abilityCooldownsMs": {
     "rending-wound": 2400,

@@ -24,6 +24,8 @@ import type { EnchantDef } from '../enchants'
 import { clearKey } from '../dungeons'
 import type { ProcDef } from '../procs'
 import type { BossAbilityDef } from '../heroic'
+import type { TempleDef } from '../temple'
+import { QUEST_CHAIN, type QuestDef } from '../quests'
 import { MECHANIC_IDS, type ProgressionStep } from '../progression'
 import type { ReagentDef } from '../reagents'
 import type { DungeonSceneKey } from '../scenery'
@@ -56,6 +58,8 @@ export interface Content {
   enchants: readonly EnchantDef[]
   procs: readonly ProcDef[]
   bossAbilities: readonly BossAbilityDef[]
+  temples: readonly TempleDef[]
+  quests: readonly QuestDef[]
   /** Сколько пыли даёт распыление каждого тира (DUST_BY_RARITY). */
   dustByRarity: Record<string, number>
   /** Статы, где зачарованию разрешена плоская прибавка (ENCHANT_FLAT_STATS). */
@@ -1494,6 +1498,122 @@ export const BOSS_ABILITY_SCHEMA: EntitySchema<BossAbilityDef> = {
   },
 }
 
+export const TEMPLE_SCHEMA: EntitySchema<TempleDef> = {
+  kind: 'храм',
+  file: 'data/temple.ts',
+  entities: (c) => c.temples,
+  id: (t) => t.id,
+  name: (t) => t.name,
+  icon: (t) => t.icon,
+  numbers: [
+    { field: 'unlockRequirement', get: (t) => t.unlockRequirement, min: 1, integer: true },
+    {
+      field: 'rewardMultiplier',
+      get: (t) => t.rewardMultiplier.toNumber(),
+      min: 0,
+      exclusiveMin: true,
+      max: 20,
+      why: 'множитель наград волны — то же, что rewardMultiplier у зоны',
+    },
+  ],
+  extra: (temple, content, report) => {
+    const where = `храм ${temple.id}`
+    report.need(
+      content.zones.some((z) => z.id === temple.zoneId),
+      where,
+      `вход из зоны «${temple.zoneId}», которой нет в data/zones.ts`,
+    )
+    report.need(
+      Array.isArray(temple.ladder) && temple.ladder.length > 0,
+      where,
+      'пул бойцов пуст — волне некого выставить (data/temple.ts)',
+    )
+    report.need(
+      content.dungeonSceneKeys.includes(temple.scenery),
+      where,
+      `обстановки «${temple.scenery}» нет в DUNGEON_SCENES (data/scenery.ts)`,
+    )
+    // Рубежи строго по возрастанию: иначе «дошёл до пятой» открывало бы
+    // награду десятой, и лестница наград перестала бы быть лестницей.
+    let previous = 0
+    for (const milestone of temple.milestones ?? []) {
+      if (milestone.wave <= previous) {
+        report.add(
+          where,
+          `рубеж волны ${milestone.wave} стоит после рубежа ${previous}: рубежи обязаны ` +
+            'идти строго по возрастанию (data/temple.ts)',
+        )
+      }
+      previous = milestone.wave
+      report.need(
+        content.recipes.some((r) => r.id === milestone.recipeId),
+        where,
+        `рубеж открывает рецепт «${milestone.recipeId}», которого нет в data/recipes.ts`,
+      )
+    }
+  },
+}
+
+export const QUEST_SCHEMA: EntitySchema<QuestDef> = {
+  kind: 'задание',
+  file: 'data/quests.ts',
+  entities: (c) => c.quests,
+  id: (q) => q.id,
+  name: (q) => q.name,
+  icon: (q) => q.icon,
+  numbers: [],
+  extra: (quest, content, report) => {
+    const where = `задание ${quest.id}`
+    report.need(
+      !!quest.flavor?.trim(),
+      where,
+      'нет строки о том, зачем это делать — заполни flavor в data/quests.ts',
+    )
+    // Цель проверяется ПО ТИПУ: пятого типа нет, а у каждого из четырёх своя
+    // ссылка, и промах в ней запер бы цепочку навсегда.
+    const goal = quest.goal
+    if (goal.kind === 'kill') {
+      const zone = content.zones.find((z) => z.id === goal.zoneId)
+      report.need(zone !== undefined, where, `зоны «${goal.zoneId}» нет в data/zones.ts`)
+      report.need(
+        zone?.monsterPool.some((m) => m.id === goal.monsterId) ?? false,
+        where,
+        `в зоне «${goal.zoneId}» не водится «${goal.monsterId}» — задание невыполнимо ` +
+          '(data/zones.ts)',
+      )
+      report.need(
+        Number.isInteger(goal.count) && goal.count > 0,
+        where,
+        'число убийств должно быть целым и больше нуля (data/quests.ts)',
+      )
+    } else if (goal.kind === 'dungeon') {
+      report.need(
+        content.dungeons.some((d) => d.id === goal.dungeonId),
+        where,
+        `данжа «${goal.dungeonId}» нет в data/dungeons.ts`,
+      )
+    } else if (goal.kind === 'craft') {
+      report.need(
+        content.recipes.some((r) => r.id === goal.recipeId),
+        where,
+        `рецепта «${goal.recipeId}» нет в data/recipes.ts`,
+      )
+      report.need(
+        Number.isInteger(goal.count) && goal.count > 0,
+        where,
+        'число крафтов должно быть целым и больше нуля (data/quests.ts)',
+      )
+    } else {
+      report.need(
+        Number.isInteger(goal.level) && goal.level > 0 && goal.level <= content.balance.levelCap,
+        where,
+        `цель «достичь ${goal.level} уровня» выше потолка ${content.balance.levelCap} — ` +
+          'задание невыполнимо (data/quests.ts)',
+      )
+    }
+  },
+}
+
 export const CLASS_SCHEMA: EntitySchema<ClassDef> = {
   kind: 'класс',
   file: 'data/classes.ts',
@@ -1799,6 +1919,8 @@ export const SCHEMAS = [
   ENCHANT_SCHEMA,
   PROC_SCHEMA,
   BOSS_ABILITY_SCHEMA,
+  TEMPLE_SCHEMA,
+  QUEST_SCHEMA,
   REAGENT_SCHEMA,
   PROGRESSION_SCHEMA,
   RECIPE_SCHEMA,
@@ -1816,6 +1938,18 @@ export const SCHEMAS = [
  * а до половины предметов игрок не доберётся никогда.
  */
 function checkReachable(content: Content, report: Report): void {
+  // --- Цепочка преквестов: она отпирает ступень лестницы ---
+  report.need(
+    content.progression.some((step) => step.id === QUEST_CHAIN.opensStepId),
+    'цепочка заданий',
+    `отпирает ступень «${QUEST_CHAIN.opensStepId}», которой нет в data/progression.ts`,
+  )
+  report.need(
+    QUEST_CHAIN.quests.length > 0,
+    'цепочка заданий',
+    'в цепочке нет ни одного задания — ступень рейда не отпереть (data/quests.ts)',
+  )
+
   // --- Зачарование: пыль и достижимость ---
   for (const rarity of content.rarities) {
     const dust = content.dustByRarity[rarity.id]

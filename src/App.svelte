@@ -22,6 +22,7 @@
   import CombatLog from './lib/ui/CombatLog.svelte'
   import ActionBar from './lib/ui/ActionBar.svelte'
   import DungeonHud from './lib/ui/DungeonHud.svelte'
+  import TempleHud from './lib/ui/TempleHud.svelte'
   import VitalsBar from './lib/ui/VitalsBar.svelte'
   import Drawer from './lib/ui/Drawer.svelte'
   import SectionTabs from './lib/ui/SectionTabs.svelte'
@@ -31,6 +32,7 @@
   import StatsPanel from './lib/ui/StatsPanel.svelte'
   import EquipmentPanel from './lib/ui/EquipmentPanel.svelte'
   import AbilityPanel from './lib/ui/AbilityPanel.svelte'
+  import QuestPanel from './lib/ui/QuestPanel.svelte'
   import TalentPanel from './lib/ui/TalentPanel.svelte'
   import ProgressionPanel from './lib/ui/ProgressionPanel.svelte'
   import InventoryPanel from './lib/ui/InventoryPanel.svelte'
@@ -38,6 +40,7 @@
   import EnchantPanel from './lib/ui/EnchantPanel.svelte'
   import ZonePanel from './lib/ui/ZonePanel.svelte'
   import DungeonPanel from './lib/ui/DungeonPanel.svelte'
+  import TemplePanel from './lib/ui/TemplePanel.svelte'
   import SettingsPanel from './lib/ui/SettingsPanel.svelte'
 
   import DebugOverlay from './lib/ui/DebugOverlay.svelte'
@@ -91,6 +94,7 @@
         {/if}
         <SwingIndicator />
         <DungeonHud />
+        <TempleHud />
       </div>
       <ActionBar />
       <VitalsBar />
@@ -134,6 +138,7 @@
       class:solo={$activeSection === 'settings'}
     >
       {#if $activeSection === 'progress'}
+        <QuestPanel />
         <TalentPanel />
         <ProgressionPanel />
         <AbilityPanel />
@@ -144,6 +149,7 @@
       {:else if $activeSection === 'world'}
         <ZonePanel />
         <DungeonPanel />
+        <TemplePanel />
       {:else}
         <SettingsPanel />
       {/if}

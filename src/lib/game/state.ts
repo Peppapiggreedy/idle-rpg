@@ -19,7 +19,15 @@ import {
 import { recomputeStats, type StatBlock } from './stats'
 import { SLOT_IDS, type SlotId } from '../data/slots'
 import { createRng, type Rng } from './rng'
-import type { CombatEvent, DungeonRun, Item, Monster, MonsterTemplate } from '../types'
+import type {
+  CombatEvent,
+  DungeonRun,
+  Item,
+  Monster,
+  MonsterTemplate,
+  QuestProgress,
+  TempleRun,
+} from '../types'
 
 // Сколько последних событий боя храним для лога на экране.
 export const COMBAT_LOG_SIZE = 8
@@ -70,6 +78,18 @@ export interface GameState {
   // а не предмет: два предмета с одним проком делят один кулдаун, ровно как
   // их считает оценка (equippedProcs схлопывает дубли).
   procCooldownsMs: Record<string, number>
+  /** Идентификатор ЭТОЙ игры. Неизменен; вместе с датой даёт сид забега
+   *  по храму — поэтому за один день поток волн один и тот же. */
+  saveId: number
+  /** Активный забег по храму; null — герой снаружи. */
+  templeRun: TempleRun | null
+  /** Личный рекорд по волнам. Он же ключ: рубежи открывают рецепты. */
+  templeBestWave: number
+  /** Отметка РЕАЛЬНОГО времени последнего забега, мс. Часы для храма идут
+   *  только вперёд (см. templeClock), поэтому перевод назад ничего не даёт. */
+  templeLastRunAtMs: number
+  /** Цепочка преквестов: сданные задания и счётчик текущего (game/quests.ts). */
+  questProgress: QuestProgress
   // Умение типа onNextSwing, поставленное в очередь: заменит следующую
   // автоатаку. Одновременно только одно; null — очередь пуста.
   queuedAbilityId: string | null
@@ -263,6 +283,7 @@ export function spawnMonster(zone: Zone, rng: Rng): Monster {
 export function createInitialState(
   rngSeed: number = randomSeed(),
   classId: string = DEFAULT_CLASS.id,
+  saveId: number = randomSeed(),
 ): GameState {
   const level = new Decimal(1)
   const hero = classById(classId)
@@ -293,6 +314,13 @@ export function createInitialState(
     herbProgress: {},
     enchantDust: new Decimal(0),
     procCooldownsMs: {},
+    saveId,
+    templeRun: null,
+    templeBestWave: 0,
+    templeLastRunAtMs: 0,
+    // Литералом, а не вызовом из quests.ts: state.ts не должен зависеть от
+    // модуля, который зависит от него.
+    questProgress: { done: {}, counter: 0 },
     queuedAbilityId: null,
     activeEffects: [],
     abilitySettings: defaultAbilitySettings(hero.id),

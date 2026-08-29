@@ -59,7 +59,17 @@ export type CombatEvent =
   | { type: 'ability'; abilityId: string; damage: Decimal; isCrit: boolean }
   // Тик эффекта (урон по времени) от умения abilityId.
   | { type: 'effect'; abilityId: string; damage: Decimal }
-  | { type: 'kill'; monsterName: string; gold: Decimal; xp: Decimal }
+  // Убийство несёт и ID моба с зоной: по ним считается прогресс заданий,
+  // а имя остаётся для лога. Раньше id тут не было — и это было исключением
+  // из общего правила «событие несёт id, а текст рендерит UI».
+  | {
+      type: 'kill'
+      monsterId: string
+      monsterName: string
+      zoneId: string
+      gold: Decimal
+      xp: Decimal
+    }
   | { type: 'levelup'; level: Decimal }
   | { type: 'loot'; item: Item }
   // Находка не поместилась в сумку и ушла в золото сама. Отдельный код,
@@ -85,6 +95,7 @@ export type CombatEvent =
   | { type: 'dungeon-exit'; defeated: boolean }
   | {
       type: 'dungeon-clear'
+      dungeonId: string
       dungeonName: string
       difficulty: DungeonDifficulty
       firstClear: boolean
@@ -116,6 +127,14 @@ export type CombatEvent =
   | { type: 'enchant'; itemName: string; enchantId: string }
   // Прок: что сработало и на сколько. Текст рендерит UI.
   | { type: 'proc'; procId: string; effect: 'damage' | 'heal'; amount: Decimal }
+  // Храм испытаний: начало забега, пройденная волна (record — новый рекорд),
+  // открытый рубежом рецепт и конец забега.
+  | { type: 'temple-start'; templeName: string }
+  | { type: 'temple-wave'; wave: number; record: boolean }
+  | { type: 'temple-reward'; recipeId: string; wave: number }
+  | { type: 'temple-end'; wave: number; defeated: boolean }
+  // Задание цепочки сдано. chainComplete поднимается один раз — на последнем.
+  | { type: 'quest-complete'; questId: string; chainComplete: boolean }
   | { type: 'rest-start' }
   | { type: 'rest-end'; interrupted: boolean }
 
@@ -128,6 +147,29 @@ export interface DungeonRun {
   difficulty: DungeonDifficulty
   bossIndex: number
   fightMs: number // сколько идёт бой с текущим боссом; от него ярость
+}
+
+/**
+ * Прогресс цепочки преквестов. Ключ — id задания, а НЕ номер в цепочке:
+ * вставка задания в середину не должна сдвигать чужой прогресс, ровно как
+ * у dungeonsCleared. `counter` — счётчик ТЕКУЩЕГО задания (убийств, крафтов);
+ * это служебное число, а не игровая величина, поэтому обычный number.
+ */
+export interface QuestProgress {
+  done: Record<string, boolean>
+  counter: number
+}
+
+/** Забег по храму: волна, сутки попытки, сид и уровень героя на входе. */
+export interface TempleRun {
+  templeId: string
+  /** Номер волны, с первой. Он же рекорд, если забег кончится здесь. */
+  wave: number
+  /** Номер суток попытки: по нему и по saveId считается сид потока волн. */
+  day: number
+  seed: number
+  /** Уровень героя НА ВХОДЕ: подстройка бойцов не едет вслед за левелапом. */
+  level: number
 }
 
 // Событие одного удара для шины game/events.ts (всплывающие числа урона и т.п.).

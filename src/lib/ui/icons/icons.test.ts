@@ -11,6 +11,8 @@ import { HERBS } from '../../data/herbs'
 import { ENCHANTS } from '../../data/enchants'
 import { PROCS } from '../../data/procs'
 import { BOSS_ABILITIES, HEROIC } from '../../data/heroic'
+import { TEMPLES } from '../../data/temple'
+import { QUESTS } from '../../data/quests'
 import { REAGENTS } from '../../data/reagents'
 import { PROFESSIONS, RECIPES } from '../../data/recipes'
 import { PROGRESSION } from '../../data/progression'
@@ -40,6 +42,12 @@ const used: IconName[] = [
   ...PROCS.map((p) => p.icon),
   ...BOSS_ABILITIES.map((a) => a.icon),
   HEROIC.icon,
+  ...TEMPLES.map((t) => t.icon),
+  ...QUESTS.map((q) => q.icon),
+  // Врата рейда: иконка стоит в панели заданий и в строке лога.
+  'raid-gate',
+  // Волна храма: иконка стоит в рубежах панели и в строке лога.
+  'temple-wave',
   ...REAGENTS.map((r) => r.icon),
   ...RECIPES.flatMap((r) => (r.output.kind === 'item' ? [r.icon] : [])),
   'gold',

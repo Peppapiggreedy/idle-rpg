@@ -70,6 +70,9 @@ function heroDies(state: GameState, rng: Rng): GameState {
     activeEffects: [],
     combatLog: pushEvent(state.combatLog, { type: 'death' }),
   }
+  // Смерть в храме выкидывает наружу: рекорд и открытые им рецепты уже
+  // записаны, а забег не сохраняется — попытка потрачена.
+  if (dead.templeRun) return leaveTemple(dead, rng, true)
   // Смерть в данже выкидывает наружу: лут за убитых боссов уже в сумке,
   // а прогресс цепочки не сохраняется — заходить придётся заново.
   return dead.dungeonRun ? leaveDungeon(dead, rng, true) : dead
@@ -87,6 +90,10 @@ function extraSwings(chance: number, rng: Rng): number {
 }
 import { rollBossReagent } from './crafting'
 import { bossDispel, bossSwingTime } from './bossAbilities'
+import { advanceTemple, clearTempleWave, leaveTemple } from './temple'
+import { freshEvents } from './events'
+import { advanceQuests } from './quests'
+import { TEMPLE_WAVE_DELAY_MS } from '../data/temple'
 import {
   activeDungeon,
   advanceDungeon,
@@ -97,7 +104,7 @@ import {
   type BossDef,
 } from './dungeons'
 import { rollBossLoot } from './loot'
-import type { AttackEvent, Monster } from '../types'
+import type { AttackEvent, CombatEvent, Monster } from '../types'
 
 // Погрешность накопления долей замаха: 0.05 и подобные не представимы в double.
 const SWING_EPS = 1e-9
@@ -116,6 +123,8 @@ interface TickContext {
   /** Ударов нанесено и получено за тик: из них класс копит свой ресурс. */
   swingsDealt: number
   hitsTaken: number
+  /** Голова лога на входе в тик: по ней считается, что нового объявлено. */
+  logHead: CombatEvent | null
 }
 
 type TickStep = (state: GameState, ctx: TickContext) => GameState
@@ -186,6 +195,9 @@ const applyRest: TickStep = (s, ctx) => {
  */
 const applyRestCheck: TickStep = (s) => {
   if (s.heroState !== 'alive') return s
+  // В храме привала нет: поток волн не прерывается на отдых, иначе «пока
+  // герой не погибнет» превратилось бы в «пока не надоест».
+  if (s.templeRun) return s
   // Только между боями: пока моб жив, порог ничего не запускает.
   if (s.monster.currentHp.gt(0)) return s
   if (!needsRest(s)) return s
@@ -383,7 +395,11 @@ const applyKillRewards: TickStep = (s, ctx) => {
     gold: s.gold.plus(killed.goldReward),
     combatLog: pushEvent(s.combatLog, {
       type: 'kill',
+      // id моба — это id АРХЕТИПА (см. buildMonster): по нему цель задания
+      // и узнаёт, того ли зверя бьют.
+      monsterId: killed.id,
       monsterName: killed.name,
+      zoneId: s.currentZoneId,
       gold: killed.goldReward,
       xp: killed.xpReward.times(clearedXpBonus(s.dungeonsCleared)),
     }),
@@ -745,8 +761,18 @@ const applyRespawn: TickStep = (s, ctx) => {
   // На привале респауна нет: герой ушёл отдыхать, и встретит его новый моб
   // в момент возвращения (applyRest), а не тот, что стоял бы тут без него.
   if (s.heroState === 'resting') return s
-  // Смерть моба на этом тике — взводим таймер; отсчёт начнётся со следующего тика.
-  if (ctx.killedMonster) return { ...s, respawnMsLeft: RESPAWN_DELAY_MS }
+  // Смерть моба на этом тике — взводим таймер; отсчёт начнётся со следующего
+  // тика. В храме пауза своя: волна должна читаться как волна, а не как
+  // мигание.
+  if (ctx.killedMonster) {
+    return { ...s, respawnMsLeft: s.templeRun ? TEMPLE_WAVE_DELAY_MS : RESPAWN_DELAY_MS }
+  }
+  // В храме пауза ведёт к следующей волне, а не к респауну моба зоны.
+  if (s.templeRun && s.respawnMsLeft > 0) {
+    const left = s.respawnMsLeft - ctx.dtMs
+    if (left > 0) return { ...s, respawnMsLeft: left }
+    return advanceTemple(s)
+  }
   // В данже пауза ведёт не к респауну, а к следующему боссу цепочки.
   if (s.dungeonRun && s.respawnMsLeft > 0) {
     const left = s.respawnMsLeft - ctx.dtMs
@@ -783,6 +809,24 @@ const applyPotions: TickStep = (s, ctx) => advancePotions(s, ctx.dtMs)
  * дальше посчитается ступень ярости.
  */
 const applyBossDispel: TickStep = (s, ctx) => bossDispel(s, ctx.dtMs)
+
+/**
+ * Прогресс заданий. Своих счётчиков шаг НЕ ЗАВОДИТ: он берёт события, которые
+ * этот тик уже объявил (убийство, пройденный данж), и отдаёт их чистой
+ * advanceQuests. Стоит ПОСЛЕ applyRespawn намеренно — именно там цепочка
+ * боссов объявляет о полном прохождении.
+ */
+const applyQuests: TickStep = (s, ctx) => advanceQuests(s, freshEvents(s.combatLog, ctx.logHead))
+
+/**
+ * Волна храма засчитана. Отдельным шагом и ДО решения об отдыхе: между
+ * смертью бойца и следующей волной герой может выйти сам, а пройденная
+ * волна обязана остаться в рекорде.
+ */
+const applyTempleWave: TickStep = (s, ctx) => {
+  if (!s.templeRun || !ctx.killedMonster) return s
+  return clearTempleWave(s)
+}
 
 /**
  * Герой мог упасть не от удара моба: героическая отдача списывает HP в момент
@@ -825,6 +869,7 @@ const PIPELINE: TickStep[] = [
   applyRegen,
   applyRespawn,
   applyHerbGather,
+  applyQuests,
   applyAutosaveCounter,
 ]
 
@@ -851,6 +896,7 @@ export function tick(
     },
     killedMonster: null,
     swingsDealt: 0,
+    logHead: state.combatLog[0] ?? null,
     hitsTaken: 0,
   }
   // Кеш статов: пересчёт только если источники менялись с прошлого тика.
