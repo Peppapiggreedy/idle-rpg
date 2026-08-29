@@ -61,7 +61,11 @@ export interface MonsterArchetype {
 // секунд, и с ростом вещей темп плавно сходит к десяти. Это НЕ «сколько не
 // жалко» — это верхнее число коридора 8-15, от которого пляшет весь масштаб.
 export const MONSTER_BASE = {
-  maxHp: new Decimal(480),
+  // 474, а не круглые 480: полтора процента — это запас, которым верхний край
+  // коридора темпа отодвинут от потолка в пятнадцать секунд. Изувер на
+  // середине лестницы упирался в него ровно, и упирался бы снова от любой
+  // мелкой правки сил. Число подобрано прогоном, а не на глаз.
+  maxHp: new Decimal(474),
   damage: new Decimal(2.6),
   goldReward: new Decimal(26),
   xpReward: new Decimal(44),
@@ -119,7 +123,7 @@ export const MONSTER_GROWTH = {
 // а не уровни героя: скидка лежит на мобе, а дерётся с ним тот, кому он
 // по лестнице и предназначен.
 export const EARLY_HP_DISCOUNT: ReadonlyArray<{ belowLevel: number; mult: Decimal }> = [
-  { belowLevel: 6, mult: new Decimal(0.78) }, // мобы 1-5: у героя одна кнопка
+  { belowLevel: 6, mult: new Decimal(0.82) }, // мобы 1-5: у героя одна кнопка
   { belowLevel: 11, mult: new Decimal(0.9) }, // мобы 6-10: две кнопки
 ]
 

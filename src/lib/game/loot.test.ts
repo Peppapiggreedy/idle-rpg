@@ -7,7 +7,7 @@ import { createInitialState, emptyEquipment, tick, type GameState } from './tick
 import { ensureStats } from './stats'
 import { STEP_MS } from './loop'
 import { DROP_CHANCE } from '../data/loot'
-import { RARITIES } from '../data/rarity'
+import { RARITIES, RARITY_BY_ID } from '../data/rarity'
 import type { Item } from '../types'
 
 // rng из заготовленной последовательности значений.
@@ -56,8 +56,12 @@ describe('rollLoot', () => {
     expect(base.every((m) => m.source === 'equipment:mainHand')).toBe(true)
     const by = (stat: string) => base.find((m) => m.stat === stat)!.value.toNumber()
     expect(by('weaponSpeed')).toBeCloseTo(1.4, 9)
-    expect(by('weaponDamageMin')).toBe(112) // 7 * bonusMult 16
-    expect(by('weaponDamageMax')).toBe(224) // 14 * bonusMult 16
+    // Числа берутся ИЗ ДАННЫХ редкости, а не переписываются руками: лестница
+    // редкостей — предмет баланса, и тест обязан проверять формулу, а не
+    // конкретное значение множителя.
+    const mult = RARITY_BY_ID.legendary.bonusMult.toNumber()
+    expect(by('weaponDamageMin')).toBeCloseTo(7 * mult, 9)
+    expect(by('weaponDamageMax')).toBeCloseTo(14 * mult, 9)
   })
 
   it('броня даёт атрибуты обычными модификаторами, без base', () => {

@@ -242,8 +242,14 @@ describe('автонадевание', () => {
     const s = withItems([better])
     const cmp = compareItem(s, better)
     const share = upgradeShare(s, better)!
+    // Доля считается по ТЕМПУ УБИЙСТВ, а не по голому урону в секунду: в темп
+    // входит ещё и аптайм, то есть живучесть, и без него броня никогда не
+    // считалась бы апгрейдом (см. комментарий у farmRate в equipment.ts).
     expect(share).toBeCloseTo(
-      cmp.damagePerSecondDelta.div(cmp.current.damagePerSecond).toNumber(),
+      cmp.withItem.killsPerSecond
+        .minus(cmp.current.killsPerSecond)
+        .div(cmp.current.killsPerSecond)
+        .toNumber(),
       9,
     )
     // Не апгрейд — доли нет вовсе, а не «ноль процентов».

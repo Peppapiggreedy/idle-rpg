@@ -24,7 +24,11 @@ describe('уровни', () => {
       expect(killsToNextLevel(point.level), `точка ${point.level}`).toBeCloseTo(point.kills, 9)
     }
     // Между ними — линия: середина отрезка даёт полусумму краёв.
-    expect(killsToNextLevel(15)).toBeCloseTo((19 + 34) / 2, 9)
+    // Числа берутся ИЗ ТАБЛИЦЫ, а не переписываются в тест: таблица — предмет
+    // баланса, и проверять надо интерполяцию, а не конкретные опорные точки.
+    const at10 = KILLS_PER_LEVEL.find((r) => r.level === 10)!.kills
+    const at20 = KILLS_PER_LEVEL.find((r) => r.level === 20)!.kills
+    expect(killsToNextLevel(15)).toBeCloseTo((at10 + at20) / 2, 9)
     // За краями таблицы кривая не улетает, а держит крайнее значение.
     expect(killsToNextLevel(0)).toBe(KILLS_PER_LEVEL[0].kills)
     expect(killsToNextLevel(500)).toBe(KILLS_PER_LEVEL[KILLS_PER_LEVEL.length - 1].kills)

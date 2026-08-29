@@ -92,13 +92,13 @@
         {
           "stat": "weaponDamageMin",
           "kind": "base",
-          "value": "216.23999999999998",
+          "value": "83.793",
           "source": "equipment:mainHand"
         },
         {
           "stat": "weaponDamageMax",
           "kind": "base",
-          "value": "432.47999999999996",
+          "value": "167.586",
           "source": "equipment:mainHand"
         },
         {
@@ -112,7 +112,7 @@
     {
       "id": "start-mainHand-bastard",
       "name": "Полуторник",
-      "rarity": "uncommon",
+      "rarity": "rare",
       "slot": "mainHand",
       "level": 1,
       "hands": 1,
@@ -126,19 +126,19 @@
         {
           "stat": "weaponDamageMin",
           "kind": "base",
-          "value": "22",
+          "value": "17.050000000000004",
           "source": "equipment:mainHand"
         },
         {
           "stat": "weaponDamageMax",
           "kind": "base",
-          "value": "44",
+          "value": "34.10000000000001",
           "source": "equipment:mainHand"
         },
         {
           "stat": "strength",
           "kind": "flat",
-          "value": "14",
+          "value": "10.85",
           "source": "equipment:mainHand"
         }
       ]
@@ -146,20 +146,20 @@
     {
       "id": "start-hands",
       "name": "Наруч",
-      "rarity": "uncommon",
+      "rarity": "rare",
       "slot": "hands",
       "level": 1,
       "mods": [
         {
           "stat": "agility",
           "kind": "flat",
-          "value": "8",
+          "value": "6.2",
           "source": "equipment:hands"
         },
         {
           "stat": "vitality",
           "kind": "flat",
-          "value": "4",
+          "value": "3.1",
           "source": "equipment:hands"
         }
       ]
@@ -167,14 +167,14 @@
     {
       "id": "start-chest",
       "name": "Панцирь",
-      "rarity": "uncommon",
+      "rarity": "rare",
       "slot": "chest",
       "level": 1,
       "mods": [
         {
           "stat": "vitality",
           "kind": "flat",
-          "value": "12",
+          "value": "9.3",
           "source": "equipment:chest"
         }
       ]
@@ -182,20 +182,20 @@
     {
       "id": "start-head",
       "name": "Шлем",
-      "rarity": "uncommon",
+      "rarity": "rare",
       "slot": "head",
       "level": 1,
       "mods": [
         {
           "stat": "intellect",
           "kind": "flat",
-          "value": "8",
+          "value": "6.2",
           "source": "equipment:head"
         },
         {
           "stat": "vitality",
           "kind": "flat",
-          "value": "4",
+          "value": "3.1",
           "source": "equipment:head"
         }
       ]
@@ -240,19 +240,19 @@
         {
           "stat": "weaponDamageMin",
           "kind": "base",
-          "value": "46.64000000000001",
+          "value": "29.150000000000006",
           "source": "equipment:mainHand"
         },
         {
           "stat": "weaponDamageMax",
           "kind": "base",
-          "value": "93.28000000000002",
+          "value": "58.30000000000001",
           "source": "equipment:mainHand"
         },
         {
           "stat": "strength",
           "kind": "flat",
-          "value": "29.68",
+          "value": "18.550000000000004",
           "source": "equipment:mainHand"
         }
       ]
@@ -260,7 +260,7 @@
     "offHand": {
       "id": "start-offHand-bulwark",
       "name": "Заслон",
-      "rarity": "uncommon",
+      "rarity": "rare",
       "slot": "offHand",
       "level": 1,
       "mods": [
@@ -273,13 +273,13 @@
         {
           "stat": "blockValue",
           "kind": "base",
-          "value": "24",
+          "value": "18.599999999999998",
           "source": "equipment:offHand"
         },
         {
           "stat": "vitality",
           "kind": "flat",
-          "value": "8",
+          "value": "6.2",
           "source": "equipment:offHand"
         }
       ]
@@ -336,13 +336,13 @@
         {
           "stat": "strength",
           "kind": "flat",
-          "value": "16.96",
+          "value": "10.600000000000001",
           "source": "equipment:hands"
         },
         {
           "stat": "vitality",
           "kind": "flat",
-          "value": "8.48",
+          "value": "5.300000000000001",
           "source": "equipment:hands"
         }
       ]
@@ -350,20 +350,20 @@
     "legs": {
       "id": "start-legs",
       "name": "Наголенник",
-      "rarity": "uncommon",
+      "rarity": "rare",
       "slot": "legs",
       "level": 1,
       "mods": [
         {
           "stat": "strength",
           "kind": "flat",
-          "value": "8",
+          "value": "6.2",
           "source": "equipment:legs"
         },
         {
           "stat": "vitality",
           "kind": "flat",
-          "value": "4",
+          "value": "3.1",
           "source": "equipment:legs"
         }
       ]
@@ -371,20 +371,20 @@
     "trinket": {
       "id": "start-trinket",
       "name": "Амулет",
-      "rarity": "uncommon",
+      "rarity": "rare",
       "slot": "trinket",
       "level": 1,
       "mods": [
         {
           "stat": "strength",
           "kind": "flat",
-          "value": "8",
+          "value": "6.2",
           "source": "equipment:trinket"
         },
         {
           "stat": "vitality",
           "kind": "flat",
-          "value": "4",
+          "value": "3.1",
           "source": "equipment:trinket"
         }
       ]
@@ -426,8 +426,8 @@
   "itemSeq": 9,
   "gold": "4820",
   "level": "10",
-  "currentXp": "546",
-  "currentHp": "283",
+  "currentXp": "488",
+  "currentHp": "253",
   "currentMana": "61",
   "heroState": "alive",
   "reviveMsLeft": 0,

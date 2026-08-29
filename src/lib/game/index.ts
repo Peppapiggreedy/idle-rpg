@@ -22,7 +22,7 @@ export {
   isUpgrade,
   upgradeShare,
   compareItem,
-  damagePerSecondWith,
+  farmRateWith,
 } from './equipment'
 export type { EquipPreview, EquipComparison } from './equipment'
 export { createRng, randomSeed, randRange } from './rng'

@@ -12,6 +12,7 @@ import {
 import { ensureStats } from './stats'
 import { finishRest, maxMonsterHit, needsRest, restDurationMs, restProgress, startRest, zoneSafety } from './rest'
 import { applyOfflineProgress } from './save'
+import { zoneRate } from './zones'
 import { REST_DURATION_S, REST_FOOD_SPEEDUP } from '../data/balance'
 import { ZONES } from '../data/zones'
 
@@ -226,7 +227,20 @@ describe('оффлайн знает про привалы', () => {
     // Оборотная сторона того же: тридцать секунд воскрешения дороже десяти
     // секунд привала, поэтому порог окупается там, где без него умирают.
     const HOURS8 = 8 * 3_600_000
-    const zone = ZONES[2]
+    // Зона выбирается ПОИСКОМ: нужна та, где безрассудный уже заметно
+    // умирает, а осторожный ещё держится. Номер в лестнице для этого не
+    // годится — он разъезжается с каждой правкой сил.
+    const zone =
+      ZONES.find((z) => {
+        const reckless = ensureStats({
+          ...hero({ currentZoneId: z.id }),
+          restHpThreshold: 0,
+          restResourceThreshold: 0,
+          statsDirty: true,
+        })
+        const share = zoneRate(reckless, z).uptime
+        return share > 0.2 && share < 0.6
+      }) ?? ZONES[2]
     const careful = hero({ currentZoneId: zone.id, restHpThreshold: 0.6 })
     const reckless = ensureStats({
       ...careful,

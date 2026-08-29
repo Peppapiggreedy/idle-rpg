@@ -38,7 +38,7 @@ import {
 } from './zones'
 import { INVENTORY_SIZE, LEVEL_CAP } from '../data/balance'
 import { ABILITIES, ABILITY_BY_ID } from '../data/abilities'
-import { AVERAGE_RARITY, RARITY_BY_ID } from '../data/rarity'
+import { RARITY_BY_ID, TYPICAL_RARITY } from '../data/rarity'
 import { ARMOR_NOUNS, ONE_HANDED, SHIELDS, WEAPONS, WEAPON_BY_ID } from '../data/items'
 import { SLOT_IDS, type SlotId } from '../data/slots'
 import { ZONES, averageMonsterLevel, zoneForMonsterLevel } from '../data/zones'
@@ -103,7 +103,7 @@ export interface SimBuild {
    */
   restThreshold?: number
   // Экипировка эталонного героя. 'average' — все слоты заняты СРЕДНИМ по
-  // рулетке предметом (см. AVERAGE_RARITY): это не «повезло» и не «не
+  // рулетке предметом (см. TYPICAL_RARITY): это не «повезло» и не «не
   // повезло», а то, во что игрок одет обычно. 'none' — голый герой.
   gear?: 'none' | 'average'
   talents?: Record<string, number>
@@ -472,11 +472,11 @@ export function averageGear(level = 1): Equipment {
       gear.mainHand = {
         id: 'sim-gear-mainHand',
         name: AVERAGE_WEAPON.noun,
-        rarity: AVERAGE_RARITY.id,
+        rarity: TYPICAL_RARITY.id,
         slot,
         level,
         hands: AVERAGE_WEAPON.hands,
-        mods: weaponMods(AVERAGE_WEAPON, AVERAGE_RARITY, 'mainHand', level),
+        mods: weaponMods(AVERAGE_WEAPON, TYPICAL_RARITY, 'mainHand', level),
       }
       continue
     }
@@ -489,22 +489,22 @@ export function averageGear(level = 1): Equipment {
           : {
               id: 'sim-gear-offHand',
               name: SHIELDS[0].noun,
-              rarity: AVERAGE_RARITY.id,
+              rarity: TYPICAL_RARITY.id,
               slot,
               level,
-              mods: shieldMods(SHIELDS[0], AVERAGE_RARITY, level),
+              mods: shieldMods(SHIELDS[0], TYPICAL_RARITY, level),
             }
       continue
     }
     gear[slot] = {
       id: `sim-gear-${slot}`,
       name: ARMOR_NOUNS[slot][0],
-      rarity: AVERAGE_RARITY.id,
+      rarity: TYPICAL_RARITY.id,
       slot,
       level,
       // Матожидание случайного главного атрибута, а не чей-то конкретный
       // бросок: эталон меряет среднюю броню, а не везение.
-      mods: averageArmorMods(slot, AVERAGE_RARITY, level),
+      mods: averageArmorMods(slot, TYPICAL_RARITY, level),
     }
   }
   return gear as Equipment
@@ -790,7 +790,7 @@ export function simulate(options: SimOptions): SimResult {
  * вещи: в игре решение принимает человек, и отнимать его — значит вернуть
  * автонадевание через заднюю дверь.
  */
-function equipUpgrades(state: GameState): GameState {
+export function equipUpgrades(state: GameState): GameState {
   let next = state
   // По одному предмету за проход: надевание меняет статы, и следующая вещь
   // сравнивается уже с новым набором.
@@ -900,8 +900,11 @@ export function simulateRun(options: RunOptions = {}): RunResult {
       if (found.rarity !== 'common' || upgradeShare(state, found) !== null) decisions += 1
     }
 
-    // Игрок разбирает сумку: надевает всё, что лучше надетого.
-    state = equipUpgrades(state)
+    // Игрок разбирает сумку: надевает всё, что лучше надетого. Но заглядывает
+    // он туда, только когда в ней ЧТО-ТО ИЗМЕНИЛОСЬ: разбирать неизменившуюся
+    // сумку каждый тик — это не только не про игру, но и минуты машинного
+    // времени на прогон, потому что каждая примерка гоняет оценку боя.
+    if (state.inventory !== prev.inventory) state = equipUpgrades(state)
 
     if (state.level.gt(prev.level)) {
       const reached = state.level.toNumber()

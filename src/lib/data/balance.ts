@@ -142,8 +142,8 @@ export const LEVEL_CAP = 100
 // игрового времени, проверяется прогоном полного пути.
 export const KILLS_PER_LEVEL: ReadonlyArray<{ level: number; kills: number }> = [
   { level: 1, kills: 3 },
-  { level: 5, kills: 10 },
-  { level: 10, kills: 19 },
+  { level: 5, kills: 8 },
+  { level: 10, kills: 17 },
   { level: 20, kills: 34 },
   { level: 30, kills: 41 },
   { level: 40, kills: 46 },
