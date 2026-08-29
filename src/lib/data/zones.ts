@@ -13,16 +13,25 @@ import {
 import type { MonsterTemplate } from '../types'
 import {
   ASHEN_SCENE,
+  BLUFF_SCENE,
   COLLAPSE_SCENE,
+  CROOKWOOD_SCENE,
+  DELL_SCENE,
+  EMERY_SCENE,
   FLOODED_SCENE,
   FURROWS_SCENE,
   GLASSWASTE_SCENE,
   MEADOW_SCENE,
   MIREFEN_SCENE,
+  MOLD_SCENE,
+  PASS_SCENE,
   QUARRY_SCENE,
   RIMEBACK_SCENE,
+  ROOTS_SCENE,
   SALTPIT_SCENE,
+  SULFUR_SCENE,
   TERRACE_SCENE,
+  WORMWOOD_SCENE,
   type SceneConfig,
 } from './scenery'
 
@@ -42,27 +51,37 @@ export interface Zone {
   scene: SceneConfig
 }
 
-// Лестница зон. Уровни мобов и требования по уровню героя — ЧАСТЬ КОНТРАКТА
-// ТЕМПА (PACING в data/balance.ts), а не украшение:
+// Лестница зон. Двадцать ступеней по ПЯТЬ уровней мобов: 1-5, 6-10, ... 96-100.
+// Полосы идут подряд, без пропусков и без нахлёстов, — на любом уровне мобов
+// есть ровно одна зона, и «дырок в мире» не бывает. Проверяется данными
+// (data/__tests__/integrity.test.ts), а не договорённостью.
 //
-//   * расстояние между СРЕДНИМИ уровнями мобов соседних зон задаёт ступеньку
-//     HP, а она обязана совпасть с тем, насколько герой усилился, пока
-//     фармил предыдущую зону. Отсюда неровные промежутки 7 / 7 / 5: рост
-//     героя от заточек с уровнями замедляется, и ступеньки идут следом;
-//   * unlockRequirement — это границы «правления» зоны, то есть длина отрезка
-//     уровней, на котором она актуальна. Их и подбирали так, чтобы за это
-//     правление герой усиливался ровно на одну ступеньку.
+// Уровни мобов и требования по уровню героя — ЧАСТЬ КОНТРАКТА ТЕМПА (PACING
+// в data/balance.ts), а не украшение:
+//
+//   * ширина полосы задана: пять уровней. Значит ступенька HP между соседними
+//     зонами тоже задана, и подгонять под неё можно только ОДНО — с какого
+//     уровня героя зона становится его;
+//   * unlockRequirement — это границы «правления» зоны, то есть отрезок
+//     уровней, на котором она актуальна. Числа подобраны прогоном так, чтобы
+//     за это правление герой усиливался ровно на одну ступеньку. Отсюда
+//     неровный шаг: 1, 3, 4, 5, ... 24, 25 — вначале ступеньки HP крупные
+//     (линейный рост от единицы), к концу мелкие, и правление удлиняется.
 //
 // Уровень моба намеренно не равен уровню героя: это ярлык сложности, а не
 // возраст противника. Менять эти числа врозь нельзя — контракт темпа
 // проверяет их вместе (game/__tests__/balance.test.ts).
+//
+// rewardMultiplier растёт на 6% за ступень. Это единственная ЭКСПОНЕНТА в
+// наградах: уровень моба добавляет их линейно, а экспоненту держит зона —
+// именно она оплачивает геометрически дорожающие заточки.
 export const ZONES: Zone[] = [
   {
     id: 'shepherds-meadow',
     scene: MEADOW_SCENE,
     icon: 'zone-shepherds-meadow',
     name: 'Пастуший луг',
-    monsterLevelRange: { min: 1, max: 3 },
+    monsterLevelRange: { min: 1, max: 5 },
     monsterPool: [
       { id: 'meadow-squelcher', name: 'Луговой хлюпень', role: COMMON },
       { id: 'pasture-tick', name: 'Пастуший клещ', role: RUNT },
@@ -77,13 +96,13 @@ export const ZONES: Zone[] = [
     scene: QUARRY_SCENE,
     icon: 'zone-hollow-quarry',
     name: 'Полая каменоломня',
-    monsterLevelRange: { min: 2, max: 4 },
+    monsterLevelRange: { min: 6, max: 10 },
     monsterPool: [
       { id: 'stone-gnawer', name: 'Каменный грызун', role: RUNT },
       { id: 'dust-digger', name: 'Пылевой копач', role: COMMON },
       { id: 'rumbling-caver', name: 'Гулкий обвальщик', role: BRUTE },
     ],
-    rewardMultiplier: new Decimal(1.15),
+    rewardMultiplier: new Decimal(1.06),
     unlockRequirement: 3,
     isSafe: false,
   },
@@ -92,13 +111,13 @@ export const ZONES: Zone[] = [
     scene: FURROWS_SCENE,
     icon: 'zone-rusted-furrows',
     name: 'Ржавые борозды',
-    monsterLevelRange: { min: 5, max: 7 },
+    monsterLevelRange: { min: 11, max: 15 },
     monsterPool: [
       { id: 'rust-chewer', name: 'Ржавый жевун', role: RUNT },
       { id: 'furrow-stalker', name: 'Бороздовый шатун', role: COMMON },
       { id: 'clay-heaver', name: 'Глиняный вздымщик', role: BRUTE },
     ],
-    rewardMultiplier: new Decimal(1.32),
+    rewardMultiplier: new Decimal(1.124),
     unlockRequirement: 5,
     isSafe: false,
   },
@@ -107,14 +126,14 @@ export const ZONES: Zone[] = [
     scene: MIREFEN_SCENE,
     icon: 'zone-mirefen-hollows',
     name: 'Топкие лощины',
-    monsterLevelRange: { min: 9, max: 11 },
+    monsterLevelRange: { min: 16, max: 20 },
     monsterPool: [
       { id: 'silt-crawler', name: 'Тинный ползун', role: RUNT },
       { id: 'rotfang', name: 'Гнилозуб', role: COMMON },
       { id: 'bog-drifter', name: 'Топляк', role: BRUTE },
     ],
-    rewardMultiplier: new Decimal(1.52),
-    unlockRequirement: 7,
+    rewardMultiplier: new Decimal(1.191),
+    unlockRequirement: 6,
     isSafe: false,
   },
   {
@@ -122,14 +141,14 @@ export const ZONES: Zone[] = [
     scene: GLASSWASTE_SCENE,
     icon: 'zone-glasswaste',
     name: 'Стеклянная пустошь',
-    monsterLevelRange: { min: 14, max: 16 },
+    monsterLevelRange: { min: 21, max: 25 },
     monsterPool: [
       { id: 'shard-skitter', name: 'Осколочник', role: RUNT },
       { id: 'pane-walker', name: 'Стеклоход', role: COMMON },
       { id: 'prism-lurker', name: 'Призменный залёгший', role: BRUTE },
     ],
-    rewardMultiplier: new Decimal(1.75),
-    unlockRequirement: 9,
+    rewardMultiplier: new Decimal(1.262),
+    unlockRequirement: 8,
     isSafe: false,
   },
   {
@@ -137,14 +156,14 @@ export const ZONES: Zone[] = [
     scene: ASHEN_SCENE,
     icon: 'zone-ashen-ridge',
     name: 'Пепельный гребень',
-    monsterLevelRange: { min: 22, max: 24 },
+    monsterLevelRange: { min: 26, max: 30 },
     monsterPool: [
       { id: 'ember-stinger', name: 'Уголёк-жалун', role: RUNT },
       { id: 'ash-walker', name: 'Пепельный ходок', role: COMMON },
       { id: 'flint-colossus', name: 'Кремнёвый исполин', role: BRUTE },
     ],
-    rewardMultiplier: new Decimal(2.01),
-    unlockRequirement: 12,
+    rewardMultiplier: new Decimal(1.338),
+    unlockRequirement: 9,
     isSafe: false,
   },
   {
@@ -152,14 +171,29 @@ export const ZONES: Zone[] = [
     scene: COLLAPSE_SCENE,
     icon: 'zone-mine-collapse',
     name: 'Обвал старой шахты',
-    monsterLevelRange: { min: 32, max: 34 },
+    monsterLevelRange: { min: 31, max: 35 },
     monsterPool: [
       { id: 'scree-nibbler', name: 'Осыпной грызун', role: RUNT },
       { id: 'shaft-lurcher', name: 'Штольневый бродяга', role: COMMON },
       { id: 'beam-breaker', name: 'Крепёжный ломщик', role: BRUTE },
     ],
-    rewardMultiplier: new Decimal(2.31),
-    unlockRequirement: 16,
+    rewardMultiplier: new Decimal(1.419),
+    unlockRequirement: 10,
+    isSafe: false,
+  },
+  {
+    id: 'root-vaults',
+    scene: ROOTS_SCENE,
+    icon: 'zone-root-vaults',
+    name: 'Корневые своды',
+    monsterLevelRange: { min: 36, max: 40 },
+    monsterPool: [
+      { id: 'root-borer', name: 'Корневой точильщик', role: RUNT },
+      { id: 'marsh-puffer', name: 'Мочажный пыхтун', role: COMMON },
+      { id: 'bole-oaf', name: 'Комлевый увалень', role: BRUTE },
+    ],
+    rewardMultiplier: new Decimal(1.504),
+    unlockRequirement: 12,
     isSafe: false,
   },
   {
@@ -167,14 +201,44 @@ export const ZONES: Zone[] = [
     scene: FLOODED_SCENE,
     icon: 'zone-flooded-tier',
     name: 'Затопленный ярус',
-    monsterLevelRange: { min: 44, max: 46 },
+    monsterLevelRange: { min: 41, max: 45 },
     monsterPool: [
       { id: 'brack-nipper', name: 'Солоноватый кусач', role: RUNT },
       { id: 'tide-wader', name: 'Приливный бродник', role: COMMON },
       { id: 'column-clinger', name: 'Колонный держун', role: BRUTE },
     ],
-    rewardMultiplier: new Decimal(2.66),
-    unlockRequirement: 21,
+    rewardMultiplier: new Decimal(1.594),
+    unlockRequirement: 13,
+    isSafe: false,
+  },
+  {
+    id: 'mold-horizon',
+    scene: MOLD_SCENE,
+    icon: 'zone-mold-horizon',
+    name: 'Плесневый горизонт',
+    monsterLevelRange: { min: 46, max: 50 },
+    monsterPool: [
+      { id: 'punkwood-midge', name: 'Трухлявый мокрец', role: RUNT },
+      { id: 'damp-bracket', name: 'Сырой трутовик', role: COMMON },
+      { id: 'rot-uproot', name: 'Гнилой выворотень', role: BRUTE },
+    ],
+    rewardMultiplier: new Decimal(1.689),
+    unlockRequirement: 15,
+    isSafe: false,
+  },
+  {
+    id: 'sulfur-springs',
+    scene: SULFUR_SCENE,
+    icon: 'zone-sulfur-springs',
+    name: 'Серные ключи',
+    monsterLevelRange: { min: 51, max: 55 },
+    monsterPool: [
+      { id: 'steam-hisser', name: 'Паровой шипун', role: RUNT },
+      { id: 'sulfur-fumer', name: 'Серный чадун', role: COMMON },
+      { id: 'mud-bruiser', name: 'Грязевой бугай', role: BRUTE },
+    ],
+    rewardMultiplier: new Decimal(1.791),
+    unlockRequirement: 17,
     isSafe: false,
   },
   {
@@ -182,14 +246,44 @@ export const ZONES: Zone[] = [
     scene: TERRACE_SCENE,
     icon: 'zone-ashen-terrace',
     name: 'Пепельная терраса',
-    monsterLevelRange: { min: 58, max: 60 },
+    monsterLevelRange: { min: 56, max: 60 },
     monsterPool: [
       { id: 'cinder-flit', name: 'Искровой порхун', role: RUNT },
       { id: 'terrace-strider', name: 'Террасный ходун', role: COMMON },
       { id: 'slag-bearer', name: 'Шлаковый носитель', role: BRUTE },
     ],
-    rewardMultiplier: new Decimal(3.06),
-    unlockRequirement: 28,
+    rewardMultiplier: new Decimal(1.898),
+    unlockRequirement: 19,
+    isSafe: false,
+  },
+  {
+    id: 'windswept-pass',
+    scene: PASS_SCENE,
+    icon: 'zone-windswept-pass',
+    name: 'Продувной перевал',
+    monsterLevelRange: { min: 61, max: 65 },
+    monsterPool: [
+      { id: 'ledge-hopper', name: 'Уступный прыгун', role: RUNT },
+      { id: 'pass-cutter', name: 'Перевальный секач', role: COMMON },
+      { id: 'weathered-hunch', name: 'Обветренный горбач', role: BRUTE },
+    ],
+    rewardMultiplier: new Decimal(2.012),
+    unlockRequirement: 22,
+    isSafe: false,
+  },
+  {
+    id: 'wormwood-rise',
+    scene: WORMWOOD_SCENE,
+    icon: 'zone-wormwood-rise',
+    name: 'Полынный увал',
+    monsterLevelRange: { min: 66, max: 70 },
+    monsterPool: [
+      { id: 'wormwood-chirper', name: 'Полынный стрекун', role: RUNT },
+      { id: 'dust-scraper', name: 'Пыльный скребун', role: COMMON },
+      { id: 'drywind-crag', name: 'Суховейный кряжень', role: BRUTE },
+    ],
+    rewardMultiplier: new Decimal(2.133),
+    unlockRequirement: 24,
     isSafe: false,
   },
   {
@@ -197,14 +291,29 @@ export const ZONES: Zone[] = [
     scene: SALTPIT_SCENE,
     icon: 'zone-salt-pit',
     name: 'Соляной провал',
-    monsterLevelRange: { min: 71, max: 73 },
+    monsterLevelRange: { min: 71, max: 75 },
     monsterPool: [
       { id: 'brine-gnat', name: 'Рассольный гнус', role: RUNT },
       { id: 'salt-treader', name: 'Соляной ступальщик', role: COMMON },
       { id: 'crust-hauler', name: 'Корковый тягач', role: BRUTE },
     ],
-    rewardMultiplier: new Decimal(3.52),
-    unlockRequirement: 36,
+    rewardMultiplier: new Decimal(2.261),
+    unlockRequirement: 25,
+    isSafe: false,
+  },
+  {
+    id: 'emery-stack',
+    scene: EMERY_SCENE,
+    icon: 'zone-emery-stack',
+    name: 'Наждачный останец',
+    monsterLevelRange: { min: 76, max: 80 },
+    monsterPool: [
+      { id: 'whirl-flaker', name: 'Вихревой шелушень', role: RUNT },
+      { id: 'emery-creaker', name: 'Наждачный скрипун', role: COMMON },
+      { id: 'weathered-boulderer', name: 'Заветренный глыбарь', role: BRUTE },
+    ],
+    rewardMultiplier: new Decimal(2.397),
+    unlockRequirement: 28,
     isSafe: false,
   },
   {
@@ -212,14 +321,59 @@ export const ZONES: Zone[] = [
     scene: RIMEBACK_SCENE,
     icon: 'zone-rimeback-ridge',
     name: 'Стылая гряда',
-    monsterLevelRange: { min: 83, max: 85 },
+    monsterLevelRange: { min: 81, max: 85 },
     monsterPool: [
       { id: 'frost-nibbler', name: 'Изморозный грызун', role: RUNT },
       { id: 'rime-walker', name: 'Стылый ходок', role: COMMON },
       { id: 'glacier-brute', name: 'Ледниковый громила', role: BRUTE },
     ],
-    rewardMultiplier: new Decimal(4.05),
-    unlockRequirement: 46,
+    rewardMultiplier: new Decimal(2.54),
+    unlockRequirement: 31,
+    isSafe: false,
+  },
+  {
+    id: 'frozen-crookwood',
+    scene: CROOKWOOD_SCENE,
+    icon: 'zone-frozen-crookwood',
+    name: 'Мёрзлое криволесье',
+    monsterLevelRange: { min: 86, max: 90 },
+    monsterPool: [
+      { id: 'needle-snapper', name: 'Иглистый щёлкун', role: RUNT },
+      { id: 'brittle-breaker', name: 'Хрусткий ломыш', role: COMMON },
+      { id: 'frozen-snag', name: 'Мёрзлый коряжник', role: BRUTE },
+    ],
+    rewardMultiplier: new Decimal(2.693),
+    unlockRequirement: 34,
+    isSafe: false,
+  },
+  {
+    id: 'hollow-dell',
+    scene: DELL_SCENE,
+    icon: 'zone-hollow-dell',
+    name: 'Порожняя падь',
+    monsterLevelRange: { min: 91, max: 95 },
+    monsterPool: [
+      { id: 'tussock-rustler', name: 'Ковыльный шелестень', role: RUNT },
+      { id: 'hollow-wheezer', name: 'Западинный сипун', role: COMMON },
+      { id: 'drift-slab', name: 'Наносный горбыль', role: BRUTE },
+    ],
+    rewardMultiplier: new Decimal(2.854),
+    unlockRequirement: 38,
+    isSafe: false,
+  },
+  {
+    id: 'mute-bluff',
+    scene: BLUFF_SCENE,
+    icon: 'zone-mute-bluff',
+    name: 'Немая круча',
+    monsterLevelRange: { min: 96, max: 100 },
+    monsterPool: [
+      { id: 'crevice-scraper', name: 'Щелевой скрёбыш', role: RUNT },
+      { id: 'verge-patroller', name: 'Кромочный обходчик', role: COMMON },
+      { id: 'craggy-idol', name: 'Кряжистый истукан', role: BRUTE },
+    ],
+    rewardMultiplier: new Decimal(3.026),
+    unlockRequirement: 42,
     isSafe: false,
   },
 ]
