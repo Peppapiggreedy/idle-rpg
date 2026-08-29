@@ -24,8 +24,8 @@ import {
   buildBoss,
 } from '../data/dungeons'
 import { RARITIES } from '../data/rarity'
+import { averageGear } from './simulate'
 import { ZONE_BY_ID, representativeMonster } from '../data/zones'
-import { WEAPON_SHARPENING } from '../data/upgrades'
 
 const DUNGEON = DUNGEONS[0]
 const NO_LUCK = () => 1
@@ -49,7 +49,26 @@ function adventurer(patch: Partial<GameState> = {}): GameState {
 // Герой, способный убить кого угодно с одного удара — чтобы гонять цепочку.
 function overpowered(patch: Partial<GameState> = {}): GameState {
   return adventurer({
-    upgrades: { [WEAPON_SHARPENING.id]: new Decimal(200_000) },
+    equipment: {
+      ...adventurer().equipment,
+      trinket: {
+        id: 'op-trinket',
+        name: 'op',
+        rarity: 'common',
+        slot: 'trinket',
+        level: 1,
+        mods: [
+          // Столько силы атаки давали двести тысяч заточек: герой сносит
+          // боссов с удара, и тест меряет цепочку, а не бой.
+          {
+            stat: 'attackPower',
+            kind: 'flat',
+            value: new Decimal(2_800_000),
+            source: 'equipment:trinket',
+          },
+        ],
+      },
+    },
     ...patch,
   })
 }
@@ -194,18 +213,18 @@ describe('ярость', () => {
 describe('ярость как проверка на урон в секунду', () => {
   // Герой, которому данжа хватает на несколько минут спокойного боя, но не
   // хватает урона: убить его должна именно ярость, а не обычные удары босса.
-  function slowDps(level: number, sharpenings: number): GameState {
+  function slowDps(level: number, gearLevel: number): GameState {
     return ensureStats({
       ...createInitialState(1),
       level: new Decimal(level),
-      upgrades: { [WEAPON_SHARPENING.id]: new Decimal(sharpenings) },
+      equipment: averageGear(gearLevel),
       currentZoneId: DUNGEON.zoneId,
       statsDirty: true,
     })
   }
 
   it('не успевающего по урону добивает именно ярость, а не обычный удар', () => {
-    let s = enterDungeon(slowDps(DUNGEON.unlockRequirement, 40), DUNGEON.id)
+    let s = enterDungeon(slowDps(DUNGEON.unlockRequirement, 4), DUNGEON.id)
     let enrageAtDeath = 1
     for (let i = 0; i < 6000 && s.dungeonRun; i++) {
       const boss = currentBoss(s)
@@ -220,7 +239,7 @@ describe('ярость как проверка на урон в секунду',
   })
 
   it('герою с достаточным уроном цепочка по плечу', () => {
-    let s = enterDungeon(slowDps(24, 500), DUNGEON.id)
+    let s = enterDungeon(slowDps(24, 60), DUNGEON.id)
     for (let i = 0; i < 6000 && s.dungeonRun; i++) s = tick(s, STEP_MS, () => 0.5, () => {})
     expect(s.heroState).toBe('alive')
     expect(s.dungeonsCleared[DUNGEON.id]).toBe(true)
@@ -281,7 +300,7 @@ describe('смерть в данже', () => {
     s = advanceDungeon(s, NO_LUCK) // как будто первого уже убил
     s = { ...s, stats: doomedStats, statsDirty: false, currentHp: new Decimal(5) }
     expect(s.dungeonRun!.bossIndex).toBe(1)
-    const loot = [...s.inventory, { id: 'trophy', name: 'Трофей', rarity: 'rare' as const, slot: 'trinket' as const, mods: [] }]
+    const loot = [...s.inventory, { id: 'trophy', name: 'Трофей', rarity: 'rare' as const, slot: 'trinket' as const, level: 1, mods: [] }]
     s = { ...s, inventory: loot }
 
     for (let i = 0; i < 5000 && s.dungeonRun; i++) s = tick(s, STEP_MS, NO_LUCK, () => {})

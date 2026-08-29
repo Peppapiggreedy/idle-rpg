@@ -1,5 +1,5 @@
 {
-  "version": 17,
+  "version": 18,
   "classId": "warden",
   "materials": {},
   "restSpeedupSource": null,
@@ -10,6 +10,7 @@
       "name": "Пастуший Змеезуб",
       "rarity": "common",
       "slot": "offHand",
+      "level": 28,
       "hands": 1,
       "mods": [
         {
@@ -21,19 +22,19 @@
         {
           "stat": "offhandDamageMin",
           "kind": "base",
-          "value": "7",
+          "value": "37.24",
           "source": "equipment:offHand"
         },
         {
           "stat": "offhandDamageMax",
           "kind": "base",
-          "value": "14",
+          "value": "74.47999999999999",
           "source": "equipment:offHand"
         },
         {
-          "stat": "critChance",
+          "stat": "agility",
           "kind": "flat",
-          "value": "0.03",
+          "value": "79.80000000000001",
           "source": "equipment:offHand"
         }
       ]
@@ -43,6 +44,7 @@
       "name": "Сумрачный Заслон",
       "rarity": "rare",
       "slot": "offHand",
+      "level": 28,
       "mods": [
         {
           "stat": "blockChance",
@@ -53,13 +55,13 @@
         {
           "stat": "blockValue",
           "kind": "base",
-          "value": "48",
+          "value": "255.35999999999999",
           "source": "equipment:offHand"
         },
         {
-          "stat": "maxHp",
+          "stat": "vitality",
           "kind": "flat",
-          "value": "30",
+          "value": "85.12",
           "source": "equipment:offHand"
         }
       ]
@@ -69,17 +71,18 @@
       "name": "Верный Наруч",
       "rarity": "uncommon",
       "slot": "hands",
+      "level": 17,
       "mods": [
         {
-          "stat": "attackPower",
+          "stat": "agility",
           "kind": "flat",
-          "value": "14",
+          "value": "28.479999999999997",
           "source": "equipment:hands"
         },
         {
-          "stat": "maxHp",
+          "stat": "vitality",
           "kind": "flat",
-          "value": "20",
+          "value": "14.239999999999998",
           "source": "equipment:hands"
         }
       ]
@@ -89,17 +92,18 @@
       "name": "Закалённый Набедренник",
       "rarity": "rare",
       "slot": "legs",
+      "level": 19,
       "mods": [
         {
-          "stat": "attackPower",
+          "stat": "strength",
           "kind": "flat",
-          "value": "28",
+          "value": "62.08",
           "source": "equipment:legs"
         },
         {
-          "stat": "maxHp",
+          "stat": "vitality",
           "kind": "flat",
-          "value": "40",
+          "value": "31.04",
           "source": "equipment:legs"
         }
       ]
@@ -109,6 +113,7 @@
       "name": "Верный Полуторник",
       "rarity": "epic",
       "slot": "mainHand",
+      "level": 20,
       "hands": 1,
       "mods": [
         {
@@ -120,19 +125,19 @@
         {
           "stat": "weaponDamageMin",
           "kind": "base",
-          "value": "88",
+          "value": "355.52000000000004",
           "source": "equipment:mainHand"
         },
         {
           "stat": "weaponDamageMax",
           "kind": "base",
-          "value": "176",
+          "value": "711.0400000000001",
           "source": "equipment:mainHand"
         },
         {
-          "stat": "attackPower",
+          "stat": "strength",
           "kind": "flat",
-          "value": "14",
+          "value": "226.24000000000004",
           "source": "equipment:mainHand"
         }
       ]
@@ -144,6 +149,7 @@
       "name": "Щербатый Крушитель",
       "rarity": "common",
       "slot": "mainHand",
+      "level": 28,
       "hands": 2,
       "mods": [
         {
@@ -155,17 +161,17 @@
         {
           "stat": "weaponDamageMin",
           "kind": "base",
-          "value": "25.5",
+          "value": "135.65999999999997",
           "source": "equipment:mainHand"
         },
         {
           "stat": "weaponDamageMax",
           "kind": "base",
-          "value": "51",
+          "value": "271.31999999999994",
           "source": "equipment:mainHand"
         },
         {
-          "stat": "attackPower",
+          "stat": "strength",
           "kind": "percent",
           "value": "0.1",
           "source": "equipment:mainHand"
@@ -178,17 +184,18 @@
       "name": "Ржавый Венец",
       "rarity": "rare",
       "slot": "head",
+      "level": 19,
       "mods": [
         {
-          "stat": "attackPower",
+          "stat": "intellect",
           "kind": "flat",
-          "value": "28",
+          "value": "62.08",
           "source": "equipment:head"
         },
         {
-          "stat": "maxHp",
+          "stat": "vitality",
           "kind": "flat",
-          "value": "40",
+          "value": "31.04",
           "source": "equipment:head"
         }
       ]
@@ -198,17 +205,12 @@
       "name": "Сумрачный Нагрудник",
       "rarity": "uncommon",
       "slot": "chest",
+      "level": 17,
       "mods": [
         {
-          "stat": "attackPower",
+          "stat": "vitality",
           "kind": "flat",
-          "value": "14",
-          "source": "equipment:chest"
-        },
-        {
-          "stat": "maxHp",
-          "kind": "flat",
-          "value": "20",
+          "value": "42.72",
           "source": "equipment:chest"
         }
       ]
@@ -218,17 +220,18 @@
       "name": "Сумрачный Налокотник",
       "rarity": "rare",
       "slot": "hands",
+      "level": 28,
       "mods": [
         {
-          "stat": "attackPower",
+          "stat": "agility",
           "kind": "flat",
-          "value": "28",
+          "value": "85.12",
           "source": "equipment:hands"
         },
         {
-          "stat": "maxHp",
+          "stat": "vitality",
           "kind": "flat",
-          "value": "40",
+          "value": "42.56",
           "source": "equipment:hands"
         }
       ]
@@ -238,17 +241,18 @@
       "name": "Пастуший Набедренник",
       "rarity": "common",
       "slot": "legs",
+      "level": 28,
       "mods": [
         {
-          "stat": "attackPower",
+          "stat": "strength",
           "kind": "flat",
-          "value": "7",
+          "value": "21.28",
           "source": "equipment:legs"
         },
         {
-          "stat": "maxHp",
+          "stat": "vitality",
           "kind": "flat",
-          "value": "10",
+          "value": "10.64",
           "source": "equipment:legs"
         }
       ]
@@ -258,17 +262,18 @@
       "name": "Закалённый Амулет",
       "rarity": "epic",
       "slot": "trinket",
+      "level": 20,
       "mods": [
         {
-          "stat": "attackPower",
+          "stat": "strength",
           "kind": "flat",
-          "value": "56",
+          "value": "129.28000000000003",
           "source": "equipment:trinket"
         },
         {
-          "stat": "maxHp",
+          "stat": "vitality",
           "kind": "flat",
-          "value": "80",
+          "value": "64.64",
           "source": "equipment:trinket"
         }
       ]
@@ -306,14 +311,11 @@
   "itemSeq": 11,
   "gold": "13400000",
   "level": "22",
-  "currentXp": "1754",
-  "currentHp": "513",
-  "currentMana": "155",
+  "currentXp": "1403",
+  "currentHp": "1526",
+  "currentMana": "465.4",
   "heroState": "alive",
   "reviveMsLeft": 0,
-  "upgrades": {
-    "weapon-sharpening": "180"
-  },
   "talents": {
     "honed-edge": 5,
     "keen-eye": 3,

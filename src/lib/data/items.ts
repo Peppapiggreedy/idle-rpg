@@ -29,6 +29,11 @@ export interface ShieldTemplate {
   extra: Array<Omit<StatModifier, 'source'>>
 }
 
+// Побочные статы оружия и щитов — АТРИБУТЫ, а не готовые статы: «Змеезуб —
+// оружие ловкости» читается из данных, а во что ловкость разворачивается,
+// решает конвейер (data/balance.ts). Плоские атрибуты растут с уровнем
+// предмета, как и всё остальное на нём.
+//
 // Оружие трёх стилей. Числа подобраны так, чтобы равны были не ОРУЖИЯ, а
 // СВЯЗКИ — то, что герой реально носит:
 //
@@ -47,7 +52,7 @@ export const WEAPONS: WeaponTemplate[] = [
     weaponSpeed: new Decimal(1.4),
     damageMin: new Decimal(7),
     damageMax: new Decimal(14),
-    extra: [{ stat: 'critChance', kind: 'flat', value: new Decimal(0.03) }],
+    extra: [{ stat: 'agility', kind: 'flat', value: new Decimal(15) }],
   },
   {
     id: 'bastard',
@@ -56,7 +61,7 @@ export const WEAPONS: WeaponTemplate[] = [
     weaponSpeed: new Decimal(2.2),
     damageMin: new Decimal(11),
     damageMax: new Decimal(22),
-    extra: [{ stat: 'attackPower', kind: 'flat', value: new Decimal(14) }],
+    extra: [{ stat: 'strength', kind: 'flat', value: new Decimal(7) }],
   },
   {
     id: 'crusher',
@@ -65,7 +70,7 @@ export const WEAPONS: WeaponTemplate[] = [
     weaponSpeed: new Decimal(3.4),
     damageMin: new Decimal(25.5),
     damageMax: new Decimal(51),
-    extra: [{ stat: 'attackPower', kind: 'percent', value: new Decimal(0.1) }],
+    extra: [{ stat: 'strength', kind: 'percent', value: new Decimal(0.1) }],
   },
 ]
 
@@ -76,7 +81,7 @@ export const SHIELDS: ShieldTemplate[] = [
     noun: 'Заслон',
     blockChance: new Decimal(0.25),
     blockValue: new Decimal(12),
-    extra: [{ stat: 'maxHp', kind: 'flat', value: new Decimal(30) }],
+    extra: [{ stat: 'vitality', kind: 'flat', value: new Decimal(4) }],
   },
 ]
 
@@ -100,7 +105,19 @@ export const ARMOR_NOUNS: Record<Exclude<SlotId, 'mainHand' | 'offHand'>, readon
   trinket: ['Амулет', 'Оберег', 'Талисман'],
 }
 
-// Броня common-тира: прибавка к силе атаки и к запасу здоровья.
-// Тиры домножают обе величины на bonusMult своей редкости.
-export const ARMOR_BASE_ATTACK_POWER = new Decimal(7)
-export const ARMOR_BASE_MAX_HP = new Decimal(10)
+// Броня даёт АТРИБУТЫ: главный — свой у каждого слота (шлем думает, кисти
+// ловчат, ноги несут силу), и живучесть — у всех: любая броня в первую
+// очередь броня. Числа common-тира 1 уровня; тир множит на bonusMult,
+// уровень предмета — на itemLevelScale.
+export type ArmorSlot = Exclude<SlotId, 'mainHand' | 'offHand'>
+
+export const ARMOR_PRIMARY: Record<ArmorSlot, 'strength' | 'agility' | 'intellect' | 'vitality'> = {
+  head: 'intellect',
+  chest: 'vitality',
+  hands: 'agility',
+  legs: 'strength',
+  trinket: 'strength',
+}
+
+export const ARMOR_BASE_PRIMARY = new Decimal(4)
+export const ARMOR_BASE_VITALITY = new Decimal(2)

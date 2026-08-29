@@ -29,7 +29,6 @@ import { MATERIALS } from '../materials'
 import { PROFESSIONS, RECIPES } from '../recipes'
 import { SLOT_DROP_WEIGHTS, SLOT_ICONS, SLOT_IDS, SLOT_NAMES } from '../slots'
 import { BRANCHES, TALENTS } from '../talents'
-import { UPGRADES } from '../upgrades'
 import { ZONES } from '../zones'
 import { STAT_IDS } from '../../game/stats'
 import { ICON_NAMES } from '../../ui/icons/manifest'
@@ -82,7 +81,6 @@ export function realContent(): Content {
     weapons: WEAPONS,
     shields: SHIELDS,
     rarities: RARITIES,
-    upgrades: UPGRADES,
     models: MODEL_ASSETS,
     slots: SLOT_IDS,
     slotNames: SLOT_NAMES,

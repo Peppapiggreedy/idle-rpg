@@ -1,18 +1,10 @@
 // Игровые формулы. Каждая — с пояснением, что считает и почему.
 import { Decimal } from './numbers'
 import { XP_CURVE_BASE, XP_CURVE_EXPONENT } from '../data/balance'
-import type { UpgradeDef } from '../types'
-
 // Погрешность pow (считается через exp/ln) может дать 79.999999 вместо 80 —
 // добавляем крошечный относительный эпсилон перед округлением вниз.
 function floorSafe(d: Decimal): Decimal {
   return d.times(1 + 1e-9).floor()
-}
-
-// Цена следующей покупки: baseCost * costGrowth^owned — каждая покупка дорожает
-// на 15%, чтобы рост урона требовал экспоненциально больше золота. Целое золото.
-export function upgradeCost(def: UpgradeDef, owned: Decimal): Decimal {
-  return floorSafe(def.baseCost.times(Decimal.pow(def.costGrowth, owned)))
 }
 
 // Кривая опыта: степенная — уровни замедляются, но не встают колом.

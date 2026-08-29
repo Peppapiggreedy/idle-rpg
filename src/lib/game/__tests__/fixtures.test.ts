@@ -6,11 +6,9 @@ import { Decimal } from '../numbers'
 import { createInitialState, defaultAbilitySettings, type GameState } from '../tick'
 import { ensureStats } from '../stats'
 import { expectedSwingDamage } from '../combat'
-import { buyUpgrade } from '../upgrades'
-import { WEAPON_SHARPENING } from '../../data/upgrades'
 import { SAFE_ZONE, ZONE_BY_ID } from '../../data/zones'
 import { ABILITY_BY_ID } from '../../data/abilities'
-import { GCD_MS, REST_HP_THRESHOLD_DEFAULT } from '../../data/balance'
+import { GCD_MS, REST_HP_THRESHOLD_DEFAULT, itemLevelScale } from '../../data/balance'
 import { TALENT_BY_ID } from '../../data/talents'
 import { availablePoints, earnedPoints, spentPoints } from '../talents'
 import { clearedXpBonus } from '../dungeons'
@@ -48,6 +46,15 @@ function loadFixture(name: string): GameState {
   return result.state
 }
 
+
+// Средний удар героя после сноса заточки: оружие + вклад силы атаки. Сила
+// атаки = 70 базовых + 2 за каждую единицу силы (по единице за уровень);
+// вклад нормализован скоростью оружия (AP_NORMALIZATION = 14).
+function apSwing(level: number, weaponAvg = 10, weaponSpeed = 2, extraAp = 0, apMult = 1): number {
+  const ap = (70 + 2 * (level - 1) + extraAp) * apMult
+  return weaponAvg + (ap * weaponSpeed) / 14
+}
+
 describe('фикстуры сейвов', () => {
   it.each([
     ['save-v0.json'],
@@ -68,6 +75,7 @@ describe('фикстуры сейвов', () => {
     ['save-v15.json'],
     ['save-v16.json'],
     ['save-v17.json'],
+    ['save-v18.json'],
   ])('%s мигрирует до текущей версии', (name) => {
     const payload = migrateSave(JSON.parse(fixture(name)))
     expect(payload).not.toBeNull()
@@ -98,57 +106,62 @@ describe('фикстуры сейвов', () => {
     },
   )
 
+  it('save-v17 -> v18: заточка снесена, вещи получили уровень своей зоны', () => {
+    // Сила ветерана переезжает в вещи: каждый предмет получает уровень мобов
+    // зоны, где герой фармил (mirefen-hollows, полоса 16-20 — середина 18).
+    // Голое level=1 обесценило бы весь его шкаф разом.
+    const raw = JSON.parse(fixture('save-v17.json'))
+    expect(raw.upgrades['weapon-sharpening']).toBe('18')
+    const payload = migrateSave(raw)!
+    expect('upgrades' in payload).toBe(false)
+    for (const item of payload.inventory) expect(item.level).toBe(18)
+    expect(payload.equipment.mainHand?.level).toBe(18)
+    // Числа вещей домножены на масштаб уровня, как у честного дропа: без
+    // этого ветеран остался бы со старыми слабыми вещами и без заточки.
+    const chestAp = payload.equipment.chest!.mods.find((m) => m.stat === 'attackPower')!
+    expect(Number(chestAp.value)).toBeCloseTo(7 * 3.72, 9) // itemLevelScale(18).toNumber()
+    const speed = payload.equipment.mainHand!.mods.find((m) => m.stat === 'weaponSpeed')!
+    expect(Number(speed.value)).toBe(3.4) // скорость НЕ растёт
+    const s = loadFixture('save-v17.json')
+    expect(s.equipment.mainHand?.level).toBe(18)
+  })
+
   it('save-v0: доверсионные поля (xp, damagePerSecond) не потеряны', () => {
     const s = loadFixture('save-v0.json')
     expect(s.gold.toNumber()).toBe(150)
     expect(s.level.toNumber()).toBe(4)
     expect(s.currentXp.toNumber()).toBe(11)
-    // 13 dps = 10 базовых + 3 заточки; средний удар после пересчёта: 20 + 3*2 = 26
-    expect(expectedSwingDamage(s.stats).toNumber()).toBe(26)
+    // Заточки v0 снесла миграция v18; остались база и сила с уровней.
+    expect(expectedSwingDamage(s.stats).toNumber()).toBeCloseTo(apSwing(4), 9)
   })
 
-  it('save-v1: прогресс и апгрейды не потеряны, инвентарь пуст', () => {
+  it('save-v1: прогресс не потерян, инвентарь пуст', () => {
     const s = loadFixture('save-v1.json')
     expect(s.gold.toNumber()).toBe(77)
     expect(s.level.toNumber()).toBe(5)
     expect(s.currentXp.toNumber()).toBe(3)
-    expect(expectedSwingDamage(s.stats).toNumber()).toBe(24) // 12 dps -> 20 + 2 заточки * 2
-    expect(s.upgrades['weapon-sharpening'].toNumber()).toBe(2)
+    // Заточку снесла миграция v18: компенсация приходит уровнем вещей,
+    // а у v1 вещей не было вовсе — остались база и сила с уровней.
+    expect(expectedSwingDamage(s.stats).toNumber()).toBeCloseTo(apSwing(5), 9)
     expect(s.inventory).toEqual([])
   })
 
-  it('save-v2 -> v4: эффективный урон в секунду не изменился', () => {
-    // v2 хранил baseDamage = урон в секунду; v4 пересчитывает урон из счётчика
-    // покупок (21 dps = 10 базовых + 11 заточек -> 20 + 11*2 = 42 за удар).
-    const raw = JSON.parse(fixture('save-v2.json'))
+  it('save-v2: после сноса заточки урон считается из уровня и вещей', () => {
     const s = loadFixture('save-v2.json')
-    const dpsBefore = Number(raw.baseDamage)
-    const dpsAfter = expectedSwingDamage(s.stats).div(s.stats.swingTime).toNumber()
-    expect(dpsAfter).toBe(dpsBefore)
+    expect(expectedSwingDamage(s.stats).toNumber()).toBeCloseTo(apSwing(9), 9)
   })
 
-  it('покупка апгрейда даёт тот же прирост урона в секунду, что и раньше (+1)', () => {
-    const before = { ...createInitialState(1), gold: new Decimal(1000) }
-    const after = buyUpgrade(before, WEAPON_SHARPENING)
-    const dpsGain = expectedSwingDamage(after.stats)
-      .minus(expectedSwingDamage(before.stats))
-      .div(after.stats.swingTime)
-    expect(dpsGain.toNumber()).toBe(1)
-  })
-
-  it('save-v3 -> v4: урон восстанавливается пересчётом и совпадает с хранившимся', () => {
-    const raw = JSON.parse(fixture('save-v3.json'))
+  it('save-v3: урон восстанавливается пересчётом из источников', () => {
     const s = loadFixture('save-v3.json')
     expect(s.gold.toNumber()).toBe(900)
-    // v3 хранил damagePerSwing 30 при 5 заточках; пересчёт: 20 + 5*2 = 30.
-    expect(expectedSwingDamage(s.stats).toNumber()).toBe(Number(raw.damagePerSwing))
+    expect(expectedSwingDamage(s.stats).toNumber()).toBeCloseTo(apSwing(12), 9)
     expect(s.inventory[0].rarity).toBe('rare')
   })
 
   it('save-v4: загружается, статы пересчитаны из источников', () => {
     const s = loadFixture('save-v4.json')
     expect(s.gold.toNumber()).toBe(1200)
-    expect(expectedSwingDamage(s.stats).toNumber()).toBe(20 + 8 * 2)
+    expect(expectedSwingDamage(s.stats).toNumber()).toBeCloseTo(apSwing(15), 9)
     expect(s.statsDirty).toBe(false)
   })
 
@@ -156,7 +169,6 @@ describe('фикстуры сейвов', () => {
     const s = loadFixture('save-v2.json')
     expect(s.gold.toNumber()).toBe(500)
     expect(s.level.toNumber()).toBe(9)
-    expect(s.upgrades['weapon-sharpening'].toNumber()).toBe(11)
     expect(s.inventory.length).toBe(2)
     expect(s.inventory[0].name).toBe('Звёздный Палаш')
     expect(s.inventory[0].rarity).toBe('epic')
@@ -172,7 +184,12 @@ describe('фикстуры сейвов', () => {
     expect(item.slot).toBe('trinket') // слот без base — база боя не подменяется
     expect(item.mods).toHaveLength(1)
     expect(item.mods[0]).toMatchObject({ stat: 'attackPower', kind: 'flat' })
-    expect(item.mods[0].value.toNumber()).toBe(Number(raw.inventory[0].statBonus))
+    // Миграция v18 даёт вещи уровень середины полосы зоны (v6 просыпается в
+    // безопасной, полоса 1–5 → уровень 3) и домножает статы на масштаб уровня.
+    expect(item.mods[0].value.toNumber()).toBeCloseTo(
+      Number(raw.inventory[0].statBonus) * itemLevelScale(3).toNumber(),
+      9,
+    )
     // Экипировки в v6 не было: предмет ждёт в инвентаре, слоты пусты.
     expect(Object.values(s.equipment).every((i) => i === null)).toBe(true)
     expect(s.autoEquip).toBe(true)
@@ -320,7 +337,9 @@ describe('фикстуры сейвов', () => {
     expect(s.equipment.mainHand?.hands).toBe(1)
     expect(s.equipment.offHand).toBeNull()
     expect(s.stats.weaponSpeed).toBeCloseTo(3.4, 9)
-    expect(s.stats.weaponDamageMin.toNumber()).toBe(68)
+    // Урон домножен миграцией v18 на масштаб уровня вещи: герой жил в
+    // Лощине Гниловодья, полоса 16–20 → уровень 18.
+    expect(s.stats.weaponDamageMin.toNumber()).toBeCloseTo(68 * itemLevelScale(18).toNumber(), 9)
     expect(s.gold.toNumber()).toBe(760000) // прогресс не потерян
   })
 
@@ -328,9 +347,11 @@ describe('фикстуры сейвов', () => {
     const s = loadFixture('save-v15.json')
     expect(s.equipment.mainHand?.name).toBe('Закалённый Крушитель')
     expect(s.equipment.offHand?.name).toBe('Дубовый Заслон')
-    // Щит работает через конвейер статов, как и всё остальное.
+    // Щит работает через конвейер статов, как и всё остальное. Величина блока
+    // домножена миграцией v18 на масштаб уровня вещи (полоса 16–20 → 18),
+    // шанс блока — вероятность, её миграция не трогает.
     expect(s.stats.blockChance).toBeCloseTo(0.25, 9)
-    expect(s.stats.blockValue.toNumber()).toBe(24)
+    expect(s.stats.blockValue.toNumber()).toBeCloseTo(24 * itemLevelScale(18).toNumber(), 9)
     // Левая рука урона не даёт: щит — не оружие.
     expect(s.stats.offhandDamageMax.toNumber()).toBe(0)
   })
@@ -402,9 +423,11 @@ describe('фикстуры сейвов', () => {
     expect(s.talentResets).toBe(2)
     expect(spentPoints(s.talents)).toBe(10)
     expect(availablePoints(s)).toBe(earnedPoints(s.level) - 10)
-    // Таланты пересчитаны в статы при загрузке, а не забыты.
+    // Таланты пересчитаны в статы при загрузке, а не забыты. Ловкость с
+    // уровней тоже даёт крит — она входит в ожидание, а не в допуск.
     expect(s.statsDirty).toBe(false)
-    expect(s.stats.critChance).toBeCloseTo(0.05 + 2 * 0.03, 9)
+    const agiCrit = (s.level.toNumber() - 1) * 0.0005
+    expect(s.stats.critChance).toBeCloseTo(0.05 + 2 * 0.02 + agiCrit, 9)
   })
 
   it('мусорные ранги из сейва режутся по maxRank и по списку талантов', () => {
@@ -475,11 +498,17 @@ describe('фикстуры сейвов', () => {
     expect(s.equipment.mainHand?.name).toBe('Закалённый Крушитель')
     expect(s.equipment.chest?.name).toBe('Пастуший Кафтан')
     // Три base-модификатора оружия перебили безоружные значения из баланса.
+    // Урон домножен миграцией v18 на масштаб уровня вещи (безопасная зона,
+    // полоса 1–5 → уровень 3); скорость оружия миграция не трогает.
     expect(s.stats.weaponSpeed).toBeCloseTo(3.4, 9)
-    expect(s.stats.weaponDamageMin.toNumber()).toBe(68)
-    expect(s.stats.weaponDamageMax.toNumber()).toBe(136)
-    // Сила атаки: база 70 + 18 заточек * 14 + 7 с нагрудника, всё это +10% с оружия.
-    expect(s.stats.attackPower.toNumber()).toBeCloseTo((70 + 18 * 14 + 7) * 1.1, 9)
+    expect(s.stats.weaponDamageMin.toNumber()).toBeCloseTo(68 * itemLevelScale(3).toNumber(), 9)
+    expect(s.stats.weaponDamageMax.toNumber()).toBeCloseTo(136 * itemLevelScale(3).toNumber(), 9)
+    // Сила атаки: база 70 + 30 уровней силы * 2 + 7 с нагрудника (домножены
+    // миграцией на тот же масштаб), всё +10% с оружия.
+    expect(s.stats.attackPower.toNumber()).toBeCloseTo(
+      (70 + 30 * 2 + 7 * itemLevelScale(3).toNumber()) * 1.1,
+      9,
+    )
     expect(s.statsDirty).toBe(false)
   })
 })
@@ -492,13 +521,13 @@ describe('экспорт -> импорт', () => {
       gold: new Decimal('1.5e30'),
       level: new Decimal(77),
       currentXp: new Decimal(123),
-      upgrades: { 'weapon-sharpening': new Decimal(67) },
       inventory: [
         {
           id: 'item-9',
           name: 'Сумрачный Венец',
           rarity: 'legendary',
           slot: 'head',
+          level: 44,
           mods: [
             { stat: 'attackPower', kind: 'flat', value: new Decimal(16), source: 'equipment:head' },
           ],
@@ -513,9 +542,8 @@ describe('экспорт -> импорт', () => {
     expect(restored.level.eq(original.level)).toBe(true)
     expect(restored.currentXp.eq(original.currentXp)).toBe(true)
     expect(restored.stats.attackPower.eq(original.stats.attackPower)).toBe(true)
-    expect(restored.upgrades['weapon-sharpening'].eq(new Decimal(67))).toBe(true)
     expect(restored.inventory).toHaveLength(1)
-    expect(restored.inventory[0]).toMatchObject({ id: 'item-9', rarity: 'legendary' })
+    expect(restored.inventory[0]).toMatchObject({ id: 'item-9', rarity: 'legendary', level: 44 })
     expect(restored.itemSeq).toBe(10)
   })
 })

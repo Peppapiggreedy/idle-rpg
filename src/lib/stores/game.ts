@@ -7,7 +7,6 @@ import { finishRest, restProgress } from '../game/rest'
 import { tick } from '../game/tick'
 import { ensureStats } from '../game/stats'
 import { createRng, type Rng } from '../game/rng'
-import { buyUpgrade } from '../game/upgrades'
 import { xpToNextLevel } from '../game/formulas'
 import { Decimal } from '../game/numbers'
 import { applyOfflineProgress } from '../game/save'
@@ -36,7 +35,6 @@ import {
   stateFromPayload,
   type OfflineReport,
 } from '../game/save'
-import type { UpgradeDef } from '../types'
 
 const state = writable<GameState>(createInitialState())
 export const gameState = readonly(state)
@@ -205,11 +203,6 @@ export function applyFpsLimit(limit: number | null): void {
 export function stopGameLoop(): void {
   loop?.stop()
   loop = null
-}
-
-/** Покупка апгрейда по клику из UI; при нехватке золота ничего не меняет. */
-export function purchaseUpgrade(def: UpgradeDef): void {
-  state.update((s) => buyUpgrade(s, def))
 }
 
 /** Продажа предмета из инвентаря по клику из UI. */

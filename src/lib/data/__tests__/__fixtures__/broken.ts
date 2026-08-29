@@ -283,7 +283,7 @@ export function brokenCases(): BrokenCase[] {
         classes: patch(real.classes, 'reaver', {
           resource: {
             ...CLASS_BY_ID.reaver.resource,
-            decayPerSecond: new Decimal(0),
+            decayShare: new Decimal(0),
           },
         }),
       },

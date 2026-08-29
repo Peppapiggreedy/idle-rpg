@@ -23,16 +23,6 @@ export interface Monster {
 export type MonsterTemplate = Omit<Monster, 'currentHp' | 'swingProgress'>
 
 // Описание апгрейда для src/lib/data: цена растёт как baseCost * costGrowth^owned.
-export interface UpgradeDef {
-  id: string
-  name: string
-  /** Иконка. Тип выведен из реестра: опечатка — ошибка проверки типов. */
-  icon: IconName
-  baseCost: Decimal
-  costGrowth: Decimal
-  damageBonus: Decimal // прибавка к урону за удар за одну покупку
-}
-
 export type Rarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary'
 
 export interface Item {
@@ -42,6 +32,10 @@ export interface Item {
   name: string
   rarity: Rarity
   slot: SlotId
+  /** Уровень предмета = уровень моба, с которого он упал. Сила предмета
+   *  растёт от него линейно (itemLevelScale в data/balance.ts). Ограничен
+   *  уровнями мобов, поэтому обычный number, а не Decimal. */
+  level: number
   // Модификаторы предмета в формате конвейера статов. У оружия среди них
   // ОБЯЗАТЕЛЬНО три kind: 'base' — weaponSpeed, weaponDamageMin, weaponDamageMax.
   mods: StatModifier[]

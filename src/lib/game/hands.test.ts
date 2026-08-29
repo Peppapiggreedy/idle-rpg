@@ -26,6 +26,7 @@ function weapon(t: WeaponTemplate, slot: 'mainHand' | 'offHand'): Item {
     name: t.noun,
     rarity: 'common',
     slot,
+    level: 1,
     hands: t.hands,
     mods: [
       { stat: off ? 'offhandSpeed' : 'weaponSpeed', kind: 'base', value: t.weaponSpeed, source },
@@ -42,6 +43,7 @@ function shield(): Item {
     name: t.noun,
     rarity: 'common',
     slot: 'offHand',
+    level: 1,
     mods: [
       { stat: 'blockChance', kind: 'base', value: t.blockChance, source: 'equipment:offHand' },
       { stat: 'blockValue', kind: 'base', value: t.blockValue, source: 'equipment:offHand' },

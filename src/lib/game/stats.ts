@@ -13,8 +13,19 @@
 // множители перемножаются. Менять порядок нельзя — это баланс.
 import { Decimal } from './numbers'
 import type { GameState } from './state'
-import { BASE_STATS, MAX_REST_THRESHOLD, MIN_REST_DURATION_S, PER_LEVEL } from '../data/balance'
-import { UPGRADES } from '../data/upgrades'
+import {
+  AGI_CRIT,
+  AGI_HASTE,
+  BASE_STATS,
+  INT_MANA_REGEN,
+  INT_MAX_MANA,
+  MAX_REST_THRESHOLD,
+  MIN_REST_DURATION_S,
+  PER_LEVEL_ATTRIBUTES,
+  STR_ATTACK_POWER,
+  VIT_HP_REGEN,
+  VIT_MAX_HP,
+} from '../data/balance'
 import { SLOT_IDS } from '../data/slots'
 import { talentModifiers } from '../data/talents'
 import { classById } from '../data/classes'
@@ -22,6 +33,13 @@ import { classById } from '../data/classes'
 // Модифицируемые статы. swingTime сюда НЕ входит намеренно: это производная
 // величина, её нельзя модифицировать напрямую — только через weaponSpeed/haste.
 export type StatId =
+  // Четыре базовые характеристики. Проходят конвейер как обычные статы
+  // (предмет может дать «+5 силы» или «+10% ловкости»), а их итоги конвейер
+  // сам разворачивает во вклады в производные статы — см. attributeModifiers.
+  | 'strength'
+  | 'agility'
+  | 'intellect'
+  | 'vitality'
   | 'attackPower'
   | 'weaponDamageMin'
   | 'weaponDamageMax'
@@ -55,6 +73,10 @@ export type StatId =
   | 'damageReduction'
 
 export const STAT_IDS: StatId[] = [
+  'strength',
+  'agility',
+  'intellect',
+  'vitality',
   'attackPower',
   'weaponDamageMin',
   'weaponDamageMax',
@@ -87,8 +109,8 @@ export interface StatModifier {
   // base — замена базового значения; flat — абсолютная прибавка;
   // percent — доля (0.2 = +20%); multiplier — множитель.
   value: Decimal
-  // Обязательный человекочитаемый источник: 'upgrade:weapon-sharpening',
-  // 'equipment:mainHand', 'talent:heavy_blows', 'zone:ashen_wastes'. UI показывает
+  // Обязательный человекочитаемый источник: 'attribute:strength',
+  // 'equipment:mainHand', 'talent:heavy_blows', 'level'. UI показывает
   // раскладку по source построчно.
   source: string
 }
@@ -96,6 +118,10 @@ export interface StatModifier {
 // Готовые статы. Вероятности/доли/секунды — number (правило CLAUDE.md),
 // неограниченно растущие величины — Decimal.
 export interface StatBlock {
+  strength: Decimal // сила: урон (через силу атаки)
+  agility: Decimal // ловкость: скорость (haste) и шанс крита
+  intellect: Decimal // интеллект: запас и восстановление маны
+  vitality: Decimal // живучесть: запас и восстановление здоровья
   attackPower: Decimal // сила атаки: вклад в удар через AP_NORMALIZATION
   weaponDamageMin: Decimal // нижняя граница урона оружия
   weaponDamageMax: Decimal // верхняя граница урона оружия
@@ -133,17 +159,15 @@ export function collectModifiers(state: GameState): StatModifier[] {
   // а не наоборот. Порядок здесь — часть контракта ступени base.
   const hero = classById(state.classId)
   for (const mod of hero.baseMods) mods.push({ ...mod, source: `class:${hero.id}` })
-  // Уровень персонажа: живучесть и мана. Урон уровень НЕ даёт — его копят
-  // апгрейдами и экипировкой; уровень открывает зоны и позволяет в них выжить.
+  // Уровень персонажа даёт АТРИБУТЫ, и прирост небольшой: главная сила героя
+  // приходит с предметов и талантов, уровень лишь открывает зоны и не даёт
+  // отстать совсем голым.
   const levelsGained = Decimal.max(state.level.minus(1), new Decimal(0))
   if (levelsGained.gt(0)) {
     const source = 'level'
-    mods.push(
-      { stat: 'maxHp', kind: 'flat', value: PER_LEVEL.maxHp.times(levelsGained), source },
-      { stat: 'hpRegen', kind: 'flat', value: PER_LEVEL.hpRegen.times(levelsGained), source },
-      { stat: 'maxMana', kind: 'flat', value: PER_LEVEL.maxMana.times(levelsGained), source },
-      { stat: 'manaRegen', kind: 'flat', value: PER_LEVEL.manaRegen.times(levelsGained), source },
-    )
+    for (const [stat, perLevel] of Object.entries(PER_LEVEL_ATTRIBUTES)) {
+      mods.push({ stat: stat as StatId, kind: 'flat', value: perLevel.times(levelsGained), source })
+    }
   }
   // Экипировка: модификаторы лежат прямо в предмете, source уже проставлен
   // генератором ('equipment:mainHand' и т.д.). Оружие среди них задаёт БАЗУ
@@ -165,17 +189,37 @@ export function collectModifiers(state: GameState): StatModifier[] {
   // Таланты: значение модификатора множится на вложенный ранг, source —
   // 'talent:<id>', поэтому раскладка на панели статов показывает их построчно.
   mods.push(...talentModifiers(state.talents))
-  // Апгрейды: урон пересчитывается из СЧЁТЧИКА покупок, а не хранится суммой.
-  for (const def of UPGRADES) {
-    const owned = state.upgrades[def.id]
-    if (!owned || owned.lte(0)) continue
-    mods.push({
-      stat: 'attackPower',
-      kind: 'flat',
-      value: def.damageBonus.times(owned),
-      source: `upgrade:${def.id}`,
-    })
+  // Разворот атрибутов — ПОСЛЕДНИМ: он читает всё собранное выше.
+  mods.push(...attributeModifiers(mods))
+  return mods
+}
+
+/**
+ * Во что разворачиваются атрибуты. Сила — урон, ловкость — скорость и криты,
+ * интеллект — мана, живучесть — здоровье; ставки — в data/balance.ts.
+ *
+ * Считается ЗДЕСЬ, внутри сбора модификаторов, а не отдельным шагом в
+ * applyModifiers: вклад атрибута — это обычные flat-модификаторы с source
+ * 'attribute:<имя>', и раскладка панели статов показывает их той же строкой,
+ * что и вклад любого предмета. Рекурсии нет: атрибут не разворачивается
+ * в атрибут, а сами четыре стата считаются из уже собранных модификаторов.
+ */
+function attributeModifiers(collected: StatModifier[]): StatModifier[] {
+  const mods: StatModifier[] = []
+  const push = (source: string, stat: StatId, value: Decimal) => {
+    if (!value.eq(0)) mods.push({ stat, kind: 'flat', value, source })
   }
+  const strength = computeStat('strength', collected)
+  const agility = computeStat('agility', collected)
+  const intellect = computeStat('intellect', collected)
+  const vitality = computeStat('vitality', collected)
+  push('attribute:strength', 'attackPower', strength.times(STR_ATTACK_POWER))
+  push('attribute:agility', 'haste', agility.times(AGI_HASTE))
+  push('attribute:agility', 'critChance', agility.times(AGI_CRIT))
+  push('attribute:intellect', 'maxMana', intellect.times(INT_MAX_MANA))
+  push('attribute:intellect', 'manaRegen', intellect.times(INT_MANA_REGEN))
+  push('attribute:vitality', 'maxHp', vitality.times(VIT_MAX_HP))
+  push('attribute:vitality', 'hpRegen', vitality.times(VIT_HP_REGEN))
   return mods
 }
 
@@ -216,6 +260,10 @@ export function applyModifiers(mods: StatModifier[]): StatBlock {
   // Ускорение одно на героя, а не на предмет: haste ускоряет обе руки.
   const offhandSpeed = computeStat('offhandSpeed', mods).toNumber()
   return {
+    strength: computeStat('strength', mods),
+    agility: computeStat('agility', mods),
+    intellect: computeStat('intellect', mods),
+    vitality: computeStat('vitality', mods),
     attackPower: computeStat('attackPower', mods),
     weaponDamageMin: computeStat('weaponDamageMin', mods),
     weaponDamageMax: computeStat('weaponDamageMax', mods),

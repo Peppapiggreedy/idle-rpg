@@ -4,6 +4,10 @@ import type { StatId } from '../game/stats'
 import type { IconName } from '../ui/icons/manifest'
 
 export const STAT_ICONS: Record<StatId | 'swingTime', IconName> = {
+  strength: 'stat-strength',
+  agility: 'stat-agility',
+  intellect: 'stat-intellect',
+  vitality: 'stat-vitality',
   attackPower: 'stat-attackPower',
   weaponDamageMin: 'stat-weaponDamageMin',
   weaponDamageMax: 'stat-weaponDamageMax',

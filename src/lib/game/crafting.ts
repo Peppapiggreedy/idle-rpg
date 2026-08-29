@@ -88,7 +88,8 @@ export function craftedItem(output: ItemOutput, seq: number): Item | null {
         name: `${output.adjective} ${template.noun}`,
         rarity: rarity.id,
         slot: output.slot,
-        mods: shieldMods(template, rarity),
+        level: output.level,
+        mods: shieldMods(template, rarity, output.level),
       }
     }
     const template = output.templateId ? WEAPON_BY_ID[output.templateId] : undefined
@@ -98,8 +99,9 @@ export function craftedItem(output: ItemOutput, seq: number): Item | null {
       name: `${output.adjective} ${template.noun}`,
       rarity: rarity.id,
       slot: output.slot,
+      level: output.level,
       hands: template.hands,
-      mods: weaponMods(template, rarity, output.slot),
+      mods: weaponMods(template, rarity, output.slot, output.level),
     }
   }
   const nouns = ARMOR_NOUNS[output.slot]
@@ -108,7 +110,8 @@ export function craftedItem(output: ItemOutput, seq: number): Item | null {
     name: `${output.adjective} ${nouns[0]}`,
     rarity: rarity.id,
     slot: output.slot,
-    mods: armorMods(output.slot, rarity),
+    level: output.level,
+    mods: armorMods(output.slot, rarity, output.level),
   }
 }
 

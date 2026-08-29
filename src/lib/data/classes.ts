@@ -34,11 +34,15 @@ export interface ResourceDef {
   perSwingDealt: Decimal
   perHitTaken: Decimal
   /**
-   * Сколько ресурса уходит в секунду ВНЕ боя (пауза респауна, привал).
-   * У маны ноль: она не тает. У ярости — то, что делает её ресурсом
+   * Какая ДОЛЯ полного запаса тает в секунду ВНЕ боя (пауза респауна,
+   * привал). У маны ноль: она не тает. У ярости — то, что делает её ресурсом
    * непрерывного боя, а не копилкой на потом.
+   *
+   * Именно доля, по той же причине, что и у дохода с удара: запас растёт
+   * с интеллектом вещей, и плоская утечка на большом запасе превращалась бы
+   * в ничто — глубокий изувер копил бы ярость впрок, а это уже не ярость.
    */
-  decayPerSecond: Decimal
+  decayShare: Decimal
 }
 
 export interface StartingItem {
@@ -76,7 +80,7 @@ export const CLASSES: ClassDef[] = [
       startFull: true,
       perSwingDealt: new Decimal(0),
       perHitTaken: new Decimal(0),
-      decayPerSecond: new Decimal(0),
+      decayShare: new Decimal(0),
     },
     baseMods: [],
     abilityIds: ['quick-strike', 'rending-wound', 'shattering-blow'],
@@ -94,10 +98,11 @@ export const CLASSES: ClassDef[] = [
       // Числа подобраны так, чтобы за обычный бой ярости хватало примерно на
       // столько же умений, на сколько манному классу хватает запаса: разница
       // должна быть в РИТМЕ, а не в силе.
-      perSwingDealt: new Decimal(0.024),
-      perHitTaken: new Decimal(0.033),
+      perSwingDealt: new Decimal(0.036),
+      perHitTaken: new Decimal(0.05),
       // Тает быстро: копить ярость между боями бессмысленно, и это её суть.
-      decayPerSecond: new Decimal(12),
+      // 6.7% запаса в секунду — прежние 12 из 180 стартового запаса.
+      decayShare: new Decimal(0.067),
     },
     baseMods: [
       // Ярость начинается с нуля и не восстанавливается временем, поэтому
@@ -112,6 +117,11 @@ export const CLASSES: ClassDef[] = [
       // сама по себе НИКОГДА — это и есть её определение.
       { stat: 'manaRegen', kind: 'multiplier', value: new Decimal(0) },
       { stat: 'regenDelay', kind: 'base', value: new Decimal(0) },
+      // Интеллект изуверу ЧУЖД: множитель-ноль гасит его целиком, и запас
+      // ярости не растёт от умных шапок. Это держит ритм класса ровным:
+      // доход с удара — доля запаса, а цены умений — числа; расти запасу
+      // значит дешеветь умениям, и глубокий изувер молотил бы без пауз.
+      { stat: 'intellect', kind: 'multiplier', value: new Decimal(0) },
       // Плата за то, что ресурс приходит из боя: изувер обязан в этом бою
       // стоять. Чуть больше здоровья и чуть меньше уклончивости.
       { stat: 'maxHp', kind: 'percent', value: new Decimal(0.1) },

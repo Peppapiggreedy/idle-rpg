@@ -22,7 +22,6 @@
   import EquipmentPanel from './lib/ui/EquipmentPanel.svelte'
   import AbilityPanel from './lib/ui/AbilityPanel.svelte'
   import TalentPanel from './lib/ui/TalentPanel.svelte'
-  import UpgradePanel from './lib/ui/UpgradePanel.svelte'
   import InventoryPanel from './lib/ui/InventoryPanel.svelte'
   import CraftPanel from './lib/ui/CraftPanel.svelte'
   import ZonePanel from './lib/ui/ZonePanel.svelte'
@@ -102,7 +101,6 @@
       {:else if $activeSection === 'progress'}
         <AbilityPanel />
         <TalentPanel />
-        <UpgradePanel />
       {:else if $activeSection === 'bag'}
         <InventoryPanel />
         <CraftPanel />

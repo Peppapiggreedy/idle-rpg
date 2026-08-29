@@ -59,15 +59,28 @@ describe('rollLoot', () => {
     expect(by('weaponDamageMax')).toBe(224) // 14 * bonusMult 16
   })
 
-  it('броня даёт обычные модификаторы, без base', () => {
+  it('броня даёт атрибуты обычными модификаторами, без base', () => {
     // Слот 0.35 попадает в отрезок головы (за двумя руками, 34 из 114).
     const item = rollLoot(seqRng([0, 0, 0.35, 0, 0]), 1)
     expect(item!.slot).toBe('head')
     expect(item!.name).toBe('Щербатый Шлем')
     expect(item!.mods.some((m) => m.kind === 'base')).toBe(false)
     expect(item!.mods.every((m) => m.source === 'equipment:head')).toBe(true)
-    const ap = item!.mods.find((m) => m.stat === 'attackPower')!
-    expect(ap.value.toNumber()).toBe(7) // база 7 * bonusMult 1
+    // Главный атрибут слота головы — интеллект, довесок — живучесть.
+    const primary = item!.mods.find((m) => m.stat === 'intellect')!
+    expect(primary.value.toNumber()).toBe(4) // база 4 * bonusMult 1 * уровень 1
+    const vit = item!.mods.find((m) => m.stat === 'vitality')!
+    expect(vit.value.toNumber()).toBe(2)
+  })
+
+  it('предмет наследует уровень моба, и сила растёт от него линейно', () => {
+    const at = (level: number) => rollLoot(seqRng([0, 0, 0.35, 0, 0]), 1, level)!
+    expect(at(1).level).toBe(1)
+    expect(at(26).level).toBe(26)
+    const base = at(1).mods.find((m) => m.stat === 'intellect')!.value
+    const deep = at(26).mods.find((m) => m.stat === 'intellect')!.value
+    // itemLevelScale(26) = 1 + 0.16 * 25 = 5 — та же прямая, что у HP мобов.
+    expect(deep.div(base).toNumber()).toBeCloseTo(5, 9)
   })
 })
 
@@ -161,6 +174,7 @@ describe('дроп в бою', () => {
       name: 'Ржавый Хват',
       rarity: 'common',
       slot: 'hands',
+      level: 1,
       mods: [
         { stat: 'attackPower', kind: 'flat', value: new Decimal(1), source: 'equipment:hands' },
       ],
@@ -177,6 +191,7 @@ describe('продажа', () => {
     name: 'Верный Оберег',
     rarity: 'rare',
     slot: 'trinket',
+    level: 1,
     mods: [
       { stat: 'attackPower', kind: 'flat', value: new Decimal(4), source: 'equipment:trinket' },
     ],

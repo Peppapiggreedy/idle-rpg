@@ -77,6 +77,10 @@ export const ICONS = {
   'slot-trinket': { file: 'lorc/gem-pendant.svg', author: 'Lorc' },
 
   // --- Статы. Ровно по одному на каждый StatId плюс производный swingTime ---
+  'stat-strength': { file: 'delapouite/biceps.svg', author: 'Delapouite' },
+  'stat-agility': { file: 'lorc/sprint.svg', author: 'Lorc' },
+  'stat-intellect': { file: 'lorc/brain.svg', author: 'Lorc' },
+  'stat-vitality': { file: 'lorc/heart-tower.svg', author: 'Lorc' },
   'stat-attackPower': { file: 'skoll/fist.svg', author: 'Skoll' },
   'stat-weaponDamageMin': { file: 'delapouite/axe-sword.svg', author: 'Delapouite' },
   'stat-weaponDamageMax': { file: 'lorc/anvil-impact.svg', author: 'Lorc' },
@@ -131,7 +135,6 @@ export const ICONS = {
   'dungeon-sunken-barrow': { file: 'delapouite/dungeon-gate.svg', author: 'Delapouite' },
 
   // --- Улучшения и валюты ---
-  'upgrade-weapon-sharpening': { file: 'delapouite/upgrade.svg', author: 'Delapouite' },
   gold: { file: 'delapouite/coins.svg', author: 'Delapouite' },
   xp: { file: 'lorc/archery-target.svg', author: 'Lorc' },
 } as const satisfies Record<string, IconSource>

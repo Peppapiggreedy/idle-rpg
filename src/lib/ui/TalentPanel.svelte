@@ -33,6 +33,10 @@
 
   // Названия статов и флагов — единственное место, где они превращаются в текст.
   const STAT_NAMES: Record<StatId, string> = $derived({
+    strength: 'силы',
+    agility: 'ловкости',
+    intellect: 'интеллекта',
+    vitality: 'живучести',
     attackPower: 'силы атаки',
     weaponDamageMin: 'урона оружия (мин)',
     weaponDamageMax: 'урона оружия (макс)',

@@ -13,7 +13,6 @@
     type StatId,
     type StatModifier,
   } from '../game'
-  import { UPGRADES } from '../data/upgrades'
   import { TALENT_BY_ID } from '../data/talents'
   import { gameState } from '../stores/game'
   import { Panel } from './kit'
@@ -27,6 +26,10 @@
 
   // Весь текст панели статов живёт здесь; логика отдаёт только раскладку.
   const STAT_NAMES: Record<StatId, string> = $derived({
+    strength: 'Сила',
+    agility: 'Ловкость',
+    intellect: 'Интеллект',
+    vitality: 'Живучесть',
     attackPower: 'Сила атаки',
     weaponDamageMin: 'Урон оружия (мин)',
     weaponDamageMax: 'Урон оружия (макс)',
@@ -96,13 +99,21 @@
     return `${mod.value.gte(0) ? '+' : ''}${formatNumber(mod.value)}`
   }
 
-  // 'upgrade:weapon-sharpening' -> «Заточка оружия», 'base' -> «база» и т.д.
+  // 'attribute:strength' -> «от силы», 'base' -> «база» и т.д.
+  const ATTRIBUTE_SOURCE: Record<string, string> = {
+    strength: 'от силы',
+    agility: 'от ловкости',
+    intellect: 'от интеллекта',
+    vitality: 'от живучести',
+  }
   function sourceName(source: string): string {
     if (source === 'base') return 'база'
+    if (source === 'level') return 'уровень'
     const [kind, id] = source.split(':')
-    if (kind === 'upgrade') return UPGRADES.find((u) => u.id === id)?.name ?? id
+    if (kind === 'attribute') return ATTRIBUTE_SOURCE[id] ?? id
     if (kind === 'equipment') return `экипировка: ${id}`
     if (kind === 'talent') return `талант: ${TALENT_BY_ID[id]?.name ?? id}`
+    if (kind === 'class') return 'класс'
     if (kind === 'zone') return `зона: ${id}`
     return source
   }

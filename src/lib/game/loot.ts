@@ -8,15 +8,18 @@ import { RARITIES, RARITY_BY_ID, type RarityDef } from '../data/rarity'
 import { DROP_CHANCE, ITEM_BASE_SELL_PRICE, LOOT_ADJECTIVES } from '../data/loot'
 import { SLOT_DROP_WEIGHTS, SLOT_IDS, type SlotId } from '../data/slots'
 import {
-  ARMOR_BASE_ATTACK_POWER,
-  ARMOR_BASE_MAX_HP,
+  ARMOR_BASE_PRIMARY,
+  ARMOR_BASE_VITALITY,
   ARMOR_NOUNS,
+  ARMOR_PRIMARY,
   ONE_HANDED,
   SHIELDS,
   WEAPONS,
+  type ArmorSlot,
   type ShieldTemplate,
   type WeaponTemplate,
 } from '../data/items'
+import { itemLevelScale } from '../data/balance'
 import type { StatModifier } from './stats'
 import { isEquipped } from './equipment'
 import type { BossLoot } from '../data/dungeons'
@@ -63,66 +66,94 @@ export function weaponMods(
   template: WeaponTemplate,
   rarity: RarityDef,
   slot: 'mainHand' | 'offHand' = 'mainHand',
+  level = 1,
 ): StatModifier[] {
   const source = `equipment:${slot}`
   const off = slot === 'offHand'
+  // Уровень и тир множат СИЛУ предмета (урон и плоские атрибуты), но не
+  // скорость: темп боя — свойство образца оружия, а не его свежести.
+  const power = itemLevelScale(level).times(rarity.bonusMult)
   return [
     { stat: off ? 'offhandSpeed' : 'weaponSpeed', kind: 'base', value: template.weaponSpeed, source },
     {
       stat: off ? 'offhandDamageMin' : 'weaponDamageMin',
       kind: 'base',
-      value: template.damageMin.times(rarity.bonusMult),
+      value: template.damageMin.times(power),
       source,
     },
     {
       stat: off ? 'offhandDamageMax' : 'weaponDamageMax',
       kind: 'base',
-      value: template.damageMax.times(rarity.bonusMult),
+      value: template.damageMax.times(power),
       source,
     },
-    ...template.extra.map((mod) => ({ ...mod, source })),
+    ...template.extra.map((mod) => ({
+      ...mod,
+      value: mod.kind === 'flat' ? mod.value.times(power) : mod.value,
+      source,
+    })),
   ]
 }
 
 /** Щит: урона не даёт, зато даёт блок. Тоже через конвейер, без исключений. */
-export function shieldMods(template: ShieldTemplate, rarity: RarityDef): StatModifier[] {
+export function shieldMods(template: ShieldTemplate, rarity: RarityDef, level = 1): StatModifier[] {
   const source = 'equipment:offHand'
+  // Шанс блока не растёт: вероятность — не сила. Растёт то, СКОЛЬКО блок
+  // снимает, и атрибуты.
+  const power = itemLevelScale(level).times(rarity.bonusMult)
   return [
     { stat: 'blockChance', kind: 'base', value: template.blockChance, source },
-    { stat: 'blockValue', kind: 'base', value: template.blockValue.times(rarity.bonusMult), source },
-    ...template.extra.map((mod) => ({ ...mod, source })),
+    { stat: 'blockValue', kind: 'base', value: template.blockValue.times(power), source },
+    ...template.extra.map((mod) => ({
+      ...mod,
+      value: mod.kind === 'flat' ? mod.value.times(power) : mod.value,
+      source,
+    })),
   ]
 }
 
 // Экспортируется ради эталонных сборок прогона баланса: «средняя броня»
 // обязана строиться теми же правилами, что и выпавшая, иначе прогон мерил бы
 // не ту игру.
-export function armorMods(
-  slot: Exclude<SlotId, 'mainHand' | 'offHand'>,
-  rarity: RarityDef,
-): StatModifier[] {
+export function armorMods(slot: ArmorSlot, rarity: RarityDef, level = 1): StatModifier[] {
   const source = `equipment:${slot}`
-  return [
-    { stat: 'attackPower', kind: 'flat', value: ARMOR_BASE_ATTACK_POWER.times(rarity.bonusMult), source },
-    { stat: 'maxHp', kind: 'flat', value: ARMOR_BASE_MAX_HP.times(rarity.bonusMult), source },
+  const power = itemLevelScale(level).times(rarity.bonusMult)
+  const primary = ARMOR_PRIMARY[slot]
+  const mods: StatModifier[] = [
+    { stat: primary, kind: 'flat', value: ARMOR_BASE_PRIMARY.times(power), source },
   ]
+  // Грудь — про живучесть дважды: главный атрибут и общий довесок сливаются
+  // в одну строку, а не спорят двумя записями об одном стате.
+  if (primary === 'vitality') {
+    mods[0] = { ...mods[0], value: ARMOR_BASE_PRIMARY.plus(ARMOR_BASE_VITALITY).times(power) }
+    return mods
+  }
+  mods.push({ stat: 'vitality', kind: 'flat', value: ARMOR_BASE_VITALITY.times(power), source })
+  return mods
 }
 
 // Бросок дропа с убитого моба: null — не повезло. itemSeq нумерует id предметов.
 // Порядок бросков фиксирован: шанс -> редкость -> слот -> прилагательное ->
 // существительное (у оружия — модель).
-export function rollLoot(rng: Rng, itemSeq: number): Item | null {
+//
+// level — УРОВЕНЬ УБИТОГО МОБА: предмет наследует его и растёт от него линейно
+// (itemLevelScale). Это двигатель прогрессии: вещи из глубокой зоны сильнее,
+// и идти глубже стоит ради самих находок, а не только ради наград.
+export function rollLoot(rng: Rng, itemSeq: number, level = 1): Item | null {
   if (rng() >= DROP_CHANCE) return null
   const rarity = rollRarity(rng)
   const slot = rollSlot(rng)
   const adjective = pick(LOOT_ADJECTIVES, rng)
-  if (slot === 'mainHand' || slot === 'offHand') return handItem(slot, rarity, adjective, rng, itemSeq)
+  if (slot === 'mainHand' || slot === 'offHand') {
+    return handItem(slot, rarity, adjective, rng, itemSeq, level)
+  }
   return {
     id: `item-${itemSeq}`,
     name: `${adjective} ${pick(ARMOR_NOUNS[slot], rng)}`,
     rarity: rarity.id,
     slot,
-    mods: armorMods(slot, rarity),
+    level,
+    mods: armorMods(slot, rarity, level),
   }
 }
 
@@ -137,6 +168,7 @@ function handItem(
   adjective: string,
   rng: Rng,
   itemSeq: number,
+  level = 1,
 ): Item {
   const shield = slot === 'offHand' && rng() < SHIELD_SHARE
   if (shield) {
@@ -146,7 +178,8 @@ function handItem(
       name: `${adjective} ${template.noun}`,
       rarity: rarity.id,
       slot,
-      mods: shieldMods(template, rarity),
+      level,
+      mods: shieldMods(template, rarity, level),
     }
   }
   const template = pick(slot === 'offHand' ? ONE_HANDED : WEAPONS, rng)
@@ -155,8 +188,9 @@ function handItem(
     name: `${adjective} ${template.noun}`,
     rarity: rarity.id,
     slot,
+    level,
     hands: template.hands,
-    mods: weaponMods(template, rarity, slot),
+    mods: weaponMods(template, rarity, slot, level),
   }
 }
 
@@ -165,7 +199,7 @@ const SHIELD_SHARE = 0.4
 
 // Лут босса: слоты заданы данными, а редкость — обычная рулетка, но не ниже
 // порога босса. Отсюда и растущее качество по цепочке: порог поднимается.
-export function rollBossLoot(loot: BossLoot, rng: Rng, itemSeq: number): Item[] {
+export function rollBossLoot(loot: BossLoot, rng: Rng, itemSeq: number, level = 1): Item[] {
   const floor = RARITIES.findIndex((r) => r.id === loot.minRarity)
   return loot.slots.map((slot, index) => {
     const rolled = rollRarity(rng)
@@ -173,14 +207,15 @@ export function rollBossLoot(loot: BossLoot, rng: Rng, itemSeq: number): Item[] 
     const rarity = RARITIES[Math.max(rolledIndex, floor)]
     const adjective = pick(LOOT_ADJECTIVES, rng)
     if (slot === 'mainHand' || slot === 'offHand') {
-      return handItem(slot, rarity, adjective, rng, itemSeq + index)
+      return handItem(slot, rarity, adjective, rng, itemSeq + index, level)
     }
     return {
       id: `item-${itemSeq + index}`,
       name: `${adjective} ${pick(ARMOR_NOUNS[slot], rng)}`,
       rarity: rarity.id,
       slot,
-      mods: armorMods(slot, rarity),
+      level,
+      mods: armorMods(slot, rarity, level),
     }
   })
 }

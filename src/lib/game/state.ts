@@ -80,7 +80,6 @@ export interface GameState {
   // Поле и место его учёта заведены заранее, чтобы профессии не пришлось
   // втискивать в конвейер тика задним числом.
   restSpeedupSource: string | null
-  upgrades: Record<string, Decimal> // id апгрейда -> сколько куплено (источник статов)
   // Таланты: id -> вложенный ранг. Тоже источник статов, а часть талантов
   // ещё и поднимает флаги, меняющие поведение (см. data/talents.ts).
   talents: Record<string, number>
@@ -176,6 +175,7 @@ export function startingEquipment(hero: ClassDef): Equipment {
         name: template.noun,
         rarity: rarity.id,
         slot: entry.slot,
+        level: 1,
         mods: shieldMods(template, rarity),
       }
       continue
@@ -187,6 +187,7 @@ export function startingEquipment(hero: ClassDef): Equipment {
       name: template.noun,
       rarity: rarity.id,
       slot: entry.slot,
+      level: 1,
       hands: template.hands,
       mods: weaponMods(template, rarity, entry.slot),
     }
@@ -242,7 +243,6 @@ export function createInitialState(
     autocastReadyMs: {},
     heroState: 'alive',
     reviveMsLeft: 0,
-    upgrades: {},
     talents: {},
     talentResets: 0,
     equipment: startingEquipment(hero),

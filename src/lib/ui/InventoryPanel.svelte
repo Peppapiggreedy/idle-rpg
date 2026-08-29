@@ -10,6 +10,7 @@
   import { SLOT_NAMES } from '../data/slots'
   import { equipInventoryItem, gameState, sellInventoryItem } from '../stores/game'
   import ItemMods from './ItemMods.svelte'
+  import { RARITY_BY_ID } from '../data/rarity'
   import { Button, IconSlot, NumberText, Panel, Tag } from './kit'
 
   const emptySlots = $derived(Math.max(0, INVENTORY_SIZE - $gameState.inventory.length))
@@ -41,7 +42,9 @@
         onfocusin={() => (hovered = item.id)}
       >
         <span class="name">{item.name}</span>
-        <Tag rarity={item.rarity} />
+        <!-- Уровень вещи — её главная сила: без него «Редкий» 3-го уровня
+             выглядел бы равным «Редкому» 60-го. -->
+        <Tag rarity={item.rarity} label="{RARITY_BY_ID[item.rarity].name} · {item.level} ур." />
         <ItemMods mods={item.mods} />
 
         {#if hovered === item.id && comparison}

@@ -28,6 +28,7 @@ function bareWeapon(t: WeaponTemplate, slot: 'mainHand' | 'offHand' = 'mainHand'
     name: t.noun,
     rarity: 'common' as Rarity,
     slot,
+    level: 1,
     hands: t.hands,
     mods: [
       { stat: off ? 'offhandSpeed' : 'weaponSpeed', kind: 'base', value: t.weaponSpeed, source },
@@ -45,6 +46,7 @@ function bareShield(t: ShieldTemplate): Item {
     name: t.noun,
     rarity: 'common' as Rarity,
     slot: 'offHand',
+    level: 1,
     mods: [
       { stat: 'blockChance', kind: 'base', value: t.blockChance, source },
       { stat: 'blockValue', kind: 'base', value: t.blockValue, source },
@@ -58,6 +60,7 @@ function armor(id: string, slot: 'head' | 'chest', attackPower: number): Item {
     name: id,
     rarity: 'common',
     slot,
+    level: 1,
     mods: [
       {
         stat: 'attackPower',
@@ -146,6 +149,7 @@ describe('инвариант: равный урон оружия в секунд
         name: 'buff',
         rarity: 'common',
         slot: 'trinket',
+        level: 1,
         mods: [
           { stat: 'attackPower', kind: 'flat', value: new Decimal(attackPower), source },
           { stat: 'haste', kind: 'flat', value: new Decimal(haste), source },
@@ -170,6 +174,7 @@ describe('инвариант: равный урон оружия в секунд
       name: 'no-ap',
       rarity: 'common',
       slot: 'trinket',
+      level: 1,
       mods: [{ stat: 'attackPower', kind: 'base', value: new Decimal(0), source: 'test:harness' }],
     }
     const build = (items: Item[]): GameState => {

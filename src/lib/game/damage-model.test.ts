@@ -1,6 +1,7 @@
-// Ключевой тест догоняющего PR: смена модели урона не должна сдвинуть
-// эффективный урон в секунду. Слева — арифметика ПРЕЖНЕЙ модели (урон удара
-// одним числом: 20 + 2 за каждую заточку при замахе 2.0 c), справа — новая.
+// Ключевой тест модели урона: сила атаки нормализована по скорости оружия.
+// Слева — арифметика эталонной модели (урон удара одним числом: 20 + 2 за
+// каждые 14 силы атаки при замахе 2.0 c), справа — конвейер. Раньше силу
+// атаки давала заточка; теперь её даёт сила с вещей, но нормализация — та же.
 import { describe, expect, it } from 'vitest'
 import { Decimal } from './numbers'
 import { createInitialState, type GameState } from './state'
@@ -17,22 +18,44 @@ import {
 } from './combat'
 import { AP_NORMALIZATION, UNARMED } from '../data/balance'
 
+// Герой с N порциями по +14 силы атаки на талисмане — прежде это была заточка.
 function withUpgrades(count: number): GameState {
+  const base = createInitialState(1)
   return ensureStats({
-    ...createInitialState(1),
-    upgrades: count > 0 ? { 'weapon-sharpening': new Decimal(count) } : {},
+    ...base,
+    equipment: {
+      ...base.equipment,
+      trinket: {
+        id: 'ap-trinket',
+        name: 'ap',
+        rarity: 'common',
+        slot: 'trinket',
+        level: 1,
+        mods:
+          count > 0
+            ? [
+                {
+                  stat: 'attackPower',
+                  kind: 'flat',
+                  value: new Decimal(14 * count),
+                  source: 'equipment:trinket',
+                },
+              ]
+            : [],
+      },
+    },
     statsDirty: true,
   })
 }
 
-// Прежняя модель: урон удара = 20 + 2*покупок, замах 2.0 c.
+// Эталонная модель: урон удара = 20 + 2*порций, замах 2.0 c.
 function legacyDpsWithoutCrit(upgrades: number): number {
   return (20 + 2 * upgrades) / 2.0
 }
 
 describe('миграция модели урона: эффективный dps сохранён', () => {
   it.each([0, 1, 5, 20, 100])(
-    'при %i заточках средний урон в секунду совпадает с прежней моделью (в пределах 1%)',
+    'при %i порциях средний урон в секунду совпадает с эталонной моделью (в пределах 1%)',
     (upgrades) => {
       const s = withUpgrades(upgrades)
       const newDps = expectedSwingDamage(s.stats).div(s.stats.swingTime).toNumber()
@@ -44,7 +67,7 @@ describe('миграция модели урона: эффективный dps �
   it('совпадение точное, а не «в пределах допуска»', () => {
     // 8..12 (среднее 10) + 70 * 2.0 / 14 = 10 -> ровно 20 за удар, как раньше.
     expect(expectedSwingDamage(withUpgrades(0).stats).toNumber()).toBe(20)
-    // Каждая заточка: +14 силы атаки * 2.0 / 14 = ровно +2 за удар, как раньше.
+    // Каждые +14 силы атаки * 2.0 / 14 = ровно +2 за удар.
     expect(expectedSwingDamage(withUpgrades(1).stats).toNumber()).toBe(22)
     expect(expectedSwingDamage(withUpgrades(20).stats).toNumber()).toBe(60)
   })

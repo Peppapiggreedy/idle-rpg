@@ -1,5 +1,5 @@
 // Сборка пресетов для съёмки скриншотов. Состояния строятся ТЕМИ ЖЕ функциями,
-// что и живая игра — покупкой апгрейдов, вложением очков, надеванием лута, —
+// что и живая игра — вложением очков, надеванием лута, честными бросками, —
 // поэтому пресет не может «застыть» в форме, которой в игре не бывает.
 //
 // Модуль в бандл игры не попадает: его импортирует только тест, который
@@ -13,7 +13,7 @@ import { equipItem } from '../../equipment'
 import { rollBossLoot, rollLoot } from '../../loot'
 import { investTalent } from '../../talents'
 import { travelToZone } from '../../zones'
-import { payloadFromState, type SavePayloadV17 } from '../../save'
+import { payloadFromState, type SavePayloadV18 } from '../../save'
 import { DUNGEONS } from '../../../data/dungeons'
 import { TALENTS } from '../../../data/talents'
 import { SLOT_IDS } from '../../../data/slots'
@@ -40,25 +40,17 @@ function atLevel(state: GameState, level: number): GameState {
   })
 }
 
-function withUpgrade(state: GameState, count: number): GameState {
-  return ensureStats({
-    ...state,
-    upgrades: { 'weapon-sharpening': new Decimal(count) },
-    statsDirty: true,
-  })
-}
-
 function addToInventory(state: GameState, items: Item[]): GameState {
   return { ...state, inventory: [...state.inventory, ...items], itemSeq: state.itemSeq + items.length }
 }
 
 // Набрать предметов честным броском лута; пустые броски пропускаем.
-function rollItems(state: GameState, seed: number, count: number): Item[] {
+function rollItems(state: GameState, seed: number, count: number, level = 1): Item[] {
   const rng = createRng(seed)
   const items: Item[] = []
   let seq = state.itemSeq
   for (let attempt = 0; attempt < count * 40 && items.length < count; attempt++) {
-    const item = rollLoot(rng, seq)
+    const item = rollLoot(rng, seq, level)
     if (!item) continue
     items.push(item)
     seq += 1
@@ -75,11 +67,10 @@ function fresh(): GameState {
 function mid(): GameState {
   let state = createInitialState(202)
   state = atLevel(state, 10)
-  state = withUpgrade(state, 24)
   // Оружие и пара вещей — надеваем через обычный equipItem. Оружие берём
   // ЯВНО, а не первым по порядку: без него герой на снимке дерётся кулаками,
   // и «урон оружия 8–12» в статах читается как поломка, а не как пустая рука.
-  const loot = rollItems(state, 2024, 9)
+  const loot = rollItems(state, 2024, 9, 8)
   state = addToInventory(state, loot)
   const weapon = loot.find((i) => i.slot === 'mainHand')
   const rest = loot.filter((i) => i !== weapon).slice(0, 4)
@@ -104,12 +95,11 @@ function mid(): GameState {
 function rich(): GameState {
   let state = createInitialState(404)
   state = atLevel(state, 22)
-  state = withUpgrade(state, 180)
   // Лут босса даёт высокие тиры — в инвентаре видно все цвета редкости.
   const bossLoot = DUNGEONS[0].bosses.flatMap((boss, index) =>
-    rollBossLoot(boss.loot, createRng(500 + index), 100 + index * 10),
+    rollBossLoot(boss.loot, createRng(500 + index), 100 + index * 10, boss.level),
   )
-  state = addToInventory(state, [...rollItems(state, 606, 5), ...bossLoot])
+  state = addToInventory(state, [...rollItems(state, 606, 5, 28), ...bossLoot])
   // Надеваем по одному предмету на слот: берём первый подходящий. Левую руку
   // пропускаем, если в правой двуручное: по правилам игры вещь в левой руке
   // выбивает двуручное обратно в сумку, и слепой обход слотов оставил бы
@@ -140,6 +130,6 @@ export function buildPreset(name: PresetName): GameState {
   return BUILDERS[name]()
 }
 
-export function presetPayload(name: PresetName): SavePayloadV17 {
+export function presetPayload(name: PresetName): SavePayloadV18 {
   return payloadFromState(buildPreset(name), FROZEN_TIMESTAMP)
 }

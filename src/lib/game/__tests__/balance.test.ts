@@ -70,9 +70,9 @@ const COLUMNS =
 
 // Сколько замахов самого медленного оружия держит средний моб зоны. От этого
 // числа зависит доля перебоя: чем короче бой, тем больше урона уходит мимо.
-function hitsPerKill(zone: Zone, level: number, sharpening: number): number {
+function hitsPerKill(zone: Zone, level: number, weaponLevel: number): number {
   const state = buildSimState(
-    { level, sharpening, weapon: { templateId: 'crusher', bare: true }, autocast: 'none' },
+    { level, weapon: { templateId: 'crusher', bare: true, level: weaponLevel }, autocast: 'none' },
     zone.id,
     1,
   )
@@ -89,8 +89,8 @@ describe('прогон баланса: таблица зон', () => {
     const { zoneHours, zoneLevel } = BALANCE_PRESET
     const zoneBuild = referenceBuild(zoneLevel)
     header(
-      `Эталонный герой ${zoneLevel} уровня (${zoneBuild.sharpening} заточек, средняя ` +
-        `экипировка), автокаст включён, ${zoneHours} часов в каждой зоне.`,
+      `Эталонный герой ${zoneLevel} уровня (вещи ${zoneBuild.gearLevel} уровня, средняя ` +
+        `редкость), автокаст включён, ${zoneHours} часов в каждой зоне.`,
       COLUMNS,
     )
     for (const zone of ZONES) {
@@ -111,7 +111,7 @@ describe('прогресс монотонный', () => {
   it('в более сложной зоне при достаточном уровне золота и опыта в час строго больше', () => {
     const build = referenceBuild(LEVEL)
     header(
-      `Эталонный герой ${LEVEL} уровня (${build.sharpening} заточек), уровень заморожен, ` +
+      `Эталонный герой ${LEVEL} уровня (вещи ${build.gearLevel} уровня), уровень заморожен, ` +
         '4 часа на зону.',
       COLUMNS,
     )
@@ -221,7 +221,7 @@ describe('стиль боя', () => {
   // без побочных статов шаблонов: проверяем нормализацию, а не бонусы модели.
   const { weaponBuild, weaponHours, weaponSeeds, weaponZoneId, weaponSpreadLimit } = BALANCE_PRESET
   const LEVEL = weaponBuild.level!
-  const SHARPENING = weaponBuild.sharpening!
+  const WEAPON_LEVEL = BALANCE_PRESET.weaponLevel
   // Названия стилей — текст, поэтому живут здесь, а не в game/simulate.ts.
   const STYLE_NAMES: Record<SimStyle, string> = {
     twoHanded: 'двуручное',
@@ -244,7 +244,7 @@ describe('стиль боя', () => {
         freezeLevel: true,
         // Привалы выключены: измерение про УДАР, а не про то, кто чаще
         // садится отдыхать. С ними разброс мерил бы живучесть связки.
-        build: { ...weaponBuild, ...styleBuild(style, true), autocast, restThreshold: 0 },
+        build: { ...weaponBuild, ...styleBuild(style, true, WEAPON_LEVEL), autocast, restThreshold: 0 },
       }),
     )
   }
@@ -252,7 +252,7 @@ describe('стиль боя', () => {
   it(`равный урон оружия в секунду — итог в пределах ${pct(weaponSpreadLimit)}`, () => {
     const zone = ZONES.find((z) => z.id === weaponZoneId)!
     header(
-      `Голые связки, герой ${LEVEL} уровня (${SHARPENING} заточек), ${zone.name}, ` +
+      `Голые связки ${WEAPON_LEVEL} уровня, герой ${LEVEL} уровня, ${zone.name}, ` +
         `${weaponHours} ч, только автоатака.`,
       'стиль                 золота/ч   отклонение   привалов/ч',
     )
@@ -273,7 +273,7 @@ describe('стиль боя', () => {
     }
     const spread = spreadOf(paired.map((r) => meanGold(r.runs)))
     log(
-      `Разброс ${pct(spread)} при ${hitsPerKill(zone, LEVEL, SHARPENING).toFixed(1)} замахах двуручника на моба.`,
+      `Разброс ${pct(spread)} при ${hitsPerKill(zone, LEVEL, WEAPON_LEVEL).toFixed(1)} замахах двуручника на моба.`,
     )
     expect(spread).toBeLessThanOrEqual(weaponSpreadLimit)
   }, 300_000)
@@ -289,7 +289,7 @@ describe('стиль боя', () => {
           zoneId: stressZoneId,
           seed,
           freezeLevel: true,
-          build: { ...stressBuild, ...styleBuild(style, true), autocast: 'none' },
+          build: { ...stressBuild, ...styleBuild(style, true, BALANCE_PRESET.stressWeaponLevel), autocast: 'none' },
         }),
       )
     const dual = stress('dual')
@@ -299,7 +299,7 @@ describe('стиль боя', () => {
     const idle = (runs: SimResult[]) =>
       runs.reduce((sum, r) => sum + r.restShare + (1 - r.uptime), 0) / runs.length
     header(
-      `Герой ${stressBuild.level} уровня (${stressBuild.sharpening} заточек) в зоне ` +
+      `Герой ${stressBuild.level} уровня со связкой ${BALANCE_PRESET.stressWeaponLevel} уровня в зоне ` +
         `${ZONES.find((z) => z.id === stressZoneId)!.name} — не по себе. ${weaponHours} ч.`,
       'стиль                 золота/ч   простой',
     )
@@ -322,13 +322,13 @@ describe('стиль боя', () => {
     // границу, за которой выбор стиля перестаёт быть равным.
     header(
       'Голые связки, только автоатака, 1 час на клетку. Разброс против длины боя.',
-      'зона                 ур. заточек  замахов/моб   разброс   лучшее',
+      'зона                 ур. оружия   замахов/моб   разброс   лучшее',
     )
     const cases = [
-      { zone: 'hollow-quarry', level: 12, sharpening: 5 },
-      { zone: 'mirefen-hollows', level: 20, sharpening: 20 },
-      { zone: 'ashen-ridge', level: 40, sharpening: 200 },
-      { zone: weaponZoneId, level: LEVEL, sharpening: SHARPENING },
+      { zone: 'hollow-quarry', level: 12, weaponLevel: 3 },
+      { zone: 'mirefen-hollows', level: 20, weaponLevel: 8 },
+      { zone: 'ashen-ridge', level: 40, weaponLevel: 28 },
+      { zone: weaponZoneId, level: LEVEL, weaponLevel: WEAPON_LEVEL },
     ]
     const paired = SIM_STYLES.filter((style) => style !== 'shield')
     for (const c of cases) {
@@ -343,8 +343,7 @@ describe('стиль боя', () => {
               freezeLevel: true,
               build: {
                 level: c.level,
-                sharpening: c.sharpening,
-                ...styleBuild(style, true),
+                ...styleBuild(style, true, c.weaponLevel),
                 autocast: 'none',
                 restThreshold: 0,
               },
@@ -356,8 +355,8 @@ describe('стиль боя', () => {
       const numbers = gold.map((g) => g.toNumber())
       const best = STYLE_NAMES[paired[numbers.indexOf(Math.max(...numbers))]]
       log(
-        `${zone.name.padEnd(20)} ${String(c.level).padStart(3)} ${String(c.sharpening).padStart(8)} ` +
-          `${hitsPerKill(zone, c.level, c.sharpening).toFixed(1).padStart(12)} ${pct(spread).padStart(9)}   ${best}`,
+        `${zone.name.padEnd(20)} ${String(c.level).padStart(3)} ${String(c.weaponLevel).padStart(8)} ` +
+          `${hitsPerKill(zone, c.level, c.weaponLevel).toFixed(1).padStart(12)} ${pct(spread).padStart(9)}   ${best}`,
       )
     }
   }, 300_000)
@@ -453,9 +452,12 @@ describe('ветки талантов', () => {
   const avg = (runs: SimResult[], pick: (r: SimResult) => number) =>
     runs.reduce((sum, r) => sum + pick(r), 0) / runs.length
 
-  /** Самая глубокая зона, которую ветка тянет: без смертей и без просиживания. */
+  /** Самая глубокая ОТКРЫТАЯ зона, которую ветка тянет: без смертей и без
+   *  просиживания. Вход по уровню обязателен: «какую зону тянет билд» в живой
+   *  игре упирается в travelToZone, и мерить закрытые значит мерить не игру. */
   function bestZone(branch: string): { zoneId: string; runs: SimResult[] } {
     for (let i = ZONES.length - 1; i >= 0; i -= 1) {
+      if (ZONES[i].unlockRequirement > branchLevel) continue
       const runs = runBranch(branch, ZONES[i].id)
       const deaths = avg(runs, (r) => r.deathsPerHour)
       const rest = avg(runs, (r) => r.restShare)
@@ -630,10 +632,10 @@ describe('контракт темпа боя', () => {
     const columns =
       'ур.  ' +
       ZONES.map((z) => `${z.name.slice(0, 9)} ${z.monsterLevelRange.min}-${z.monsterLevelRange.max}`.padStart(18)).join('') +
-      '  заточек  смертей   минут'
+      '  ур.вещей  смертей   минут'
     header(
       'Эталонное прохождение: герой в СРЕДНЕЙ по рулетке экипировке, всё золото ' +
-        'в заточку, переезд по мере открытия зон.\n' +
+        'в вещи своей зоны, переезд по мере открытия зон.\n' +
         '* актуальная зона, < отстающая, > опережающая. В скобках — самый быстрый и самый долгий моб зоны.',
       columns,
     )
@@ -643,7 +645,7 @@ describe('контракт темпа боя', () => {
         return `${mark}${ttk(c.ttk.avg)} (${ttk(c.ttk.min)}-${ttk(c.ttk.max)})`.padStart(18)
       })
       log(
-        `${String(r.level).padStart(3)}  ${cells.join('')}  ${String(r.sharpening).padStart(7)}  ` +
+        `${String(r.level).padStart(3)}  ${cells.join('')}  ${String(r.gearLevel).padStart(8)}  ` +
           `${String(r.deaths).padStart(7)}  ${(r.atSec / 60).toFixed(1).padStart(6)}`,
       )
     }
@@ -761,11 +763,17 @@ describe('контракт темпа боя', () => {
     // обязана давать преимущество — иначе лут не нужен.
     const level = PACING_MAX_LEVEL
     const zone = intendedZone(level)
-    const build = { level, sharpening: rows[rows.length - 1].sharpening }
+    const build = { level, gearLevel: rows[rows.length - 1].gearLevel }
     const average = estimateTtk(buildSimState({ ...build, gear: 'average' }, zone.id, 1), zone)
     const lucky = estimateTtk(
       buildSimState(
-        { ...build, gear: 'average', weapon: { templateId: AVERAGE_WEAPON.id, rarity: 'epic' } },
+        {
+          ...build,
+          gear: 'average',
+          // Эпик ТОГО ЖЕ уровня вещей: везение — это редкость находки, а не
+          // прыжок через десять зон.
+          weapon: { templateId: AVERAGE_WEAPON.id, rarity: 'epic', level: build.gearLevel },
+        },
         zone.id,
         1,
       ),

@@ -309,7 +309,8 @@ const applyLootDrop: TickStep = (s, ctx) => {
   if (boss) return dropBossLoot(s, boss, ctx)
   // Дроп только при свободном слоте; rng при полном инвентаре не трогаем.
   if (s.inventory.length >= INVENTORY_SIZE) return s
-  const item = rollLoot(ctx.rng, s.itemSeq)
+  // Предмет наследует уровень убитого моба: находки растут вместе с зоной.
+  const item = rollLoot(ctx.rng, s.itemSeq, s.monster.level)
   if (!item) return s
   const withItem: GameState = {
     ...s,
@@ -325,7 +326,7 @@ const applyLootDrop: TickStep = (s, ctx) => {
 function dropBossLoot(s: GameState, boss: BossDef, ctx: TickContext): GameState {
   const free = INVENTORY_SIZE - s.inventory.length
   if (free <= 0) return s
-  const items = rollBossLoot(boss.loot, ctx.rng, s.itemSeq).slice(0, free)
+  const items = rollBossLoot(boss.loot, ctx.rng, s.itemSeq, boss.level).slice(0, free)
   let next: GameState = { ...s, itemSeq: s.itemSeq + items.length }
   for (const item of items) {
     next = {
@@ -446,7 +447,7 @@ const applyRegen: TickStep = (s, ctx) => {
   // Ресурс вне боя ТАЕТ, если так сказано в данных класса. У маны ноль,
   // у ярости — то, что не даёт копить её между боями. Ветка по классу здесь
   // не нужна: множитель просто равен нулю.
-  const decay = classById(s.classId).resource.decayPerSecond
+  const decay = classById(s.classId).resource.decayShare.times(s.stats.maxMana)
   const drained =
     s.respawnMsLeft > 0
       ? Decimal.max(s.currentMana.minus(decay.times(dtSec)), new Decimal(0))

@@ -14,6 +14,10 @@
   const resource = $derived(resourceWords($gameState.classId))
 
   const NAMES: Record<StatId, string> = $derived({
+    strength: 'сила',
+    agility: 'ловкость',
+    intellect: 'интеллект',
+    vitality: 'живучесть',
     attackPower: 'сила атаки',
     weaponDamageMin: 'урон оружия (мин)',
     weaponDamageMax: 'урон оружия (макс)',
