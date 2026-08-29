@@ -132,7 +132,7 @@ export const DUNGEON_SCENE: SceneConfig = {
 }
 
 // --- Зоны второй половины лестницы -------------------------------------
-// Один набор примитивов плюс пропсы из KayKit дают одиннадцать разных мест,
+// Один набор примитивов плюс пропсы из KayKit дают двадцать разных мест,
 // не рисуя ни одной картинки. Цвет и плотность тумана — главное, что их
 // различает: место узнаётся раньше, чем прочитано его название.
 
@@ -246,6 +246,150 @@ export const RIMEBACK_SCENE: SceneConfig = {
     { shape: 'stump', model: 'prop-chest', count: 4, scaleRange: [0.8, 1.2], color: 0x4a3a28 },
   ],
   seed: 7911,
+}
+
+/** Корневые своды: пустота под обвалом, прошитая живыми корнями с поверхности. */
+export const ROOTS_SCENE: SceneConfig = {
+  fogColor: 0x1e1a12,
+  fogDensity: 0.075,
+  groundColor: 0x332c1e,
+  lightColor: 0xd8c48a,
+  lightIntensity: 1.4,
+  lightAngleDeg: 235,
+  ambientIntensity: 0.35,
+  props: [
+    { shape: 'tree', count: 12, scaleRange: [1.0, 2.0], color: 0x6b5a44 },
+    { shape: 'stump', count: 9, scaleRange: [0.5, 1.2], color: 0x4a3b28 },
+  ],
+  seed: 6905,
+}
+
+/** Плесневый горизонт: вода ушла, тепло осталось, светят шляпки. */
+export const MOLD_SCENE: SceneConfig = {
+  fogColor: 0x141c14,
+  fogDensity: 0.08,
+  groundColor: 0x1f2c1e,
+  lightColor: 0x9fe07a,
+  lightIntensity: 1.4,
+  lightAngleDeg: 205,
+  ambientIntensity: 0.32,
+  props: [
+    { shape: 'stump', count: 12, scaleRange: [0.4, 1.0], color: 0x4b3a2c },
+    { shape: 'crystal', count: 9, scaleRange: [0.4, 1.1], color: 0x8fbf5a },
+  ],
+  seed: 4726,
+}
+
+/** Серные ключи: жёлтая корка, кипящие бочаги, пар стеной. */
+export const SULFUR_SCENE: SceneConfig = {
+  fogColor: 0x1d1b0c,
+  fogDensity: 0.085,
+  groundColor: 0x33301a,
+  lightColor: 0xffe98a,
+  lightIntensity: 1.6,
+  lightAngleDeg: 150,
+  ambientIntensity: 0.38,
+  props: [
+    { shape: 'crystal', count: 9, scaleRange: [0.4, 1.2], color: 0xd0b545 },
+    { shape: 'rock', count: 12, scaleRange: [0.5, 1.6], color: 0x46411f },
+  ],
+  seed: 6890,
+}
+
+/** Продувной перевал: голый камень, холодный свет, открыто и высоко. */
+export const PASS_SCENE: SceneConfig = {
+  fogColor: 0x1b1f26,
+  fogDensity: 0.045,
+  groundColor: 0x2c323c,
+  lightColor: 0xc9d8e8,
+  lightIntensity: 1.8,
+  lightAngleDeg: 300,
+  ambientIntensity: 0.5,
+  props: [
+    { shape: 'rock', count: 14, scaleRange: [0.4, 1.5], color: 0x5a606c },
+    { shape: 'stump', count: 6, scaleRange: [0.5, 1.2], color: 0x484034 },
+  ],
+  seed: 7455,
+}
+
+/** Полынный увал: безводье, охра, седой сухостой. */
+export const WORMWOOD_SCENE: SceneConfig = {
+  fogColor: 0x231e18,
+  fogDensity: 0.05,
+  groundColor: 0x3b3428,
+  lightColor: 0xe8d2a0,
+  lightIntensity: 1.9,
+  lightAngleDeg: 120,
+  ambientIntensity: 0.52,
+  props: [
+    { shape: 'tree', count: 11, scaleRange: [0.8, 1.8], color: 0x6a6244 },
+    { shape: 'rock', count: 9, scaleRange: [0.4, 1.2], color: 0x4c4535 },
+  ],
+  seed: 7488,
+}
+
+/** Наждачный останец: камень, обточенный до гладкости, резкие тени. */
+export const EMERY_SCENE: SceneConfig = {
+  fogColor: 0x22202a,
+  fogDensity: 0.04,
+  groundColor: 0x3a3744,
+  lightColor: 0xdcd2e6,
+  lightIntensity: 1.9,
+  lightAngleDeg: 235,
+  ambientIntensity: 0.46,
+  props: [
+    { shape: 'rock', count: 12, scaleRange: [0.6, 2.0], color: 0x6a5f72 },
+    { shape: 'stump', count: 9, scaleRange: [0.4, 1.0], color: 0x4a4152 },
+  ],
+  seed: 7745,
+}
+
+/** Мёрзлое криволесье: обесцвеченное дерево и наледь, всё звенит. */
+export const CROOKWOOD_SCENE: SceneConfig = {
+  fogColor: 0x161c1c,
+  fogDensity: 0.085,
+  groundColor: 0x28302f,
+  lightColor: 0xcfe6ea,
+  lightIntensity: 1.35,
+  lightAngleDeg: 240,
+  ambientIntensity: 0.34,
+  props: [
+    { shape: 'tree', count: 16, scaleRange: [0.9, 2.0], color: 0x4a5150 },
+    { shape: 'stump', count: 9, scaleRange: [0.4, 1.1], color: 0x5b6560 },
+  ],
+  seed: 8214,
+}
+
+/** Порожняя падь: выдутая долина, ковыль, каменные зубья, пусто до звона. */
+export const DELL_SCENE: SceneConfig = {
+  fogColor: 0x1f2228,
+  fogDensity: 0.04,
+  groundColor: 0x343a3e,
+  lightColor: 0xe2ddd2,
+  lightIntensity: 1.5,
+  lightAngleDeg: 350,
+  ambientIntensity: 0.42,
+  props: [
+    { shape: 'rock', count: 13, scaleRange: [0.7, 2.0], color: 0x5b5b54 },
+    { shape: 'stump', count: 8, scaleRange: [0.4, 1.0], color: 0x4a4438 },
+  ],
+  seed: 8248,
+}
+
+/** Немая круча: последний уступ, за которым земля обрывается. */
+export const BLUFF_SCENE: SceneConfig = {
+  fogColor: 0x1c1426,
+  fogDensity: 0.04,
+  groundColor: 0x2e2440,
+  lightColor: 0xe6d2ff,
+  lightIntensity: 1.3,
+  lightAngleDeg: 350,
+  ambientIntensity: 0.33,
+  props: [
+    { shape: 'rock', count: 10, scaleRange: [0.5, 1.6], color: 0x554a6b },
+    { shape: 'crystal', count: 5, scaleRange: [0.6, 1.3], color: 0x7a6a9a },
+  ],
+  seed: 8207,
 }
 
 /**

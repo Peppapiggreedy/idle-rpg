@@ -16,11 +16,16 @@ export interface MonsterRole {
 //
 // Разброс hpMult задаёт КРАЯ темпа зоны: мелочь — самый быстрый бой, здоровяк —
 // самый долгий, и оба обязаны уложиться между TTK_HARD_FLOOR и TTK_HARD_CEILING.
-// Поэтому мелочь подтянута ближе к обычному мобу (иначе она умирала бы за
-// секунды), а здоровяк, наоборот, отодвинут: три роли должны читаться как три
-// разных боя, а не как один и тот же с чуть разной полоской.
+//
+// ПОЧЕМУ РАЗБРОС УЗКИЙ. Полоса зоны — пять уровней мобов, и один только уровень
+// уже даёт внутри зоны двукратный разброс HP (рост линейный от единицы: моб с
+// нижнего края полосы вдвое слабее моба с верхнего). Второй такой же разброс от
+// ролей клал бы мелочь с нижнего края под пол темпа — она умирала бы раньше,
+// чем игрок успевает прочитать её имя. Поэтому HP у мелочи и обычного равны, а
+// здоровяк тяжелее в 1.7 раза: три роли читаются как три разных боя РИТМОМ —
+// частотой удара и уроном, — а не третьей полоской здоровья.
 export const RUNT: MonsterRole = {
-  hpMult: new Decimal(0.93),
+  hpMult: new Decimal(1),
   damageMult: new Decimal(0.8),
   goldMult: new Decimal(0.9),
   xpMult: new Decimal(0.9),
@@ -36,7 +41,7 @@ export const COMMON: MonsterRole = {
 }
 
 export const BRUTE: MonsterRole = {
-  hpMult: new Decimal(2),
+  hpMult: new Decimal(1.7),
   damageMult: new Decimal(1.5),
   goldMult: new Decimal(1.4),
   xpMult: new Decimal(1.3),
@@ -91,16 +96,31 @@ export const MONSTER_GROWTH = {
   // переживёшь». Единственная экспонента в игре — rewardMultiplier зоны
   // (data/zones.ts): она и двигает экономику заточек, из которой растёт та
   // самая прямая силы героя.
-  hpPerLevel: new Decimal(0.26),
+  hpPerLevel: new Decimal(0.16),
   // Урон растёт КРУЧЕ HP: запас здоровья героя тоже растёт с уровнем, и без
   // этого дальняя зона переставала бы быть опасной.
-  damagePerLevel: new Decimal(0.5),
+  damagePerLevel: new Decimal(0.4),
   rewardPerLevel: new Decimal(0.26),
+  // ОПЫТ РАСТЁТ ОТДЕЛЬНО И ГОРАЗДО МЕДЛЕННЕЕ ЗОЛОТА, и это не мелочь.
+  //
+  // Золото платит за силу и обязано успевать за геометрически дорожающей
+  // заточкой. Опыт же — ЧАСЫ игрока: уровень должен означать «сколько ты
+  // сыграл», а не «как глубоко залез». На лестнице из двадцати ступеней
+  // герой уходит на восемь зон вперёд уже к десятому уровню, и при общей
+  // ставке тот, кто переезжает, получал бы опыта в четырнадцать раз больше
+  // с удара — то есть один и тот же десятый уровень брался бы за полчаса
+  // или за полдня в зависимости от того, ездит игрок или нет.
+  xpPerLevel: new Decimal(0.1),
 }
 
 // Множители уровня: у моба 1 уровня все равны 1.
 export function hpScale(level: number): Decimal {
   return MONSTER_GROWTH.hpPerLevel.times(level - 1).plus(1)
+}
+
+/** Множитель опыта: своя, более пологая ставка — см. xpPerLevel. */
+export function xpScale(level: number): Decimal {
+  return MONSTER_GROWTH.xpPerLevel.times(level - 1).plus(1)
 }
 
 export function damageScale(level: number): Decimal {
@@ -126,7 +146,10 @@ export function buildMonster(
     level,
     maxHp: MONSTER_BASE.maxHp.times(role.hpMult).times(hpScale(level)),
     goldReward: MONSTER_BASE.goldReward.times(role.goldMult).times(reward),
-    xpReward: MONSTER_BASE.xpReward.times(role.xpMult).times(reward),
+    xpReward: MONSTER_BASE.xpReward
+      .times(role.xpMult)
+      .times(xpScale(level))
+      .times(rewardMultiplier),
     // Диапазон урона: пока min = max — разброс придёт вместе со способностями.
     damageMin: damage,
     damageMax: damage,

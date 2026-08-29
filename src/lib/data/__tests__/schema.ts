@@ -1227,6 +1227,49 @@ function checkReachable(content: Content, report: Report): void {
     )
   }
 
+  // --- Зоны: полосы уровней мобов идут подряд, без дыр и без нахлёстов ---
+  //
+  // Дыра — это уровни мобов, которых в игре нет ни в одной зоне: лестница
+  // мира рвётся, и на каком-то отрезке прогрессии герою некуда идти. Нахлёст
+  // тише и потому хуже: две зоны спорят за одни и те же уровни, и одна из них
+  // навсегда остаётся бессмысленной копией другой.
+  const bands = [...content.zones]
+    .map((z) => ({ id: z.id, min: z.monsterLevelRange?.min, max: z.monsterLevelRange?.max }))
+    .filter((b) => Number.isFinite(b.min) && Number.isFinite(b.max))
+    .sort((a, b) => a.min - b.min)
+  if (bands.length > 0) {
+    report.need(
+      bands[0].min === 1,
+      `зона ${bands[0].id}`,
+      `самая нижняя полоса начинается с ${bands[0].min}-го уровня мобов, а обязана с первого: ` +
+        'иначе новичку не с кем драться (data/zones.ts)',
+    )
+    for (let i = 1; i < bands.length; i += 1) {
+      const prev = bands[i - 1]
+      const zone = bands[i]
+      if (zone.min === prev.max + 1) continue
+      report.add(
+        `зона ${zone.id}`,
+        zone.min > prev.max + 1
+          ? `полоса ${zone.min}-${zone.max} начинается после ${prev.max} у зоны ${prev.id}: ` +
+              `уровни мобов ${prev.max + 1}-${zone.min - 1} не покрыты ни одной зоной ` +
+              '(data/zones.ts)'
+          : `полоса ${zone.min}-${zone.max} налезает на ${prev.min}-${prev.max} у зоны ` +
+              `${prev.id}: две зоны спорят за одни и те же уровни мобов (data/zones.ts)`,
+      )
+    }
+  }
+
+  // --- Зоны: в каждой что-то падает из материалов ---
+  for (const zone of content.zones) {
+    const drops = content.materials.filter((m) => m.zoneIds?.includes(zone.id))
+    report.need(
+      drops.length > 0,
+      `зона ${zone.id}`,
+      'ни один материал в ней не падает — ремёсла в этой зоне мертвы (data/materials.ts)',
+    )
+  }
+
   // --- Данжи: вход из зоны, до которой игрок дорос раньше ---
   for (const dungeon of content.dungeons) {
     const zone = content.zones.find((z) => z.id === dungeon.zoneId)

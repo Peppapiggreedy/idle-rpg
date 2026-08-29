@@ -98,11 +98,18 @@ describe('масштаб мобов от уровня', () => {
     expect(rich.damageMax.eq(plain.damageMax)).toBe(true)
   })
 
-  it('роли отличают мелочь от здоровяка', () => {
+  it('роли отличают мелочь от здоровяка РИТМОМ, а не третьей полоской HP', () => {
+    // Полоса зоны — пять уровней мобов, и уровень внутри неё уже даёт разброс
+    // HP. Второй такой же разброс от ролей ронял бы мелочь с нижнего края под
+    // пол темпа, поэтому у мелочи и обычного здоровье ОДНО, а различает их
+    // частота удара и урон. Здоровяк тяжелее — но не вдвое.
     const at = (role: typeof COMMON) => buildMonster({ id: 'x', name: 'x', role }, 3, new Decimal(1))
-    expect(at(RUNT).maxHp.lt(at(COMMON).maxHp)).toBe(true)
+    expect(at(RUNT).maxHp.eq(at(COMMON).maxHp)).toBe(true)
     expect(at(BRUTE).maxHp.gt(at(COMMON).maxHp)).toBe(true)
-    expect(at(RUNT).swingTime).toBeLessThan(at(BRUTE).swingTime)
+    expect(at(RUNT).swingTime).toBeLessThan(at(COMMON).swingTime)
+    expect(at(COMMON).swingTime).toBeLessThan(at(BRUTE).swingTime)
+    expect(at(RUNT).damageMax.lt(at(COMMON).damageMax)).toBe(true)
+    expect(at(BRUTE).damageMax.gt(at(COMMON).damageMax)).toBe(true)
   })
 })
 

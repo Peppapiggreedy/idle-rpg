@@ -4,7 +4,8 @@
 //
 // Привязка к зонам — часть контента, а не украшение: материал из дальней
 // зоны нужен рецептам, которые в ней и осмысленны. Ссылки «материал → зона»
-// проверяет content:check.
+// проверяет content:check — вместе с тем, что ни одна зона не осталась без
+// материалов вовсе: зона, где ничего не падает, выглядит сломанной.
 import type { IconName } from '../ui/icons/manifest'
 
 export interface MaterialDef {
@@ -23,42 +24,42 @@ export const MATERIALS: MaterialDef[] = [
     id: 'meadow-herb',
     name: 'Луговой сбор',
     icon: 'material-herb',
-    zoneIds: ['shepherds-meadow', 'hollow-quarry', 'rusted-furrows'],
+    zoneIds: ['shepherds-meadow', 'hollow-quarry', 'rusted-furrows', 'wormwood-rise'],
     weight: 10,
   },
   {
     id: 'lean-meat',
     name: 'Постное мясо',
     icon: 'material-meat',
-    zoneIds: ['shepherds-meadow', 'mirefen-hollows', 'flooded-tier'],
+    zoneIds: ['shepherds-meadow', 'mirefen-hollows', 'flooded-tier', 'root-vaults'],
     weight: 10,
   },
   {
     id: 'quarry-ore',
     name: 'Каменоломная руда',
     icon: 'material-ore',
-    zoneIds: ['hollow-quarry', 'rusted-furrows', 'mine-collapse'],
+    zoneIds: ['hollow-quarry', 'rusted-furrows', 'mine-collapse', 'windswept-pass', 'emery-stack'],
     weight: 8,
   },
   {
     id: 'bog-hide',
     name: 'Топкая шкура',
     icon: 'material-hide',
-    zoneIds: ['mirefen-hollows', 'glasswaste', 'flooded-tier'],
+    zoneIds: ['mirefen-hollows', 'glasswaste', 'flooded-tier', 'mold-horizon', 'hollow-dell'],
     weight: 8,
   },
   {
     id: 'ember-shard',
     name: 'Тлеющий осколок',
     icon: 'material-shard',
-    zoneIds: ['glasswaste', 'ashen-ridge', 'ashen-terrace'],
+    zoneIds: ['glasswaste', 'ashen-ridge', 'ashen-terrace', 'sulfur-springs', 'mute-bluff'],
     weight: 6,
   },
   {
     id: 'rime-salt',
     name: 'Стылая соль',
     icon: 'material-salt',
-    zoneIds: ['salt-pit', 'rimeback-ridge', 'ashen-terrace'],
+    zoneIds: ['salt-pit', 'rimeback-ridge', 'ashen-terrace', 'frozen-crookwood'],
     weight: 5,
   },
 ]

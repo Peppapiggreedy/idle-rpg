@@ -191,7 +191,7 @@ export const BALANCE_PRESET = {
   // Заточек НАМЕРЕННО меньше эталона: чем слабее герой, тем длиннее бой и
   // тем меньше в итоге доля перебоя.
   weaponHours: 4,
-  weaponZoneId: 'ashen-ridge',
+  weaponZoneId: 'mirefen-hollows',
   weaponBuild: { level: 22, sharpening: 10 } as SimBuild,
   // Урон за ману считается по умениям «на следующий удар».
   manaAbilities: ['rending-wound', 'shattering-blow'],

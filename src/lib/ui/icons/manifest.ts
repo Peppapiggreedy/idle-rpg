@@ -117,6 +117,15 @@ export const ICONS = {
   'zone-ashen-terrace': { file: 'delapouite/mountain-cave.svg', author: 'Delapouite' },
   'zone-salt-pit': { file: 'lorc/salt-shaker.svg', author: 'Lorc' },
   'zone-rimeback-ridge': { file: 'lorc/ice-spear.svg', author: 'Lorc' },
+  'zone-root-vaults': { file: 'delapouite/tree-roots.svg', author: 'Delapouite' },
+  'zone-mold-horizon': { file: 'delapouite/mushrooms-cluster.svg', author: 'Delapouite' },
+  'zone-sulfur-springs': { file: 'lorc/boiling-bubbles.svg', author: 'Lorc' },
+  'zone-windswept-pass': { file: 'delapouite/mountain-road.svg', author: 'Delapouite' },
+  'zone-wormwood-rise': { file: 'delapouite/tumbleweed.svg', author: 'Delapouite' },
+  'zone-emery-stack': { file: 'lorc/windy-stripes.svg', author: 'Lorc' },
+  'zone-frozen-crookwood': { file: 'lorc/dead-wood.svg', author: 'Lorc' },
+  'zone-hollow-dell': { file: 'lorc/dust-cloud.svg', author: 'Lorc' },
+  'zone-mute-bluff': { file: 'delapouite/sea-cliff.svg', author: 'Delapouite' },
 
   // --- Данжи ---
   'dungeon-sunken-barrow': { file: 'delapouite/dungeon-gate.svg', author: 'Delapouite' },

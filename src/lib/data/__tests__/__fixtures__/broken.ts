@@ -160,6 +160,40 @@ export function brokenCases(): BrokenCase[] {
       expect: [first(first(real.zones).monsterPool).id, 'name'],
     },
     {
+      title: 'между полосами зон дыра: этих уровней мобов нет ни у кого',
+      content: {
+        ...real,
+        zones: patch(real.zones, real.zones[1].id, {
+          monsterLevelRange: {
+            min: real.zones[1].monsterLevelRange.min + 5,
+            max: real.zones[1].monsterLevelRange.max + 5,
+          },
+        }),
+      },
+      expect: [real.zones[1].id, 'не покрыты', 'data/zones.ts'],
+    },
+    {
+      title: 'полосы зон налезают друг на друга: две зоны об одном и том же',
+      content: {
+        ...real,
+        zones: patch(real.zones, real.zones[1].id, {
+          monsterLevelRange: real.zones[0].monsterLevelRange,
+        }),
+      },
+      expect: [real.zones[1].id, 'налезает', 'data/zones.ts'],
+    },
+    {
+      title: 'в зоне не падает ни одного материала: ремёсла в ней мертвы',
+      content: {
+        ...real,
+        materials: real.materials.map((m) => ({
+          ...m,
+          zoneIds: m.zoneIds.filter((id) => id !== real.zones[1].id),
+        })),
+      },
+      expect: [real.zones[1].id, 'материал', 'data/materials.ts'],
+    },
+    {
       title: 'скорость оружия ушла в ноль',
       content: {
         ...real,
