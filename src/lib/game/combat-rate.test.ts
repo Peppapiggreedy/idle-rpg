@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { estimateCombatRate } from './combat'
 import { createInitialState, manualOnlySettings, monsterFromTemplate } from './state'
 import { COMMON, buildMonster } from '../data/monsters'
+import { ABILITY_BY_ID } from '../data/abilities'
 import { Decimal } from './numbers'
 import { tick } from './tick'
 import { STEP_MS } from './loop'
@@ -103,5 +104,32 @@ describe('estimateCombatRate', () => {
     const relDiff = Math.abs(offlineGold - expectedGold) / expectedGold
     expect(relDiff).toBeLessThanOrEqual(0.08)
     expect(offlineGold).toBeLessThan(simGold) // оффлайн НИКОГДА не выгоднее игры
+  })
+
+  it('запертые уровнем умения в модель темпа не входят', () => {
+    const monster = monsterFromTemplate(
+      buildMonster({ id: 'test-dummy', name: 'Чучело', role: COMMON }, 1, new Decimal(1)),
+    )
+    // Герой первого уровня: открыто только первое умение класса.
+    const novice = { ...createInitialState(5), monster }
+    // Тот же герой, но запертых умений в настройках нет вовсе. Для модели
+    // это обязано быть ОДНО И ТО ЖЕ состояние: запертое не жмёт ни автокаст,
+    // ни рука, и модель, считающая его урон, завышала бы прогноз и оффлайн.
+    const stripped = {
+      ...novice,
+      abilitySettings: Object.fromEntries(
+        Object.entries(novice.abilitySettings).filter(
+          ([id]) => ABILITY_BY_ID[id].unlockLevel <= 1,
+        ),
+      ),
+    }
+    expect(estimateCombatRate(novice).damagePerSecond.toNumber()).toBeCloseTo(
+      estimateCombatRate(stripped).damagePerSecond.toNumber(),
+      9,
+    )
+    expect(estimateCombatRate(novice, 'manual').damagePerSecond.toNumber()).toBeCloseTo(
+      estimateCombatRate(stripped, 'manual').damagePerSecond.toNumber(),
+      9,
+    )
   })
 })

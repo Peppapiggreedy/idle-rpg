@@ -25,7 +25,8 @@ import {
 import { PLAN, rotationRate, type PlayMode, type RotationPlan, type RotationRate } from './rotation'
 import type { Monster } from '../types'
 import { SAFE_ZONE, ZONE_BY_ID, zoneMonsterVariants, type Zone } from '../data/zones'
-import { monsterFromTemplate } from './state'
+import { monsterFromTemplate, type AbilitySettings } from './state'
+import { ABILITY_BY_ID } from '../data/abilities'
 import { classById } from '../data/classes'
 
 // Какой рукой бьём. Правило нормализации скорости одно на обе, отличаются
@@ -423,16 +424,31 @@ export function resourceIncome(state: GameState, extraHitsPerSecond = 0): Decima
     .plus(incoming.times(resource.perHitTaken).times(stats.maxMana))
 }
 
+/**
+ * Настройки только ОТКРЫТЫХ умений: запертые уровнем не жмёт ни рука, ни
+ * автокаст, и модель, считающая их урон, завышала бы прогноз и оффлайн
+ * новичка — в нарушение правила «оффлайн <= автокаст <= ручная игра».
+ */
+function unlockedSettings(state: GameState): AbilitySettings {
+  const settings: AbilitySettings = {}
+  for (const [id, value] of Object.entries(state.abilitySettings)) {
+    const ability = ABILITY_BY_ID[id]
+    if (ability && state.level.gte(ability.unlockLevel)) settings[id] = value
+  }
+  return settings
+}
+
 function rawRate(state: GameState, plan: RotationPlan): CombatRate {
   const stats = state.stats
   const avgSwing = expectedSwingDamage(stats)
   const respawnSec = RESPAWN_DELAY_MS / 1000
+  const settings = unlockedSettings(state)
   // Ресурс из боя — уравнение с самим собой: удары умений тоже дают ярость,
   // а число умений зависит от ярости. Решаем ДВУМЯ проходами: сперва доход
   // от одних автоатак, потом — с учётом посчитанных мгновенных ударов.
   // Двух хватает: второй проход меняет ответ на проценты, третий — на доли.
   const pause = resourcePause(state)
-  let rotation = rotationRate(stats, state.abilitySettings, plan, resourceIncome(state), pause)
+  let rotation = rotationRate(stats, settings, plan, resourceIncome(state), pause)
   if (classById(state.classId).resource.perSwingDealt.gt(0)) {
     // Умения «на следующий удар» ЗАМЕНЯЮТ автоатаку и лишнего удара не дают.
     const extraHits = rotation.casts
@@ -440,7 +456,7 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
       .reduce((sum, c) => sum + c.castsPerSecond, 0)
     rotation = rotationRate(
       stats,
-      state.abilitySettings,
+      settings,
       plan,
       resourceIncome(state, extraHits),
       pause,

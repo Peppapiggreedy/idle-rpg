@@ -105,19 +105,20 @@ export const ARMOR_NOUNS: Record<Exclude<SlotId, 'mainHand' | 'offHand'>, readon
   trinket: ['Амулет', 'Оберег', 'Талисман'],
 }
 
-// Броня даёт АТРИБУТЫ: главный — свой у каждого слота (шлем думает, кисти
-// ловчат, ноги несут силу), и живучесть — у всех: любая броня в первую
-// очередь броня. Числа common-тира 1 уровня; тир множит на bonusMult,
-// уровень предмета — на itemLevelScale.
+// Броня даёт АТРИБУТЫ: главный к слоту НЕ привязан — его разыгрывает лут,
+// и один и тот же шлем бывает и умным, и живучим. Живучесть — у всех:
+// любая броня в первую очередь броня. Числа common-тира 1 уровня; тир
+// множит на bonusMult, уровень предмета — на itemLevelScale.
 export type ArmorSlot = Exclude<SlotId, 'mainHand' | 'offHand'>
+export type AttributeId = 'strength' | 'agility' | 'intellect' | 'vitality'
 
-export const ARMOR_PRIMARY: Record<ArmorSlot, 'strength' | 'agility' | 'intellect' | 'vitality'> = {
-  head: 'intellect',
-  chest: 'vitality',
-  hands: 'agility',
-  legs: 'strength',
-  trinket: 'strength',
-}
+/** Что может выпасть главным атрибутом брони — любой из четырёх, поровну. */
+export const ARMOR_ATTRIBUTES: readonly AttributeId[] = [
+  'strength',
+  'agility',
+  'intellect',
+  'vitality',
+]
 
 export const ARMOR_BASE_PRIMARY = new Decimal(4)
 export const ARMOR_BASE_VITALITY = new Decimal(2)

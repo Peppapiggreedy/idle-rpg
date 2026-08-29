@@ -61,20 +61,32 @@ describe('rollLoot', () => {
 
   it('броня даёт атрибуты обычными модификаторами, без base', () => {
     // Слот 0.35 попадает в отрезок головы (за двумя руками, 34 из 114).
-    const item = rollLoot(seqRng([0, 0, 0.35, 0, 0]), 1)
+    // Последний бросок — главный атрибут: 0.6 из четырёх даёт интеллект.
+    const item = rollLoot(seqRng([0, 0, 0.35, 0, 0, 0.6]), 1)
     expect(item!.slot).toBe('head')
     expect(item!.name).toBe('Щербатый Шлем')
     expect(item!.mods.some((m) => m.kind === 'base')).toBe(false)
     expect(item!.mods.every((m) => m.source === 'equipment:head')).toBe(true)
-    // Главный атрибут слота головы — интеллект, довесок — живучесть.
     const primary = item!.mods.find((m) => m.stat === 'intellect')!
     expect(primary.value.toNumber()).toBe(4) // база 4 * bonusMult 1 * уровень 1
     const vit = item!.mods.find((m) => m.stat === 'vitality')!
     expect(vit.value.toNumber()).toBe(2)
   })
 
+  it('главный атрибут брони не привязан к слоту — его решает бросок', () => {
+    const helm = (roll: number) => rollLoot(seqRng([0, 0, 0.35, 0, 0, roll]), 1)!
+    expect(helm(0.1).mods[0].stat).toBe('strength')
+    expect(helm(0.3).mods[0].stat).toBe('agility')
+    expect(helm(0.6).mods[0].stat).toBe('intellect')
+    // Выпавшая живучесть сливается с общим довеском в одну строку.
+    const vit = helm(0.9)
+    expect(vit.mods).toHaveLength(1)
+    expect(vit.mods[0]).toMatchObject({ stat: 'vitality', kind: 'flat' })
+    expect(vit.mods[0].value.toNumber()).toBe(6) // 4 главных + 2 довеска
+  })
+
   it('предмет наследует уровень моба, и сила растёт от него линейно', () => {
-    const at = (level: number) => rollLoot(seqRng([0, 0, 0.35, 0, 0]), 1, level)!
+    const at = (level: number) => rollLoot(seqRng([0, 0, 0.35, 0, 0, 0.6]), 1, level)!
     expect(at(1).level).toBe(1)
     expect(at(26).level).toBe(26)
     const base = at(1).mods.find((m) => m.stat === 'intellect')!.value

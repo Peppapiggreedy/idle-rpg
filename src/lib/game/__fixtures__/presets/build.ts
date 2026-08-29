@@ -99,7 +99,9 @@ function rich(): GameState {
   const bossLoot = DUNGEONS[0].bosses.flatMap((boss, index) =>
     rollBossLoot(boss.loot, createRng(500 + index), 100 + index * 10, boss.level),
   )
-  state = addToInventory(state, [...rollItems(state, 606, 5, 28), ...bossLoot])
+  // Семь бросков: после надевания по слотам сумка обязана остаться заметно
+  // полнее, чем у среднего героя, — это и отличает поздний пресет.
+  state = addToInventory(state, [...rollItems(state, 606, 7, 28), ...bossLoot])
   // Надеваем по одному предмету на слот: берём первый подходящий. Левую руку
   // пропускаем, если в правой двуручное: по правилам игры вещь в левой руке
   // выбивает двуручное обратно в сумку, и слепой обход слотов оставил бы

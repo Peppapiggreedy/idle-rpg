@@ -18,7 +18,15 @@ import {
   averageMonsterLevel,
   representativeMonster,
 } from '../data/zones'
-import { MONSTER_BASE, buildMonster, COMMON, RUNT, BRUTE } from '../data/monsters'
+import {
+  EARLY_HP_DISCOUNT,
+  MONSTER_BASE,
+  MONSTER_GROWTH,
+  buildMonster,
+  COMMON,
+  RUNT,
+  BRUTE,
+} from '../data/monsters'
 import { PACING_MAX_LEVEL, averageGear } from './simulate'
 
 const QUARRY = ZONE_BY_ID['hollow-quarry']
@@ -68,10 +76,23 @@ describe('данные зон', () => {
 describe('масштаб мобов от уровня', () => {
   it('моб 1 уровня с обычной ролью равен базовым числам', () => {
     const m = buildMonster({ id: 'x', name: 'x', role: COMMON }, 1, new Decimal(1))
-    expect(m.maxHp.eq(MONSTER_BASE.maxHp)).toBe(true)
+    // HP — со скидкой ранней полосы: у героя пока одна кнопка из трёх.
+    expect(m.maxHp.eq(MONSTER_BASE.maxHp.times(EARLY_HP_DISCOUNT[0].mult))).toBe(true)
     expect(m.damageMin.eq(MONSTER_BASE.damage)).toBe(true)
     expect(m.goldReward.eq(MONSTER_BASE.goldReward)).toBe(true)
     expect(m.xpReward.eq(MONSTER_BASE.xpReward)).toBe(true)
+  })
+
+  it('скидка HP ранних полос заканчивается вместе с набором кнопок', () => {
+    // За пределами полос скидки hpScale — та же прямая, что и всегда.
+    const at = (level: number) =>
+      buildMonster({ id: 'x', name: 'x', role: COMMON }, level, new Decimal(1)).maxHp
+    const line = (level: number) =>
+      MONSTER_BASE.maxHp.times(MONSTER_GROWTH.hpPerLevel.times(level - 1).plus(1))
+    expect(at(5).lt(line(5))).toBe(true) // полоса одной кнопки
+    expect(at(8).lt(line(8))).toBe(true) // полоса двух кнопок
+    expect(at(8).gt(at(5))).toBe(true) // но скидка тает, а не прыгает вниз
+    expect(at(11).eq(line(11))).toBe(true) // полный набор — чистая прямая
   })
 
   it('с уровнем растут и hp, и урон, и награда', () => {
@@ -81,10 +102,11 @@ describe('масштаб мобов от уровня', () => {
     expect(high.damageMin.gt(low.damageMin)).toBe(true)
     expect(high.goldReward.gt(low.goldReward)).toBe(true)
     // Урон растёт БЫСТРЕЕ hp — и это ставка контракта темпа, а не случайность.
-    // HP догоняет прокачку урона героя, а она от заточек почти линейна, так что
-    // расти быстро hp нельзя: бой начнёт растягиваться. Урону такой привязки
-    // нет, зато есть своя: регенерация героя в бою растёт с уровнем, и урон
-    // обязан её обгонять — иначе «сунуться в дальнюю зону» перестаёт убивать.
+    // HP догоняет прокачку урона героя, а тот растёт линейно от уровня вещей,
+    // так что расти быстро hp нельзя: бой начнёт растягиваться. Урону такой
+    // привязки нет, зато есть своя: регенерация героя в бою растёт с уровнем,
+    // и урон обязан её обгонять — иначе «сунуться в дальнюю зону» перестаёт
+    // убивать.
     expect(high.damageMin.div(low.damageMin).gt(high.maxHp.div(low.maxHp))).toBe(true)
   })
 

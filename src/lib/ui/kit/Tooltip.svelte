@@ -9,9 +9,11 @@
   // Закрывается по Esc и по клику вне: открытая подсказка, которую нечем
   // убрать, хуже отсутствующей.
   //
-  // Позиционируется чистым CSS, но край экрана поправляется числом: на 390px
-  // подсказка у правой кнопки иначе уезжает за границу окна, и прочитать её
-  // нельзя. Замер идёт по требованию, при открытии, — не на каждый кадр.
+  // Позиционируется чистым CSS, но края экрана поправляются числом: на 390px
+  // подсказка у правой кнопки иначе уезжает за границу окна по горизонтали,
+  // а длинное описание умения у верхнего края — за верх экрана. Горизонталь
+  // лечится сдвигом, вертикаль — переворотом на другую сторону хоста.
+  // Замер идёт по требованию, при открытии, — не на каждый кадр.
   import type { Snippet } from 'svelte'
 
   interface Props {
@@ -40,13 +42,17 @@
   let pinned = $state(false)
   /** Сдвиг пузыря по горизонтали, чтобы он не вылезал за край окна. */
   let shift = $state(0)
+  /** Пузырь не влез со своей стороны — показываем с противоположной. */
+  let flipped = $state(false)
 
   const shown = $derived(open || pinned)
+  const side = $derived(flipped ? (placement === 'top' ? 'bottom' : 'top') : placement)
 
   function clamp(): void {
     if (!bubble) return
-    // Сначала снимаем прежний сдвиг, иначе замеряем уже сдвинутое.
+    // Сначала снимаем прежние поправки, иначе замеряем уже поправленное.
     shift = 0
+    flipped = false
     requestAnimationFrame(() => {
       if (!bubble) return
       const rect = bubble.getBoundingClientRect()
@@ -55,6 +61,8 @@
       else if (rect.right > window.innerWidth - margin) {
         shift = window.innerWidth - margin - rect.right
       }
+      if (placement === 'top' && rect.top < margin) flipped = true
+      else if (placement === 'bottom' && rect.bottom > window.innerHeight - margin) flipped = true
     })
   }
 
@@ -103,7 +111,7 @@
 >
   {@render children()}
   <span
-    class="bubble {placement} {width}"
+    class="bubble {side} {width}"
     class:open={shown}
     bind:this={bubble}
     style="--shift: {shift}px"

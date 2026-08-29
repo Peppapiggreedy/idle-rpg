@@ -15,7 +15,7 @@ export { ABILITIES, ABILITY_BY_ID } from '../data/abilities'
 export type { AbilityDef, AbilityEffect, AbilityType } from '../data/abilities'
 
 // Почему кнопка не нажимается. Каждый случай отдельный код — текст рендерит UI.
-export type AbilityBlockReason = 'dead' | 'cooldown' | 'gcd' | 'no-mana'
+export type AbilityBlockReason = 'locked' | 'dead' | 'cooldown' | 'gcd' | 'no-mana'
 
 export interface AbilityStatus {
   abilityId: string
@@ -50,6 +50,8 @@ export function abilityStatus(state: GameState, ability: AbilityDef): AbilitySta
   // Снять своё же умение с очереди можно всегда, чем бы игрок ни был занят.
   if (queued) return { ...base, usable: true, reason: null }
   const blocked = (reason: AbilityBlockReason) => ({ ...base, usable: false, reason })
+  // Запертое уровнем — первым: эта причина не лечится ни ожиданием, ни маной.
+  if (state.level.lt(ability.unlockLevel)) return blocked('locked')
   if (state.heroState === 'dead') return blocked('dead')
   if (cooldownMsLeft > 0) return blocked('cooldown')
   if (ability.triggersGcd && state.gcdMsLeft > 0) return blocked('gcd')

@@ -58,7 +58,7 @@
       )
     }
     if (status.queued) parts.push('В очереди на следующий замах — нажми, чтобы снять')
-    else if (status.reason) parts.push(abilityReasonText(status.reason, resource))
+    else if (status.reason) parts.push(abilityReasonText(status.reason, resource, ability.unlockLevel))
     return parts.join('\n')
   }
 
@@ -100,7 +100,9 @@
         {:else if status.queued}
           <span class="timer">в очереди</span>
         {:else if status.reason}
-          <span class="timer reason">{abilityReasonText(status.reason, resource)}</span>
+          <span class="timer reason">
+            {abilityReasonText(status.reason, resource, ability.unlockLevel)}
+          </span>
         {:else}
           <span class="timer ready">готово</span>
         {/if}

@@ -67,43 +67,79 @@
       ]
     },
     {
-      "id": "item-101",
-      "name": "Верный Наруч",
+      "id": "item-5",
+      "name": "Сумрачный Заслон",
       "rarity": "uncommon",
+      "slot": "offHand",
+      "level": 28,
+      "mods": [
+        {
+          "stat": "blockChance",
+          "kind": "base",
+          "value": "0.25",
+          "source": "equipment:offHand"
+        },
+        {
+          "stat": "blockValue",
+          "kind": "base",
+          "value": "127.67999999999999",
+          "source": "equipment:offHand"
+        },
+        {
+          "stat": "vitality",
+          "kind": "flat",
+          "value": "42.56",
+          "source": "equipment:offHand"
+        }
+      ]
+    },
+    {
+      "id": "item-100",
+      "name": "Сумрачный Нагрудник",
+      "rarity": "uncommon",
+      "slot": "chest",
+      "level": 17,
+      "mods": [
+        {
+          "stat": "vitality",
+          "kind": "flat",
+          "value": "42.72",
+          "source": "equipment:chest"
+        }
+      ]
+    },
+    {
+      "id": "item-101",
+      "name": "Щербатый Наруч",
+      "rarity": "rare",
       "slot": "hands",
       "level": 17,
       "mods": [
         {
           "stat": "agility",
           "kind": "flat",
-          "value": "28.479999999999997",
+          "value": "56.959999999999994",
           "source": "equipment:hands"
         },
         {
           "stat": "vitality",
           "kind": "flat",
-          "value": "14.239999999999998",
+          "value": "28.479999999999997",
           "source": "equipment:hands"
         }
       ]
     },
     {
       "id": "item-111",
-      "name": "Закалённый Набедренник",
+      "name": "Гремящий Сапог",
       "rarity": "rare",
       "slot": "legs",
       "level": 19,
       "mods": [
         {
-          "stat": "strength",
-          "kind": "flat",
-          "value": "62.08",
-          "source": "equipment:legs"
-        },
-        {
           "stat": "vitality",
           "kind": "flat",
-          "value": "31.04",
+          "value": "93.12",
           "source": "equipment:legs"
         }
       ]
@@ -187,30 +223,30 @@
       "level": 19,
       "mods": [
         {
-          "stat": "intellect",
-          "kind": "flat",
-          "value": "62.08",
-          "source": "equipment:head"
-        },
-        {
           "stat": "vitality",
           "kind": "flat",
-          "value": "31.04",
+          "value": "93.12",
           "source": "equipment:head"
         }
       ]
     },
     "chest": {
-      "id": "item-100",
-      "name": "Сумрачный Нагрудник",
-      "rarity": "uncommon",
+      "id": "item-6",
+      "name": "Верный Панцирь",
+      "rarity": "common",
       "slot": "chest",
-      "level": 17,
+      "level": 28,
       "mods": [
+        {
+          "stat": "agility",
+          "kind": "flat",
+          "value": "21.28",
+          "source": "equipment:chest"
+        },
         {
           "stat": "vitality",
           "kind": "flat",
-          "value": "42.72",
+          "value": "10.64",
           "source": "equipment:chest"
         }
       ]
@@ -223,15 +259,9 @@
       "level": 28,
       "mods": [
         {
-          "stat": "agility",
-          "kind": "flat",
-          "value": "85.12",
-          "source": "equipment:hands"
-        },
-        {
           "stat": "vitality",
           "kind": "flat",
-          "value": "42.56",
+          "value": "127.68000000000002",
           "source": "equipment:hands"
         }
       ]
@@ -244,15 +274,9 @@
       "level": 28,
       "mods": [
         {
-          "stat": "strength",
-          "kind": "flat",
-          "value": "21.28",
-          "source": "equipment:legs"
-        },
-        {
           "stat": "vitality",
           "kind": "flat",
-          "value": "10.64",
+          "value": "31.92",
           "source": "equipment:legs"
         }
       ]
@@ -265,15 +289,9 @@
       "level": 20,
       "mods": [
         {
-          "stat": "strength",
-          "kind": "flat",
-          "value": "129.28000000000003",
-          "source": "equipment:trinket"
-        },
-        {
           "stat": "vitality",
           "kind": "flat",
-          "value": "64.64",
+          "value": "193.92000000000002",
           "source": "equipment:trinket"
         }
       ]
@@ -308,12 +326,12 @@
       "reserve": 0
     }
   },
-  "itemSeq": 11,
+  "itemSeq": 13,
   "gold": "13400000",
   "level": "22",
   "currentXp": "1403",
-  "currentHp": "1526",
-  "currentMana": "465.4",
+  "currentHp": "3163",
+  "currentMana": "155",
   "heroState": "alive",
   "reviveMsLeft": 0,
   "talents": {

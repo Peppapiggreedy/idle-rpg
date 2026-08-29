@@ -52,10 +52,12 @@ const MANA_TRINKET: Item = {
 
 // Автокаст выключен: эти тесты про РУЧНОЕ применение умений. Автокасту
 // посвящён отдельный блок в autocast.test.ts.
+// Уровень 10: все три умения открыты. Замкам уровней — свой блок ниже.
 function hero(patch: Partial<GameState> = {}): GameState {
   const base = { ...createInitialState(1), abilitySettings: manualOnlySettings() }
   const withMana = ensureStats({
     ...base,
+    level: new Decimal(10),
     equipment: { ...base.equipment, trinket: MANA_TRINKET },
     monster: monsterFromTemplate(DUMMY),
     combatLog: [],
@@ -336,6 +338,37 @@ describe('почему кнопка не нажимается', () => {
     const queued = useAbility(s, BLOW.id, NO_LUCK, () => {})
     expect(abilityStatus(queued, BLOW)).toMatchObject({ usable: true, queued: true })
     expect(useAbility(queued, BLOW.id, NO_LUCK, () => {}).queuedAbilityId).toBeNull()
+  })
+})
+
+describe('умения открываются уровнями', () => {
+  it('у каждого класса ровно одно умение с первого уровня, дальше по одному', () => {
+    for (const cls of CLASSES) {
+      const levels = abilitiesOf(cls.id)
+        .map((a) => a.unlockLevel)
+        .sort((a, b) => a - b)
+      expect(levels[0], cls.id).toBe(1)
+      expect(new Set(levels).size, cls.id).toBe(levels.length) // не пачкой
+    }
+  })
+
+  it('запертое уровнем не жмётся и не встаёт в очередь', () => {
+    const novice = hero({ level: new Decimal(1), statsDirty: true })
+    expect(abilityStatus(novice, WOUND)).toMatchObject({ usable: false, reason: 'locked' })
+    expect(abilityStatus(novice, BLOW)).toMatchObject({ usable: false, reason: 'locked' })
+    expect(useAbility(novice, BLOW.id, NO_LUCK, () => {})).toBe(novice)
+    // Первое умение класса открыто с самого начала.
+    expect(abilityStatus(novice, QUICK).reason).not.toBe('locked')
+  })
+
+  it('замок важнее смерти: причина не меняется от состояния героя', () => {
+    const dead = hero({ level: new Decimal(1), heroState: 'dead', statsDirty: true })
+    expect(abilityStatus(dead, BLOW).reason).toBe('locked')
+  })
+
+  it('на уровне разблокировки умение открывается', () => {
+    const grown = hero({ level: new Decimal(WOUND.unlockLevel), statsDirty: true })
+    expect(abilityStatus(grown, WOUND).reason).not.toBe('locked')
   })
 })
 

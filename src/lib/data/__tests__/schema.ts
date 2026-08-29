@@ -16,7 +16,7 @@ import { Decimal } from '../../game/numbers'
 import type { AbilityDef } from '../abilities'
 import type { ModelAsset, PropAsset } from '../assets'
 import type { DungeonDef } from '../dungeons'
-import type { ShieldTemplate, WeaponTemplate } from '../items'
+import { ARMOR_ATTRIBUTES, type AttributeId, type ShieldTemplate, type WeaponTemplate } from '../items'
 import type { ClassDef } from '../classes'
 import type { MaterialDef } from '../materials'
 import type { ProfessionDef, RecipeDef } from '../recipes'
@@ -321,6 +321,13 @@ export const ABILITY_SCHEMA: EntitySchema<AbilityDef> = {
       min: 0,
       exclusiveMin: true,
       why: 'урон умения — доля удара оружия, и она обязана быть положительной',
+    },
+    {
+      field: 'unlockLevel',
+      get: (a) => a.unlockLevel,
+      min: 1,
+      integer: true,
+      why: 'уровень разблокировки — номер уровня героя, с первого и выше',
     },
   ],
   extra: (ability, _content, report) => {
@@ -891,6 +898,15 @@ export const RECIPE_SCHEMA: EntitySchema<RecipeDef> = {
           where,
           `предмет в руку без шаблона: «${output.templateId ?? '—'}» не найден в data/items.ts`,
         )
+      } else {
+        // У дропа главный атрибут случайный, у крафта — обещанный данными:
+        // без него armorMods собрать нечего.
+        report.need(
+          ARMOR_ATTRIBUTES.includes(output.attribute as AttributeId),
+          where,
+          `кованая броня обязана называть главный атрибут: «${output.attribute ?? '—'}» ` +
+            'не из ARMOR_ATTRIBUTES (data/recipes.ts)',
+        )
       }
     } else {
       report.need(
@@ -930,6 +946,16 @@ export const CLASS_SCHEMA: EntitySchema<ClassDef> = {
         `ссылается на умение «${id}», которого нет в data/abilities.ts`,
       )
     }
+    // Умения открываются уровнями, но первая кнопка обязана быть с первого:
+    // класс, у которого всё заперто, встречает игрока пустой панелью.
+    const ownAbilities = (hero.abilityIds ?? [])
+      .map((id) => content.abilities.find((a) => a.id === id))
+      .filter((a): a is AbilityDef => !!a)
+    report.need(
+      ownAbilities.length === 0 || ownAbilities.some((a) => toNumber(a.unlockLevel) <= 1),
+      where,
+      'ни одного умения первого уровня — на старте у класса пустая панель (data/abilities.ts)',
+    )
     // Ветки: без них дерево талантов у класса пустое.
     report.need(
       Array.isArray(hero.branchIds) && hero.branchIds.length > 0,

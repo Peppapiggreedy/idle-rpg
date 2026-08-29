@@ -155,24 +155,34 @@ export function forecastZone(state: GameState, zone: Zone): ZoneForecast {
     ? Number.POSITIVE_INFINITY
     : state.stats.maxHp.div(incoming).toNumber()
   const killsPerHour = rate.killsPerSecond.times(3600)
+  const timeToDeathSec = estimateCombatRate(typical).timeToDeathSec
   return {
     zoneId: zone.id,
     unlocked: isZoneUnlocked(state, zone),
     monsterLevelRange: zone.monsterLevelRange,
     levelGap: averageMonsterLevel(zone) - state.level.toNumber(),
     uptime: rate.uptime,
-    timeToDeathSec: estimateCombatRate(typical).timeToDeathSec,
+    timeToDeathSec,
     hitsSurvived,
     killsPerHour,
     goldPerHour: rate.goldPerSecond.times(3600),
     xpPerHour: rate.xpPerSecond.times(3600),
-    verdict: verdictFor(rate.uptime, killsPerHour),
+    verdict: verdictFor(rate.uptime, killsPerHour, estimateTtk(state, zone), timeToDeathSec),
   }
 }
 
-function verdictFor(uptime: number, killsPerHour: Decimal): ZoneVerdict {
-  // Ноль убийств в час — герой не дожимает даже одного моба между смертями.
+function verdictFor(
+  uptime: number,
+  killsPerHour: Decimal,
+  ttkSec: number,
+  timeToDeathSec: number | null,
+): ZoneVerdict {
+  // «Безнадёжно» — герой не дожимает даже одного моба: убийств нет вовсе
+  // либо типичный моб живёт дольше, чем герой против него. Порог uptime
+  // этого не ловит: у героя, умирающего за секунды, доля живого времени
+  // всё ещё складывается из привалов и воскрешений.
   if (killsPerHour.lte(0)) return 'hopeless'
+  if (timeToDeathSec !== null && ttkSec > timeToDeathSec) return 'hopeless'
   if (uptime >= ZONE_VERDICT_UPTIME.safe) return 'safe'
   if (uptime >= ZONE_VERDICT_UPTIME.risky) return 'risky'
   if (uptime >= ZONE_VERDICT_UPTIME.deadly) return 'deadly'

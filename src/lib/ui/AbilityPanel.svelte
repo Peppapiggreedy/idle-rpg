@@ -96,7 +96,9 @@
           </div>
         {/if}
         {#if status.reason}
-          <p class="reason">Сейчас недоступно: {abilityReasonText(status.reason, resource)}</p>
+          <p class="reason">
+            Сейчас недоступно: {abilityReasonText(status.reason, resource, ability.unlockLevel)}
+          </p>
         {/if}
       </li>
     {/each}

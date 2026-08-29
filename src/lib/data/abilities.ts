@@ -25,6 +25,10 @@ export interface AbilityDef {
   /** Иконка. Тип выведен из реестра: опечатка — ошибка проверки типов. */
   icon: IconName
   type: AbilityType
+  /** С какого уровня героя умение доступно. Кнопки открываются постепенно:
+   *  первая с 1-го, дальше по одной, чтобы новичок не тонул в трёх сразу.
+   *  У каждого класса ровно одно умение первого уровня — держит схема. */
+  unlockLevel: number
   manaCost: Decimal
   cooldownSec: number
   weaponDamagePercent: Decimal // урон удара умения в долях удара оружия
@@ -38,6 +42,7 @@ export const ABILITIES: AbilityDef[] = [
     icon: 'ability-quick-strike',
     name: 'Скорый выпад',
     type: 'instant',
+    unlockLevel: 1,
     manaCost: new Decimal(9),
     cooldownSec: 2,
     weaponDamagePercent: new Decimal(1.6),
@@ -48,6 +53,7 @@ export const ABILITIES: AbilityDef[] = [
     icon: 'ability-rending-wound',
     name: 'Рваная рана',
     type: 'onNextSwing',
+    unlockLevel: 4,
     manaCost: new Decimal(15),
     cooldownSec: 5,
     weaponDamagePercent: new Decimal(1.8),
@@ -64,6 +70,7 @@ export const ABILITIES: AbilityDef[] = [
     icon: 'ability-shattering-blow',
     name: 'Сокрушение',
     type: 'onNextSwing',
+    unlockLevel: 8,
     manaCost: new Decimal(30),
     cooldownSec: 12,
     weaponDamagePercent: new Decimal(5.0),
@@ -79,6 +86,7 @@ export const ABILITIES: AbilityDef[] = [
     icon: 'ability-gut-rip',
     name: 'Потрошащий взмах',
     type: 'instant',
+    unlockLevel: 1,
     manaCost: new Decimal(18),
     cooldownSec: 2,
     weaponDamagePercent: new Decimal(1.6),
@@ -89,6 +97,7 @@ export const ABILITIES: AbilityDef[] = [
     icon: 'ability-blood-frenzy',
     name: 'Кровавое исступление',
     type: 'onNextSwing',
+    unlockLevel: 4,
     manaCost: new Decimal(30),
     cooldownSec: 5,
     weaponDamagePercent: new Decimal(1.8),
@@ -105,6 +114,7 @@ export const ABILITIES: AbilityDef[] = [
     icon: 'ability-skull-splitter',
     name: 'Череполом',
     type: 'onNextSwing',
+    unlockLevel: 8,
     manaCost: new Decimal(60),
     cooldownSec: 12,
     weaponDamagePercent: new Decimal(5.0),

@@ -277,6 +277,34 @@ export function brokenCases(): BrokenCase[] {
       expect: [first(real.classes).id, 'ни одной ветки'],
     },
     {
+      title: 'кованая броня не называет главный атрибут',
+      content: {
+        ...real,
+        recipes: real.recipes.map((r) =>
+          r.id === 'forged-helm' && r.output.kind === 'item'
+            ? { ...r, output: { ...r.output, attribute: undefined } }
+            : r,
+        ),
+      },
+      expect: ['forged-helm', 'главный атрибут', 'data/recipes.ts'],
+    },
+    {
+      title: 'умение с нулевым уровнем разблокировки',
+      content: {
+        ...real,
+        abilities: patch(real.abilities, 'quick-strike', { unlockLevel: 0 }),
+      },
+      expect: ['quick-strike', 'unlockLevel', 'data/abilities.ts'],
+    },
+    {
+      title: 'у класса все умения заперты уровнями — на старте пустая панель',
+      content: {
+        ...real,
+        abilities: patch(real.abilities, 'quick-strike', { unlockLevel: 4 }),
+      },
+      expect: ['warden', 'первого уровня', 'data/abilities.ts'],
+    },
+    {
       title: 'ресурс копится боем, но не тает — это копилка, а не ярость',
       content: {
         ...real,
