@@ -23,8 +23,9 @@ export {
   upgradeShare,
   compareItem,
   farmRateWith,
+  equipStatus,
 } from './equipment'
-export type { EquipPreview, EquipComparison } from './equipment'
+export type { EquipPreview, EquipComparison, EquipStatus, EquipBlockReason } from './equipment'
 export { createRng, randomSeed, randRange } from './rng'
 export {
   recomputeStats,
@@ -214,7 +215,7 @@ export {
   OFFLINE_MODAL_MIN_MS,
 } from './save'
 export type {
-  SavePayloadV19,
+  SavePayloadV20,
   SavedDungeonRun,
   SavedItem,
   SavedModifier,

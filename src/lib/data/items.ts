@@ -4,11 +4,27 @@ import { Decimal } from '../game/numbers'
 import type { SlotId } from './slots'
 import type { StatModifier } from '../game/stats'
 
+/**
+ * ХВАТ — как предмет ложится в руки. Свойство ПРЕДМЕТА, а не слота: слот
+ * говорит, куда вещь надевается, хват — можно ли её туда надеть вообще.
+ *
+ *   'one'    — одноручное: идёт в любую руку;
+ *   'two'    — двуручное: занимает обе, вторая рука остаётся пустой;
+ *   'shield' — щит: только вторая рука, и это не оружие.
+ *
+ * Три значения взаимоисключающие, поэтому одно поле, а не два флага: щит,
+ * который «одновременно и оружие», выразить нечем.
+ */
+export type Grip = 'one' | 'two' | 'shield'
+
+/** Хваты, которые бывают у оружия. Щит оружием не бывает. */
+export type WeaponGrip = Extract<Grip, 'one' | 'two'>
+
 export interface WeaponTemplate {
   id: string
   noun: string // существительное для имени: «Щербатый Змеезуб»
-  /** Сколько рук занимает. Двуручное занимает обе и оставляет левую пустой. */
-  hands: 1 | 2
+  /** Хват оружия. Двуручное занимает обе руки и оставляет левую пустой. */
+  grip: WeaponGrip
   weaponSpeed: Decimal // секунд между ударами (меньше = быстрее)
   damageMin: Decimal
   damageMax: Decimal
@@ -24,6 +40,9 @@ export interface WeaponTemplate {
 export interface ShieldTemplate {
   id: string
   noun: string
+  /** Всегда 'shield'. Поле есть в данных, а не подставляется кодом: хват
+   *  читается из шаблона, и проверка контента сверяет его с типом. */
+  grip: Extract<Grip, 'shield'>
   blockChance: Decimal // вероятность блока, доля
   blockValue: Decimal // сколько урона снимает удачный блок
   extra: Array<Omit<StatModifier, 'source'>>
@@ -48,7 +67,7 @@ export const WEAPONS: WeaponTemplate[] = [
   {
     id: 'fang',
     noun: 'Змеезуб',
-    hands: 1,
+    grip: 'one',
     weaponSpeed: new Decimal(1.4),
     damageMin: new Decimal(7),
     damageMax: new Decimal(14),
@@ -57,7 +76,7 @@ export const WEAPONS: WeaponTemplate[] = [
   {
     id: 'bastard',
     noun: 'Полуторник',
-    hands: 1,
+    grip: 'one',
     weaponSpeed: new Decimal(2.2),
     damageMin: new Decimal(11),
     damageMax: new Decimal(22),
@@ -66,7 +85,7 @@ export const WEAPONS: WeaponTemplate[] = [
   {
     id: 'crusher',
     noun: 'Крушитель',
-    hands: 2,
+    grip: 'two',
     weaponSpeed: new Decimal(3.4),
     damageMin: new Decimal(25.5),
     damageMax: new Decimal(51),
@@ -79,6 +98,7 @@ export const SHIELDS: ShieldTemplate[] = [
   {
     id: 'bulwark',
     noun: 'Заслон',
+    grip: 'shield',
     blockChance: new Decimal(0.25),
     blockValue: new Decimal(12),
     extra: [{ stat: 'vitality', kind: 'flat', value: new Decimal(4) }],
@@ -90,7 +110,7 @@ export const SHIELD_BY_ID: Record<string, ShieldTemplate> = Object.fromEntries(
 )
 
 /** Одноручные — то, что можно взять во вторую руку вместо щита. */
-export const ONE_HANDED = WEAPONS.filter((w) => w.hands === 1)
+export const ONE_HANDED = WEAPONS.filter((w) => w.grip === 'one')
 
 export const WEAPON_BY_ID: Record<string, WeaponTemplate> = Object.fromEntries(
   WEAPONS.map((w) => [w.id, w]),

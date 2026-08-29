@@ -77,7 +77,7 @@ export function styleBuild(
   level = 1,
 ): Pick<SimBuild, 'weapon' | 'offhand'> {
   const one = ONE_HANDED[0].id
-  const two = (WEAPONS.find((w) => w.hands === 2) ?? WEAPONS[0]).id
+  const two = (WEAPONS.find((w) => w.grip === 'two') ?? WEAPONS[0]).id
   if (style === 'twoHanded') return { weapon: { templateId: two, bare, level }, offhand: null }
   if (style === 'dual') {
     return { weapon: { templateId: one, bare, level }, offhand: { templateId: one, bare, level } }
@@ -435,7 +435,7 @@ export function simWeaponItem(weapon: SimWeapon, slot: 'mainHand' | 'offHand' = 
     rarity: rarity.id,
     slot,
     level,
-    hands: template.hands,
+    grip: template.grip,
     // Голое оружие — только база боя: скорость и диапазон урона.
     mods: weapon.bare ? mods.filter((m) => m.kind === 'base') : mods,
   }
@@ -450,6 +450,7 @@ export function simShieldItem(rarity: Rarity = 'common', level = 1): Item {
     rarity,
     slot: 'offHand',
     level,
+    grip: template.grip,
     mods: shieldMods(template, RARITY_BY_ID[rarity], level),
   }
 }
@@ -475,7 +476,7 @@ export function averageGear(level = 1): Equipment {
         rarity: TYPICAL_RARITY.id,
         slot,
         level,
-        hands: AVERAGE_WEAPON.hands,
+        grip: AVERAGE_WEAPON.grip,
         mods: weaponMods(AVERAGE_WEAPON, TYPICAL_RARITY, 'mainHand', level),
       }
       continue
@@ -484,7 +485,7 @@ export function averageGear(level = 1): Equipment {
       // Средний герой носит щит: одноручное со щитом — самая обычная связка,
       // и коридор темпа держится именно на ней.
       gear.offHand =
-        AVERAGE_WEAPON.hands === 2
+        AVERAGE_WEAPON.grip === 'two'
           ? null
           : {
               id: 'sim-gear-offHand',
@@ -492,6 +493,7 @@ export function averageGear(level = 1): Equipment {
               rarity: TYPICAL_RARITY.id,
               slot,
               level,
+              grip: SHIELDS[0].grip,
               mods: shieldMods(SHIELDS[0], TYPICAL_RARITY, level),
             }
       continue
@@ -530,14 +532,14 @@ function buildEquipment(build: SimBuild, weapon: Item | null): Equipment {
   const equipment: Equipment = { ...base }
   if (weapon) {
     equipment.mainHand = weapon
-    if (weapon.hands === 2) equipment.offHand = null
+    if (weapon.grip === 'two') equipment.offHand = null
   }
   if (build.offhand === null) equipment.offHand = null
   else if (build.offhand === 'shield') equipment.offHand = simShieldItem()
   else if (build.offhand) equipment.offHand = simWeaponItem(build.offhand, 'offHand')
   // Двуручное в правой руке несовместимо со второй: правило одно и то же
   // и для игры, и для прогона.
-  if (equipment.mainHand?.hands === 2) equipment.offHand = null
+  if (equipment.mainHand?.grip === 'two') equipment.offHand = null
   return equipment
 }
 

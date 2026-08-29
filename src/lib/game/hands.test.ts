@@ -39,7 +39,7 @@ function weapon(t: WeaponTemplate, slot: 'mainHand' | 'offHand'): Item {
     rarity: 'common',
     slot,
     level: 1,
-    hands: t.hands,
+    grip: t.grip,
     mods: [
       { stat: off ? 'offhandSpeed' : 'weaponSpeed', kind: 'base', value: t.weaponSpeed, source },
       { stat: off ? 'offhandDamageMin' : 'weaponDamageMin', kind: 'base', value: t.damageMin, source },
@@ -240,7 +240,7 @@ describe('щит блокирует', () => {
 
 describe('двуручное', () => {
   it('в данных есть представитель каждого стиля', () => {
-    expect(WEAPONS.some((w) => w.hands === 2)).toBe(true)
+    expect(WEAPONS.some((w) => w.grip === 'two')).toBe(true)
     expect(ONE_HANDED.length).toBeGreaterThanOrEqual(2)
     expect(SHIELDS.length).toBeGreaterThanOrEqual(1)
   })

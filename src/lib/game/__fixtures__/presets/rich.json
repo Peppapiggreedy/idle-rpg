@@ -1,5 +1,5 @@
 {
-  "version": 19,
+  "version": 20,
   "classId": "warden",
   "materials": {},
   "activePotions": [],
@@ -18,7 +18,7 @@
       "rarity": "common",
       "slot": "offHand",
       "level": 28,
-      "hands": 1,
+      "grip": "one",
       "mods": [
         {
           "stat": "offhandSpeed",
@@ -52,6 +52,7 @@
       "rarity": "rare",
       "slot": "offHand",
       "level": 28,
+      "grip": "shield",
       "mods": [
         {
           "stat": "blockChance",
@@ -79,6 +80,7 @@
       "rarity": "uncommon",
       "slot": "offHand",
       "level": 28,
+      "grip": "shield",
       "mods": [
         {
           "stat": "blockChance",
@@ -157,7 +159,7 @@
       "rarity": "epic",
       "slot": "mainHand",
       "level": 22,
-      "hands": 1,
+      "grip": "one",
       "mods": [
         {
           "stat": "weaponSpeed",
@@ -191,7 +193,7 @@
       "rarity": "rare",
       "slot": "mainHand",
       "level": 1,
-      "hands": 1,
+      "grip": "one",
       "mods": [
         {
           "stat": "weaponSpeed",
@@ -225,6 +227,7 @@
       "rarity": "rare",
       "slot": "offHand",
       "level": 1,
+      "grip": "shield",
       "mods": [
         {
           "stat": "blockChance",
@@ -353,7 +356,7 @@
       "rarity": "common",
       "slot": "mainHand",
       "level": 28,
-      "hands": 2,
+      "grip": "two",
       "mods": [
         {
           "stat": "weaponSpeed",

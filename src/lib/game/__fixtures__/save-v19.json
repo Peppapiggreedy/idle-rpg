@@ -1,25 +1,23 @@
 {
-  "version": 20,
+  "version": 19,
   "classId": "warden",
   "materials": {},
   "activePotions": [],
   "enchantDust": "0",
-  "saveId": 101,
+  "saveId": 3904983578,
   "templeRun": null,
   "templeBestWave": 0,
   "templeLastRunAtMs": 0,
   "procCooldownsMs": {},
   "restSpeedupSource": null,
-  "lastTimestamp": 1700000000000,
-  "inventory": [],
-  "equipment": {
-    "mainHand": {
-      "id": "start-mainHand-bastard",
-      "name": "Полуторник",
+  "lastTimestamp": 0,
+  "inventory": [
+    {
+      "id": "item-3",
+      "name": "Верный Полуторник",
       "rarity": "rare",
       "slot": "mainHand",
-      "level": 1,
-      "grip": "one",
+      "level": 25,
       "mods": [
         {
           "stat": "weaponSpeed",
@@ -30,30 +28,30 @@
         {
           "stat": "weaponDamageMin",
           "kind": "base",
-          "value": "17.050000000000004",
+          "value": "82.522",
           "source": "equipment:mainHand"
         },
         {
           "stat": "weaponDamageMax",
           "kind": "base",
-          "value": "34.10000000000001",
+          "value": "165.044",
           "source": "equipment:mainHand"
         },
         {
           "stat": "strength",
           "kind": "flat",
-          "value": "10.85",
+          "value": "52.513999999999996",
           "source": "equipment:mainHand"
         }
-      ]
+      ],
+      "hands": 1
     },
-    "offHand": {
-      "id": "start-offHand-bulwark",
-      "name": "Заслон",
-      "rarity": "rare",
+    {
+      "id": "item-4",
+      "name": "Щербатый Заслон",
+      "rarity": "epic",
       "slot": "offHand",
-      "level": 1,
-      "grip": "shield",
+      "level": 26,
       "mods": [
         {
           "stat": "blockChance",
@@ -64,16 +62,107 @@
         {
           "stat": "blockValue",
           "kind": "base",
-          "value": "18.599999999999998",
+          "value": "114",
           "source": "equipment:offHand"
         },
         {
           "stat": "vitality",
           "kind": "flat",
-          "value": "6.2",
+          "value": "38",
           "source": "equipment:offHand"
         }
       ]
+    },
+    {
+      "id": "item-5",
+      "name": "Звёздный Кафтан",
+      "rarity": "common",
+      "slot": "chest",
+      "level": 24,
+      "mods": [
+        {
+          "stat": "agility",
+          "kind": "flat",
+          "value": "18.72",
+          "source": "equipment:chest"
+        },
+        {
+          "stat": "vitality",
+          "kind": "flat",
+          "value": "9.36",
+          "source": "equipment:chest"
+        }
+      ]
+    }
+  ],
+  "equipment": {
+    "mainHand": {
+      "id": "item-1",
+      "name": "Верный Крушитель",
+      "rarity": "rare",
+      "slot": "mainHand",
+      "level": 26,
+      "mods": [
+        {
+          "stat": "weaponSpeed",
+          "kind": "base",
+          "value": "3.4",
+          "source": "equipment:mainHand"
+        },
+        {
+          "stat": "weaponDamageMin",
+          "kind": "base",
+          "value": "197.62499999999997",
+          "source": "equipment:mainHand"
+        },
+        {
+          "stat": "weaponDamageMax",
+          "kind": "base",
+          "value": "395.24999999999994",
+          "source": "equipment:mainHand"
+        },
+        {
+          "stat": "strength",
+          "kind": "percent",
+          "value": "0.1",
+          "source": "equipment:mainHand"
+        }
+      ],
+      "hands": 2
+    },
+    "offHand": {
+      "id": "item-2",
+      "name": "Верный Змеезуб",
+      "rarity": "rare",
+      "slot": "offHand",
+      "level": 24,
+      "mods": [
+        {
+          "stat": "offhandSpeed",
+          "kind": "base",
+          "value": "1.4",
+          "source": "equipment:offHand"
+        },
+        {
+          "stat": "offhandDamageMin",
+          "kind": "base",
+          "value": "50.778",
+          "source": "equipment:offHand"
+        },
+        {
+          "stat": "offhandDamageMax",
+          "kind": "base",
+          "value": "101.55599999999998",
+          "source": "equipment:offHand"
+        },
+        {
+          "stat": "agility",
+          "kind": "flat",
+          "value": "108.81",
+          "source": "equipment:offHand"
+        }
+      ],
+      "hands": 1
     },
     "head": {
       "id": "start-head",
@@ -175,8 +264,8 @@
       ]
     }
   },
-  "currentZoneId": "shepherds-meadow",
-  "lastSurvivedZoneId": null,
+  "currentZoneId": "mirefen-hollows",
+  "lastSurvivedZoneId": "mirefen-hollows",
   "dungeonRun": null,
   "dungeonsCleared": {},
   "questProgress": {
@@ -205,16 +294,16 @@
       "reserve": 0
     }
   },
-  "itemSeq": 0,
-  "gold": "0",
-  "level": "1",
-  "currentXp": "0",
+  "itemSeq": 6,
+  "gold": "760000",
+  "level": "28",
+  "currentXp": "1200",
   "currentHp": "295.3",
   "currentMana": "81",
   "heroState": "alive",
   "reviveMsLeft": 0,
   "talents": {},
   "talentResets": 0,
-  "totalTicks": "0",
-  "playtimeMs": "0"
+  "totalTicks": "520000",
+  "playtimeMs": "52000000"
 }

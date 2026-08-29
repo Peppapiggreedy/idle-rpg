@@ -5,6 +5,7 @@
   import { SLOT_ICONS, SLOT_IDS, SLOT_NAMES } from '../data/slots'
   import { gameState, unequipSlot } from '../stores/game'
   import ItemMods from './ItemMods.svelte'
+  import { GRIP_TEXT } from './itemText'
   import { RARITY_BY_ID } from '../data/rarity'
   import { Button, IconSlot, Panel, Tag } from './kit'
   import { Icon } from './icons'
@@ -12,7 +13,7 @@
   const inventoryFull = $derived($gameState.inventory.length >= INVENTORY_SIZE)
   // Двуручное занимает обе руки: левая не пуста, она ЗАНЯТА — и разницу
   // между «надень что-нибудь» и «сюда нельзя» игрок должен видеть.
-  const twoHanded = $derived($gameState.equipment.mainHand?.hands === 2)
+  const twoHanded = $derived($gameState.equipment.mainHand?.grip === 'two')
 </script>
 
 <!-- Автонадевания больше нет: предметы надевает только игрок. Оно съедало
@@ -32,6 +33,7 @@
         {#if item}
           <span class="name">{item.name}</span>
           <Tag rarity={item.rarity} label="{RARITY_BY_ID[item.rarity].name} · {item.level} ур." />
+          {#if item.grip}<span class="grip">{GRIP_TEXT[item.grip]}</span>{/if}
           <ItemMods mods={item.mods} />
         {/if}
         {#snippet footer()}
@@ -75,6 +77,12 @@
   }
   .name {
     font-weight: var(--weight-bold);
+  }
+  .grip {
+    font-size: var(--text-2xs);
+    color: var(--c-text-faint);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
   }
   .unarmed {
     margin: 0;

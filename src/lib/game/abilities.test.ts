@@ -391,7 +391,7 @@ describe('умения масштабируются от оружия', () => {
           rarity: 'common',
           slot: 'mainHand',
           level: 1,
-          hands: w.hands,
+          grip: w.grip,
           mods: [
             { stat: 'weaponSpeed', kind: 'base', value: w.weaponSpeed, source },
             { stat: 'weaponDamageMin', kind: 'base', value: w.damageMin, source },
