@@ -51,71 +51,77 @@
 <!-- Спрайт иконок: один раз на страницу, до всего остального. -->
 <IconSprite />
 
-<main>
-  <header class="top">
-    <h1>Idle RPG</h1>
-    <NoticeBar />
-  </header>
+<!-- Пока класс не выбран, экран игры не спрятан под шторкой — его нет вовсе.
+     Разница не косметическая: смонтированный под шторкой экран оставлял
+     живыми хоткеи умений (слушатель висит на window, и никакой inert его не
+     гасит), пускал Tab на невидимые кнопки и поднимал контекст WebGL герою,
+     которого игрок ещё не выбрал. Тик и сейв остановлены той же проверкой —
+     см. startGameLoop и persistNow. -->
+{#if $gameStarted}
+  <main>
+    <header class="top">
+      <h1>Idle RPG</h1>
+      <NoticeBar />
+    </header>
 
-  <!-- Боевая часть. Видна в любом разделе: бой идёт всегда.
-       Порядок в разметке — десктопный (слева направо); на мобильном
-       сцена поднимается наверх через order, см. стили. -->
-  <div class="battle">
-    <div class="side hero">
-      <HeroPanel />
+    <!-- Боевая часть. Видна в любом разделе: бой идёт всегда.
+         Порядок в разметке — десктопный (слева направо); на мобильном
+         сцена поднимается наверх через order, см. стили. -->
+    <div class="battle">
+      <div class="side hero">
+        <HeroPanel />
+      </div>
+      <div class="stage">
+        {#if textMode}
+          <BattlePanel />
+        {:else}
+          <BattleScene />
+        {/if}
+        <SwingIndicator />
+        <DungeonHud />
+        <CombatLog />
+      </div>
+      <div class="side actions">
+        <ActionBar />
+      </div>
     </div>
-    <div class="stage">
-      {#if textMode}
-        <BattlePanel />
+
+    <SectionTabs bagCount={$gameState.inventory.length} bagLimit={INVENTORY_SIZE} hasPoints={points > 0} />
+
+    <!-- Разделы из одной панели ведут себя иначе, чем из двух: сумке нужна
+         вся ширина под сетку предметов, а настройкам — узкая колонка, иначе
+         строки пояснений растянет через весь экран и их станет не прочесть. -->
+    <div
+      class="section"
+      class:full={$activeSection === 'bag'}
+      class:solo={$activeSection === 'settings'}
+    >
+      {#if $activeSection === 'character'}
+        <StatsPanel />
+        <EquipmentPanel />
+      {:else if $activeSection === 'progress'}
+        <AbilityPanel />
+        <TalentPanel />
+        <UpgradePanel />
+      {:else if $activeSection === 'bag'}
+        <InventoryPanel />
+        <CraftPanel />
+      {:else if $activeSection === 'world'}
+        <ZonePanel />
+        <DungeonPanel />
       {:else}
-        <BattleScene />
+        <SettingsPanel />
       {/if}
-      <SwingIndicator />
-      <DungeonHud />
-      <CombatLog />
     </div>
-    <div class="side actions">
-      <ActionBar />
-    </div>
-  </div>
 
-  <SectionTabs bagCount={$gameState.inventory.length} bagLimit={INVENTORY_SIZE} hasPoints={points > 0} />
+    <!-- Место под нижнюю панель вкладок: на мобильном она прибита к низу
+         экрана и иначе накрыла бы последнюю строку раздела. -->
+    <div class="tabbar-space" aria-hidden="true"></div>
+  </main>
 
-  <!-- Разделы из одной панели ведут себя иначе, чем из двух: сумке нужна
-       вся ширина под сетку предметов, а настройкам — узкая колонка, иначе
-       строки пояснений растянет через весь экран и их станет не прочесть. -->
-  <div
-    class="section"
-    class:full={$activeSection === 'bag'}
-    class:solo={$activeSection === 'settings'}
-  >
-    {#if $activeSection === 'character'}
-      <StatsPanel />
-      <EquipmentPanel />
-    {:else if $activeSection === 'progress'}
-      <AbilityPanel />
-      <TalentPanel />
-      <UpgradePanel />
-    {:else if $activeSection === 'bag'}
-      <InventoryPanel />
-      <CraftPanel />
-    {:else if $activeSection === 'world'}
-      <ZonePanel />
-      <DungeonPanel />
-    {:else}
-      <SettingsPanel />
-    {/if}
-  </div>
-
-  <!-- Место под нижнюю панель вкладок: на мобильном она прибита к низу
-       экрана и иначе накрыла бы последнюю строку раздела. -->
-  <div class="tabbar-space" aria-hidden="true"></div>
-</main>
-
-<OfflineModal />
-<LootReveal />
-{#if !$gameStarted}
-  <!-- Игра идёт под ним: цикл уже крутится, но экран закрыт выбором класса. -->
+  <OfflineModal />
+  <LootReveal />
+{:else}
   <ClassPicker />
 {/if}
 

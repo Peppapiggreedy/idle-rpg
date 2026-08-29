@@ -13,7 +13,7 @@ import { Decimal } from '../game/numbers'
 import { applyOfflineProgress } from '../game/save'
 import { sellItem } from '../game/loot'
 import { craft as craftAction } from '../game/crafting'
-import { recordDecision } from './telemetry'
+import { recordDecision, resetTelemetry } from './telemetry'
 import { equipItem, setAutoEquip, unequipItem } from '../game/equipment'
 import { currentZone, travelToZone as travelAction } from '../game/zones'
 import { useAbility as useAbilityAction } from '../game/abilities'
@@ -28,6 +28,7 @@ import type { SlotId } from '../data/slots'
 import {
   AUTOSAVE_INTERVAL_MS,
   OFFLINE_MODAL_MIN_MS,
+  clearSave,
   decodeSaveString,
   encodeSaveString,
   loadGame,
@@ -81,20 +82,39 @@ function rng(): Rng {
   return actionRng
 }
 
-/** Сохраняет игру немедленно (автосейв, visibilitychange, экспорт). */
+// Есть ли уже начатая игра. Пока её нет, показывается выбор класса: класс
+// выбирается ОДИН раз и не меняется никогда, поэтому спрашивать надо до того,
+// как накопился прогресс, а не после.
+const started = writable(false)
+export const gameStarted = readonly(started)
+
+// Режим съёмки: состояние подставлено снаружи и к сейву игрока отношения не
+// имеет. Пока флаг поднят, не пишем НИЧЕГО: иначе достаточно открыть ссылку
+// со снимком и нажать «Экспорт сейва» (он сохраняет заодно), чтобы пресет
+// лёг поверх настоящего героя. Флаг односторонний — режим съёмки живёт до
+// перезагрузки страницы.
+let screenshotMode = false
+
+/**
+ * Сохраняет игру немедленно (автосейв, visibilitychange, экспорт).
+ *
+ * ДО ВЫБОРА КЛАССА НЕ ПИШЕТ НИЧЕГО, и это не мелочь: сейв, записанный за
+ * спиной у выбора, ставит в него класс по умолчанию, а следующая загрузка
+ * такой сейв находит, поднимает `started` — и выбор больше не появляется
+ * никогда. Игрок остаётся Стражем навсегда, ничего не выбрав.
+ *
+ * Проверка стоит именно ЗДЕСЬ, в одной точке, а не у каждого вызывающего:
+ * сохраняются автосейв в цикле, уход вкладки в фон и отладочные экшены — и
+ * достаточно забыть один из них, чтобы вернуть ту же поломку.
+ */
 export function persistNow(): void {
+  if (!get(started) || screenshotMode) return
   try {
     saveGame(get(state))
   } catch {
     /* нет localStorage (приватный режим и т.п.) — игра просто живёт без сейва */
   }
 }
-
-// Есть ли уже начатая игра. Пока её нет, показывается выбор класса: класс
-// выбирается ОДИН раз и не меняется никогда, поэтому спрашивать надо до того,
-// как накопился прогресс, а не после.
-const started = writable(false)
-export const gameStarted = readonly(started)
 
 /** Начать новую игру выбранным классом. Работает только до первого сейва. */
 export function startNewGame(classId: string): void {
@@ -137,6 +157,12 @@ export function startGameLoop(): void {
   const stream = rng()
   loop = createGameLoop({
     step: (dtMs) => {
+      // Пока класс не выбран, игра НЕ ИДЁТ. Раньше цикл крутился под
+      // выбором: герой по умолчанию дрался, копил лог, находил вещи и
+      // отправлял всё это в автосейв — то есть в сейв, который потом
+      // и отменял выбор. Замершая сцена за непрозрачной шторкой никому
+      // не видна, а вот её последствия были видны навсегда.
+      if (!get(started)) return
       state.update((s) => {
         const next = tick(s, dtMs, stream)
         // События лога уходят НА ШИНУ, а не кому-то напрямую: звук и лента —
@@ -338,6 +364,10 @@ export function importSaveString(input: string): boolean {
     return false
   }
   state.set(stateFromPayload(payload))
+  // Импортированный сейв — это НАЧАТАЯ игра: класс в нём уже выбран. Без
+  // этой строки импорт до выбора класса оставил бы поверх чужого героя
+  // шторку выбора, а сам сейв не сохранился бы (persistNow молчит до старта).
+  started.set(true)
   persistNow()
   notice.set('import-success')
   return true
@@ -369,6 +399,7 @@ export function applyScreenshotState(preset: GameState): void {
     rngSeed: SCREENSHOT_SEED,
     monster: spawnMonster(currentZone(preset), createRng(SCREENSHOT_SEED)),
   }
+  screenshotMode = true
   const stream = createRng(SCREENSHOT_SEED)
   let s = seeded
   for (let i = 0; i < SCREENSHOT_TICKS; i++) s = tick(s, STEP_MS, stream, emitAttack)
@@ -405,11 +436,28 @@ export function debugKillMonster(): void {
   })
 }
 
+/**
+ * «Стереть сейв и начать заново» — буквально. Сейв СТИРАЕТСЯ, а не
+ * переписывается свежим: переписанный остаётся сейвом, следующая загрузка
+ * считает игру начатой, и выбор класса не возвращается. Именно так кнопка и
+ * ломалась — «сброс» молча оставлял игрока тем же классом навсегда.
+ *
+ * Флаг начатой игры снимается тоже: заново — значит с выбора класса.
+ */
 export function debugResetSave(): void {
+  try {
+    clearSave()
+  } catch {
+    /* нет localStorage — стирать нечего */
+  }
+  screenshotMode = false
+  started.set(false)
   state.set(createInitialState())
   offline.set(null)
+  notice.set(null)
   sessionStart.set(0)
-  persistNow()
+  // Наблюдение за интервалом решений — про ЭТУ игру. Заново — значит и оно.
+  resetTelemetry()
 }
 
 /** Симуляция оффлайна тем же кодом, что и настоящая загрузка (с потолком 8 ч). */

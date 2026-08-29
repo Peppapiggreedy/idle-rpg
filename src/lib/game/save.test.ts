@@ -9,6 +9,7 @@ import {
   OFFLINE_CAP_MS,
   SAVE_KEY,
   applyOfflineProgress,
+  clearSave,
   decodeSaveString,
   encodeSaveString,
   loadGame,
@@ -22,6 +23,7 @@ function makeStorage(): SaveStorage & { data: Map<string, string> } {
     data,
     getItem: (k) => data.get(k) ?? null,
     setItem: (k, v) => void data.set(k, v),
+    removeItem: (k) => void data.delete(k),
   }
 }
 
@@ -72,6 +74,26 @@ const HOUR = 60 * 60 * 1000
 function zoneUptime(state: GameState): number {
   return zoneRate(state, SAFE_ZONE).uptime
 }
+
+describe('стирание сейва', () => {
+  // «Начать заново» обязано именно СТЕРЕТЬ: переписанный пустым сейв — это
+  // по-прежнему сейв, и загрузка сочтёт игру начатой. В игре на этом ломался
+  // выбор класса: после «сброса» он не возвращался никогда.
+  it('после clearSave загрузка видит чистое место, а не свежий сейв', () => {
+    const storage = makeStorage()
+    saveGame(richState(), { storage, now: () => 1000 })
+    expect(loadGame({ storage, now: () => 1000 }).kind).toBe('loaded')
+
+    clearSave({ storage })
+    expect(storage.data.has(SAVE_KEY)).toBe(false)
+    expect(loadGame({ storage, now: () => 1000 }).kind).toBe('fresh')
+  })
+
+  it('стирать нечего — не падает', () => {
+    const storage = makeStorage()
+    expect(() => clearSave({ storage })).not.toThrow()
+  })
+})
 
 describe('save/load', () => {
   it('сохранение и загрузка не теряют состояние', () => {

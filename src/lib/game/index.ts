@@ -128,6 +128,7 @@ export { subscribe as subscribeAttacks, emit as emitAttack } from './events'
 export type { Rng } from './rng'
 export {
   saveGame,
+  clearSave,
   loadGame,
   migrateSave,
   applyOfflineProgress,
