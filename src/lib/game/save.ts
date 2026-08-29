@@ -15,8 +15,11 @@ import {
   type AbilitySettings,
   type Equipment,
   type GameState,
+  type ActivePotion,
 } from './state'
 import { createRng } from './rng'
+import { advancePotions, gatherHerbs } from './potions'
+import { ENCHANT_BY_ID } from '../data/enchants'
 import { ensureStats, STAT_IDS, type ModifierKind, type StatId, type StatModifier } from './stats'
 import { SLOT_IDS, type SlotId } from '../data/slots'
 import {
@@ -36,8 +39,8 @@ import {
 import { ABILITIES, ABILITY_BY_ID } from '../data/abilities'
 import { DEFAULT_CLASS, classById } from '../data/classes'
 import { MATERIAL_BY_ID } from '../data/materials'
-import { FOOD_BY_ID } from '../data/recipes'
-import { TALENTS } from '../data/talents'
+import { FOOD_BY_ID, POTION_RECIPE_BY_ID, isBagId } from '../data/recipes'
+import { BRANCHES, talentsInBranch, talentsOfClass } from '../data/talents'
 import { DUNGEONS, DUNGEON_BY_ID, buildBoss } from '../data/dungeons'
 import { currentBoss } from './dungeons'
 import type { DungeonRun } from '../types'
@@ -75,6 +78,8 @@ export interface SavedItem {
   level: number
   /** Сколько рук занимает оружие. Нет поля — предмет не оружие. */
   hands?: number
+  /** Наложенное зачарование. Нет поля — предмет не зачарован. */
+  enchantId?: string
   mods: SavedModifier[]
 }
 
@@ -93,8 +98,13 @@ export interface SavedDungeonRun {
 
 export interface SavePayloadV19 {
   version: 19
-  /** Материалы и готовая еда: id -> количество строкой (величина растущая). */
+  /** Мешок: материалы, травы, еда и склянки — id -> количество строкой. */
   materials: Record<string, string>
+  /** Пыль зачарования: величина растущая, поэтому строкой. */
+  enchantDust: string
+  /** Действующие зелья. Переживают перезагрузку: склянка выпита и оплачена
+   *  травами, отнимать её за F5 нельзя. Оффлайн их дожигает. */
+  activePotions: Array<{ recipeId: string; msLeft: number }>
   /** Порция еды, уже потраченная на текущий привал. */
   restSpeedupSource: string | null
   /** Класс героя. Выбирается один раз при новой игре и не меняется. */
@@ -172,6 +182,7 @@ function savedFromItem(item: Item): SavedItem {
     slot: item.slot,
     level: item.level,
     ...(item.hands ? { hands: item.hands } : {}),
+    ...(item.enchantId ? { enchantId: item.enchantId } : {}),
     mods: item.mods.map((m) => ({
       stat: m.stat,
       kind: m.kind,
@@ -197,9 +208,10 @@ export function payloadFromState(state: GameState, lastTimestamp: number): SaveP
     const setting = state.abilitySettings[ability.id]
     if (setting) abilitySettings[ability.id] = { ...setting }
   }
-  // Нулевые ранги в сейв не пишем — это мусор, а не прогресс.
+  // Нулевые ранги в сейв не пишем — это мусор, а не прогресс. Дерево берётся
+  // ПО КЛАССУ: чужих веток у героя нет, и увозить их в сейве незачем.
   const talents: Record<string, number> = {}
-  for (const talent of TALENTS) {
+  for (const talent of talentsOfClass(state.classId)) {
     const rank = rankOf(state.talents, talent.id)
     if (rank > 0) talents[talent.id] = rank
   }
@@ -216,6 +228,11 @@ export function payloadFromState(state: GameState, lastTimestamp: number): SaveP
         .filter(([, count]) => count.gt(0))
         .map(([id, count]) => [id, count.toString()]),
     ),
+    // Нулевые и чужие зелья в сейв не пишем — это мусор, а не прогресс.
+    activePotions: state.activePotions
+      .filter((p) => p.msLeft > 0 && p.recipeId in POTION_RECIPE_BY_ID)
+      .map((p) => ({ recipeId: p.recipeId, msLeft: Math.max(0, p.msLeft) })),
+    enchantDust: state.enchantDust.floor().toString(),
     restSpeedupSource: state.restSpeedupSource,
     lastTimestamp,
     inventory: state.inventory.map(savedFromItem),
@@ -269,7 +286,9 @@ function materialsFromSaved(raw: unknown): Record<string, Decimal> {
   const result: Record<string, Decimal> = {}
   if (typeof raw !== 'object' || raw === null) return result
   for (const [id, count] of Object.entries(raw as Record<string, unknown>)) {
-    if (!(id in MATERIAL_BY_ID) && !(id in FOOD_BY_ID)) continue
+    // Своими считаются материалы, травы, еда и склянки — всё, что вообще
+    // может лежать в мешке. Забытый вид молча пропал бы при загрузке.
+    if (!(id in MATERIAL_BY_ID) && !isBagId(id)) continue
     const value = parseDec(count, '0')
     if (value.gt(0)) result[id] = value.floor()
   }
@@ -291,6 +310,11 @@ function itemFromSaved(raw: SavedItem, index: number): Item {
   // Уровень предмета из сейва принимаем только конечным числом не меньше 1:
   // мусор деградирует до первого уровня, а не до NaN в силе вещи.
   const level = Number.isFinite(raw.level) && raw.level >= 1 ? Math.floor(raw.level) : 1
+  // Зачарование из сейва: чужой id (переименовали, откатили версию) и
+  // зачарование не для этого слота отбрасываем. Иначе правленый руками сейв
+  // повесил бы руну оружия на талисман и подменил базу боя.
+  const enchant = typeof raw.enchantId === 'string' ? ENCHANT_BY_ID[raw.enchantId] : undefined
+  const enchantId = enchant && enchant.slots.includes(slot) ? enchant.id : undefined
   return {
     id: typeof raw.id === 'string' ? raw.id : `item-restored-${index}`,
     name: typeof raw.name === 'string' ? raw.name : FALLBACK_ITEM_NAME,
@@ -298,6 +322,7 @@ function itemFromSaved(raw: SavedItem, index: number): Item {
     slot,
     level,
     ...(hands ? { hands } : {}),
+    ...(enchantId ? { enchantId } : {}),
     mods,
   }
 }
@@ -377,15 +402,105 @@ function abilitySettingsFromSaved(raw: unknown, classId: string): AbilitySetting
 
 // Ранги из сейва: чужие id отбрасываем, свои режем по maxRank — иначе
 // подправленный сейв дал бы талант выше потолка.
-function talentsFromSaved(raw: unknown): Record<string, number> {
+// Ранги ЧУЖИХ веток отбрасываются: дерево привязано к классу, и правленый
+// руками сейв не должен выдать герою чужой стиль.
+function talentsFromSaved(raw: unknown, classId: string): Record<string, number> {
   const ranks: Record<string, number> = {}
   if (typeof raw !== 'object' || raw === null) return ranks
   const saved = raw as Record<string, unknown>
-  for (const talent of TALENTS) {
+  for (const talent of talentsOfClass(classId)) {
     const rank = rankOf({ [talent.id]: Number(saved[talent.id]) }, talent.id)
     if (rank > 0) ranks[talent.id] = rank
   }
   return ranks
+}
+
+/**
+ * КАРТА СООТВЕТСТВИЯ старого дерева новому.
+ *
+ * Старое дерево было общим на оба класса, новое — своё у каждого. Поэтому
+ * карта двухступенчатая: талант -> его новое имя у КАЖДОГО класса. Где
+ * соответствия нет (у Гнева нет левой руки, изуверу чужды мана и её пауза),
+ * стоит пусто — очки вернутся свободными, а не потеряются.
+ */
+const LEGACY_TALENT_MAP: Record<string, Record<string, string>> = {
+  // Ярость -> Гнев / Резня
+  'honed-edge': { warden: 'wrath-honed-edge', reaver: 'carnage-bloodlust' },
+  'keen-eye': { warden: 'wrath-keen-eye', reaver: 'carnage-predator-eye' },
+  'savage-blows': { warden: 'wrath-savage-blows', reaver: 'carnage-ferocity' },
+  frenzy: { warden: 'wrath-frenzy', reaver: 'carnage-drive' },
+  // Левая рука есть только у Резни: Гнев растёт одноручным со щитом.
+  'offhand-mastery': { reaver: 'carnage-offhand' },
+  rupture: { warden: 'wrath-rupture', reaver: 'carnage-bleeding-wound' },
+  // Стойкость -> Оплот / Жилы
+  'thick-hide': { warden: 'bulwark-thick-hide', reaver: 'sinew-beast-hide' },
+  'second-wind': { warden: 'bulwark-battle-breath', reaver: 'sinew-knitting' },
+  'shield-wall': { warden: 'bulwark-shield-wall', reaver: 'sinew-forearm-guard' },
+  'bulwark-training': { warden: 'bulwark-training', reaver: 'sinew-heavy-riposte' },
+  'iron-skin': { warden: 'bulwark-iron-skin', reaver: 'sinew-tanned-hide' },
+  'swift-return': { warden: 'bulwark-swift-return', reaver: 'sinew-not-finished' },
+  // Самообладание -> Бдение / Чутьё
+  'steady-breath': { warden: 'vigil-steady-breath' },
+  'clear-mind': { warden: 'vigil-clear-mind' },
+  'deep-well': { warden: 'vigil-deep-well', reaver: 'instinct-rage-capacity' },
+  'quick-camp': { warden: 'vigil-quick-camp', reaver: 'instinct-short-rest' },
+  'field-medicine': { warden: 'vigil-field-medicine', reaver: 'instinct-beast-sense' },
+  'unbroken-focus': { warden: 'vigil-unbroken-focus', reaver: 'instinct-never-cooling' },
+}
+
+/**
+ * Ранги старого дерева -> ранги нового.
+ *
+ * ДВА ПРОХОДА, и второй важнее первого. Сперва перенос по карте, потом
+ * проверка ЗАКОННОСТИ: этажи в новом дереве стоят по 5 очков, а в старом
+ * шли по 3, поэтому честно перенесённый ранг может оказаться на этаже, до
+ * которого игрок не дотягивается. Такой ранг НЕ записывается — и очко
+ * возвращается само: доступные очки это заработанные минус вложенные,
+ * отдельного счётчика нет.
+ */
+function talentsV18toV19(raw: unknown, classId: string): Record<string, number> {
+  const mapped: Record<string, number> = {}
+  if (typeof raw === 'object' && raw !== null) {
+    for (const [oldId, value] of Object.entries(raw as Record<string, unknown>)) {
+      const newId = LEGACY_TALENT_MAP[oldId]?.[classId]
+      const rank = Number(value)
+      if (!newId || !Number.isFinite(rank) || rank <= 0) continue
+      mapped[newId] = Math.floor(rank)
+    }
+  }
+  const kept: Record<string, number> = {}
+  for (const branch of BRANCHES) {
+    if (branch.classId !== classId) continue
+    let spent = 0
+    for (const talent of talentsInBranch(branch.id)) {
+      const rank = Math.min(mapped[talent.id] ?? 0, talent.maxRank)
+      if (rank <= 0) continue
+      // Этаж ещё не открыт тем, что удержано выше, — перенести нельзя.
+      if (spent < talent.requiredPointsInBranch) continue
+      kept[talent.id] = rank
+      spent += rank
+    }
+  }
+  return kept
+}
+
+// Зелья из сейва: чужой рецепт и мусорное время отбрасываем, своё режем по
+// длительности — иначе правленый сейв дал бы вечную склянку.
+function potionsFromSaved(raw: unknown): ActivePotion[] {
+  if (!Array.isArray(raw)) return []
+  const potions: ActivePotion[] = []
+  const seen = new Set<string>()
+  for (const entry of raw) {
+    if (typeof entry !== 'object' || entry === null) continue
+    const { recipeId, msLeft } = entry as Record<string, unknown>
+    if (typeof recipeId !== 'string' || seen.has(recipeId)) continue
+    const recipe = POTION_RECIPE_BY_ID[recipeId]
+    if (!recipe) continue
+    if (typeof msLeft !== 'number' || !Number.isFinite(msLeft) || msLeft <= 0) continue
+    seen.add(recipeId)
+    potions.push({ recipeId, msLeft: Math.min(msLeft, recipe.output.durationSec * 1000) })
+  }
+  return potions
 }
 
 // Забег из сейва: чужой данж или индекс за пределами цепочки — забега нет.
@@ -430,7 +545,11 @@ export function stateFromPayload(p: SavePayloadV19): GameState {
     level,
     currentXp: parseDec(p.currentXp, '0'),
     xpToNext: xpToNextLevel(level),
-    talents: talentsFromSaved(p.talents),
+    talents: talentsFromSaved(p.talents, hero.id),
+    activePotions: potionsFromSaved(p.activePotions),
+    // Мусор и отсутствие поля означают ноль, а не потерю сейва: v19 в этой
+    // же ветке писался ещё без пыли, и такие сейвы обязаны читаться.
+    enchantDust: parseDec(p.enchantDust, '0').floor(),
     talentResets:
       typeof p.talentResets === 'number' && Number.isFinite(p.talentResets) && p.talentResets > 0
         ? Math.floor(p.talentResets)
@@ -578,6 +697,11 @@ export const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
     next.level = String(capped)
     // На потолке копить нечего: опыт обнуляется вместе с полоской.
     next.currentXp = capped >= LEVEL_CAP ? '0' : newNeed.times(share).floor().toString()
+    // Дерево переехало на класс и на глубину в 61 очко. Ранги переносим
+    // картой соответствия, непереносимое возвращается свободными очками —
+    // прогресс не теряется ни на очко.
+    const classId = typeof raw.classId === 'string' ? raw.classId : DEFAULT_CLASS.id
+    next.talents = talentsV18toV19(raw.talents, classId)
     return next
   },
   // 16 -> 17: появились профессии. Мешок материалов у старого героя пуст —
@@ -840,9 +964,16 @@ export function applyOfflineProgress(
     }
     if (s.statsDirty) s = ensureStats(s)
   }
+  // Травы набегают ВРЕМЕНЕМ, поэтому оффлайн срезает их одним вызовом, тем
+  // же куском игрового времени и с тем же урезанием. Отдельной модели у сбора
+  // нет — иначе оффлайн и онлайн разошлись бы молча.
+  s = gatherHerbs(s, cappedMs * OFFLINE_EFFICIENCY)
+  // Склянки ДОЖИГАЮТСЯ полным временем, без урезания: придержать зелье,
+  // закрыв вкладку, нельзя. Событий в лог оффлайн не пишет.
+  s = advancePotions(s, cappedMs, false)
   // Дробные убийства копим по шагам и округляем один раз, в самом конце.
   kills = kills.floor()
-  if (kills.lte(0)) return { state, report: null }
+  if (kills.lte(0)) return { state: s, report: null }
   return {
     state: { ...s, gold: s.gold.plus(gold) },
     report: { elapsedMs: cappedMs, kills, gold, xp },

@@ -52,6 +52,20 @@ export interface GameState {
   // поэтому множитель скорости из отладочной панели ускоряет и их.
   gcdMsLeft: number // глобальный кулдаун; 0 — свободен
   abilityCooldownsMs: Record<string, number> // id умения -> сколько мс осталось
+  // Нерастраченные заряды умений: id -> сколько осталось. ОТСУТСТВИЕ записи
+  // означает полный комплект, поэтому у героя без талантов-зарядов поле всегда
+  // пустое и в сейв ничего лишнего не едет. Заряды копятся откатом по одному.
+  abilityCharges: Record<string, number>
+  // Действующие зелья. Список, а не одно поле: зелья разных рецептов
+  // складываются, одного и того же — обновляются (см. game/potions.ts).
+  activePotions: ActivePotion[]
+  // Недорезанная доля пучка по каждой траве, 0..1. Служебный счётчик, как
+  // regenTickMsLeft: копится долей, чтобы на медленном шаге ничего не
+  // терялось. В сейв не пишется — терять меньше одного пучка не жалко.
+  herbProgress: Record<string, number>
+  /** Пыль зачарования: копится ТОЛЬКО распылением находок, с мобов не падает.
+   *  Растёт неограниченно (сотни находок за сотню уровней) — значит Decimal. */
+  enchantDust: Decimal
   // Умение типа onNextSwing, поставленное в очередь: заменит следующую
   // автоатаку. Одновременно только одно; null — очередь пуста.
   queuedAbilityId: string | null
@@ -116,6 +130,18 @@ export interface ActiveEffect {
   damagePerTick: Decimal
   ticksLeft: number
   msToNextTick: number
+}
+
+/**
+ * Действующее зелье. Модификаторы НЕ снимаются с него слепком: они живут в
+ * данных рецепта, и правка баланса зелья действует сразу, а не со следующего
+ * глотка. Это осознанно иначе, чем у ActiveEffect: там заснят урон тика,
+ * потому что он зависит от оружия в момент удара.
+ */
+export interface ActivePotion {
+  recipeId: string
+  // Обычный number: это миллисекунды, а не растущая игровая величина.
+  msLeft: number
 }
 
 // Настройка автокаста одного умения. priority: меньше число — выше в списке.
@@ -258,6 +284,10 @@ export function createInitialState(
     restResourceThreshold: REST_RESOURCE_THRESHOLD_DEFAULT,
     restSpeedupSource: null,
     abilityCooldownsMs: {},
+    abilityCharges: {},
+    activePotions: [],
+    herbProgress: {},
+    enchantDust: new Decimal(0),
     queuedAbilityId: null,
     activeEffects: [],
     abilitySettings: defaultAbilitySettings(hero.id),

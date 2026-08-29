@@ -27,6 +27,9 @@
 
   function outputText(recipe: RecipeDef): string {
     if (recipe.output.kind === 'food') return 'Порция еды: привал вдвое короче'
+    if (recipe.output.kind === 'potion') {
+      return `Склянка: ${Math.round(recipe.output.durationSec / 60)} мин действия`
+    }
     return `${SLOT_NAMES[recipe.output.slot]}, ${rarityName(recipe.output.rarity)}`
   }
 </script>

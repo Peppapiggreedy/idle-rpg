@@ -9,10 +9,10 @@
 // Текста для игрока здесь нет: наружу идут числа и состояния, подписи рисует UI.
 import { Decimal } from './numbers'
 import { estimateCombatRate, expectedMonsterDamage } from './combat'
-import { REST_FOOD_SPEEDUP } from '../data/balance'
+import { MIN_REST_DURATION_S, REST_FOOD_SPEEDUP } from '../data/balance'
 import { zoneMonsterVariants, type Zone } from '../data/zones'
 import type { StatBlock } from './stats'
-import { restCooldownMultiplier } from './talents'
+import { restCooldownMultiplier, restDurationMultiplier } from './talents'
 import { takeFood } from './crafting'
 import type { GameState } from './state'
 import type { MonsterTemplate } from '../types'
@@ -20,13 +20,15 @@ import type { MonsterTemplate } from '../types'
 /**
  * Сколько длится привал прямо сейчас, мс.
  *
- * Ускорение приходит ИСТОЧНИКОМ (`restSpeedupSource`), а не правкой числа:
- * пока источника нет, привал полный. Сюда приедет еда из кулинарии — и это
- * единственное место, где длительность вообще считается.
+ * Два независимых ускорителя: талант-капстоун (множитель из ДАННЫХ таланта)
+ * и порция еды, которая приходит ИСТОЧНИКОМ (`restSpeedupSource`), а не
+ * правкой числа. Нижняя граница та же, что у стата: короче MIN_REST_DURATION_S
+ * привал перестаёт быть паузой и становится кнопкой «полный запас».
  */
 export function restDurationMs(state: GameState): number {
-  const base = state.stats.restDuration * 1000
-  return state.restSpeedupSource ? base / REST_FOOD_SPEEDUP : base
+  const base = state.stats.restDuration * 1000 * restDurationMultiplier(state.talents)
+  const withFood = state.restSpeedupSource ? base / REST_FOOD_SPEEDUP : base
+  return Math.max(MIN_REST_DURATION_S * 1000, withFood)
 }
 
 /** Пора ли на привал: HP или ресурс упали ниже своего порога. */

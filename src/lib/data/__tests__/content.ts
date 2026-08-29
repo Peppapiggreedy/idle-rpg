@@ -10,6 +10,9 @@ import {
   AUTOCAST_MAX_LOSS,
   BASE_STATS,
   OFFLINE_EFFICIENCY,
+  ENCHANT_UNLOCK_LEVEL,
+  LEVEL_CAP,
+  POTION_UNLOCK_LEVEL,
   TALENT_FIRST_LEVEL,
   TTK_AHEAD_MIN,
   TTK_BEHIND_MAX,
@@ -26,6 +29,8 @@ import { RARITIES } from '../rarity'
 import { SOUNDS } from '../sounds'
 import { CLASSES } from '../classes'
 import { MATERIALS } from '../materials'
+import { HERBS } from '../herbs'
+import { DUST_BY_RARITY, ENCHANTS, ENCHANT_FLAT_STATS } from '../enchants'
 import { PROGRESSION } from '../progression'
 import { REAGENTS } from '../reagents'
 import { DUNGEON_SCENE_KEYS } from '../scenery'
@@ -97,6 +102,10 @@ export function realContent(): Content {
     sounds: SOUNDS,
     classes: CLASSES,
     materials: MATERIALS,
+    herbs: HERBS,
+    enchants: ENCHANTS,
+    dustByRarity: DUST_BY_RARITY,
+    enchantFlatStats: ENCHANT_FLAT_STATS,
     progression: PROGRESSION,
     reagents: REAGENTS,
     dungeonSceneKeys: DUNGEON_SCENE_KEYS,
@@ -112,6 +121,9 @@ export function realContent(): Content {
       offlineEfficiency: OFFLINE_EFFICIENCY,
       autocastMaxLoss: AUTOCAST_MAX_LOSS,
       talentFirstLevel: TALENT_FIRST_LEVEL,
+      enchantUnlockLevel: ENCHANT_UNLOCK_LEVEL,
+      potionUnlockLevel: POTION_UNLOCK_LEVEL,
+      levelCap: LEVEL_CAP,
       ttkHardFloor: TTK_HARD_FLOOR,
       ttkTargetMin: TTK_TARGET_MIN,
       ttkTargetMax: TTK_TARGET_MAX,

@@ -91,6 +91,8 @@ export {
   availablePoints,
   spentPoints,
   spentInBranch,
+  heroBranches,
+  heroTalents,
   rankOf,
   talentStatus,
   allTalentStatuses,
@@ -104,6 +106,41 @@ export {
   reviveMultiplier,
 } from './talents'
 export type { TalentStatus, TalentBlockReason, TalentRanks } from './talents'
+export {
+  potionSlots,
+  potionStatus,
+  potionCount,
+  activePotion,
+  potionFraction,
+  plannedPotion,
+  potionSupply,
+  drinkPotion,
+  advancePotions,
+  gatherHerbs,
+  statsWithoutPotions,
+  statsWithPotionPlan,
+} from './potions'
+export type { PotionSlot, PotionBlockReason, PotionSupply } from './potions'
+export {
+  isEnchantingUnlocked,
+  dustValue,
+  disenchantStatus,
+  disenchantItem,
+  enchantStatus,
+  enchantItem,
+  ENCHANTS,
+  ENCHANT_BY_ID,
+  enchantsForSlot,
+  enchantOf,
+  enchantModifiers,
+} from './enchanting'
+export type {
+  EnchantDef,
+  EnchantStatus,
+  EnchantBlockReason,
+  DisenchantStatus,
+  DisenchantBlockReason,
+} from './enchanting'
 export {
   DUNGEONS,
   DUNGEON_BY_ID,

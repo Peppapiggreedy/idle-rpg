@@ -7,6 +7,8 @@ import { STAT_ICONS } from '../../data/stats'
 import { TALENTS } from '../../data/talents'
 import { CLASSES } from '../../data/classes'
 import { MATERIALS } from '../../data/materials'
+import { HERBS } from '../../data/herbs'
+import { ENCHANTS } from '../../data/enchants'
 import { REAGENTS } from '../../data/reagents'
 import { PROFESSIONS, RECIPES } from '../../data/recipes'
 import { PROGRESSION } from '../../data/progression'
@@ -30,11 +32,18 @@ const used: IconName[] = [
   ...PROGRESSION.map((s) => s.icon),
   ...PROFESSIONS.map((p) => p.icon),
   ...RECIPES.map((r) => r.icon),
+  ...RECIPES.flatMap((r) => (r.output.kind === 'potion' ? [r.output.icon] : [])),
+  ...HERBS.map((h) => h.icon),
+  ...ENCHANTS.map((e) => e.icon),
   'gold',
   'xp',
   // Иконки интерфейса: их не перечисляют данные — они стоят прямо
   // в компонентах (ручка выдвижки «Журнал»).
   'log',
+  // Распыление и пыль: кнопка в инвентаре и строка панели зачарования.
+  'action-disenchant',
+  'material-dust',
+  'profession-enchanting',
 ]
 
 describe('спрайт иконок', () => {

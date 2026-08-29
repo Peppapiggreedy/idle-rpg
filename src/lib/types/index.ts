@@ -39,6 +39,11 @@ export interface Item {
   // Модификаторы предмета в формате конвейера статов. У оружия среди них
   // ОБЯЗАТЕЛЬНО три kind: 'base' — weaponSpeed, weaponDamageMin, weaponDamageMax.
   mods: StatModifier[]
+  /** Наложенное зачарование (id из data/enchants.ts). Ровно одно: новое
+   *  затирает старое. Нет поля — предмет не зачарован. Модификаторы
+   *  зачарования В mods НЕ КОПИРУЮТСЯ — их разворачивает enchantModifiers
+   *  внутри конвейера, иначе снять зачарование было бы нечем. */
+  enchantId?: string
 }
 
 // Структурированные события боя для лога. Логика их эмитит,
@@ -72,10 +77,25 @@ export type CombatEvent =
   // Привал: управляемая пауза по порогу. 'interrupted' — игрок прервал сам,
   // и восстановление вышло частичным.
   // Блок щитом: `damage` — что прошло, `blocked` — что снял щит.
-  | { type: 'block'; damage: Decimal; blocked: Decimal; monsterName: string }
+  // `reflected` появляется только у героя с талантом-отражением: щит
+  // возвращает долю поглощённого обратно в моба.
+  | {
+      type: 'block'
+      damage: Decimal
+      blocked: Decimal
+      reflected?: Decimal
+      monsterName: string
+    }
   // Материал с моба и собранный рецепт: id, текст рендерит UI.
   | { type: 'material'; materialId: string }
   | { type: 'craft'; recipeId: string }
+  // Зелья: id рецепта, текст рендерит UI. Сбор трав события НЕ порождает —
+  // это фон, а не событие, и ленте боя шуршать травой незачем.
+  | { type: 'potion'; recipeId: string }
+  | { type: 'potion-expired'; recipeId: string }
+  // Распыление и зачарование: id и предмет, текст рендерит UI.
+  | { type: 'disenchant'; item: Item; dust: Decimal }
+  | { type: 'enchant'; itemName: string; enchantId: string }
   | { type: 'rest-start' }
   | { type: 'rest-end'; interrupted: boolean }
 

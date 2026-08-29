@@ -18,11 +18,14 @@
     abilityStatus,
     expectedAbilityDamage,
     formatNumber,
+    potionSlots,
     type AbilityDef,
+    type PotionSlot,
   } from '../game'
   import { GCD_MS } from '../data/balance'
-  import { activateAbility, gameState } from '../stores/game'
+  import { activateAbility, drinkPotion, gameState } from '../stores/game'
   import { abilityReasonText } from './abilityText'
+  import { potionEffectText, potionReasonText } from './potionText'
   import { resourceWords } from './resource'
   import { Tooltip } from './kit'
   import { Icon } from './icons'
@@ -33,9 +36,16 @@
   const ordered = $derived(abilitiesByPriority($gameState.abilitySettings, false))
   const statuses = $derived(ordered.map((a) => abilityStatus($gameState, a)))
 
-  // Хоткеи: умения — 1..N, зелья продолжают тот же счёт.
+  const potions = $derived(potionSlots($gameState))
+
+  // Хоткеи: умения — 1..N, зелья продолжают ТОТ ЖЕ счёт. Ряд один, значит и
+  // нумерация одна; сдвигать её при появлении зелий нельзя — игрок помнит
+  // клавиши пальцами.
   function hotkey(index: number): string {
     return String(index + 1)
+  }
+  function potionKey(index: number): string {
+    return String(ordered.length + index + 1)
   }
 
   function onKey(event: KeyboardEvent) {
@@ -44,9 +54,26 @@
     if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return
     if (event.metaKey || event.ctrlKey || event.altKey) return
     const index = ordered.findIndex((_, i) => event.key === hotkey(i))
-    if (index === -1) return
+    if (index !== -1) {
+      event.preventDefault()
+      activateAbility(ordered[index].id)
+      return
+    }
+    const potion = potions.findIndex((_, i) => event.key === potionKey(i))
+    if (potion === -1) return
     event.preventDefault()
-    activateAbility(ordered[index].id)
+    drinkPotion(potions[potion].recipe.output.id)
+  }
+
+  function potionTooltip(slot: PotionSlot, index: number): string {
+    const parts = [
+      `${slot.recipe.output.name} (${potionKey(index)})`,
+      `${potionEffectText(slot.recipe)} на ${Math.round(slot.recipe.output.durationSec / 60)} мин`,
+      `Склянок в мешке: ${formatNumber(slot.count)}`,
+      'Зелья пьются только руками: ни автокаст, ни оффлайн их не трогают.',
+    ]
+    if (slot.reason) parts.push(potionReasonText(slot.reason))
+    return parts.join('\n')
   }
 
   function abilityTooltip(ability: AbilityDef, index: number): string {
@@ -111,6 +138,30 @@
     </Tooltip>
   {/each}
 
+  <!-- Зелья — те же квадраты того же ряда. Отдельного угла экрана у них нет:
+       это такое же действие, только его нельзя автоматизировать. -->
+  {#each potions as slot, i (slot.recipe.id)}
+    <Tooltip text={potionTooltip(slot, i)} width="wide">
+      <button
+        type="button"
+        class="slot"
+        class:queued={slot.active}
+        class:blocked={!slot.usable}
+        disabled={!slot.usable}
+        aria-label={slot.recipe.output.name}
+        onclick={() => drinkPotion(slot.recipe.output.id)}
+      >
+        <span class="fill" style="height: {Math.min(100, slot.fraction * 100)}%"></span>
+        <span class="key">{potionKey(i)}</span>
+        <Icon name={slot.recipe.output.icon} size="lg" />
+        {#if slot.active}
+          <span class="timer queued-mark">{seconds(slot.msLeft)}</span>
+        {:else}
+          <span class="timer">{formatNumber(slot.count)}</span>
+        {/if}
+      </button>
+    </Tooltip>
+  {/each}
 </div>
 
 <style>

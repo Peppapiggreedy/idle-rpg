@@ -47,6 +47,43 @@ export const ICONS = {
   'talent-quick-camp': { file: 'delapouite/camping-tent.svg', author: 'Delapouite' },
   'talent-field-medicine': { file: 'delapouite/first-aid-kit.svg', author: 'Delapouite' },
   'talent-unbroken-focus': { file: 'lorc/sands-of-time.svg', author: 'Lorc' },
+  // --- Таланты: шесть веток глубиной 61 ---
+  'talent-double-strike': { file: 'lorc/sword-clash.svg', author: 'Lorc' },
+  'talent-second-charge': { file: 'lorc/charged-arrow.svg', author: 'Lorc' },
+  'talent-block-resource': { file: 'lorc/shield-bounces.svg', author: 'Lorc' },
+  'talent-block-reflect': { file: 'lorc/mirror-mirror.svg', author: 'Lorc' },
+  'talent-kill-refund': { file: 'lorc/trophy.svg', author: 'Lorc' },
+  'talent-shorter-rest': { file: 'lorc/campfire.svg', author: 'Lorc' },
+  'talent-strength': { file: 'delapouite/biceps.svg', author: 'Delapouite' },
+  'talent-vitality': { file: 'lorc/heart-tower.svg', author: 'Lorc' },
+  'talent-intellect': { file: 'lorc/brain.svg', author: 'Lorc' },
+  'talent-relentless': { file: 'lorc/quick-slash.svg', author: 'Lorc' },
+  'talent-bleed-deep': { file: 'lorc/barbed-coil.svg', author: 'Lorc' },
+  'talent-blood-charge': { file: 'delapouite/swords-power.svg', author: 'Delapouite' },
+  'talent-guard-echo': { file: 'lorc/shield-echoes.svg', author: 'Lorc' },
+  'talent-hard-to-kill': { file: 'lorc/skull-crack.svg', author: 'Lorc' },
+  'talent-spiked-guard': { file: 'lorc/spiked-armor.svg', author: 'Lorc' },
+
+  // --- Травы и зелья ---
+  'herb-bitterleaf': { file: 'delapouite/dandelion-flower.svg', author: 'Delapouite' },
+  'herb-emberroot': { file: 'lorc/root-tip.svg', author: 'Lorc' },
+  'herb-hoarbloom': { file: 'lorc/vine-flower.svg', author: 'Lorc' },
+  'profession-herbalism': { file: 'lorc/cauldron.svg', author: 'Lorc' },
+  'potion-fury': { file: 'lorc/bubbling-flask.svg', author: 'Lorc' },
+  'potion-wind': { file: 'lorc/fizzing-flask.svg', author: 'Lorc' },
+  'potion-stone': { file: 'lorc/standing-potion.svg', author: 'Lorc' },
+
+  // --- Зачарование ---
+  'material-dust': { file: 'lorc/powder.svg', author: 'Lorc' },
+  'action-disenchant': { file: 'lorc/crumbling-ball.svg', author: 'Lorc' },
+  'profession-enchanting': { file: 'lorc/rune-stone.svg', author: 'Lorc' },
+  'enchant-rune-edge': { file: 'lorc/rune-sword.svg', author: 'Lorc' },
+  'enchant-wind-notch': { file: 'lorc/wind-hole.svg', author: 'Lorc' },
+  'enchant-wall-oath': { file: 'lorc/shield-echoes.svg', author: 'Lorc' },
+  'enchant-heavy-hand': { file: 'delapouite/weight-lifting-up.svg', author: 'Delapouite' },
+  'enchant-light-tread': { file: 'lorc/wingfoot.svg', author: 'Lorc' },
+  'enchant-clear-sight': { file: 'lorc/psychic-waves.svg', author: 'Lorc' },
+  'enchant-stone-core': { file: 'lorc/stone-sphere.svg', author: 'Lorc' },
 
   // --- Классы ---
   'class-warden': { file: 'delapouite/spiked-shield.svg', author: 'Delapouite' },

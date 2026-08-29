@@ -39,7 +39,25 @@ import { advanceCooldowns, autocastStep, consumeQueuedAbility } from './abilitie
 import { finishRest, needsRest, startRest } from './rest'
 import { addMaterial, rollMaterial } from './crafting'
 import { classById } from '../data/classes'
-import { reviveMultiplier } from './talents'
+import { advancePotions, gatherHerbs } from './potions'
+import {
+  blockReflectShare,
+  blockResourceShare,
+  doubleStrikeChance,
+  killCooldownMultiplier,
+  reviveMultiplier,
+} from './talents'
+
+/**
+ * Двойной удар: талант-флаг даёт замаху шанс повториться.
+ *
+ * Бросок делается ТОЛЬКО когда шанс положительный. Это не оптимизация:
+ * лишний вызов rng сдвинул бы весь поток случайности, и golden-прогон
+ * героя БЕЗ таланта перестал бы сходиться с эталоном.
+ */
+function extraSwings(chance: number, rng: Rng): number {
+  return chance > 0 && rng() < chance ? 1 : 0
+}
 import {
   advanceDungeon,
   clearedXpBonus,
@@ -239,6 +257,29 @@ const applyCombat: TickStep = (s, ctx) => {
       timestamp: swung.playtimeMs.toNumber(),
     })
     if (hpLeft.lte(0)) ctx.killedMonster = monster
+    for (
+      let i = extraSwings(doubleStrikeChance(swung.talents), ctx.rng);
+      i > 0 && ctx.killedMonster === null;
+      i -= 1
+    ) {
+      const extra = rollSwing(swung.stats, ctx.rng)
+      const afterExtra = monster.currentHp.minus(extra.amount)
+      monster = { ...monster, currentHp: Decimal.max(afterExtra, new Decimal(0)) }
+      combatLog = pushEvent(combatLog, {
+        type: 'hit',
+        damage: extra.amount,
+        isCrit: extra.isCrit,
+      })
+      ctx.emitAttack({
+        sourceId: 'hero',
+        targetId: monster.id,
+        amount: extra.amount,
+        isCrit: extra.isCrit,
+        abilityId: null,
+        timestamp: swung.playtimeMs.toNumber(),
+      })
+      if (afterExtra.lte(0)) ctx.killedMonster = monster
+    }
   }
   return { ...swung, swingProgress, monster, combatLog }
 }
@@ -286,11 +327,27 @@ const applyEffects: TickStep = (s, ctx) => {
   return { ...s, monster, combatLog, activeEffects: remaining }
 }
 
+/**
+ * Награды за убийство. Здесь же читается флаг «убийство возвращает откаты»:
+ * доля из данных таланта множит и кулдауны, и GCD. Единица — таланта нет,
+ * и тогда не пересобирается ничего.
+ */
 const applyKillRewards: TickStep = (s, ctx) => {
   const killed = ctx.killedMonster
   if (!killed) return s
+  const share = killCooldownMultiplier(s.talents)
+  const refunded =
+    share >= 1
+      ? { abilityCooldownsMs: s.abilityCooldownsMs, gcdMsLeft: s.gcdMsLeft }
+      : {
+          abilityCooldownsMs: Object.fromEntries(
+            Object.entries(s.abilityCooldownsMs).map(([id, left]) => [id, left * share]),
+          ),
+          gcdMsLeft: s.gcdMsLeft * share,
+        }
   return {
     ...s,
+    ...refunded,
     // Убил моба — значит в этой зоне выживает; сюда же вернёт смерть.
     lastSurvivedZoneId: s.currentZoneId,
     gold: s.gold.plus(killed.goldReward),
@@ -386,6 +443,29 @@ const applyOffhandCombat: TickStep = (s, ctx) => {
       timestamp: s.playtimeMs.toNumber(),
     })
     if (hpLeft.lte(0)) ctx.killedMonster = monster
+    for (
+      let i = extraSwings(doubleStrikeChance(s.talents), ctx.rng);
+      i > 0 && ctx.killedMonster === null;
+      i -= 1
+    ) {
+      const extra = rollSwing(s.stats, ctx.rng, new Decimal(1), 'off')
+      const afterExtra = monster.currentHp.minus(extra.amount)
+      monster = { ...monster, currentHp: Decimal.max(afterExtra, new Decimal(0)) }
+      combatLog = pushEvent(combatLog, {
+        type: 'hit',
+        damage: extra.amount,
+        isCrit: extra.isCrit,
+      })
+      ctx.emitAttack({
+        sourceId: 'hero',
+        targetId: monster.id,
+        amount: extra.amount,
+        isCrit: extra.isCrit,
+        abilityId: null,
+        timestamp: s.playtimeMs.toNumber(),
+      })
+      if (afterExtra.lte(0)) ctx.killedMonster = monster
+    }
   }
   return { ...s, offhandSwingProgress: progress, monster, combatLog }
 }
@@ -395,8 +475,12 @@ const applyMonsterAttack: TickStep = (s, ctx) => {
   // На привале по герою не бьют: он вышел из боя, а не отвернулся в нём.
   if (s.heroState !== 'alive' || s.respawnMsLeft > 0 || ctx.killedMonster) return s
   if (s.monster.damageMax.lte(0)) return s
+  const reflectShare = blockReflectShare(s.talents)
+  const resourceShare = blockResourceShare(s.talents)
   let monsterSwing = s.monster.swingProgress + ctx.dtMs / (s.monster.swingTime * 1000)
+  let monster = s.monster
   let currentHp = s.currentHp
+  let currentMana = s.currentMana
   let combatLog = s.combatLog
   let died = false
   while (monsterSwing >= 1 - SWING_EPS && !died) {
@@ -414,11 +498,37 @@ const applyMonsterAttack: TickStep = (s, ctx) => {
     // зависел бы от того, попал моб или нет.
     const { amount, blocked } = rollBlock(s.stats, raw, ctx.rng)
     currentHp = Decimal.max(currentHp.minus(amount), new Decimal(0))
+    // Два флага живучести, оба срабатывают ТОЛЬКО на удачном блоке; числа
+    // приходят из payload талантов, а не из логики.
+    let reflected: Decimal | undefined
+    if (blocked) {
+      const absorbed = raw.minus(amount)
+      if (reflectShare > 0 && absorbed.gt(0)) {
+        reflected = absorbed.times(reflectShare)
+        const hpAfter = monster.currentHp.minus(reflected)
+        monster = { ...monster, currentHp: Decimal.max(hpAfter, new Decimal(0)) }
+        ctx.emitAttack({
+          sourceId: 'hero',
+          targetId: monster.id,
+          amount: reflected,
+          isCrit: false,
+          abilityId: null,
+          timestamp: s.playtimeMs.toNumber(),
+        })
+      }
+      if (resourceShare > 0) {
+        currentMana = Decimal.min(
+          currentMana.plus(s.stats.maxMana.times(resourceShare)),
+          s.stats.maxMana,
+        )
+      }
+    }
     combatLog = blocked
       ? pushEvent(combatLog, {
           type: 'block',
           damage: amount,
           blocked: raw.minus(amount),
+          ...(reflected ? { reflected } : {}),
           monsterName: s.monster.name,
         })
       : pushEvent(combatLog, { type: 'hurt', damage: amount, monsterName: s.monster.name })
@@ -432,7 +542,16 @@ const applyMonsterAttack: TickStep = (s, ctx) => {
     })
     if (currentHp.lte(0)) died = true
   }
-  const next = { ...s, currentHp, monster: { ...s.monster, swingProgress: monsterSwing }, combatLog }
+  // Отражение может добить моба. Награды за это убийство придут СЛЕДУЮЩИМ
+  // тиком, через applyPendingKill: шаг мобов стоит в конвейере после наград,
+  // и переставлять его ради отражения нельзя — порядок ударов важнее.
+  const next = {
+    ...s,
+    currentHp,
+    currentMana,
+    monster: { ...monster, swingProgress: monsterSwing },
+    combatLog,
+  }
   if (!died) return next
   // Смерть героя: 30 игровых секунд простоя, награды не капают.
   const dead: GameState = {
@@ -546,9 +665,24 @@ const applyAutosaveCounter: TickStep = (s, ctx) => {
   return { ...s, msSinceAutosave: s.msSinceAutosave + ctx.dtMs }
 }
 
+/**
+ * Зелья: отсчёт длительностей. Идёт ИГРОВЫМ временем, тем же dtMs, что и
+ * кулдауны. Шаг стоит ПЕРВЫМ среди боевых и до applyCooldowns: зелье,
+ * истёкшее на этом тике, не должно бить этим тиком.
+ */
+const applyPotions: TickStep = (s, ctx) => advancePotions(s, ctx.dtMs)
+
+/**
+ * Травы: собираются ВРЕМЕНЕМ, а не убийством. Шаг не смотрит на
+ * ctx.killedMonster и не берёт ни одного броска из rng — поэтому его место
+ * в конвейере на воспроизводимость прогонов с сидом не влияет вовсе.
+ */
+const applyHerbGather: TickStep = (s, ctx) => gatherHerbs(s, ctx.dtMs)
+
 const PIPELINE: TickStep[] = [
   applyRevive,
   applyRest,
+  applyPotions,
   applyCooldowns,
   applyEnrage,
   applyAutocast,
@@ -567,6 +701,7 @@ const PIPELINE: TickStep[] = [
   applyResourceGain,
   applyRegen,
   applyRespawn,
+  applyHerbGather,
   applyAutosaveCounter,
 ]
 

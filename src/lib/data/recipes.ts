@@ -6,12 +6,15 @@
 //   кулинария  — сокращает привал (даёт restSpeedupSource на одну отсидку);
 //   кузнечное  — даёт предмет уровня хорошей находки СВОЕЙ зоны, а не лучше:
 //                крафт — это подстраховка от невезения, а не обход лута.
+import { Decimal } from '../game/numbers'
+import type { StatModifier } from '../game/stats'
+import { HERB_BY_ID } from './herbs'
 import type { IconName } from '../ui/icons/manifest'
 import type { SlotId } from './slots'
 import type { AttributeId } from './items'
 import type { Rarity } from '../types'
 
-export type ProfessionId = 'cooking' | 'smithing'
+export type ProfessionId = 'cooking' | 'smithing' | 'herbalism'
 
 export interface ProfessionDef {
   id: ProfessionId
@@ -33,6 +36,14 @@ export const PROFESSIONS: ProfessionDef[] = [
     name: 'Кузнечное дело',
     icon: 'profession-smithing',
     tagline: 'Предмет уровня хорошей находки своей зоны — на случай, если не везёт.',
+  },
+  {
+    id: 'herbalism',
+    name: 'Травничество',
+    icon: 'profession-herbalism',
+    tagline:
+      'Травы срезаются сами, пока герой в зоне. Склянка действует только ' +
+      'у того, кто её выпил: сам себя герой не поит.',
   },
 ]
 
@@ -69,13 +80,34 @@ export interface ItemOutput {
   adjective: string
 }
 
+/** Модификатор зелья БЕЗ source: source проставляется как 'potion:<id>'. */
+export type PotionModifier = Omit<StatModifier, 'source'>
+
+/** Длительность склянки, секунд. Одна на все три: аптайм считается от неё,
+ *  и разная длительность превратила бы «держать зелье» в упражнение по
+ *  таймерам, а не в решение, какое зелье держать. */
+export const POTION_DURATION_SEC = 180
+
+/** Зелье: расходуется глотком и на POTION_DURATION_SEC поднимает статы. */
+export interface PotionOutput {
+  kind: 'potion'
+  /** Id склянки: он же ложится в мешок и он же — source модификаторов.
+   *  Обязан быть `potion:<id рецепта>`, это держит content:check. */
+  id: string
+  name: string
+  icon: IconName
+  durationSec: number
+  /** Что склянка делает — модификаторы конвейера статов, без source. */
+  mods: PotionModifier[]
+}
+
 export interface RecipeDef {
   id: string
   name: string
   icon: IconName
   profession: ProfessionId
   inputs: RecipeInput[]
-  output: FoodOutput | ItemOutput
+  output: FoodOutput | ItemOutput | PotionOutput
 }
 
 export const RECIPES: RecipeDef[] = [
@@ -202,6 +234,85 @@ export const RECIPES: RecipeDef[] = [
       adjective: 'Кованый',
     },
   },
+  // --- Травничество: три склянки, три разных ответа на «чего не хватает» ---
+  //
+  // Числа держит контракт шага 34: ручная игра С зельями к автокасту БЕЗ них
+  // обязана лечь в 1.4..1.6 (game/__tests__/potions.test.ts). Прибавок три,
+  // а не одна, намеренно: зелье должно ощутимо менять бой, но ни одна из
+  // трёх сама по себе не переворачивает билд.
+  {
+    id: 'fury-draught',
+    name: 'Настой ярости',
+    icon: 'potion-fury',
+    profession: 'herbalism',
+    inputs: [
+      { materialId: 'bitterleaf', count: 2 },
+      { materialId: 'emberroot', count: 1 },
+    ],
+    output: {
+      kind: 'potion',
+      id: 'potion:fury-draught',
+      name: 'Настой ярости',
+      icon: 'potion-fury',
+      durationSec: POTION_DURATION_SEC,
+      mods: [
+        { stat: 'attackPower', kind: 'percent', value: new Decimal(0.3) },
+        // Ускорение ВСЕГДА flat по haste и никогда прибавкой к weaponSpeed:
+        // то же правило, что и у талантов (см. CLAUDE.md).
+        { stat: 'haste', kind: 'flat', value: new Decimal(0.1) },
+        { stat: 'critChance', kind: 'flat', value: new Decimal(0.05) },
+      ],
+    },
+  },
+  {
+    id: 'windroot-draught',
+    name: 'Настой ветрокорня',
+    icon: 'potion-wind',
+    profession: 'herbalism',
+    inputs: [
+      { materialId: 'emberroot', count: 2 },
+      { materialId: 'hoarbloom', count: 1 },
+    ],
+    output: {
+      kind: 'potion',
+      id: 'potion:windroot-draught',
+      name: 'Настой ветрокорня',
+      icon: 'potion-wind',
+      durationSec: POTION_DURATION_SEC,
+      // Не «то же самое, но слабее»: ускорение плюс восстановление ресурса
+      // разгоняет РОТАЦИЮ, а не удар, и на классе с дорогими умениями
+      // выигрывает у ярости. Выбор между ними — про билд, а не про цифру.
+      mods: [
+        { stat: 'haste', kind: 'flat', value: new Decimal(0.18) },
+        { stat: 'manaRegen', kind: 'percent', value: new Decimal(0.25) },
+      ],
+    },
+  },
+  {
+    id: 'stonebloom-draught',
+    name: 'Настой стылоцвета',
+    icon: 'potion-stone',
+    profession: 'herbalism',
+    inputs: [
+      { materialId: 'hoarbloom', count: 2 },
+      { materialId: 'bitterleaf', count: 1 },
+    ],
+    output: {
+      kind: 'potion',
+      id: 'potion:stonebloom-draught',
+      name: 'Настой стылоцвета',
+      icon: 'potion-stone',
+      durationSec: POTION_DURATION_SEC,
+      // Это зелье поднимает не урон, а АПТАЙМ: больше запаса и меньше
+      // входящего — значит дольше между привалами. В зоне не по силам оно
+      // приносит больше ярости, и это законный ответ на «тут больно».
+      mods: [
+        { stat: 'maxHp', kind: 'percent', value: new Decimal(0.25) },
+        { stat: 'damageReduction', kind: 'flat', value: new Decimal(0.05) },
+        { stat: 'hpRegen', kind: 'percent', value: new Decimal(0.5) },
+      ],
+    },
+  },
 ]
 
 export const RECIPE_BY_ID: Record<string, RecipeDef> = Object.fromEntries(
@@ -227,4 +338,69 @@ export const FOOD_BY_ID: Record<string, FoodOutput> = Object.fromEntries(
 export function recipeCost(recipe: RecipeDef): number {
   return recipe.inputs.reduce((sum, i) => sum + i.count, 0)
 }
+
+/** Префикс source у модификаторов зелий: по нему их видно и в раскладке
+ *  статов, и там, где модель боя обязана их ВЫЧИСТИТЬ (режим 'auto'). */
+export const POTION_SOURCE_PREFIX = 'potion:'
+
+export function potionSource(recipeId: string): string {
+  return `${POTION_SOURCE_PREFIX}${recipeId}`
+}
+
+export type PotionRecipe = RecipeDef & { output: PotionOutput }
+
+/** Рецепты зелий В ПОРЯДКЕ ДАННЫХ: он же — приоритет модели ручной игры
+ *  (первое, что герой может сварить здесь, она и считает выпитым). */
+export const POTION_RECIPES: PotionRecipe[] = RECIPES.filter(
+  (r): r is PotionRecipe => r.output.kind === 'potion',
+)
+
+export const POTION_RECIPE_BY_ID: Record<string, PotionRecipe> = Object.fromEntries(
+  POTION_RECIPES.map((r) => [r.id, r]),
+)
+
+/** По id склянки из мешка — её рецепт. Ровно так зелье и находят при глотке. */
+export const POTION_RECIPE_BY_OUTPUT: Record<string, PotionRecipe> = Object.fromEntries(
+  POTION_RECIPES.map((r) => [r.output.id, r]),
+)
+
+export const POTION_BY_ID: Record<string, PotionOutput> = Object.fromEntries(
+  POTION_RECIPES.map((r) => [r.output.id, r.output]),
+)
+
+/**
+ * Модификаторы действующих зелий для конвейера статов. Живут В ДАННЫХ, как и
+ * talentModifiers: логика знает только «действует склянка с таким id», а что
+ * именно она делает, записано здесь. Ни одного `if (зелье === '...')`.
+ *
+ * `share` — доля силы: единица у реально выпитого зелья и POTION_TARGET_UPTIME
+ * у модели ручной игры (зелье действует не всё время). Урезание ЛИНЕЙНОЕ —
+ * это среднее стата по времени, и для flat/percent оно точное.
+ */
+export function potionModifiers(
+  active: ReadonlyArray<{ recipeId: string }>,
+  share = 1,
+): StatModifier[] {
+  const mods: StatModifier[] = []
+  for (const { recipeId } of active) {
+    const recipe = POTION_RECIPE_BY_ID[recipeId]
+    if (!recipe) continue
+    for (const mod of recipe.output.mods) {
+      mods.push({
+        ...mod,
+        value: share === 1 ? mod.value : mod.value.times(share),
+        source: potionSource(recipeId),
+      })
+    }
+  }
+  return mods
+}
+
+/** Все id, которые могут лежать в мешке помимо материалов: еда и склянки.
+ *  По нему сейв отличает свой мусор от чужого. */
+export function isBagId(id: string): boolean {
+  return id in FOOD_BY_ID || id in POTION_BY_ID || id in HERB_BY_ID
+}
+
+
 

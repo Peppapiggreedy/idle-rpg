@@ -2,14 +2,23 @@
   import {
     Decimal,
     compareItem,
+    disenchantStatus,
+    enchantModifiers,
+    enchantOf,
     formatNumber,
     sellPrice,
     upgradeShare,
     INVENTORY_SIZE,
+    type DisenchantBlockReason,
     type EquipComparison,
   } from '../game'
   import { SLOT_NAMES } from '../data/slots'
-  import { equipInventoryItem, gameState, sellInventoryItem } from '../stores/game'
+  import {
+    disenchantInventoryItem,
+    equipInventoryItem,
+    gameState,
+    sellInventoryItem,
+  } from '../stores/game'
   import ItemMods from './ItemMods.svelte'
   import { RARITY_BY_ID } from '../data/rarity'
   import { Button, IconSlot, NumberText, Panel, Tag } from './kit'
@@ -43,13 +52,29 @@
     return item ? compareItem($gameState, item) : null
   })
 
+  // Распыление живёт ЗДЕСЬ, рядом с продажей: это две половины одного
+  // решения — «что делать с находкой», — и разносить их по экранам нельзя.
+  const DISENCHANT_REASON: Record<DisenchantBlockReason, string> = {
+    locked: 'Распыление откроется на 50 уровне',
+    equipped: 'Сперва сними предмет',
+    missing: 'Предмета больше нет',
+  }
+  // Подтверждение спрашивается ТОЛЬКО у зачарованной вещи: лишний клик на
+  // каждую находку убил бы разбор сумки.
+  let confirming = $state<string | null>(null)
+
   const seconds = (v: number) => `${v.toFixed(2)}с`
   // Урон в секунду растёт неограниченно: пока читается — десятые доли,
   // дальше короткая запись formatNumber.
   const dps = (value: Decimal) => (value.lt(1000) ? value.toFixed(1) : formatNumber(value))
 </script>
 
-<Panel title="Инвентарь" subtitle="{$gameState.inventory.length} из {INVENTORY_SIZE} слотов">
+<Panel
+  title="Инвентарь"
+  subtitle="{$gameState.inventory.length} из {INVENTORY_SIZE} слотов{$gameState.enchantDust.gt(0)
+    ? ` · ${formatNumber($gameState.enchantDust)} пыли`
+    : ''}"
+>
   <div class="grid">
     {#each sorted as item (item.id)}
       {@const share = shares.get(item.id)}
@@ -70,6 +95,10 @@
           <span class="upgrade" data-upgrade>Апгрейд {upgradeLabel(share)}</span>
         {/if}
         <ItemMods mods={item.mods} />
+        {#if enchantOf(item)}
+          <span class="enchant">Зачаровано: {enchantOf(item)?.name}</span>
+          <ItemMods mods={enchantModifiers(item)} />
+        {/if}
 
         {#if hovered === item.id && comparison}
           {@const c = comparison}
@@ -96,12 +125,41 @@
         {/if}
 
         {#snippet footer()}
-          <Button size="sm" variant="primary" onclick={() => equipInventoryItem(item.id)}>
-            Надеть
-          </Button>
-          <Button size="sm" onclick={() => sellInventoryItem(item.id)}>
-            Продать за {formatNumber(sellPrice(item))}
-          </Button>
+          {@const dis = disenchantStatus($gameState, item.id)}
+          {#if confirming === item.id}
+            <span class="warn">
+              На вещи «{enchantOf(item)?.name}» — она исчезнет вместе с ней.
+            </span>
+            <Button
+              size="sm"
+              variant="primary"
+              onclick={() => {
+                disenchantInventoryItem(item.id)
+                confirming = null
+              }}
+            >
+              Всё равно распылить
+            </Button>
+            <Button size="sm" onclick={() => (confirming = null)}>Отмена</Button>
+          {:else}
+            <Button size="sm" variant="primary" onclick={() => equipInventoryItem(item.id)}>
+              Надеть
+            </Button>
+            <Button size="sm" onclick={() => sellInventoryItem(item.id)}>
+              Продать за {formatNumber(sellPrice(item))}
+            </Button>
+            {#if dis.reason !== 'locked'}
+              <Button
+                size="sm"
+                disabled={!dis.canDisenchant}
+                title={dis.reason ? DISENCHANT_REASON[dis.reason] : 'Предмет исчезнет навсегда'}
+                onclick={() =>
+                  item.enchantId ? (confirming = item.id) : disenchantInventoryItem(item.id)}
+              >
+                Распылить · {formatNumber(dis.dust)} пыли
+              </Button>
+            {/if}
+          {/if}
         {/snippet}
       </IconSlot>
     {/each}
@@ -120,6 +178,14 @@
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
     gap: var(--space-2);
+  }
+  .enchant {
+    font-size: var(--text-xs);
+    color: var(--c-accent);
+  }
+  .warn {
+    font-size: var(--text-xs);
+    color: var(--c-warning);
   }
   .name {
     font-weight: var(--weight-bold);

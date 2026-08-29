@@ -106,7 +106,7 @@ export const CLASSES: ClassDef[] = [
     },
     baseMods: [],
     abilityIds: ['quick-strike', 'rending-wound', 'shattering-blow'],
-    branchIds: ['fury', 'endurance', 'composure'],
+    branchIds: ['warden-wrath', 'warden-bulwark', 'warden-vigil'],
     startingEquipment: [
       // Одноручное и щит: стражу они и по смыслу, и по делу. Голыми руками
       // бой первого моба длился бы сорок секунд вместо десяти — раньше это
@@ -158,7 +158,7 @@ export const CLASSES: ClassDef[] = [
       { stat: 'maxHp', kind: 'percent', value: new Decimal(0.1) },
     ],
     abilityIds: ['gut-rip', 'blood-frenzy', 'skull-splitter'],
-    branchIds: ['fury', 'endurance', 'composure'],
+    branchIds: ['reaver-carnage', 'reaver-sinew', 'reaver-instinct'],
     startingEquipment: [
       // Изувер начинает с двумя клинками: ярость копится от ударов, а два
       // клинка бьют чаще. У стража вместо второго клинка щит — тот же

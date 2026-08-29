@@ -23,11 +23,14 @@ import {
   MIN_REST_DURATION_S,
   PER_LEVEL_ATTRIBUTES,
   STR_ATTACK_POWER,
+  VIT_BLOCK_VALUE,
   VIT_HP_REGEN,
   VIT_MAX_HP,
 } from '../data/balance'
 import { SLOT_IDS } from '../data/slots'
 import { talentModifiers } from '../data/talents'
+import { potionModifiers } from '../data/recipes'
+import { enchantModifiers } from '../data/enchants'
 import { classById } from '../data/classes'
 
 // Модифицируемые статы. swingTime сюда НЕ входит намеренно: это производная
@@ -173,9 +176,16 @@ export function collectModifiers(state: GameState): StatModifier[] {
   // генератором ('equipment:mainHand' и т.д.). Оружие среди них задаёт БАЗУ
   // weaponSpeed / weaponDamageMin / weaponDamageMax через kind 'base' —
   // сняли оружие, и значения вернулись к UNARMED из data/balance.ts.
+  //
+  // Зачарование приходит ОТСЮДА ЖЕ и вместе с предметом: оно живёт полем на
+  // самой вещи, поэтому снятая вещь уносит его с собой, а надетая обратно —
+  // возвращает. Отдельного списка «наложенных зачарований» в состоянии нет
+  // и быть не должно: он разъехался бы с экипировкой при первой же смене вещи.
   for (const slot of SLOT_IDS) {
     const item = state.equipment?.[slot]
-    if (item) mods.push(...item.mods)
+    if (!item) continue
+    mods.push(...item.mods)
+    mods.push(...enchantModifiers(item))
   }
   // Порог привала — НАСТРОЙКА игрока, и в конвейер она входит базой: талант
   // тогда сдвигает выбранный порог, а не спорит с ним. Ровно один base-источник
@@ -188,7 +198,14 @@ export function collectModifiers(state: GameState): StatModifier[] {
   })
   // Таланты: значение модификатора множится на вложенный ранг, source —
   // 'talent:<id>', поэтому раскладка на панели статов показывает их построчно.
-  mods.push(...talentModifiers(state.talents))
+  // Ветка ЧУЖОГО класса не даёт ничего: дерево привязано к классу, и
+  // правленый руками сейв не должен выдать герою чужой стиль.
+  mods.push(...talentModifiers(state.talents, state.classId))
+  // Зелья: временные модификаторы с source 'potion:<id>'. Стоят ЗДЕСЬ, до
+  // разворота атрибутов: зелье на силу обязано развернуться в силу атаки той
+  // же строкой, что и сила с предмета. Они же — единственные модификаторы,
+  // которые модель боя умеет вычищать (см. statsWithoutPotions).
+  mods.push(...potionModifiers(state.activePotions ?? []))
   // Разворот атрибутов — ПОСЛЕДНИМ: он читает всё собранное выше.
   mods.push(...attributeModifiers(mods))
   return mods
@@ -220,6 +237,7 @@ function attributeModifiers(collected: StatModifier[]): StatModifier[] {
   push('attribute:intellect', 'manaRegen', intellect.times(INT_MANA_REGEN))
   push('attribute:vitality', 'maxHp', vitality.times(VIT_MAX_HP))
   push('attribute:vitality', 'hpRegen', vitality.times(VIT_HP_REGEN))
+  push('attribute:vitality', 'blockValue', vitality.times(VIT_BLOCK_VALUE))
   return mods
 }
 

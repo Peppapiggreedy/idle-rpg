@@ -35,6 +35,7 @@
   import ProgressionPanel from './lib/ui/ProgressionPanel.svelte'
   import InventoryPanel from './lib/ui/InventoryPanel.svelte'
   import CraftPanel from './lib/ui/CraftPanel.svelte'
+  import EnchantPanel from './lib/ui/EnchantPanel.svelte'
   import ZonePanel from './lib/ui/ZonePanel.svelte'
   import DungeonPanel from './lib/ui/DungeonPanel.svelte'
   import SettingsPanel from './lib/ui/SettingsPanel.svelte'
@@ -139,6 +140,7 @@
       {:else if $activeSection === 'bag'}
         <InventoryPanel />
         <CraftPanel />
+        <EnchantPanel />
       {:else if $activeSection === 'world'}
         <ZonePanel />
         <DungeonPanel />

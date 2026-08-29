@@ -28,6 +28,8 @@ import { SAFE_ZONE, ZONE_BY_ID, zoneMonsterVariants, type Zone } from '../data/z
 import { monsterFromTemplate, type AbilitySettings } from './state'
 import { ABILITY_BY_ID } from '../data/abilities'
 import { classById } from '../data/classes'
+import { blockReflectShare, blockResourceShare, doubleStrikeChance } from './talents'
+import { statsWithPotionPlan, statsWithoutPotions } from './potions'
 
 // Какой рукой бьём. Правило нормализации скорости одно на обе, отличаются
 // только база боя и штраф левой руки.
@@ -307,19 +309,26 @@ function damagePerKill(state: GameState, rotation: RotationRate, plan: RotationP
 function hitStream(
   stats: StatBlock,
   rotation: RotationRate,
+  doubleChance = 0,
 ): { rate: Decimal; killing: Decimal; paced: Decimal } {
   const swingRate = new Decimal(1).div(stats.swingTime)
   const swing = expectedSwingDamage(stats)
   const replaced = replacedSwingsPerSecond(stats, rotation)
   // Ударов в секунду: замахи ОБЕИХ рук плюс мгновенные умения. «На следующий
   // удар» новых ударов не добавляет — оно занимает уже существующий замах
-  // правой руки, только бьёт он сильнее.
+  // правой руки, только бьёт он сильнее. Двойной удар (талант-флаг) добавляет
+  // ЛИШНИЕ замахи: их умение не заменяет — очередь одна, — поэтому они идут
+  // отдельной ставкой, а не множителем на swingRate.
   const offRate = hasOffhand(stats)
     ? new Decimal(1).div(stats.offhandSwingTime)
     : new Decimal(0)
-  let rate = swingRate.plus(offRate)
-  let killing = swing.times(swingRate.minus(replaced)).plus(
-    hasOffhand(stats) ? expectedSwingDamage(stats, 'off').times(offRate) : new Decimal(0),
+  const extraMain = swingRate.times(doubleChance)
+  const extraOff = offRate.times(doubleChance)
+  let rate = swingRate.plus(offRate).plus(extraMain).plus(extraOff)
+  let killing = swing.times(swingRate.minus(replaced).plus(extraMain)).plus(
+    hasOffhand(stats)
+      ? expectedSwingDamage(stats, 'off').times(offRate.plus(extraOff))
+      : new Decimal(0),
   )
   let paced = killing
   for (const cast of rotation.casts) {
@@ -338,11 +347,14 @@ function hitStream(
  * не меняется. Этим числом сравниваются предметы, и на нём держится инвариант
  * нормализации скорости.
  */
-export function autoDamagePerSecond(stats: StatBlock): Decimal {
-  return expectedSwingDamage(stats)
+export function autoDamagePerSecond(stats: StatBlock, doubleChance = 0): Decimal {
+  const single = expectedSwingDamage(stats)
     .times(critFactor(stats))
     .div(stats.swingTime)
     .plus(offhandDamagePerSecond(stats))
+  // Шанс двойного удара — талант-флаг, ноль по умолчанию: сравнение предметов
+  // о талантах не знает и знать не должно.
+  return single.times(1 + doubleChance)
 }
 
 /** Урон левой руки в секунду. Пустая рука не бьёт вовсе. */
@@ -471,20 +483,42 @@ export function resourcePause(state: GameState): number {
 export function resourceIncome(state: GameState, extraHitsPerSecond = 0): Decimal {
   const stats = state.stats
   const resource = classById(state.classId).resource
-  if (resource.perSwingDealt.lte(0) && resource.perHitTaken.lte(0)) return stats.manaRegen
+  const incoming =
+    state.monster.swingTime > 0 && state.monster.damageMax.gt(0)
+      ? new Decimal(1).div(state.monster.swingTime)
+      : new Decimal(0)
+  // Блок возвращает долю запаса за каждый заблокированный удар. Работает это
+  // у ОБОИХ классов: ветки по ресурсу здесь нет, только число из данных таланта.
+  const fromBlock = incoming
+    .times(stats.blockChance * blockResourceShare(state.talents))
+    .times(stats.maxMana)
+  if (resource.perSwingDealt.lte(0) && resource.perHitTaken.lte(0)) {
+    return stats.manaRegen.plus(fromBlock)
+  }
   // Ударов в секунду: свои — обе руки, чужие — замах моба. Умения сюда не
   // входят намеренно: их число само зависит от ресурса, и подставлять его
   // значило бы решать уравнение самим собой.
   const own = new Decimal(1).div(stats.swingTime).plus(
     hasOffhand(stats) ? new Decimal(1).div(stats.offhandSwingTime) : new Decimal(0),
   )
-  const incoming =
-    state.monster.swingTime > 0 && state.monster.damageMax.gt(0)
-      ? new Decimal(1).div(state.monster.swingTime)
-      : new Decimal(0)
   return stats.manaRegen
     .plus(own.plus(extraHitsPerSecond).times(resource.perSwingDealt).times(stats.maxMana))
     .plus(incoming.times(resource.perHitTaken).times(stats.maxMana))
+    .plus(fromBlock)
+}
+
+/**
+ * Отражённый щитом урон в секунду. Считается ЗДЕСЬ, а не забывается: иначе
+ * прогноз зоны и оффлайн занижали бы капстоун живучести, и «оффлайн <=
+ * автокаст» держалось бы по недосмотру, а не по правилу.
+ */
+function reflectPerSecond(state: GameState, incoming: Decimal): Decimal {
+  const share = blockReflectShare(state.talents)
+  const stats = state.stats
+  if (share <= 0 || stats.blockChance <= 0 || state.monster.swingTime <= 0) return new Decimal(0)
+  // Щит снимает фиксированную величину, но не больше самого удара.
+  const absorbed = Decimal.min(stats.blockValue, incoming)
+  return absorbed.times(share).times(stats.blockChance).div(state.monster.swingTime)
 }
 
 /**
@@ -502,17 +536,26 @@ function unlockedSettings(state: GameState): AbilitySettings {
 }
 
 function rawRate(state: GameState, plan: RotationPlan): CombatRate {
-  const stats = state.stats
+  // ЗЕЛЬЯ ВХОДЯТ ТОЛЬКО В РУЧНУЮ ИГРУ. В модель 'manual' — приоритетным
+  // зельем, урезанным целевым аптаймом; из 'auto' и из точки отсчёта
+  // 'autocastByHand' они ВЫЧИЩАЮТСЯ, даже если склянка выпита прямо сейчас, —
+  // иначе прибавка уехала бы в оффлайн (он считается по 'auto') и правило
+  // «оффлайн <= автокаст <= ручная игра» сломалось бы молча.
+  const modelled = plan.potions ? statsWithPotionPlan(state) : statsWithoutPotions(state)
+  // Подменяем статы В КОПИИ состояния: всё, что ниже (resourceIncome,
+  // resourcePause, damagePerKill), читает их оттуда, и второго пути нет.
+  const s: GameState = modelled === state.stats ? state : { ...state, stats: modelled }
+  const stats = s.stats
   const avgSwing = expectedSwingDamage(stats)
   const respawnSec = RESPAWN_DELAY_MS / 1000
-  const settings = unlockedSettings(state)
+  const settings = unlockedSettings(s)
   // Ресурс из боя — уравнение с самим собой: удары умений тоже дают ярость,
   // а число умений зависит от ярости. Решаем ДВУМЯ проходами: сперва доход
   // от одних автоатак, потом — с учётом посчитанных мгновенных ударов.
   // Двух хватает: второй проход меняет ответ на проценты, третий — на доли.
-  const pause = resourcePause(state)
-  let rotation = rotationRate(stats, settings, plan, resourceIncome(state), pause)
-  if (classById(state.classId).resource.perSwingDealt.gt(0)) {
+  const pause = resourcePause(s)
+  let rotation = rotationRate(stats, settings, plan, resourceIncome(s), pause)
+  if (classById(s.classId).resource.perSwingDealt.gt(0)) {
     // Умения «на следующий удар» ЗАМЕНЯЮТ автоатаку и лишнего удара не дают.
     const extraHits = rotation.casts
       .filter((c) => c.ability.type === 'instant')
@@ -521,7 +564,7 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
       stats,
       settings,
       plan,
-      resourceIncome(state, extraHits),
+      resourceIncome(s, extraHits),
       pause,
     )
   }
@@ -529,16 +572,20 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
   // умений герой ни жал, «столько бьёт этот меч» не меняется. Этим числом
   // сравниваются предметы, и на нём держится инвариант нормализации скорости.
   // Автоатака — это ОБЕ руки: у каждой свой таймер и свой урон за удар.
-  const autoDps = autoDamagePerSecond(stats)
+  const doubleChance = doubleStrikeChance(s.talents)
+  const autoDps = autoDamagePerSecond(stats, doubleChance)
   // Сложить автоатаку и умения напрямую НЕЛЬЗЯ: умение «на следующий удар»
   // ЗАМЕНЯЕТ автоатаку, а не добавляется к ней, — эти замахи посчитаны дважды.
   // Пока бой длился полтора удара, ошибка была незаметной; на длинном бою она
   // делала оффлайн выгоднее живой игры, то есть ломала железное правило.
   const replaced = replacedSwingsPerSecond(stats, rotation).times(avgSwing).times(critFactor(stats))
   // Урон в секунду, реально дошедший до мобов: сырой темп минус перебой.
-  const raw = autoDps.plus(rotation.damagePerSecond).minus(replaced)
-  const perKill = damagePerKill(state, rotation, plan)
-  const damagePerSecond = raw.times(state.monster.maxHp.div(perKill))
+  const raw = autoDps
+    .plus(rotation.damagePerSecond)
+    .minus(replaced)
+    .plus(reflectPerSecond(s, expectedMonsterDamage(s.monster, stats)))
+  const perKill = damagePerKill(s, rotation, plan)
+  const damagePerSecond = raw.times(s.monster.maxHp.div(perKill))
   // Длина боя — из уже посчитанного урона в секунду (он уже с поправкой на
   // перебой). Дискретность ударов сидит внутри damagePerKill, поэтому здесь
   // деление честное и без округлений.
@@ -547,7 +594,7 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
   // заново, автокаст выжидает задержку реакции. Непрерывная модель этого не
   // видит и торопит бой процентов на пятнадцать, а от длины боя зависит
   // весь оффлайн.
-  const stream = hitStream(stats, rotation)
+  const stream = hitStream(stats, rotation, doubleChance)
   const averagePaced = stream.rate.gt(0) ? stream.paced.div(stream.rate) : new Decimal(1)
   const hitsPerKill = averagePaced.gt(0)
     ? Decimal.max(perKill.div(averagePaced).ceil(), new Decimal(1))
@@ -560,9 +607,9 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
 
   // Баланс HP за цикл: входящие удары моба (целым числом за фазу боя) минус
   // реген (в бою медленный, в паузе респауна быстрый).
-  const avgIncoming = expectedMonsterDamage(state.monster, stats)
+  const avgIncoming = expectedMonsterDamage(s.monster, stats)
   const monsterHitsPerCycle = avgIncoming.gt(0)
-    ? fightSec.div(state.monster.swingTime).floor()
+    ? fightSec.div(s.monster.swingTime).floor()
     : new Decimal(0)
   const incomingPerCycle = monsterHitsPerCycle.times(avgIncoming)
   const regenPerCycle = stats.hpRegen

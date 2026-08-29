@@ -128,8 +128,10 @@ export function craft(state: GameState, recipeId: string): GameState {
   for (const input of recipe.inputs) {
     materials[input.materialId] = materialCount(state, input.materialId).minus(input.count)
   }
-  if (recipe.output.kind === 'food') {
-    // Еда — такой же счётчик, как материал: одна порция расходуется привалом.
+  if (recipe.output.kind === 'food' || recipe.output.kind === 'potion') {
+    // Еда и зелья — такие же счётчики, как материал: одна порция расходуется
+    // привалом, одна склянка — глотком. Места в сумке ни та, ни другая не
+    // занимают, поэтому и проверки на inventory-full у них нет.
     const id = recipe.output.id
     return {
       ...state,

@@ -24,7 +24,7 @@ import {
 import { ensureStats } from './stats'
 import { tick } from './tick'
 import { averageArmorMods, sellItem, sellPrice, shieldMods, weaponMods } from './loot'
-import { upgradeShare } from './equipment'
+import { equipItem, upgradeShare } from './equipment'
 import { estimateZoneTtk, type TtkEstimate } from './combat'
 
 import {
@@ -36,12 +36,12 @@ import {
   zoneStanding,
   type ZoneStanding,
 } from './zones'
-import { INVENTORY_SIZE } from '../data/balance'
+import { INVENTORY_SIZE, LEVEL_CAP } from '../data/balance'
 import { ABILITIES, ABILITY_BY_ID } from '../data/abilities'
 import { AVERAGE_RARITY, RARITY_BY_ID } from '../data/rarity'
 import { ARMOR_NOUNS, ONE_HANDED, SHIELDS, WEAPONS, WEAPON_BY_ID } from '../data/items'
 import { SLOT_IDS, type SlotId } from '../data/slots'
-import { ZONES, averageMonsterLevel } from '../data/zones'
+import { ZONES, averageMonsterLevel, zoneForMonsterLevel } from '../data/zones'
 import { BRANCHES, talentsInBranch, type BranchId } from '../data/talents'
 import { CLASSES, DEFAULT_CLASS, classById } from '../data/classes'
 import { TALENT_FIRST_LEVEL } from '../data/balance'
@@ -768,5 +768,189 @@ export function simulate(options: SimOptions): SimResult {
     casts,
     damagePerMana: manaSpent.lte(0) ? null : abilityDamage.div(manaSpent),
     levelReachedAtSec,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Прогон полного пути: от первого уровня до потолка
+// ---------------------------------------------------------------------------
+
+/**
+ * МОДЕЛЬ ИГРОКА, КОТОРЫЙ РАЗБИРАЕТ ДОБЫЧУ.
+ *
+ * Автонадевания в игре больше нет — предметы надевает человек. Значит прибор
+ * обязан этого человека МОДЕЛИРОВАТЬ: без него герой прошёл бы сто уровней
+ * в стартовом комплекте, и все замеры оказались бы про другую игру.
+ *
+ * Политика простая и намеренно не умная: увидел в сумке вещь лучше надетой
+ * по тому же `estimateCombatRate`, которым игроку рисуется метка «Апгрейд
+ * +12%», — надел. Ни планирования, ни придерживания вещей «на потом».
+ *
+ * ЖИВЁТ ОНА ЗДЕСЬ, В ПРИБОРЕ, И НИКОГДА НЕ ПЕРЕЕЗЖАЕТ В ИГРУ. Это две разные
+ * вещи: в игре решение принимает человек, и отнимать его — значит вернуть
+ * автонадевание через заднюю дверь.
+ */
+function equipUpgrades(state: GameState): GameState {
+  let next = state
+  // По одному предмету за проход: надевание меняет статы, и следующая вещь
+  // сравнивается уже с новым набором.
+  for (let guard = 0; guard < SLOT_IDS.length + 1; guard += 1) {
+    const best = next.inventory
+      .map((item) => ({ item, share: upgradeShare(next, item) }))
+      .filter((c): c is { item: Item; share: number } => c.share !== null)
+      .sort((a, b) => b.share - a.share)[0]
+    if (!best) return next
+    const after = equipItem(next, best.item.id)
+    if (after === next) return next
+    next = after
+  }
+  return next
+}
+
+/** Строка таблицы полного пути: один уровень героя. */
+export interface RunLevelRow {
+  level: number
+  kills: number
+  seconds: number
+  zoneId: string
+}
+
+export interface RunResult {
+  classId: string
+  /** Уровень, на котором прогон закончился: при успехе — потолок. */
+  finalLevel: number
+  reachedCap: boolean
+  totalKills: number
+  totalHours: number
+  levels: RunLevelRow[]
+  /** Часы по полосам игры: 1-9 / 10-59 / 60-89 / 90-100. */
+  bandHours: Record<string, number>
+  restShare: number
+  deathsPerHour: number
+  goldPerHour: Decimal
+  xpPerHour: Decimal
+  decisionIntervalSec: number | null
+}
+
+/** Границы полос, по которым печатаются часы. Те же, что в дизайн-документе. */
+export const RUN_BANDS: ReadonlyArray<{ label: string; from: number; to: number }> = [
+  { label: '1-9', from: 1, to: 9 },
+  { label: '10-59', from: 10, to: 59 },
+  { label: '60-89', from: 60, to: 89 },
+  { label: '90-100', from: 90, to: LEVEL_CAP },
+]
+
+export interface RunOptions {
+  classId?: string
+  /** Предохранитель: сколько игровых часов максимум крутить. */
+  maxHours?: number
+  seed?: number
+}
+
+/**
+ * Полный путь 1..100 настоящим конвейером тика.
+ *
+ * Своей модели боя здесь нет — крутится тот же `tick`. Сверх него прибор
+ * делает ровно две вещи, которых в игре нет: переезжает в лучшую открытую
+ * зону при повышении уровня и надевает найденные апгрейды (см. equipUpgrades).
+ * И то и другое — МОДЕЛЬ ИГРОКА, а не правило игры.
+ */
+export function simulateRun(options: RunOptions = {}): RunResult {
+  const { classId = DEFAULT_CLASS.id, maxHours = 40, seed = 4242 } = options
+  const rng = createRng(seed)
+  let state = buildSimState({ classId, level: 1 }, ZONES[0].id, seed)
+
+  const levels: RunLevelRow[] = []
+  let levelKills = 0
+  let levelStartSec = 0
+  let totalKills = 0
+  let deaths = 0
+  let restingMs = 0
+  let decisions = 0
+  let openZones = ZONES.filter((z) => z.unlockRequirement <= 1).length
+  let talentPoints = branchPoints(1)
+  const startGold = state.gold
+  let xpTotal = new Decimal(0)
+
+  const steps = Math.round((maxHours * 3600 * 1000) / STEP_MS)
+  let step = 0
+  for (; step < steps; step += 1) {
+    const prev = state
+    state = tick(prev, STEP_MS, rng, () => {})
+    const sec = ((step + 1) * STEP_MS) / 1000
+
+    if (prev.respawnMsLeft <= 0 && state.respawnMsLeft > 0) {
+      levelKills += 1
+      totalKills += 1
+    }
+    if (prev.heroState === 'alive' && state.heroState === 'dead') deaths += 1
+    if (state.heroState === 'resting') restingMs += STEP_MS
+    xpTotal = xpTotal.plus(
+      state.level.eq(prev.level)
+        ? state.currentXp.minus(prev.currentXp)
+        : totalXpEarned(state.level, state.currentXp).minus(
+            totalXpEarned(prev.level, prev.currentXp),
+          ),
+    )
+    // Решения игрока: находка выше обычной либо апгрейд — ровно та мера,
+    // которой пользуется таблица интервала решений.
+    for (let i = prev.inventory.length; i < state.inventory.length; i += 1) {
+      const found = state.inventory[i]
+      if (!found) continue
+      if (found.rarity !== 'common' || upgradeShare(state, found) !== null) decisions += 1
+    }
+
+    // Игрок разбирает сумку: надевает всё, что лучше надетого.
+    state = equipUpgrades(state)
+
+    if (state.level.gt(prev.level)) {
+      const reached = state.level.toNumber()
+      levels.push({
+        level: prev.level.toNumber(),
+        kills: levelKills,
+        seconds: sec - levelStartSec,
+        zoneId: prev.currentZoneId,
+      })
+      levelKills = 0
+      levelStartSec = sec
+      const zonesNow = ZONES.filter((z) => z.unlockRequirement <= reached).length
+      const pointsNow = branchPoints(reached)
+      decisions += zonesNow - openZones + Math.max(0, pointsNow - talentPoints)
+      openZones = zonesNow
+      talentPoints = pointsNow
+      // Куда переезжает МОДЕЛЬ ИГРОКА: в зону СВОЕЙ полосы, если она уже
+      // открыта. Не в «лучшую по опыту в час» — та выбирает зону, где мобы
+      // падают с одного удара, и прогон превращался бы в мясорубку с
+      // временем убийства полторы секунды вместо коридора 8-15. Игрок идёт
+      // туда, где противник ему под стать, и лестница ведёт его именно так.
+      const own = zoneForMonsterLevel(reached)
+      state = travelToZone(state, isZoneUnlocked(state, own) ? own.id : bestZoneId(state), rng)
+      if (reached >= LEVEL_CAP) break
+    }
+  }
+
+  const seconds = ((step + 1) * STEP_MS) / 1000
+  const hours = seconds / 3600
+  const bandHours: Record<string, number> = {}
+  for (const band of RUN_BANDS) {
+    bandHours[band.label] =
+      levels
+        .filter((r) => r.level >= band.from && r.level <= band.to)
+        .reduce((sum, r) => sum + r.seconds, 0) / 3600
+  }
+
+  return {
+    classId,
+    finalLevel: state.level.toNumber(),
+    reachedCap: state.level.gte(LEVEL_CAP),
+    totalKills,
+    totalHours: hours,
+    levels,
+    bandHours,
+    restShare: restingMs / (seconds * 1000),
+    deathsPerHour: deaths / hours,
+    goldPerHour: state.gold.minus(startGold).div(hours),
+    xpPerHour: xpTotal.div(hours),
+    decisionIntervalSec: decisions > 0 ? seconds / decisions : null,
   }
 }

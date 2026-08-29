@@ -7,6 +7,7 @@
   import { ABILITY_BY_ID } from '../data/abilities'
   import { MATERIAL_BY_ID } from '../data/materials'
   import { RECIPE_BY_ID } from '../data/recipes'
+  import { ENCHANT_BY_ID } from '../data/enchants'
   import { rarityName, rarityStyle } from './kit'
   import { Icon } from './icons'
   import type { IconName } from './icons'
@@ -52,6 +53,14 @@
         return `Собрано: ${MATERIAL_BY_ID[e.materialId]?.name ?? e.materialId}`
       case 'craft':
         return `Готово: ${RECIPE_BY_ID[e.recipeId]?.name ?? e.recipeId}`
+      case 'disenchant':
+        return `Распылено: ${e.item.name} → ${formatNumber(e.dust)} пыли`
+      case 'enchant':
+        return `Зачаровано: ${e.itemName} — ${ENCHANT_BY_ID[e.enchantId]?.name ?? e.enchantId}`
+      case 'potion':
+        return `Выпито: ${RECIPE_BY_ID[e.recipeId]?.name ?? e.recipeId}`
+      case 'potion-expired':
+        return `${RECIPE_BY_ID[e.recipeId]?.name ?? e.recipeId} выдохся`
       case 'rest-start':
         return 'Привал: восстанавливаешься'
       case 'rest-end':
@@ -119,6 +128,10 @@
     // ровно про неё. Заводить вторую такую же незачем.
     material: 'material-ore',
     craft: 'profession-smithing',
+    disenchant: 'action-disenchant',
+    enchant: 'profession-enchanting',
+    potion: 'potion-fury',
+    'potion-expired': 'potion-fury',
     'rest-start': 'stat-hpRegenOutOfCombat',
     'rest-end': 'stat-hpRegenOutOfCombat',
   }

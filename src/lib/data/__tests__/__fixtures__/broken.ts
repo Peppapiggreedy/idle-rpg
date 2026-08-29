@@ -261,6 +261,90 @@ export function brokenCases(): BrokenCase[] {
       expect: [first(real.materials).id, 'нет-зоны'],
     },
     {
+      title: 'трава не растёт ни в одной зоне — зелья с ней недостижимы',
+      content: {
+        ...real,
+        herbs: patch(real.herbs, first(real.herbs).id, { zoneIds: [] }),
+      },
+      expect: [first(real.herbs).id, 'не растёт ни в одной зоне'],
+    },
+    {
+      title: 'трава растёт в зоне, которой нет',
+      content: {
+        ...real,
+        herbs: patch(real.herbs, first(real.herbs).id, { zoneIds: ['нет-зоны'] }),
+      },
+      expect: [first(real.herbs).id, 'нет-зоны'],
+    },
+    {
+      title: 'трава срезается ноль раз в минуту — её не собрать никогда',
+      content: {
+        ...real,
+        herbs: patch(real.herbs, first(real.herbs).id, { perMinute: 0 }),
+      },
+      expect: [first(real.herbs).id, 'perMinute'],
+    },
+    {
+      title: 'зелье лечит наоборот: отрицательный модификатор — это наказание',
+      content: {
+        ...real,
+        recipes: real.recipes.map((r) =>
+          r.output.kind === 'potion'
+            ? {
+                ...r,
+                output: {
+                  ...r.output,
+                  mods: r.output.mods.map((m) => ({ ...m, value: m.value.neg() })),
+                },
+              }
+            : r,
+        ),
+      },
+      expect: ['не положителен'],
+    },
+    {
+      title: 'id склянки не совпадает с id рецепта — мешок её не найдёт',
+      content: {
+        ...real,
+        recipes: real.recipes.map((r) =>
+          r.output.kind === 'potion' ? { ...r, output: { ...r.output, id: 'potion:чужой' } } : r,
+        ),
+      },
+      expect: ['potion:чужой'],
+    },
+    {
+      title: 'зачарование подменяет базу боя: kind base',
+      content: {
+        ...real,
+        enchants: patch(real.enchants, first(real.enchants).id, {
+          mods: [
+            { stat: 'weaponDamageMin' as StatId, kind: 'base' as const, value: new Decimal(50) },
+          ],
+        }),
+      },
+      expect: [first(real.enchants).id, 'base', 'data/enchants.ts'],
+    },
+    {
+      title: 'зачарование ускоряет прибавкой к weaponSpeed вместо haste',
+      content: {
+        ...real,
+        enchants: patch(real.enchants, first(real.enchants).id, {
+          mods: [
+            { stat: 'weaponSpeed' as StatId, kind: 'flat' as const, value: new Decimal(-0.5) },
+          ],
+        }),
+      },
+      expect: [first(real.enchants).id, 'weaponSpeed', 'haste'],
+    },
+    {
+      title: 'зачарование не подходит ни одному слоту — наложить его некуда',
+      content: {
+        ...real,
+        enchants: patch(real.enchants, first(real.enchants).id, { slots: [] }),
+      },
+      expect: [first(real.enchants).id, 'не подходит ни одному слоту'],
+    },
+    {
       title: 'класс ссылается на несуществующее умение',
       content: {
         ...real,

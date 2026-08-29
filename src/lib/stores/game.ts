@@ -18,6 +18,8 @@ import { currentZone, travelToZone as travelAction } from '../game/zones'
 import { useAbility as useAbilityAction } from '../game/abilities'
 import { abilitiesByPriority } from '../game/rotation'
 import { investTalent as investTalentAction, resetTalents as resetTalentsAction } from '../game/talents'
+import { drinkPotion as drinkPotionAction } from '../game/potions'
+import { disenchantItem, enchantItem } from '../game/enchanting'
 import {
   enterDungeon as enterDungeonAction,
   leaveDungeon as leaveDungeonAction,
@@ -265,6 +267,35 @@ export function setRestHpThreshold(share: number): void {
 export function craftRecipe(recipeId: string): void {
   recordDecision('craft')
   state.update((s) => craftAction(s, recipeId))
+}
+
+/**
+ * Выпить зелье (клик или хоткей). Недоступная склянка состояние не меняет;
+ * причину показывает potionStatus, текст к ней рендерит UI.
+ *
+ * Экшен ОДИН и только здесь: автокаста у зелий нет и не будет — вся разница
+ * между ручной игрой и предоставленным самому себе героем держится на том,
+ * что эту кнопку жмёт человек.
+ */
+/** Распылить предмет из сумки в пыль. Надетый и запертое уровнем — как было. */
+export function disenchantInventoryItem(itemId: string): void {
+  recordDecision('enchant')
+  state.update((s) => disenchantItem(s, itemId))
+}
+
+/**
+ * Наложить зачарование. Подтверждение «старое исчезнет» спрашивает UI до
+ * вызова: логика молча делает то, о чём попросили, и переспрашивать в сторе
+ * ей нечем — там нет ни диалогов, ни текста.
+ */
+export function enchantInventoryItem(itemId: string, enchantId: string): void {
+  recordDecision('enchant')
+  state.update((s) => enchantItem(s, itemId, enchantId))
+}
+
+export function drinkPotion(outputId: string): void {
+  recordDecision('potion')
+  state.update((s) => drinkPotionAction(s, outputId))
 }
 
 /** Порог ухода на привал по ресурсу. */
