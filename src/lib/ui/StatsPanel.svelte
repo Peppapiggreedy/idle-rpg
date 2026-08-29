@@ -18,6 +18,7 @@
   import { Panel } from './kit'
   import { STAT_ICONS } from '../data/stats'
   import { resourceWords } from './resource'
+  import { flatText } from './statText'
   import { Icon } from './icons'
 
   // Три строки называют ресурс, а он у классов разный: у изувера это ярость,
@@ -96,7 +97,7 @@
     if (mod.kind === 'percent') return `${mod.value.gte(0) ? '+' : ''}${mod.value.times(100).toFixed(0)}%`
     if (mod.kind === 'multiplier') return `×${mod.value.toFixed(2)}`
     if (PERCENT_STATS.includes(stat)) return `${mod.value.gte(0) ? '+' : ''}${mod.value.times(100).toFixed(0)}%`
-    return `${mod.value.gte(0) ? '+' : ''}${formatNumber(mod.value)}`
+    return flatText(mod.value)
   }
 
   // 'attribute:strength' -> «от силы», 'base' -> «база» и т.д.

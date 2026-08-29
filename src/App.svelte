@@ -131,25 +131,41 @@
 
     <!-- Разделы из одной панели ведут себя иначе, чем из двух: сумке нужна
          вся ширина под сетку предметов, а настройкам — узкая колонка, иначе
-         строки пояснений растянет через весь экран и их станет не прочесть. -->
+         строки пояснений растянет через весь экран и их станет не прочесть.
+
+         Две колонки собраны РУКАМИ, а не сеткой из плоского списка панелей.
+         Сетка кладёт панели построчно и равняет строку по самой высокой:
+         дерево талантов в две тысячи пикселей рядом с панелькой задания
+         оставляло под заданием пустоту во весь экран. Колонка растёт своей
+         высотой, поэтому панели распределены по ним так, чтобы итоговые
+         высоты сошлись. На мобильном колонки исчезают (`display: contents`)
+         и панели идут одним столбцом в порядке разметки. -->
     <div
       class="section"
       class:full={$activeSection === 'bag'}
       class:solo={$activeSection === 'settings'}
     >
       {#if $activeSection === 'progress'}
-        <QuestPanel />
-        <TalentPanel />
-        <ProgressionPanel />
-        <AbilityPanel />
+        <div class="col">
+          <TalentPanel />
+        </div>
+        <div class="col">
+          <QuestPanel />
+          <ProgressionPanel />
+          <AbilityPanel />
+        </div>
       {:else if $activeSection === 'bag'}
         <InventoryPanel />
         <CraftPanel />
         <EnchantPanel />
       {:else if $activeSection === 'world'}
-        <ZonePanel />
-        <DungeonPanel />
-        <TemplePanel />
+        <div class="col">
+          <ZonePanel />
+          <TemplePanel />
+        </div>
+        <div class="col">
+          <DungeonPanel />
+        </div>
       {:else}
         <SettingsPanel />
       {/if}
@@ -229,6 +245,11 @@
     align-items: start;
     min-width: 0;
   }
+  /* На узком экране колонок нет вовсе: обёртки растворяются, и панели
+     становятся прямыми детьми сетки в порядке разметки. */
+  .col {
+    display: contents;
+  }
   .tabbar-space {
     height: var(--tabbar-height);
   }
@@ -256,6 +277,12 @@
     .section {
       grid-template-columns: 1fr 1fr;
       gap: var(--space-4);
+    }
+    .col {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-4);
+      min-width: 0;
     }
     .section.full {
       grid-template-columns: 1fr;

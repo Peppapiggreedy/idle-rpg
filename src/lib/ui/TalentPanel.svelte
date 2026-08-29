@@ -5,7 +5,6 @@
   import {
     availablePoints,
     canResetTalents,
-    formatNumber,
     heroBranches,
     resetCost,
     spentInBranch,
@@ -22,6 +21,7 @@
   import { TALENT_FIRST_LEVEL } from '../data/balance'
   import { gameState, investTalentPoint, resetTalentTree } from '../stores/game'
   import { resourceWords } from './resource'
+  import { flatText } from './statText'
   import { Button, NumberText, Panel, Tag } from './kit'
   import { Icon } from './icons'
 
@@ -106,7 +106,7 @@
     if (PERCENT_STATS.includes(mod.stat)) {
       return `+${mod.value.times(100).toFixed(mod.value.times(100).lt(10) ? 1 : 0)}% ${name}`
     }
-    return `+${formatNumber(mod.value)} ${name}`
+    return `${flatText(mod.value)} ${name}`
   }
 
   function effectText(talent: TalentDef): string {

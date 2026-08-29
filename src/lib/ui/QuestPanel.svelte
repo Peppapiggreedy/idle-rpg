@@ -28,13 +28,10 @@
   )
 </script>
 
-<Panel
-  title={QUEST_CHAIN.name}
-  subtitle={unlocked ? 'Цепочка к вратам рейда' : `Откроется на ${QUEST_CHAIN.unlockLevel} уровне`}
->
+<Panel title={QUEST_CHAIN.name} subtitle="Цепочка к вратам рейда">
   {#if !unlocked}
     <p class="hint">
-      Первое задание выдадут на {QUEST_CHAIN.unlockLevel} уровне. Осталось {levelLeft}.
+      Первое задание выдадут на {QUEST_CHAIN.unlockLevel} уровне — осталось {levelLeft}.
     </p>
   {:else}
     <ol>

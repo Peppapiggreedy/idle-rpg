@@ -160,9 +160,11 @@ test('на мобильном вкладки прибиты к низу экра
   await page.waitForTimeout(200)
   const after = await nav.boundingBox()
   expect(Math.round(after!.y)).toBe(Math.round(before!.y))
-  // И под полосой не прячется последняя панель раздела.
-  const last = page.locator('main .section > *').last()
-  const box = await last.boundingBox()
+  // И под полосой не прячется низ раздела. Меряем сам раздел, а не его
+  // последнего ребёнка: на десктопе панели разложены по колонкам-обёрткам,
+  // а на мобильном обёртки растворены в `display: contents` — у такого
+  // элемента своей рамки нет, и замер по нему ничего бы не значил.
+  const box = await page.locator('main .section').boundingBox()
   expect(box!.y + box!.height).toBeLessThanOrEqual(before!.y + 1)
 })
 
