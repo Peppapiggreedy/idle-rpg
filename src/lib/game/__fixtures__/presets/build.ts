@@ -7,13 +7,16 @@
 import { Decimal } from '../../numbers'
 import { createRng } from '../../rng'
 import { createInitialState, type GameState } from '../../state'
+// saveId у пресета ФИКСИРОВАН вместе с сидом: он входит в сейв, а снимок
+// обязан быть воспроизводим до байта.
+import { DEFAULT_CLASS } from '../../../data/classes'
 import { ensureStats } from '../../stats'
 import { xpToNextLevel } from '../../formulas'
 import { equipItem } from '../../equipment'
 import { rollBossLoot, rollLoot } from '../../loot'
 import { investTalent } from '../../talents'
 import { travelToZone } from '../../zones'
-import { payloadFromState, type SavePayloadV18 } from '../../save'
+import { payloadFromState, type SavePayloadV19 } from '../../save'
 import { DUNGEONS } from '../../../data/dungeons'
 import { TALENTS } from '../../../data/talents'
 import { SLOT_IDS } from '../../../data/slots'
@@ -60,12 +63,12 @@ function rollItems(state: GameState, seed: number, count: number, level = 1): It
 
 /** Новый игрок: всё по нулям, стартовая зона. */
 function fresh(): GameState {
-  return createInitialState(101)
+  return createInitialState(101, DEFAULT_CLASS.id, 101)
 }
 
 /** Середина игры: десятый уровень, экипировка, умения на кулдауне. */
 function mid(): GameState {
-  let state = createInitialState(202)
+  let state = createInitialState(202, DEFAULT_CLASS.id, 202)
   state = atLevel(state, 10)
   // Оружие и пара вещей — надеваем через обычный equipItem. Оружие берём
   // ЯВНО, а не первым по порядку: без него герой на снимке дерётся кулаками,
@@ -93,7 +96,7 @@ function mid(): GameState {
 
 /** Поздняя игра: полный инвентарь, все зоны, вложенные таланты, данж пройден. */
 function rich(): GameState {
-  let state = createInitialState(404)
+  let state = createInitialState(404, DEFAULT_CLASS.id, 404)
   state = atLevel(state, 22)
   // Лут босса даёт высокие тиры — в инвентаре видно все цвета редкости.
   const bossLoot = DUNGEONS[0].bosses.flatMap((boss, index) =>
@@ -132,6 +135,6 @@ export function buildPreset(name: PresetName): GameState {
   return BUILDERS[name]()
 }
 
-export function presetPayload(name: PresetName): SavePayloadV18 {
+export function presetPayload(name: PresetName): SavePayloadV19 {
   return payloadFromState(buildPreset(name), FROZEN_TIMESTAMP)
 }

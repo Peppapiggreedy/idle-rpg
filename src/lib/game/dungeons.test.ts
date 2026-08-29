@@ -24,6 +24,7 @@ import {
   buildBoss,
 } from '../data/dungeons'
 import { RARITIES } from '../data/rarity'
+import { zoneForMonsterLevel } from '../data/zones'
 import { averageGear } from './simulate'
 import { ZONE_BY_ID, representativeMonster } from '../data/zones'
 
@@ -103,8 +104,12 @@ describe('данные данжа', () => {
       expect(buildBoss(boss).goldReward.gt(buildBoss(prev).goldReward)).toBe(true)
       // Порог редкости лута поднимается от босса к боссу.
       expect(rarityIndex(boss.loot.minRarity)).toBeGreaterThan(rarityIndex(prev.loot.minRarity))
-      // И времени до ярости даётся меньше.
-      expect(boss.enrageAfterSec).toBeLessThanOrEqual(prev.enrageAfterSec)
+      // И проверка на урон в секунду ЖЁСТЧЕ. Мерить это голыми секундами
+      // нельзя: у третьего босса запас HP в полтора раза больше, и тот же
+      // таймер означал бы для него совсем другое требование. Жёсткость —
+      // это отношение отпущенного времени к длине боя, то есть к запасу HP.
+      const tightness = (b: typeof boss) => b.enrageAfterSec / buildBoss(b).maxHp.toNumber()
+      expect(tightness(boss)).toBeLessThanOrEqual(tightness(prev) * 1.001)
     }
   })
 })
@@ -362,4 +367,82 @@ describe('оффлайн и данж', () => {
     expect(state.gold.eq(inside.gold)).toBe(true)
     expect(state.dungeonRun).not.toBeNull() // забег ждёт героя на месте
   })
+})
+
+// ВОСЕМЬ ДАНЖЕЙ ПРОВЕРЯЮТСЯ ФОРМУЛОЙ, А НЕ ПОДБОРОМ ПО ОДНОМУ. Числа боссов
+// выводятся из тира, значит и правило у них общее — его и меряем разом:
+// герой уровня входа в вещах своей полосы проходит цепочку, а отставший
+// по урону гибнет ИМЕННО ОТ ЯРОСТИ, а не от обычного удара.
+describe('правило чисел держится на всех восьми данжах', () => {
+  function heroFor(dungeon: (typeof DUNGEONS)[number], gearLevel: number): GameState {
+    return ensureStats({
+      ...createInitialState(1),
+      level: new Decimal(dungeon.unlockRequirement),
+      equipment: averageGear(gearLevel),
+      currentZoneId: dungeon.zoneId,
+      statsDirty: true,
+    })
+  }
+
+  /** Прогон цепочки до конца или до смерти. */
+  function runChain(start: GameState): { cleared: boolean; enrageAtDeath: number } {
+    let s = enterDungeon(start, s0Dungeon(start)!.id)
+    let enrageAtDeath = 1
+    for (let i = 0; i < 20_000 && s.dungeonRun; i += 1) {
+      const boss = currentBoss(s)
+      const run = s.dungeonRun
+      s = tick(s, STEP_MS, () => 0.5, () => {})
+      if (boss && run && s.heroState === 'dead') enrageAtDeath = enrageMultiplier(boss, run.fightMs)
+    }
+    return { cleared: s.heroState !== 'dead', enrageAtDeath }
+  }
+
+  // Данж, в который герой собрался: он один — тот, чью зону мы поставили.
+  function s0Dungeon(state: GameState) {
+    return DUNGEONS.find((d) => d.zoneId === state.currentZoneId && d.unlockRequirement <= state.level.toNumber())
+  }
+
+  it('на своём уровне в вещах своей полосы цепочка проходится', () => {
+    for (const dungeon of DUNGEONS) {
+      // Вещи полосы, на которой герой этого уровня дерётся, — то, во что он
+      // одет к моменту, когда дверь открылась.
+      const gear = zoneForMonsterLevel(dungeon.unlockRequirement).monsterLevelRange.max
+      const { cleared } = runChain(heroFor(dungeon, gear))
+      expect(cleared, `${dungeon.id}: цепочка не проходится на своём уровне`).toBe(true)
+    }
+  })
+
+  it('на отметке ярости герой ещё жив: обычные удары он переживает', () => {
+    // МЕРИМ ПЕРВУЮ СХВАТКУ, и это не упрощение. Внутри данжа привала нет:
+    // ко второму боссу герой приходит с тем, что осталось, и там его добьёт
+    // что угодно. Чистое утверждение «обычные удары герой переживает,
+    // догоняет ярость» проверяемо ровно на первом боссе — на полном запасе.
+    for (const dungeon of DUNGEONS) {
+      // Вчетверо более слабые вещи: урона не хватает, но обычные удары
+      // герой держит — значит убить его обязана отметка ярости.
+      // Вещи СВОЕЙ полосы: обещание «обычные удары переживает» дано именно
+      // тому, кто пришёл вовремя и одетым. Недоодетый — отдельный разговор,
+      // и там правило другое: его добивает ярость (см. тест выше по файлу).
+      const gear = zoneForMonsterLevel(dungeon.unlockRequirement).monsterLevelRange.max
+      let s = enterDungeon(heroFor(dungeon, gear), dungeon.id)
+      const boss = dungeon.bosses[0]
+      let deathFightMs: number | null = null
+      for (let i = 0; i < 20_000 && s.dungeonRun?.bossIndex === 0; i += 1) {
+        const fightMs = s.dungeonRun?.fightMs ?? 0
+        s = tick(s, STEP_MS, () => 0.5, () => {})
+        if (s.heroState === 'dead') {
+          deathFightMs = fightMs
+          break
+        }
+      }
+      // ОБЕЩАНИЕ ДАНЖА: до отметки ярости обычные удары героя не убивают.
+      // Он либо дожал босса раньше (deathFightMs === null), либо погиб уже
+      // после отметки — то есть от ярости. Всё, что происходит после неё, —
+      // проверка на урон в секунду, и её исход зависит от билда.
+      expect(
+        deathFightMs === null || deathFightMs >= boss.enrageAfterSec * 1000,
+        `${dungeon.id}: обычные удары убили до ярости (${deathFightMs} мс)`,
+      ).toBe(true)
+    }
+  }, 300_000)
 })

@@ -53,15 +53,35 @@ function withEquipped(state: GameState, item: Item): GameState {
   })
 }
 
-/** Оценочный урон в секунду, если надеть предмет (сам предмет не надевается). */
-export function damagePerSecondWith(state: GameState, item: Item): Decimal {
-  return estimateCombatRate(withEquipped(state, item)).damagePerSecond
+/** Темп фарма, каким он станет с предметом (сам предмет не надевается). */
+export function farmRateWith(state: GameState, item: Item): Decimal {
+  return farmRate(withEquipped(state, item))
 }
 
-/** Лучше ли предмет надетого — СТРОГО по оценочному урону в секунду. */
+/**
+ * ЧЕМ МЕРИТСЯ «ЛУЧШЕ». Убийствами в секунду, а не голым уроном в секунду.
+ *
+ * Разница принципиальна, и прогон полного пути показал это дороже некуда.
+ * `damagePerSecond` — это «как сильно бью», и живучесть в него не входит
+ * вовсе: панцирь на живучесть не двигает его ни на единицу. Значит по нему
+ * броня НИКОГДА не апгрейд — герой донашивает стартовый панцирь до
+ * шестидесятого уровня, начинает умирать, и класс со щитом (у которого
+ * половина силы как раз в том, чтобы стоять) вылетает из игры к середине
+ * лестницы. В прогоне страж застревал на 64 уровне с четырнадцатью
+ * смертями в час, пока изувер доходил до сотого.
+ *
+ * `killsPerSecond` — это «сколько мобов в секунду я кладу»: в нём и урон,
+ * и аптайм, то есть и живучесть. Это ТА ЖЕ оценка из estimateCombatRate,
+ * которой пользуются прогноз зоны и оффлайн, — второй меры «хорошести»
+ * в игре по-прежнему нет.
+ */
+function farmRate(state: GameState): Decimal {
+  return estimateCombatRate(state).killsPerSecond
+}
+
+/** Лучше ли предмет надетого — СТРОГО по оценочному темпу убийств. */
 export function isUpgrade(state: GameState, item: Item): boolean {
-  const current = estimateCombatRate(state).damagePerSecond
-  return damagePerSecondWith(state, item).gt(current)
+  return farmRateWith(state, item).gt(farmRate(state))
 }
 
 // Производные числа для сравнения предметов в UI: не «+4 к силе атаки»,
@@ -71,6 +91,8 @@ export interface EquipPreview {
   damageMax: Decimal
   swingTime: number // секунд между ударами с учётом haste
   damagePerSecond: Decimal
+  /** Убийств в секунду с учётом аптайма — мера, по которой считается апгрейд. */
+  killsPerSecond: Decimal
 }
 
 function previewOf(state: GameState): EquipPreview {
@@ -80,6 +102,8 @@ function previewOf(state: GameState): EquipPreview {
     damageMax: max,
     swingTime: state.stats.swingTime,
     damagePerSecond: estimateCombatRate(state).damagePerSecond,
+    // Темп фарма — то, чем СРАВНИВАЮТСЯ предметы: в нём и урон, и аптайм.
+    killsPerSecond: farmRate(state),
   }
 }
 
@@ -102,7 +126,7 @@ export function compareItem(state: GameState, item: Item): EquipComparison {
     current,
     currentItem: state.equipment[item.slot],
     damagePerSecondDelta: withItem.damagePerSecond.minus(current.damagePerSecond),
-    isUpgrade: withItem.damagePerSecond.gt(current.damagePerSecond),
+    isUpgrade: withItem.killsPerSecond.gt(current.killsPerSecond),
   }
 }
 
@@ -141,14 +165,19 @@ export function isEquipped(state: GameState, itemId: string): boolean {
   return Object.values(state.equipment).some((i) => i?.id === itemId)
 }
 
-/** Переключатель автонадевания; сам ничего не надевает — только флаг. */
-export function setAutoEquip(state: GameState, enabled: boolean): GameState {
-  return { ...state, autoEquip: enabled }
-}
-
-/** Автонадевание: надевает предмет, только если он повышает урон в секунду. */
-export function autoEquipIfBetter(state: GameState, item: Item): GameState {
-  if (!state.autoEquip) return state
-  if (!isUpgrade(state, item)) return state
-  return equipItem(state, item.id)
+/**
+ * Насколько предмет лучше надетого — ДОЛЯ прироста темпа убийств.
+ *
+ * Именно доля, а не разница: «+340 урона» на двадцатом уровне и на
+ * восьмидесятом значат совершенно разное, а «+12%» значит одно и то же
+ * везде. Это то число, ради которого игрок вообще смотрит на находку.
+ * Пустой слот — прирост от нуля, поэтому доля не считается вовсе
+ * (делить не на что): такой предмет лучше по определению.
+ */
+export function upgradeShare(state: GameState, item: Item): number | null {
+  const cmp = compareItem(state, item)
+  if (!cmp.isUpgrade) return null
+  const base = cmp.current.killsPerSecond
+  if (base.lte(0)) return Number.POSITIVE_INFINITY
+  return cmp.withItem.killsPerSecond.minus(base).div(base).toNumber()
 }

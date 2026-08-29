@@ -24,12 +24,20 @@ export type PlayMode = 'auto' | 'manual'
 export interface RotationPlan {
   delayed: boolean
   onlyAutocast: boolean
+  /**
+   * Считать ли выпитое зелье. Третья ось режима, и она НЕ про умения:
+   * зелье нельзя автоматизировать, поэтому герой сам себя им не поит.
+   * У autocastByHand — false намеренно: это точка отсчёта потолка
+   * отставания автокаста, и подмешивать в неё зелья значило бы требовать
+   * от автокаста того, чего он в принципе не умеет.
+   */
+  potions: boolean
 }
 
 export const PLAN: Record<'auto' | 'manual' | 'autocastByHand', RotationPlan> = {
-  auto: { delayed: true, onlyAutocast: true },
-  manual: { delayed: false, onlyAutocast: false },
-  autocastByHand: { delayed: false, onlyAutocast: true },
+  auto: { delayed: true, onlyAutocast: true, potions: false },
+  manual: { delayed: false, onlyAutocast: false, potions: true },
+  autocastByHand: { delayed: false, onlyAutocast: true, potions: false },
 }
 
 export interface AbilityCastRate {

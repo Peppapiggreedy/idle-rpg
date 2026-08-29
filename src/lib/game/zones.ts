@@ -2,7 +2,7 @@
 // из статов героя и мобов зоны через ту же estimateCombatRate, что и бой, —
 // в данных зоны нет ни слова про «тут опасно». Текст рендерит UI по вердикту.
 import { Decimal } from './numbers'
-import { restDurationMs } from './rest'
+import { restDurationMs, zoneSafety } from './rest'
 import { estimateCombatRate, estimateTtk, expectedMonsterDamage, uptimeFromHpLoss } from './combat'
 import type { PlayMode } from './rotation'
 import { monsterFromTemplate, pushEvent, spawnMonster, type GameState } from './state'
@@ -13,6 +13,8 @@ import {
   ZONE_BY_ID,
   averageMonsterLevel,
   representativeMonster,
+  zoneForLevel,
+  zoneForMonsterLevel,
   zoneMonsterVariants,
   type Zone,
 } from '../data/zones'
@@ -32,16 +34,20 @@ export function isZoneUnlocked(state: GameState, zone: Zone): boolean {
 }
 
 /**
- * Куда игра ведёт героя на этом уровне: САМАЯ ДАЛЬНЯЯ открытая зона.
- * Это и есть «актуальная зона» контракта темпа — не та, где герой стоит
- * прямо сейчас (туда он мог заглянуть сам), а та, на которую рассчитан
- * его уровень.
+ * Куда игра ведёт героя на этом уровне: полоса мобов, КОТОРАЯ ЕМУ ПО СИЛАМ.
+ * Это и есть «актуальная зона» контракта темпа.
+ *
+ * НЕ «самая дальняя открытая», и это важно. Зоны открываются заметно
+ * быстрее, чем герой начинает в них выживать: на десятом уровне открыта
+ * полоса шестнадцатых, и мерить контракт по ней значит мерить бой, в
+ * который герой ещё не должен лезть. Ровно та же подмена ломала кривую
+ * опыта и уровни боссов — там она уже исправлена, и здесь основание
+ * обязано быть тем же.
+ *
+ * Само правило живёт в данных (`zoneForMonsterLevel`): по нему же считается
+ * кривая опыта, а тянуть бой в `formulas.ts` нельзя — вышло бы кольцо.
  */
-export function intendedZone(level: number): Zone {
-  let intended = SAFE_ZONE
-  for (const zone of ZONES) if (level >= zone.unlockRequirement) intended = zone
-  return intended
-}
+export const intendedZone = zoneForMonsterLevel
 
 /**
  * Где зона относительно героя. Четыре положения, а не три, и четвёртое
@@ -105,19 +111,28 @@ export function zoneRate(state: GameState, zone: Zone, mode: PlayMode = 'auto'):
   let gold = new Decimal(0)
   let xp = new Decimal(0)
   let hpLoss = new Decimal(0)
+  let cycleSec = 0
   for (const template of variants) {
     const rate = estimateCombatRate(facing(state, template), mode)
     kills = kills.plus(rate.idealKillsPerSecond)
     gold = gold.plus(rate.idealKillsPerSecond.times(template.goldReward))
     xp = xp.plus(rate.idealKillsPerSecond.times(template.xpReward))
     hpLoss = hpLoss.plus(rate.hpLossPerSecond)
+    cycleSec += rate.idealKillsPerSecond.gt(0)
+      ? new Decimal(1).div(rate.idealKillsPerSecond).toNumber()
+      : 0
   }
   // Привал — часть цикла зоны: герой не умирает, а отдыхает, и это время
   // тоже не приносит золота. Модель обязана его вычесть, иначе оффлайн
   // пообещает больше живой игры.
+  //
+  // Считается ПО БОЯМ ЦЕЛИКОМ: длина средней схватки зоны — второй вход
+  // модели, потому что уйти на привал герой может только между боями.
+  // Порог берётся из конвейера (настройка плюс таланты), а не сырым полем.
   const uptime = uptimeFromHpLoss(state.stats.maxHp, hpLoss.div(n), {
-    hpThreshold: state.restHpThreshold,
+    hpThreshold: state.stats.restThreshold,
     durationMs: restDurationMs(state),
+    cycleSec: cycleSec / variants.length,
   })
   return {
     killsPerSecond: kills.div(n).times(uptime),
@@ -167,23 +182,22 @@ export function forecastZone(state: GameState, zone: Zone): ZoneForecast {
     killsPerHour,
     goldPerHour: rate.goldPerSecond.times(3600),
     xpPerHour: rate.xpPerSecond.times(3600),
-    verdict: verdictFor(rate.uptime, killsPerHour, estimateTtk(state, zone), timeToDeathSec),
+    verdict: verdictFor(rate.uptime, killsPerHour, zoneSafety(state, zone).safe),
   }
 }
 
-function verdictFor(
-  uptime: number,
-  killsPerHour: Decimal,
-  ttkSec: number,
-  timeToDeathSec: number | null,
-): ZoneVerdict {
-  // «Безнадёжно» — герой не дожимает даже одного моба: убийств нет вовсе
-  // либо типичный моб живёт дольше, чем герой против него. Порог uptime
-  // этого не ловит: у героя, умирающего за секунды, доля живого времени
-  // всё ещё складывается из привалов и воскрешений.
+/**
+ * Код вердикта. «По силам» больше НЕ значит «не теряю здоровья»: с привалом
+ * между боями герой теряет его всегда, а важно другое — переживёт ли он
+ * неудачную схватку. Поэтому safe выдаётся ровно тогда, когда порога хватает
+ * на бой целиком с запасом на разброс (zoneSafety, 95-й процентиль), а не
+ * когда баланс HP сошёлся в ноль.
+ */
+function verdictFor(uptime: number, killsPerHour: Decimal, safeByThreshold: boolean): ZoneVerdict {
+  // «Безнадёжно» — герой не дожимает даже одного моба: убийств нет вовсе.
+  // Порог uptime этого не ловит сам по себе, поэтому проверка отдельная.
   if (killsPerHour.lte(0)) return 'hopeless'
-  if (timeToDeathSec !== null && ttkSec > timeToDeathSec) return 'hopeless'
-  if (uptime >= ZONE_VERDICT_UPTIME.safe) return 'safe'
+  if (safeByThreshold) return 'safe'
   if (uptime >= ZONE_VERDICT_UPTIME.risky) return 'risky'
   if (uptime >= ZONE_VERDICT_UPTIME.deadly) return 'deadly'
   return 'hopeless'
@@ -222,6 +236,9 @@ function enterZone(
 export function travelToZone(state: GameState, zoneId: string, rng: Rng): GameState {
   const zone = ZONE_BY_ID[zoneId]
   if (!zone) return state
+  // Из храма выходят выходом, а не переездом: иначе смена зоны оставила бы
+  // забег висеть, а героя — драться с мобами зоны под флагом храма.
+  if (state.templeRun) return state
   if (!isZoneUnlocked(state, zone)) return state
   if (zone.id === state.currentZoneId) return state
   return enterZone(state, zone, rng, 'travel')

@@ -4,7 +4,7 @@
 // атаки давала заточка; теперь её даёт сила с вещей, но нормализация — та же.
 import { describe, expect, it } from 'vitest'
 import { Decimal } from './numbers'
-import { createInitialState, type GameState } from './state'
+import { createInitialState, emptyEquipment, type GameState } from './state'
 import { ensureStats } from './stats'
 import { createRng } from './rng'
 import {
@@ -18,9 +18,21 @@ import {
 } from './combat'
 import { AP_NORMALIZATION, UNARMED } from '../data/balance'
 
+// Голый герой: стартовый комплект снят. Эти тесты про КОНВЕЙЕР и формулы,
+// а не про то, во что игра одевает новобранца, — база должна быть чистой,
+// иначе они мерили бы ещё и стартовые вещи.
+function bareHero(seed = 1): GameState {
+  return ensureStats({
+    ...createInitialState(seed),
+    equipment: emptyEquipment(),
+    statsDirty: true,
+  })
+}
+
+
 // Герой с N порциями по +14 силы атаки на талисмане — прежде это была заточка.
 function withUpgrades(count: number): GameState {
-  const base = createInitialState(1)
+  const base = bareHero(1)
   return ensureStats({
     ...base,
     equipment: {

@@ -8,6 +8,8 @@
   import { materialCount, recipeStatus, type CraftBlockReason } from '../game/crafting'
   import { craftRecipe, gameState } from '../stores/game'
   import { MATERIALS, MATERIAL_BY_ID } from '../data/materials'
+  import { HERBS, HERB_BY_ID } from '../data/herbs'
+  import { REAGENTS, REAGENT_BY_ID } from '../data/reagents'
   import { PROFESSIONS, recipesOf, type RecipeDef } from '../data/recipes'
   import { SLOT_NAMES } from '../data/slots'
   import { rarityName } from './kit'
@@ -15,18 +17,30 @@
   import { Icon } from './icons'
 
   const REASON_TEXT: Record<CraftBlockReason, string> = {
+    level: 'Рецепт откроется позже',
+    locked: 'Награда храма: дойди до своего рубежа волн',
     materials: 'Не хватает материалов',
     'inventory-full': 'Сумка полна — освободи место',
   }
 
+  // Мешок держит четыре вида: материалы зон, травы, реагенты боссов и готовую
+  // еду со склянками. Забытый вид просто не показался бы игроку.
+  const BAG_ENTRIES = [
+    ...MATERIALS.map((m) => ({ id: m.id, name: m.name, icon: m.icon })),
+    ...HERBS.map((h) => ({ id: h.id, name: h.name, icon: h.icon })),
+    ...REAGENTS.map((r) => ({ id: r.id, name: r.name, icon: r.icon })),
+  ]
   const owned = $derived(
-    MATERIALS.map((m) => ({ material: m, count: materialCount($gameState, m.id) })).filter((row) =>
-      row.count.gt(0),
+    BAG_ENTRIES.map((m) => ({ material: m, count: materialCount($gameState, m.id) })).filter(
+      (row) => row.count.gt(0),
     ),
   )
 
   function outputText(recipe: RecipeDef): string {
     if (recipe.output.kind === 'food') return 'Порция еды: привал вдвое короче'
+    if (recipe.output.kind === 'potion') {
+      return `Склянка: ${Math.round(recipe.output.durationSec / 60)} мин действия`
+    }
     return `${SLOT_NAMES[recipe.output.slot]}, ${rarityName(recipe.output.rarity)}`
   }
 </script>
@@ -73,7 +87,10 @@
               {#each recipe.inputs as input (input.materialId)}
                 {@const have = materialCount($gameState, input.materialId)}
                 <li class:short={have.lt(input.count)}>
-                  {MATERIAL_BY_ID[input.materialId]?.name ?? input.materialId}
+                  {MATERIAL_BY_ID[input.materialId]?.name ??
+                    HERB_BY_ID[input.materialId]?.name ??
+                    REAGENT_BY_ID[input.materialId]?.name ??
+                    input.materialId}
                   {formatNumber(have)}/{input.count}
                 </li>
               {/each}

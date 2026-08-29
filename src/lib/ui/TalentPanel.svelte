@@ -1,17 +1,18 @@
 <script lang="ts">
-  // Дерево талантов: две колонки-ветки. Весь текст для игрока — здесь;
-  // логика отдаёт только ранги, коды причин и структурированные эффекты.
+  // Дерево талантов: три колонки-ветки СВОЕГО класса, каждая глубиной
+  // в 61 очко. Весь текст для игрока — здесь; логика отдаёт только ранги,
+  // коды причин и структурированные эффекты.
   import {
     availablePoints,
     canResetTalents,
-    formatNumber,
+    heroBranches,
     resetCost,
+    spentInBranch,
     talentStatus,
     type StatId,
     type TalentBlockReason,
   } from '../game'
   import {
-    BRANCHES,
     talentsInBranch,
     type TalentDef,
     type TalentFlag,
@@ -20,6 +21,7 @@
   import { TALENT_FIRST_LEVEL } from '../data/balance'
   import { gameState, investTalentPoint, resetTalentTree } from '../stores/game'
   import { resourceWords } from './resource'
+  import { flatText } from './statText'
   import { Button, NumberText, Panel, Tag } from './kit'
   import { Icon } from './icons'
 
@@ -68,12 +70,29 @@
     'offhandPenalty',
     'restThreshold',
   ]
-  const FLAG_TEXT: Record<TalentFlag, string> = {
-    'quick-strike-bleeds': 'Скорый выпад начинает накладывать урон по времени',
-    'halved-revive': 'Воскрешение занимает вдвое меньше времени',
-    'rest-clears-cooldowns': 'После привала умения готовы: кулдауны снимаются',
-  }
+  // Текст флага собирается из ПЕЙЛОАДА таланта: число живёт в данных, а не
+  // в подписи. Ветвления по id таланта здесь нет и быть не должно.
+  const FLAG_TEXT: Record<TalentFlag, (e: Extract<TalentDef['effect'], { kind: 'flag' }>) => string> =
+    {
+      'ability-learns-effect': () => 'Умение начинает накладывать урон по времени',
+      'ability-extra-charge': (e) =>
+        `+${'extraCharges' in e ? e.extraCharges : 1} заряд умения: второе нажатие проходит, пока идёт откат`,
+      'double-strike': (e) =>
+        `${'chance' in e ? (e.chance * 100).toFixed(0) : 0}% шанс, что замах бьёт дважды`,
+      'block-reflects': (e) =>
+        `Блок возвращает ${'damageShare' in e ? (e.damageShare * 100).toFixed(0) : 0}% поглощённого урона в моба`,
+      'block-restores-resource': (e) =>
+        `Блок возвращает ${'resourceShare' in e ? (e.resourceShare * 100).toFixed(0) : 0}% запаса ${resource.genitive}`,
+      'kill-refunds-cooldowns': (e) =>
+        `Убийство срезает откаты на ${'cooldownShare' in e ? ((1 - e.cooldownShare) * 100).toFixed(0) : 0}%`,
+      'rest-clears-cooldowns': () => 'После привала умения готовы: откаты снимаются',
+      'shorter-rest': (e) =>
+        `Привал короче на ${'durationMultiplier' in e ? ((1 - e.durationMultiplier) * 100).toFixed(0) : 0}%`,
+      'faster-revive': (e) =>
+        `Воскрешение быстрее на ${'reviveMultiplier' in e ? ((1 - e.reviveMultiplier) * 100).toFixed(0) : 0}%`,
+    }
   const REASON_TEXT: Record<TalentBlockReason, (t: TalentDef) => string> = {
+    'other-class': () => 'Ветка другого класса',
     'branch-locked': (t) => `Нужно ${t.requiredPointsInBranch} очков в ветке`,
     'max-rank': () => 'Уже максимальный ранг',
     'no-points': () => 'Нет свободных очков',
@@ -87,11 +106,11 @@
     if (PERCENT_STATS.includes(mod.stat)) {
       return `+${mod.value.times(100).toFixed(mod.value.times(100).lt(10) ? 1 : 0)}% ${name}`
     }
-    return `+${formatNumber(mod.value)} ${name}`
+    return `${flatText(mod.value)} ${name}`
   }
 
   function effectText(talent: TalentDef): string {
-    if (talent.effect.kind === 'flag') return FLAG_TEXT[talent.effect.flag]
+    if (talent.effect.kind === 'flag') return FLAG_TEXT[talent.effect.flag](talent.effect)
     return `${talent.effect.mods.map(modText).join(', ')} за ранг`
   }
 </script>
@@ -108,9 +127,12 @@
   {/snippet}
 
   <div class="branches">
-    {#each BRANCHES as branch (branch.id)}
+    {#each heroBranches($gameState) as branch (branch.id)}
       <div class="branch">
-        <h3>{branch.name}</h3>
+        <h3>
+          {branch.name}
+          <span class="invested">{spentInBranch($gameState.talents, branch.id)}</span>
+        </h3>
         {#each talentsInBranch(branch.id) as talent (talent.id)}
           {@const status = talentStatus($gameState, talent)}
           <div class="talent" class:locked={!status.canInvest} class:taken={status.rank > 0}>

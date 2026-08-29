@@ -10,12 +10,24 @@ import {
   STAT_IDS,
   type StatModifier,
 } from './stats'
-import { createInitialState, type GameState } from './state'
+import { createInitialState, emptyEquipment, type GameState } from './state'
 import { UNARMED } from '../data/balance'
 import { expectedSwingDamage } from './combat'
 
+// Голый герой: стартовый комплект снят. Эти тесты про КОНВЕЙЕР и формулы,
+// а не про то, во что игра одевает новобранца, — база должна быть чистой,
+// иначе они мерили бы ещё и стартовые вещи.
+function bareHero(seed = 1): GameState {
+  return ensureStats({
+    ...createInitialState(seed),
+    equipment: emptyEquipment(),
+    statsDirty: true,
+  })
+}
+
+
 function withUpgrades(count: number): GameState {
-  const base = createInitialState(1)
+  const base = bareHero(1)
   const s = {
     ...base,
     equipment: {
@@ -108,7 +120,7 @@ describe('прогресс замаха при смене swingTime', () => {
   it('доля замаха сохраняется: смена оружия не сбрасывает удар', () => {
     // Прогресс хранится ДОЛЕЙ 0..1, поэтому при смене swingTime он остаётся
     // тем же: половина замаха 4с превращается в половину замаха 2с сама.
-    const s = createInitialState(1)
+    const s = bareHero(1)
     const stale: GameState = {
       ...s,
       stats: { ...s.stats, weaponSpeed: 4, swingTime: 4 },
@@ -121,7 +133,7 @@ describe('прогресс замаха при смене swingTime', () => {
   })
 
   it('смена скорости не даёт ни мгновенного удара, ни сброса замаха', () => {
-    const s = createInitialState(1)
+    const s = bareHero(1)
     const stale: GameState = {
       ...s,
       stats: { ...s.stats, weaponSpeed: 1, swingTime: 1 },
@@ -136,14 +148,14 @@ describe('прогресс замаха при смене swingTime', () => {
   })
 
   it('без изменения swingTime прогресс не трогается', () => {
-    const s: GameState = { ...createInitialState(1), swingProgress: 0.777, statsDirty: true }
+    const s: GameState = { ...bareHero(1), swingProgress: 0.777, statsDirty: true }
     expect(ensureStats(s).swingProgress).toBe(0.777)
   })
 })
 
 describe('конвейер статов', () => {
   it('базовые статы без источников равны балансу', () => {
-    const stats = createInitialState(1).stats
+    const stats = bareHero(1).stats
     expect(stats.attackPower.toNumber()).toBe(70) // даёт 70 * 2.0 / 14 = 10 к удару
     expect(stats.weaponDamageMin.toNumber()).toBe(8)
     expect(stats.weaponDamageMax.toNumber()).toBe(12)
@@ -176,7 +188,7 @@ describe('конвейер статов', () => {
   })
 
   it('ловкость даёт скорость и криты, интеллект ману, живучесть здоровье', () => {
-    const base = createInitialState(1)
+    const base = bareHero(1)
     const s = ensureStats({
       ...base,
       equipment: {
@@ -252,7 +264,7 @@ describe('конвейер статов', () => {
   })
 
   it('кеш: без statsDirty пересчёта нет, объект статов тот же', () => {
-    const s = createInitialState(1)
+    const s = bareHero(1)
     expect(ensureStats(s)).toBe(s) // не dirty — то же состояние без копий
     const dirty = { ...s, statsDirty: true }
     const recomputed = ensureStats(dirty)

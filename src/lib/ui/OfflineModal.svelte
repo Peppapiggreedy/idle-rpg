@@ -1,7 +1,13 @@
 <script lang="ts">
   import { dismissOfflineReport, offlineReport } from '../stores/game'
+  import { OFFLINE_CAP_HOURS, OFFLINE_EFFICIENCY } from '../data/balance'
   import { Button, NumberText, Panel } from './kit'
   import { Icon } from './icons'
+
+  // Правило названо ЧИСЛОМ и прямо здесь. Молчаливое урезание впятеро игрок
+  // прочитает как баг, а не как правило: он помнит, сколько приносит час
+  // за экраном, и увидит вместо него пятую часть без объяснений.
+  const share = Math.round(OFFLINE_EFFICIENCY * 100)
 
   function formatElapsed(ms: number): string {
     const totalMinutes = Math.floor(ms / 60_000)
@@ -41,7 +47,13 @@
                Придумать эти числа было бы враньём (см. долг №5
                в ARCHITECTURE.md). -->
           <p class="note">
-            Пока тебя не было, добыча не собиралась — только золото и опыт.
+            Оффлайн начисляет {share}% от онлайн-темпа: этот
+            {formatElapsed($offlineReport.elapsedMs)} стоит примерно
+            {formatElapsed($offlineReport.elapsedMs * OFFLINE_EFFICIENCY)} живой игры.
+            Дольше {OFFLINE_CAP_HOURS} ч отсутствие не оплачивается.
+          </p>
+          <p class="note">
+            Добыча в оффлайне не собирается — только золото и опыт.
           </p>
           <div class="actions">
             <Button variant="primary" onclick={dismissOfflineReport}>Продолжить</Button>

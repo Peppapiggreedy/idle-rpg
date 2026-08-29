@@ -47,6 +47,81 @@ export const ICONS = {
   'talent-quick-camp': { file: 'delapouite/camping-tent.svg', author: 'Delapouite' },
   'talent-field-medicine': { file: 'delapouite/first-aid-kit.svg', author: 'Delapouite' },
   'talent-unbroken-focus': { file: 'lorc/sands-of-time.svg', author: 'Lorc' },
+  // --- Таланты: шесть веток глубиной 61 ---
+  'talent-double-strike': { file: 'lorc/sword-clash.svg', author: 'Lorc' },
+  'talent-second-charge': { file: 'lorc/charged-arrow.svg', author: 'Lorc' },
+  'talent-block-resource': { file: 'lorc/shield-bounces.svg', author: 'Lorc' },
+  'talent-block-reflect': { file: 'lorc/mirror-mirror.svg', author: 'Lorc' },
+  'talent-kill-refund': { file: 'lorc/trophy.svg', author: 'Lorc' },
+  'talent-shorter-rest': { file: 'lorc/campfire.svg', author: 'Lorc' },
+  'talent-strength': { file: 'delapouite/biceps.svg', author: 'Delapouite' },
+  'talent-vitality': { file: 'lorc/heart-tower.svg', author: 'Lorc' },
+  'talent-intellect': { file: 'lorc/brain.svg', author: 'Lorc' },
+  'talent-relentless': { file: 'lorc/quick-slash.svg', author: 'Lorc' },
+  'talent-bleed-deep': { file: 'lorc/barbed-coil.svg', author: 'Lorc' },
+  'talent-blood-charge': { file: 'delapouite/swords-power.svg', author: 'Delapouite' },
+  'talent-guard-echo': { file: 'lorc/shield-echoes.svg', author: 'Lorc' },
+  'talent-hard-to-kill': { file: 'lorc/skull-crack.svg', author: 'Lorc' },
+  'talent-spiked-guard': { file: 'lorc/spiked-armor.svg', author: 'Lorc' },
+
+  // --- Травы и зелья ---
+  'herb-bitterleaf': { file: 'delapouite/dandelion-flower.svg', author: 'Delapouite' },
+  'herb-emberroot': { file: 'lorc/root-tip.svg', author: 'Lorc' },
+  'herb-hoarbloom': { file: 'lorc/vine-flower.svg', author: 'Lorc' },
+  'profession-herbalism': { file: 'lorc/cauldron.svg', author: 'Lorc' },
+  'potion-fury': { file: 'lorc/bubbling-flask.svg', author: 'Lorc' },
+  'potion-wind': { file: 'lorc/fizzing-flask.svg', author: 'Lorc' },
+  'potion-stone': { file: 'lorc/standing-potion.svg', author: 'Lorc' },
+
+  // --- Зачарование ---
+  'material-dust': { file: 'lorc/powder.svg', author: 'Lorc' },
+  'action-disenchant': { file: 'lorc/crumbling-ball.svg', author: 'Lorc' },
+  'profession-enchanting': { file: 'lorc/rune-stone.svg', author: 'Lorc' },
+  'enchant-rune-edge': { file: 'lorc/rune-sword.svg', author: 'Lorc' },
+  'enchant-wind-notch': { file: 'lorc/wind-hole.svg', author: 'Lorc' },
+  'enchant-wall-oath': { file: 'lorc/shield-echoes.svg', author: 'Lorc' },
+  'enchant-heavy-hand': { file: 'delapouite/weight-lifting-up.svg', author: 'Delapouite' },
+  'enchant-light-tread': { file: 'lorc/wingfoot.svg', author: 'Lorc' },
+  'enchant-clear-sight': { file: 'lorc/psychic-waves.svg', author: 'Lorc' },
+  'enchant-stone-core': { file: 'lorc/stone-sphere.svg', author: 'Lorc' },
+
+  // --- Реликвии и проки ---
+  'relic-echo': { file: 'lorc/relic-blade.svg', author: 'Lorc' },
+  'relic-thorn': { file: 'lorc/crown-of-thorns.svg', author: 'Lorc' },
+  'relic-storm': { file: 'lorc/lightning-shadow.svg', author: 'Lorc' },
+  'relic-shell': { file: 'lorc/spiral-shell.svg', author: 'Lorc' },
+  'relic-facet': { file: 'lorc/diamond-hard.svg', author: 'Lorc' },
+  'relic-sign': { file: 'lorc/holy-symbol.svg', author: 'Lorc' },
+  'relic-spark': { file: 'lorc/tesla-coil.svg', author: 'Lorc' },
+  'relic-gilded': { file: 'lorc/gold-shell.svg', author: 'Lorc' },
+  'proc-strike': { file: 'lorc/thunder-struck.svg', author: 'Lorc' },
+  'proc-ward': { file: 'lorc/shining-heart.svg', author: 'Lorc' },
+  'profession-relics': { file: 'lorc/gem-chain.svg', author: 'Lorc' },
+
+  // --- Героика: режим, способности боссов и её реагенты ---
+  'dungeon-heroic': { file: 'lorc/crowned-skull.svg', author: 'Lorc' },
+  'boss-ability-dispel': { file: 'lorc/vortex.svg', author: 'Lorc' },
+  'boss-ability-frenzy': { file: 'lorc/flame-spin.svg', author: 'Lorc' },
+  'boss-ability-backlash': { file: 'lorc/burning-dot.svg', author: 'Lorc' },
+  'reagent-drowned-whorl': { file: 'lorc/spiral-shell.svg', author: 'Lorc' },
+  'reagent-drift-charge': { file: 'lorc/mine-explosion.svg', author: 'Lorc' },
+  'reagent-bottom-tear': { file: 'lorc/drop.svg', author: 'Lorc' },
+  'reagent-seething-coal': { file: 'lorc/burning-embers.svg', author: 'Lorc' },
+  'reagent-booming-whirl': { file: 'lorc/tornado.svg', author: 'Lorc' },
+  'reagent-brine-druse': { file: 'lorc/crystalize.svg', author: 'Lorc' },
+  'reagent-rime-core': { file: 'lorc/frozen-orb.svg', author: 'Lorc' },
+  'reagent-mute-stone': { file: 'lorc/tombstone.svg', author: 'Lorc' },
+
+  'recipe-relic-blade': { file: 'lorc/relic-blade.svg', author: 'Lorc' },
+  'recipe-relic-plate': { file: 'lorc/breastplate.svg', author: 'Lorc' },
+  'recipe-relic-charm': { file: 'lorc/gem-chain.svg', author: 'Lorc' },
+
+  // --- Храм испытаний ---
+  temple: { file: 'delapouite/greek-temple.svg', author: 'Delapouite' },
+  'temple-wave': { file: 'lorc/wave-crest.svg', author: 'Lorc' },
+
+  // --- Преквесты и врата рейда ---
+  'raid-gate': { file: 'lorc/magic-gate.svg', author: 'Lorc' },
 
   // --- Классы ---
   'class-warden': { file: 'delapouite/spiked-shield.svg', author: 'Delapouite' },
@@ -132,7 +207,30 @@ export const ICONS = {
   'zone-mute-bluff': { file: 'delapouite/sea-cliff.svg', author: 'Delapouite' },
 
   // --- Данжи ---
-  'dungeon-sunken-barrow': { file: 'delapouite/dungeon-gate.svg', author: 'Delapouite' },
+  // Общая иконка данжа: ею лог помечает события забега, у которых своего
+  // данжа под рукой нет (вход, выход, прохождение).
+  dungeon: { file: 'delapouite/dungeon-gate.svg', author: 'Delapouite' },
+  'dungeon-sunken-barrow': { file: 'delapouite/crypt-entrance.svg', author: 'Delapouite' },
+  'dungeon-ninth-drift': { file: 'delapouite/hole-ladder.svg', author: 'Delapouite' },
+  'dungeon-tier-cisterns': { file: 'delapouite/well.svg', author: 'Delapouite' },
+  'dungeon-boiling-adits': { file: 'delapouite/cave-entrance.svg', author: 'Delapouite' },
+  'dungeon-wind-galleries': { file: 'delapouite/ancient-ruins.svg', author: 'Delapouite' },
+  'dungeon-salt-womb': { file: 'delapouite/dungeon-light.svg', author: 'Delapouite' },
+  'dungeon-rime-catacombs': { file: 'lorc/coffin.svg', author: 'Lorc' },
+  'dungeon-bluff-hollow': { file: 'delapouite/temple-gate.svg', author: 'Delapouite' },
+
+  // --- Реагенты данжей ---
+  'reagent-silt-clot': { file: 'lorc/dripping-goo.svg', author: 'Lorc' },
+  'reagent-drift-sinter': { file: 'delapouite/coal-pile.svg', author: 'Delapouite' },
+  'reagent-sediment-core': { file: 'lorc/stone-sphere.svg', author: 'Lorc' },
+  'reagent-sulfur-growth': { file: 'lorc/crystal-growth.svg', author: 'Lorc' },
+  'reagent-wind-glass': { file: 'lorc/glass-heart.svg', author: 'Lorc' },
+  'reagent-brine-crystal': { file: 'lorc/gems.svg', author: 'Lorc' },
+  'reagent-rime-vein': { file: 'lorc/frozen-block.svg', author: 'Lorc' },
+  'reagent-mute-shard': { file: 'lorc/rune-stone.svg', author: 'Lorc' },
+
+  // --- Интерфейс ---
+  log: { file: 'lorc/scroll-unfurled.svg', author: 'Lorc' },
 
   // --- Улучшения и валюты ---
   gold: { file: 'delapouite/coins.svg', author: 'Delapouite' },

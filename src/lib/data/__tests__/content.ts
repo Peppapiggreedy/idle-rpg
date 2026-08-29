@@ -10,6 +10,9 @@ import {
   AUTOCAST_MAX_LOSS,
   BASE_STATS,
   OFFLINE_EFFICIENCY,
+  ENCHANT_UNLOCK_LEVEL,
+  LEVEL_CAP,
+  POTION_UNLOCK_LEVEL,
   TALENT_FIRST_LEVEL,
   TTK_AHEAD_MIN,
   TTK_BEHIND_MAX,
@@ -19,13 +22,22 @@ import {
   TTK_TARGET_MAX,
   TTK_TARGET_MIN,
 } from '../balance'
-import { DUNGEONS } from '../dungeons'
+import { ALL_DUNGEONS } from '../dungeons'
 import { ARMOR_NOUNS, SHIELDS, WEAPONS } from '../items'
 import { DROP_CHANCE } from '../loot'
 import { RARITIES } from '../rarity'
 import { SOUNDS } from '../sounds'
 import { CLASSES } from '../classes'
 import { MATERIALS } from '../materials'
+import { HERBS } from '../herbs'
+import { DUST_BY_RARITY, ENCHANTS, ENCHANT_FLAT_STATS } from '../enchants'
+import { PROCS } from '../procs'
+import { BOSS_ABILITIES } from '../heroic'
+import { TEMPLES } from '../temple'
+import { QUESTS } from '../quests'
+import { PROGRESSION } from '../progression'
+import { REAGENTS } from '../reagents'
+import { DUNGEON_SCENE_KEYS } from '../scenery'
 import { PROFESSIONS, RECIPES } from '../recipes'
 import { SLOT_DROP_WEIGHTS, SLOT_ICONS, SLOT_IDS, SLOT_NAMES } from '../slots'
 import { BRANCHES, TALENTS } from '../talents'
@@ -77,7 +89,9 @@ export function realContent(): Content {
     branches: BRANCHES,
     talents: TALENTS,
     zones: ZONES,
-    dungeons: DUNGEONS,
+    // Обе лестницы: героика — тот же шаблон, и её реагенты, лут и уровни
+    // проверяются теми же схемами, а не отдельным списком.
+    dungeons: ALL_DUNGEONS,
     weapons: WEAPONS,
     shields: SHIELDS,
     rarities: RARITIES,
@@ -94,6 +108,17 @@ export function realContent(): Content {
     sounds: SOUNDS,
     classes: CLASSES,
     materials: MATERIALS,
+    herbs: HERBS,
+    enchants: ENCHANTS,
+    procs: PROCS,
+    bossAbilities: BOSS_ABILITIES,
+    temples: TEMPLES,
+    quests: QUESTS,
+    dustByRarity: DUST_BY_RARITY,
+    enchantFlatStats: ENCHANT_FLAT_STATS,
+    progression: PROGRESSION,
+    reagents: REAGENTS,
+    dungeonSceneKeys: DUNGEON_SCENE_KEYS,
     recipes: RECIPES,
     professions: PROFESSIONS,
     props: PROP_ASSETS,
@@ -106,6 +131,9 @@ export function realContent(): Content {
       offlineEfficiency: OFFLINE_EFFICIENCY,
       autocastMaxLoss: AUTOCAST_MAX_LOSS,
       talentFirstLevel: TALENT_FIRST_LEVEL,
+      enchantUnlockLevel: ENCHANT_UNLOCK_LEVEL,
+      potionUnlockLevel: POTION_UNLOCK_LEVEL,
+      levelCap: LEVEL_CAP,
       ttkHardFloor: TTK_HARD_FLOOR,
       ttkTargetMin: TTK_TARGET_MIN,
       ttkTargetMax: TTK_TARGET_MAX,

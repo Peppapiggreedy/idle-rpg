@@ -2,7 +2,7 @@
 // поэтому вся логика детерминированно тестируется.
 import { Decimal } from './numbers'
 import type { Rng } from './rng'
-import type { GameState } from './state'
+import { pushEvent, type GameState } from './state'
 import type { Item } from '../types'
 import { RARITIES, RARITY_BY_ID, type RarityDef } from '../data/rarity'
 import { DROP_CHANCE, ITEM_BASE_SELL_PRICE, LOOT_ADJECTIVES } from '../data/loot'
@@ -20,9 +20,9 @@ import {
   type ShieldTemplate,
   type WeaponTemplate,
 } from '../data/items'
-import { itemLevelScale } from '../data/balance'
+import { INVENTORY_SIZE, itemLevelScale } from '../data/balance'
 import type { StatModifier } from './stats'
-import { isEquipped } from './equipment'
+import { isEquipped, upgradeShare } from './equipment'
 import type { BossLoot } from '../data/dungeons'
 
 // Реэкспорт для обратной совместимости импортов.
@@ -256,6 +256,78 @@ export function rollBossLoot(loot: BossLoot, rng: Rng, itemSeq: number, level = 
 
 export function sellPrice(item: Item): Decimal {
   return ITEM_BASE_SELL_PRICE.times(RARITY_BY_ID[item.rarity].sellMult)
+}
+
+/**
+ * Ценность предмета для разбора добычи: больше — ценнее. Апгрейды всегда
+ * ценнее не-апгрейдов, внутри группы решает прирост урона в секунду,
+ * а при равенстве — цена продажи.
+ *
+ * Своей меры «хорошести» здесь нет и быть не должно: сравнение идёт тем же
+ * `estimateCombatRate`, что и подсказка в сумке, и автонадевание до его
+ * сноса. Две разные меры разошлись бы, и игрок увидел бы, как игра выкинула
+ * то, что сама же пометила апгрейдом.
+ */
+function lootValue(state: GameState, item: Item): number {
+  const share = upgradeShare(state, item)
+  const sell = sellPrice(item).toNumber()
+  if (share === null) return sell * 1e-6
+  if (!Number.isFinite(share)) return Number.POSITIVE_INFINITY
+  return 1 + share
+}
+
+/**
+ * Куда девать выпавший предмет. Три исхода, и третий — главный:
+ *
+ *   место есть            — предмет ложится в сумку;
+ *   места нет, не лучше   — автопродажа за золото (своё событие лога);
+ *   места нет, но ЛУЧШЕ   — вытесняется худший предмет сумки, находка
+ *                           остаётся. Потерять апгрейд из-за полной сумки
+ *                           нельзя ни при каких настройках.
+ *
+ * Раньше при полной сумке дроп не бросался ВООБЩЕ: герой переставал
+ * находить вещи, пока игрок не продаст, и это было видно в golden —
+ * статы упирались в потолок. Теперь бросок идёт всегда.
+ */
+export function stashLoot(state: GameState, item: Item): GameState {
+  const withSeq = { ...state, itemSeq: Math.max(state.itemSeq, Number(item.id.split('-')[1]) + 1) }
+  if (state.inventory.length < INVENTORY_SIZE) {
+    return {
+      ...withSeq,
+      inventory: [...state.inventory, item],
+      combatLog: pushEvent(state.combatLog, { type: 'loot', item }),
+    }
+  }
+  const value = lootValue(state, item)
+  // Кого вытеснять: самый дешёвый предмет сумки по той же мере.
+  let worstIndex = 0
+  let worstValue = Number.POSITIVE_INFINITY
+  state.inventory.forEach((candidate, index) => {
+    const v = lootValue(state, candidate)
+    if (v < worstValue) {
+      worstValue = v
+      worstIndex = index
+    }
+  })
+  // Находка не ценнее худшего в сумке — уходит в золото сама.
+  if (value <= worstValue) {
+    const gold = sellPrice(item)
+    return {
+      ...withSeq,
+      gold: state.gold.plus(gold),
+      combatLog: pushEvent(state.combatLog, { type: 'autosell', item, gold }),
+    }
+  }
+  const dropped = state.inventory[worstIndex]
+  const gold = sellPrice(dropped)
+  const inventory = state.inventory.slice()
+  inventory.splice(worstIndex, 1, item)
+  return {
+    ...withSeq,
+    inventory,
+    gold: state.gold.plus(gold),
+    combatLog: pushEvent(state.combatLog, { type: 'loot-swap', item, dropped, gold }),
+  }
 }
 
 // Продажа предмета: золото по цене тира, предмет исчезает из инвентаря.

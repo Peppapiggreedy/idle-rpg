@@ -9,7 +9,16 @@ import { tick } from './tick'
 import { craft, materialCount, recipeStatus, rollMaterial, takeFood } from './crafting'
 import { restDurationMs, startRest } from './rest'
 import { MATERIALS, materialsInZone } from '../data/materials'
-import { FOOD_BY_ID, PROFESSIONS, RECIPES, RECIPE_BY_ID, recipesOf } from '../data/recipes'
+import {
+  FOOD_BY_ID,
+  PROFESSIONS,
+  RECIPES,
+  RECIPE_BY_ID,
+  recipeUnlockLevel,
+  recipesOf,
+} from '../data/recipes'
+import { LEVEL_CAP } from '../data/balance'
+import { TEMPLE } from '../data/temple'
 import { INVENTORY_SIZE, MATERIAL_DROP_CHANCE, REST_FOOD_SPEEDUP } from '../data/balance'
 import { ZONES } from '../data/zones'
 
@@ -34,17 +43,35 @@ function hero(patch: Partial<GameState> = {}): GameState {
 const BROTH = RECIPE_BY_ID['herb-broth']
 const HELM = RECIPE_BY_ID['forged-helm']
 
+/**
+ * Рядовые рецепты кузнеца: те, что не заперты НИЧЕМ, кроме материалов.
+ * Кузнечное дело — подстраховка от невезения, и мерить его надо без наград:
+ * реликты стоят реагентов героики, а храмовые открываются рубежом волн.
+ */
+const rewardIds = new Set(TEMPLE.milestones.map((m) => m.recipeId))
+const everydaySmithing = () =>
+  recipesOf('smithing').filter((r) => recipeUnlockLevel(r) < LEVEL_CAP && !rewardIds.has(r.id))
+/** Легендарные реликты: открываются на потолке и стоят реагентов героики. */
+const legendarySmithing = () =>
+  recipesOf('smithing').filter((r) => recipeUnlockLevel(r) >= LEVEL_CAP)
+
 describe('данные профессий', () => {
-  it('две профессии, у кулинарии 3-4 рецепта, у кузнечного 4-5', () => {
-    expect(PROFESSIONS).toHaveLength(2)
+  it('четыре профессии, у кулинарии 3-4 рецепта, у кузнечного 4-5 рядовых', () => {
+    // Кулинария, кузнечное дело, травничество и реликварий: каждая отвечает
+    // на свой вопрос, и ни одна не дублирует другую.
+    expect(PROFESSIONS).toHaveLength(4)
     expect(recipesOf('cooking').length).toBeGreaterThanOrEqual(3)
     expect(recipesOf('cooking').length).toBeLessThanOrEqual(4)
-    expect(recipesOf('smithing').length).toBeGreaterThanOrEqual(4)
-    expect(recipesOf('smithing').length).toBeLessThanOrEqual(5)
+    // Рядовые рецепты кузнеца — подстраховка от невезения; легендарные
+    // реликты на реагентах героики считаются отдельно: это конец лестницы,
+    // а не запасной вариант.
+    expect(everydaySmithing().length).toBeGreaterThanOrEqual(4)
+    expect(everydaySmithing().length).toBeLessThanOrEqual(5)
+    expect(legendarySmithing().length).toBeGreaterThan(0)
   })
 
   it('у кузнечного дела по рецепту на разные слоты, а не пять на один', () => {
-    const slots = recipesOf('smithing').map((r) =>
+    const slots = everydaySmithing().map((r) =>
       r.output.kind === 'item' ? r.output.slot : null,
     )
     expect(new Set(slots).size).toBe(slots.length)
@@ -150,7 +177,9 @@ describe('крафт', () => {
   it('кованый предмет не лучше хорошей находки своей зоны, а вровень', () => {
     // Крафт — подстраховка от невезения, а не обход лута: редкость у него
     // необычная, а не легендарная, и модификаторы строит та же функция.
-    for (const recipe of recipesOf('smithing')) {
+    // Легендарные реликты сюда не входят: они стоят реагентов ГЕРОИКИ,
+    // то есть второго прохода по всей лестнице, и обходом лута не являются.
+    for (const recipe of everydaySmithing()) {
       if (recipe.output.kind !== 'item') continue
       expect(['common', 'uncommon', 'rare']).toContain(recipe.output.rarity)
     }

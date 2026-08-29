@@ -7,6 +7,10 @@
   import { ABILITY_BY_ID } from '../data/abilities'
   import { MATERIAL_BY_ID } from '../data/materials'
   import { RECIPE_BY_ID } from '../data/recipes'
+  import { ENCHANT_BY_ID } from '../data/enchants'
+  import { PROC_BY_ID } from '../data/procs'
+  import { BOSS_ABILITY_BY_ID } from '../data/heroic'
+  import { QUEST_BY_ID } from '../data/quests'
   import { rarityName, rarityStyle } from './kit'
   import { Icon } from './icons'
   import type { IconName } from './icons'
@@ -52,6 +56,36 @@
         return `Собрано: ${MATERIAL_BY_ID[e.materialId]?.name ?? e.materialId}`
       case 'craft':
         return `Готово: ${RECIPE_BY_ID[e.recipeId]?.name ?? e.recipeId}`
+      case 'quest-complete':
+        return e.chainComplete
+          ? 'Цепочка заданий пройдена — врата рейда открыты!'
+          : `Задание сдано: «${QUEST_BY_ID[e.questId]?.name ?? e.questId}»`
+      case 'temple-start':
+        return `${e.templeName}: волны пошли`
+      case 'temple-wave':
+        return e.record ? `Волна ${e.wave} — новый рекорд!` : `Волна ${e.wave} пройдена`
+      case 'temple-reward':
+        return `Рубеж ${e.wave} волны: открыт рецепт «${RECIPE_BY_ID[e.recipeId]?.name ?? e.recipeId}»`
+      case 'temple-end':
+        return e.defeated
+          ? `Храм пройден до ${e.wave} волны — тебя вынесли`
+          : `Ты вышел из храма на ${e.wave} волне`
+      case 'boss-ability': {
+        const name = BOSS_ABILITY_BY_ID[e.abilityId]?.name ?? 'Уловка босса'
+        return e.damage ? `${name}: −${formatNumber(e.damage)} здоровья` : `${name} сработал`
+      }
+      case 'proc':
+        return e.effect === 'damage'
+          ? `${PROC_BY_ID[e.procId]?.name ?? 'Реликвия'}: ${formatNumber(e.amount)} урона`
+          : `${PROC_BY_ID[e.procId]?.name ?? 'Реликвия'} возвращает ${formatNumber(e.amount)} здоровья`
+      case 'disenchant':
+        return `Распылено: ${e.item.name} → ${formatNumber(e.dust)} пыли`
+      case 'enchant':
+        return `Зачаровано: ${e.itemName} — ${ENCHANT_BY_ID[e.enchantId]?.name ?? e.enchantId}`
+      case 'potion':
+        return `Выпито: ${RECIPE_BY_ID[e.recipeId]?.name ?? e.recipeId}`
+      case 'potion-expired':
+        return `${RECIPE_BY_ID[e.recipeId]?.name ?? e.recipeId} выдохся`
       case 'rest-start':
         return 'Привал: восстанавливаешься'
       case 'rest-end':
@@ -64,6 +98,11 @@
         return `Новый уровень: ${formatNumber(e.level)}!`
       case 'loot':
         return `Выпало: ${e.item.name} [${rarityName(e.item.rarity)}]`
+      case 'autosell':
+        // Игрок этого не выбирал — значит, обязан об этом узнать.
+        return `Сумка полна: ${e.item.name} продан сам за ${formatNumber(e.gold)}`
+      case 'loot-swap':
+        return `${e.item.name} лучше надетого — освободил место, продав ${e.dropped.name} за ${formatNumber(e.gold)}`
       case 'spawn':
         return `Появился ${e.monsterName}`
       case 'hurt':
@@ -98,6 +137,8 @@
     kill: 'xp',
     levelup: 'xp',
     loot: 'slot-trinket',
+    autosell: 'gold',
+    'loot-swap': 'slot-trinket',
     spawn: 'zone-mirefen-hollows',
     hurt: 'stat-maxHp',
     block: 'slot-offhand',
@@ -112,6 +153,17 @@
     // ровно про неё. Заводить вторую такую же незачем.
     material: 'material-ore',
     craft: 'profession-smithing',
+    'quest-complete': 'raid-gate',
+    'temple-start': 'temple',
+    'temple-wave': 'temple-wave',
+    'temple-reward': 'temple',
+    'temple-end': 'temple',
+    'boss-ability': 'dungeon-heroic',
+    proc: 'proc-strike',
+    disenchant: 'action-disenchant',
+    enchant: 'profession-enchanting',
+    potion: 'potion-fury',
+    'potion-expired': 'potion-fury',
     'rest-start': 'stat-hpRegenOutOfCombat',
     'rest-end': 'stat-hpRegenOutOfCombat',
   }

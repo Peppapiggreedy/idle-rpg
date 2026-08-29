@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { openSettings } from './screen.js'
 
 // Бюджеты слоя представления. 3D-сцена, работающая часами, греет телефон
 // и ест батарею — а заметно это становится через час игры, когда чинить
@@ -34,17 +35,21 @@ test('за полчаса игрового времени сцена и DOM не
   await page.getByRole('button', { name: '×100', exact: true }).click()
 
   // ПРОГРЕВ перед замером. С нуля растут ДВЕ вещи, и обе законно: лог до
-  // своего потолка в 50 строк и сумка до 12 предметов — вместе это под три
+  // своего потолка в 50 строк и сумка до отказа — вместе это под три
   // сотни узлов. Мерить их как утечку значит мерить не то, поэтому точка
   // отсчёта — установившееся состояние, а не пустой экран.
   //
   // Сумку ждём по счётчику на вкладке, а не по таймеру: сколько реального
-  // времени уйдёт на двенадцать находок, зависит от машины, и таймер здесь
-  // означал бы «иногда успело, иногда нет».
+  // времени уйдёт на полную сумку, зависит от машины, и таймер здесь
+  // означал бы «иногда успело, иногда нет». Размер сумки читаем с самой
+  // вкладки: число мест — величина баланса, и вписывать его сюда значит
+  // ронять тест каждый раз, когда сумка вырастет.
   // Таймаут щедрый: дроп на старте редкий (25% с моба при TTK ~13 игровых
-  // секунд), и на двенадцать находок уходит пара минут даже на ×100.
+  // секунд), и на полную сумку уходит пара минут даже на ×100.
   const bagTab = page.locator('nav[aria-label="Разделы"] button', { hasText: 'Сумка' })
-  await expect(bagTab).toContainText('12/12', { timeout: 240_000 })
+  const limit = (await bagTab.innerText()).match(/\/\s*(\d+)/)?.[1]
+  expect(limit, 'на вкладке сумки должен быть счётчик вида 0/24').toBeTruthy()
+  await expect(bagTab).toContainText(`${limit}/${limit}`, { timeout: 240_000 })
   await page.waitForTimeout(5_000)
   const nodesBefore = await domNodes(page)
   const geometriesBefore = await probe(page, 'geometries')
@@ -91,7 +96,7 @@ test('при document.hidden сцена не создаёт всплывающи
 
 test('десять переключений текстового режима не растят память', async ({ page }) => {
   await openLiveGame(page)
-  await page.locator('nav[aria-label="Разделы"] button').nth(4).click()
+  await openSettings(page)
   const toText = page.getByRole('button', { name: 'Всегда текст' })
   const toScene = page.getByRole('button', { name: 'Всегда сцена' })
 
@@ -119,7 +124,7 @@ test('переключение в текст и обратно не ломает
   const goldOf = async () =>
     Number((await page.locator('text=/^Золото/').first().innerText()).replace(/\D/g, '')) || 0
 
-  await page.locator('nav[aria-label="Разделы"] button').nth(4).click()
+  await openSettings(page)
   await page.getByRole('button', { name: 'Всегда текст' }).click()
   await expect(page.locator('canvas')).toHaveCount(0)
   // Игра идёт: бой в текстовом режиме продолжается, уровень и золото на месте.

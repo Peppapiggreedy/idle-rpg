@@ -4,6 +4,8 @@
 // нет. Отказ — отдельный КОД, текст причины рендерит UI (правило проекта).
 import { Decimal } from './numbers'
 import { MATERIAL_BY_ID, materialsInZone, type MaterialDef } from '../data/materials'
+import { recipeUnlockLevel } from '../data/recipes'
+import { recipeUnlocked } from '../data/temple'
 import {
   FOOD_BY_ID,
   RECIPE_BY_ID,
@@ -12,11 +14,14 @@ import {
 } from '../data/recipes'
 import { RARITY_BY_ID } from '../data/rarity'
 import { ARMOR_NOUNS, SHIELD_BY_ID, WEAPON_BY_ID } from '../data/items'
-import { INVENTORY_SIZE, MATERIAL_DROP_CHANCE } from '../data/balance'
+import { INVENTORY_SIZE, MATERIAL_DROP_CHANCE, REAGENT_DROP_CHANCE } from '../data/balance'
+import { REAGENT_BY_ID, type ReagentDef } from '../data/reagents'
+import type { DungeonDef } from '../data/dungeons'
 import { armorMods, shieldMods, weaponMods } from './loot'
 import { pushEvent, type GameState } from './state'
 import type { Rng } from './rng'
-import type { Item } from '../types'
+import { advanceQuests } from './quests'
+import type { CombatEvent, Item } from '../types'
 
 /** Сколько единиц материала у героя. Отсутствие — ноль, а не undefined. */
 export function materialCount(state: GameState, id: string): Decimal {
@@ -50,7 +55,7 @@ export function addMaterial(state: GameState, id: string, count = 1): GameState 
 }
 
 /** Почему рецепт не собрать. null — собирается. */
-export type CraftBlockReason = 'materials' | 'inventory-full'
+export type CraftBlockReason = 'level' | 'locked' | 'materials' | 'inventory-full'
 
 export interface RecipeStatus {
   recipe: RecipeDef
@@ -68,6 +73,16 @@ export function recipeStatus(state: GameState, recipe: RecipeDef): RecipeStatus 
       have: materialCount(state, input.materialId),
     }))
     .filter((row) => row.have.lt(row.need))
+  // Уровень — первым: эта причина не лечится ни материалами, ни местом в сумке.
+  if (state.level.lt(recipeUnlockLevel(recipe))) {
+    return { recipe, canCraft: false, reason: 'level', missing }
+  }
+  // Рецепт-награда храма заперт, пока рекорд по волнам не дорос до рубежа.
+  // Правило живёт в данных (recipeUnlocked): списка «выданных наград» в
+  // состоянии нет, открывает их сам рекорд.
+  if (!recipeUnlocked(recipe.id, state.templeBestWave)) {
+    return { recipe, canCraft: false, reason: 'locked', missing: [] }
+  }
   if (missing.length > 0) return { recipe, canCraft: false, reason: 'materials', missing }
   // Предмет должен куда-то лечь; еда места не занимает.
   if (recipe.output.kind === 'item' && state.inventory.length >= INVENTORY_SIZE) {
@@ -80,28 +95,36 @@ export function recipeStatus(state: GameState, recipe: RecipeDef): RecipeStatus 
 export function craftedItem(output: ItemOutput, seq: number): Item | null {
   const rarity = RARITY_BY_ID[output.rarity]
   const id = `craft-${seq}`
+  // Прок — ссылка, а не копия чисел: см. комментарий у Item.procId.
+  const proc = output.procId ? { procId: output.procId } : {}
+  // У уникальной вещи имя СОБСТВЕННОЕ, а не «Кованый X»: её планируют заранее
+  // и знают по имени.
+  const named = (fallbackNoun: string) =>
+    output.name ?? `${output.adjective ?? ''} ${fallbackNoun}`.trim()
   if (output.slot === 'mainHand' || output.slot === 'offHand') {
     if (output.templateId && SHIELD_BY_ID[output.templateId]) {
       const template = SHIELD_BY_ID[output.templateId]
       return {
         id,
-        name: `${output.adjective} ${template.noun}`,
+        name: named(template.noun),
         rarity: rarity.id,
         slot: output.slot,
         level: output.level,
         mods: shieldMods(template, rarity, output.level),
+        ...proc,
       }
     }
     const template = output.templateId ? WEAPON_BY_ID[output.templateId] : undefined
     if (!template) return null
     return {
       id,
-      name: `${output.adjective} ${template.noun}`,
+      name: named(template.noun),
       rarity: rarity.id,
       slot: output.slot,
       level: output.level,
       hands: template.hands,
       mods: weaponMods(template, rarity, output.slot, output.level),
+      ...proc,
     }
   }
   // Атрибут кованой брони обязан быть назван в рецепте — это держит
@@ -110,12 +133,33 @@ export function craftedItem(output: ItemOutput, seq: number): Item | null {
   const nouns = ARMOR_NOUNS[output.slot]
   return {
     id,
-    name: `${output.adjective} ${nouns[0]}`,
+    name: named(nouns[0]),
     rarity: rarity.id,
     slot: output.slot,
     level: output.level,
     mods: armorMods(output.slot, rarity, output.level, output.attribute),
+    ...proc,
   }
+}
+
+/**
+ * Реагент с убитого босса.
+ *
+ * ПОСЛЕДНИЙ босс цепочки роняет его ВСЕГДА — это и есть награда за то, что
+ * цепочку прошли целиком, а не бросили на середине. Остальные — с шансом.
+ * Для гарантии бросок НЕ делается вовсе: у неё нет случайности, а лишний
+ * вызов rng сдвинул бы поток и сломал воспроизводимость прогонов.
+ */
+export function rollBossReagent(
+  dungeon: DungeonDef,
+  bossIndex: number,
+  rng: Rng,
+): ReagentDef | null {
+  const reagent = REAGENT_BY_ID[dungeon.reagentId]
+  if (!reagent) return null
+  const last = bossIndex >= dungeon.bosses.length - 1
+  if (!last && rng() >= REAGENT_DROP_CHANCE) return null
+  return reagent
 }
 
 /** Собрать рецепт. Нельзя — состояние не меняется вовсе. */
@@ -128,24 +172,36 @@ export function craft(state: GameState, recipeId: string): GameState {
   for (const input of recipe.inputs) {
     materials[input.materialId] = materialCount(state, input.materialId).minus(input.count)
   }
-  if (recipe.output.kind === 'food') {
-    // Еда — такой же счётчик, как материал: одна порция расходуется привалом.
+  const event: CombatEvent = { type: 'craft', recipeId: recipe.id }
+  if (recipe.output.kind === 'food' || recipe.output.kind === 'potion') {
+    // Еда и зелья — такие же счётчики, как материал: одна порция расходуется
+    // привалом, одна склянка — глотком. Места в сумке ни та, ни другая не
+    // занимают, поэтому и проверки на inventory-full у них нет.
     const id = recipe.output.id
-    return {
-      ...state,
-      materials: { ...materials, [id]: (materials[id] ?? new Decimal(0)).plus(1) },
-      combatLog: pushEvent(state.combatLog, { type: 'craft', recipeId: recipe.id }),
-    }
+    return advanceQuests(
+      {
+        ...state,
+        materials: { ...materials, [id]: (materials[id] ?? new Decimal(0)).plus(1) },
+        combatLog: pushEvent(state.combatLog, event),
+      },
+      [event],
+    )
   }
   const item = craftedItem(recipe.output, state.itemSeq)
   if (!item) return state
-  return {
-    ...state,
-    materials,
-    inventory: [...state.inventory, item],
-    itemSeq: state.itemSeq + 1,
-    combatLog: pushEvent(state.combatLog, { type: 'craft', recipeId: recipe.id }),
-  }
+  // Крафт — экшен МЕЖДУ тиками, и его событие тик уже не увидит: на входе
+  // в следующий тик оно лежит головой лога. Поэтому задание двигаем здесь же,
+  // тем же событием, которое уходит в ленту.
+  return advanceQuests(
+    {
+      ...state,
+      materials,
+      inventory: [...state.inventory, item],
+      itemSeq: state.itemSeq + 1,
+      combatLog: pushEvent(state.combatLog, event),
+    },
+    [event],
+  )
 }
 
 /**

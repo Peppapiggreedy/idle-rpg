@@ -20,10 +20,9 @@ export {
   unequipItem,
   isEquipped,
   isUpgrade,
-  setAutoEquip,
-  autoEquipIfBetter,
+  upgradeShare,
   compareItem,
-  damagePerSecondWith,
+  farmRateWith,
 } from './equipment'
 export type { EquipPreview, EquipComparison } from './equipment'
 export { createRng, randomSeed, randRange } from './rng'
@@ -92,6 +91,8 @@ export {
   availablePoints,
   spentPoints,
   spentInBranch,
+  heroBranches,
+  heroTalents,
   rankOf,
   talentStatus,
   allTalentStatuses,
@@ -106,6 +107,69 @@ export {
 } from './talents'
 export type { TalentStatus, TalentBlockReason, TalentRanks } from './talents'
 export {
+  TEMPLES,
+  TEMPLE_BY_ID,
+  activeTemple,
+  enterTemple,
+  leaveTemple,
+  msToNextAttempt,
+  templeById,
+  templeStatus,
+  TEMPLE,
+  TEMPLE_DAY_MS,
+  recipeUnlocked,
+  recipeUnlockWave,
+} from './temple'
+export type { TempleDef, TempleMilestone, TempleStatus, TempleBlockReason } from './temple'
+export {
+  QUEST_CHAIN,
+  activeQuest,
+  advanceQuests,
+  chainComplete,
+  chainUnlocked,
+  goalTarget,
+  isQuestDone,
+  progressionGateOpen,
+  questReward,
+  questStatuses,
+} from './quests'
+export type { QuestDef, QuestGoal, QuestReward, QuestStatus } from './quests'
+export {
+  potionSlots,
+  potionStatus,
+  potionCount,
+  activePotion,
+  potionFraction,
+  plannedPotion,
+  potionSupply,
+  drinkPotion,
+  advancePotions,
+  gatherHerbs,
+  statsWithoutPotions,
+  statsWithPotionPlan,
+} from './potions'
+export type { PotionSlot, PotionBlockReason, PotionSupply } from './potions'
+export {
+  isEnchantingUnlocked,
+  dustValue,
+  disenchantStatus,
+  disenchantItem,
+  enchantStatus,
+  enchantItem,
+  ENCHANTS,
+  ENCHANT_BY_ID,
+  enchantsForSlot,
+  enchantOf,
+  enchantModifiers,
+} from './enchanting'
+export type {
+  EnchantDef,
+  EnchantStatus,
+  EnchantBlockReason,
+  DisenchantStatus,
+  DisenchantBlockReason,
+} from './enchanting'
+export {
   DUNGEONS,
   DUNGEON_BY_ID,
   dungeonById,
@@ -113,6 +177,14 @@ export {
   currentBoss,
   dungeonStatus,
   allDungeonStatuses,
+  bossDispel,
+  bossFrenzyActive,
+  bossSwingTime,
+  currentBossAbility,
+  clearKey,
+  dungeonView,
+  ALL_DUNGEONS,
+  HEROIC_DUNGEONS,
   enterDungeon,
   leaveDungeon,
   advanceDungeon,
@@ -142,7 +214,7 @@ export {
   OFFLINE_MODAL_MIN_MS,
 } from './save'
 export type {
-  SavePayloadV18,
+  SavePayloadV19,
   SavedDungeonRun,
   SavedItem,
   SavedModifier,

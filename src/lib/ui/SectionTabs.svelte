@@ -10,11 +10,14 @@
     bagLimit?: number
     /** Есть ли свободные очки талантов — точка на «Развитии». */
     hasPoints?: boolean
+    /** Лежит ли в сумке апгрейд — точка на «Сумке». Выпадение вещи лучше
+     *  надетой должно быть заметно и из другого раздела: ради этого
+     *  мгновения лут и существует. */
+    hasUpgrade?: boolean
   }
-  let { bagCount = 0, bagLimit = 0, hasPoints = false }: Props = $props()
+  let { bagCount = 0, bagLimit = 0, hasPoints = false, hasUpgrade = false }: Props = $props()
 
   const LABEL: Record<SectionId, string> = {
-    character: 'Персонаж',
     progress: 'Развитие',
     bag: 'Сумка',
     world: 'Мир',
@@ -33,7 +36,7 @@
     >
       <span class="label">{LABEL[id]}</span>
       {#if id === 'bag' && bagLimit > 0}
-        <span class="badge">{bagCount}/{bagLimit}</span>
+        <span class="badge" class:upgrade={hasUpgrade}>{bagCount}/{bagLimit}</span>
       {:else if id === 'progress' && hasPoints}
         <span class="dot" aria-label="есть свободные очки"></span>
       {/if}
@@ -44,7 +47,7 @@
 <style>
   .tabs {
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     gap: var(--space-1);
     background: var(--c-surface);
     border: 1px solid var(--c-border);
@@ -91,6 +94,14 @@
     font-size: var(--text-2xs);
     font-variant-numeric: tabular-nums;
     opacity: 0.85;
+  }
+  .badge.upgrade {
+    color: var(--c-heal);
+    font-weight: var(--weight-bold);
+    opacity: 1;
+  }
+  .tab.active .badge.upgrade {
+    color: var(--c-bg);
   }
   .dot {
     width: var(--space-2);

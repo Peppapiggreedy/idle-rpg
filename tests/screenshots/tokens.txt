@@ -1,3 +1,4 @@
+--action-slot: 56px
 --bar-lg: 18px
 --bar-md: 12px
 --bar-sm: 8px

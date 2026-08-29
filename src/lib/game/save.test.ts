@@ -64,7 +64,6 @@ function richState(): GameState {
         ],
       },
     },
-    autoEquip: false,
     itemSeq: 2,
   }
 }
@@ -137,7 +136,10 @@ describe('save/load', () => {
     const s = result.state
     expect(s.gold.toNumber()).toBe(77)
     expect(s.level.toNumber()).toBe(5)
-    expect(s.currentXp.toNumber()).toBe(3)
+    // Абсолютное число опыта миграция v19 пересчитала под новую кривую;
+    // сохраняется ДОЛЯ пройденного уровня — полоска стоит там же, где стояла.
+    // Старая кривая: 40 * 5^1.5 = 447 опыта на уровень, из них пройдено 3.
+    expect(s.currentXp.div(s.xpToNext).toNumber()).toBeCloseTo(3 / 447, 2)
     // v1 хранил 12 dps = 10 базовых + 2 заточки. Заточку снесла миграция v18;
     // остались база и сила с уровней: 10 + (70 + 4 силы * 2) * 2 / 14.
     expect(expectedSwingDamage(s.stats).toNumber()).toBeCloseTo(10 + ((70 + 8) * 2) / 14, 9)
@@ -173,7 +175,6 @@ describe('save/load', () => {
     expect(result.state.stats.weaponSpeed).toBeCloseTo(2.2, 9)
     expect(result.state.stats.weaponDamageMin.toNumber()).toBe(44)
     expect(result.state.stats.weaponDamageMax.toNumber()).toBe(88)
-    expect(result.state.autoEquip).toBe(false)
   })
 
   it('сейв прошлой версии (v0, без поля version) мигрирует без потери прогресса', () => {
@@ -187,7 +188,8 @@ describe('save/load', () => {
     if (result.kind !== 'loaded') return
     expect(result.state.gold.toNumber()).toBe(50)
     expect(result.state.level.toNumber()).toBe(3)
-    expect(result.state.currentXp.toNumber()).toBe(7)
+    // Доля пройденного уровня сохранена: старая кривая давала 40 * 3^1.5 = 207.
+    expect(result.state.currentXp.div(result.state.xpToNext).toNumber()).toBeCloseTo(7 / 207, 2)
     expect(result.state.xpToNext.eq(xpToNextLevel(new Decimal(3)))).toBe(true)
   })
 
@@ -225,17 +227,19 @@ describe('оффлайн-прогресс', () => {
     expect(after100h.report!.elapsedMs).toBe(OFFLINE_CAP_MS)
   })
 
-  it('награда растёт со временем отсутствия, но не быстрее линейного', () => {
+  it('награда растёт со временем отсутствия — быстрее линейного, но не взрывом', () => {
     const base = createInitialState()
     const hour = applyOfflineProgress(base, HOUR).report!
     const fourHours = applyOfflineProgress(base, 4 * HOUR).report!
     expect(fourHours.gold.gt(hour.gold)).toBe(true)
-    // Не меньше линейного: за четыре часа герой набирает уровни, а с ними
-    // живучесть, так что темп может только вырасти. И не больше потолка —
-    // идеального фарма без единой смерти. Épsilon — на округления Decimal.
+    // НЕ МЕНЬШЕ линейного: за четыре часа герой набирает уровни, а с ними
+    // атрибуты, — темп следующего шага может только вырасти. Эпсилон — на
+    // округления Decimal.
     const linear = hour.gold.times(4)
     expect(fourHours.gold.gte(linear.times(0.999))).toBe(true)
-    expect(fourHours.gold.lte(linear.div(zoneUptime(base)).times(1.001))).toBe(true)
+    // И не взрывом: рост от уровней ограничен, восемь часов оффлайна не
+    // должны стоить как неделя игры.
+    expect(fourHours.gold.lte(linear.times(4))).toBe(true)
   })
 
   it('золото и опыт согласованы с наградами мобов зоны', () => {

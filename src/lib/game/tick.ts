@@ -1,7 +1,7 @@
 // Тик — конвейер чистых шагов (state, ctx) => state. Порядок фиксирован и важен:
 //   1. applyRevive          — мёртвый герой: отсчёт воскрешения; по нулю — полный HP
 //                             и откат в последнюю зону, где он выживал
-//   1a. applyRest           — привал: отсчёт отдыха либо уход на него по порогу
+//   1a. applyRest           — привал: отсчёт отдыха (уход — в applyRestCheck)
 //   2. applyCooldowns       — кулдауны умений и GCD идут игровым временем
 //   2a. applyEnrage         — время боя с боссом; по нему растёт его урон
 //   2a. applyAutocast       — таймер реакции и применение умения по приоритету
@@ -21,9 +21,15 @@
 // rng потребляют: удар героя (урон + крит), дроп, удар моба и спавн (уровень + архетип).
 import { Decimal } from './numbers'
 import { applyXp } from './formulas'
-import { rollLoot } from './loot'
-import { hasOffhand, rollBlock, rollMonsterDamage, rollSwing } from './combat'
-import { autoEquipIfBetter } from './equipment'
+import { rollLoot, stashLoot } from './loot'
+import {
+  advanceProcCooldowns,
+  hasOffhand,
+  rollBlock,
+  rollMonsterDamage,
+  rollProcs,
+  rollSwing,
+} from './combat'
 import type { Rng } from './rng'
 import { pushEvent, spawnMonster, type ActiveEffect, type GameState } from './state'
 import { ensureStats } from './stats'
@@ -40,8 +46,56 @@ import { advanceCooldowns, autocastStep, consumeQueuedAbility } from './abilitie
 import { finishRest, needsRest, startRest } from './rest'
 import { addMaterial, rollMaterial } from './crafting'
 import { classById } from '../data/classes'
-import { reviveMultiplier } from './talents'
+import { advancePotions, gatherHerbs } from './potions'
 import {
+  blockReflectShare,
+  blockResourceShare,
+  doubleStrikeChance,
+  killCooldownMultiplier,
+  reviveMultiplier,
+} from './talents'
+
+/**
+ * Смерть героя одним местом. Раньше она была вписана внутрь applyMonsterAttack;
+ * теперь герой может упасть и не от удара моба (героическая отдача списывает
+ * HP в момент траты ресурса), и оформлять смерть двумя способами нельзя.
+ */
+function heroDies(state: GameState, rng: Rng): GameState {
+  const dead: GameState = {
+    ...state,
+    heroState: 'dead',
+    // Талант «Скорое возвращение» режет простой; множитель живёт в данных.
+    reviveMsLeft: REVIVE_DELAY_MS * reviveMultiplier(state.talents),
+    queuedAbilityId: null,
+    activeEffects: [],
+    combatLog: pushEvent(state.combatLog, { type: 'death' }),
+  }
+  // Смерть в храме выкидывает наружу: рекорд и открытые им рецепты уже
+  // записаны, а забег не сохраняется — попытка потрачена.
+  if (dead.templeRun) return leaveTemple(dead, rng, true)
+  // Смерть в данже выкидывает наружу: лут за убитых боссов уже в сумке,
+  // а прогресс цепочки не сохраняется — заходить придётся заново.
+  return dead.dungeonRun ? leaveDungeon(dead, rng, true) : dead
+}
+
+/**
+ * Двойной удар: талант-флаг даёт замаху шанс повториться.
+ *
+ * Бросок делается ТОЛЬКО когда шанс положительный. Это не оптимизация:
+ * лишний вызов rng сдвинул бы весь поток случайности, и golden-прогон
+ * героя БЕЗ таланта перестал бы сходиться с эталоном.
+ */
+function extraSwings(chance: number, rng: Rng): number {
+  return chance > 0 && rng() < chance ? 1 : 0
+}
+import { rollBossReagent } from './crafting'
+import { bossDispel, bossSwingTime } from './bossAbilities'
+import { advanceTemple, clearTempleWave, leaveTemple } from './temple'
+import { freshEvents } from './events'
+import { advanceQuests } from './quests'
+import { TEMPLE_WAVE_DELAY_MS } from '../data/temple'
+import {
+  activeDungeon,
   advanceDungeon,
   clearedXpBonus,
   currentBoss,
@@ -50,7 +104,7 @@ import {
   type BossDef,
 } from './dungeons'
 import { rollBossLoot } from './loot'
-import type { AttackEvent, Monster } from '../types'
+import type { AttackEvent, CombatEvent, Monster } from '../types'
 
 // Погрешность накопления долей замаха: 0.05 и подобные не представимы в double.
 const SWING_EPS = 1e-9
@@ -69,6 +123,8 @@ interface TickContext {
   /** Ударов нанесено и получено за тик: из них класс копит свой ресурс. */
   swingsDealt: number
   hitsTaken: number
+  /** Голова лога на входе в тик: по ней считается, что нового объявлено. */
+  logHead: CombatEvent | null
 }
 
 type TickStep = (state: GameState, ctx: TickContext) => GameState
@@ -95,23 +151,62 @@ const applyRevive: TickStep = (s, ctx) => {
 }
 
 /**
- * Привал. Сидит ДО кулдаунов и боя: пока герой отдыхает, он не бьёт, не
- * получает по себе и не жмёт умений — тик для него сводится к отсчёту.
+ * Привал: ТОЛЬКО ОТСЧЁТ. Пока герой отдыхает, он не бьёт, не получает по себе
+ * и не жмёт умений — тик для него сводится к тиканью таймера.
  *
- * Уход на привал проверяется здесь же, но ПОСЛЕ отсчёта: порог мерится по
- * состоянию, с которым герой пришёл в тик.
+ * Решение «пора отдыхать» здесь больше НЕ принимается: оно переехало в
+ * applyRestCheck, за убийство моба (см. там же почему).
+ *
+ * Возврат из привала — это НОВАЯ СХВАТКА, а не продолжение старой: герой
+ * получает свежего моба с полным здоровьем. Иначе отдых был бы способом
+ * долечиться посреди боя, только оформленным иначе.
  */
 const applyRest: TickStep = (s, ctx) => {
-  if (s.heroState === 'dead') return s
-  if (s.heroState === 'resting') {
-    const restMsLeft = s.restMsLeft - ctx.dtMs
-    if (restMsLeft > 0) return { ...s, restMsLeft }
-    const done = finishRest(s)
-    return { ...done, combatLog: pushEvent(done.combatLog, { type: 'rest-end', interrupted: false }) }
+  if (s.heroState !== 'resting') return s
+  const restMsLeft = s.restMsLeft - ctx.dtMs
+  if (restMsLeft > 0) return { ...s, restMsLeft }
+  const done = finishRest(s)
+  const log = pushEvent(done.combatLog, { type: 'rest-end', interrupted: false })
+  // В данже цепочка боссов своя: там моба назначает забег, а не зона.
+  if (done.dungeonRun) return { ...done, combatLog: log }
+  const monster = spawnMonster(currentZone(done), ctx.rng)
+  return {
+    ...done,
+    monster,
+    swingProgress: 0,
+    offhandSwingProgress: 0,
+    respawnMsLeft: 0,
+    combatLog: pushEvent(log, { type: 'spawn', monsterName: monster.name }),
   }
+}
+
+/**
+ * Пора ли на привал. Проверяется ТОЛЬКО ПОСЛЕ УБИЙСТВА и никогда в середине
+ * схватки — в этом вся суть шага.
+ *
+ * Раньше герой выходил из боя, едва просев ниже порога, и бой поэтому был
+ * безопасен: до смерти дело не доходило вовсе, а порог был не решением, а
+ * страховкой. Теперь он доводит бой до конца, а решение отдохнуть принимает
+ * между схватками. Отсюда риск, ради которого всё и делалось: войти в бой
+ * на низком здоровье — значит, возможно, из него не выйти.
+ *
+ * Вход в привал снимает и текущего моба, и таймер респауна: возвращаться
+ * герою будет не к кому — его встретит новый (см. applyRest).
+ */
+const applyRestCheck: TickStep = (s) => {
+  if (s.heroState !== 'alive') return s
+  // В храме привала нет: поток волн не прерывается на отдых, иначе «пока
+  // герой не погибнет» превратилось бы в «пока не надоест».
+  if (s.templeRun) return s
+  // Только между боями: пока моб жив, порог ничего не запускает.
+  if (s.monster.currentHp.gt(0)) return s
   if (!needsRest(s)) return s
   const resting = startRest(s)
-  return { ...resting, combatLog: pushEvent(resting.combatLog, { type: 'rest-start' }) }
+  return {
+    ...resting,
+    respawnMsLeft: 0,
+    combatLog: pushEvent(resting.combatLog, { type: 'rest-start' }),
+  }
 }
 
 // Кулдауны умений и GCD идут ИГРОВЫМ временем: множитель скорости из
@@ -204,6 +299,29 @@ const applyCombat: TickStep = (s, ctx) => {
       timestamp: swung.playtimeMs.toNumber(),
     })
     if (hpLeft.lte(0)) ctx.killedMonster = monster
+    for (
+      let i = extraSwings(doubleStrikeChance(swung.talents), ctx.rng);
+      i > 0 && ctx.killedMonster === null;
+      i -= 1
+    ) {
+      const extra = rollSwing(swung.stats, ctx.rng)
+      const afterExtra = monster.currentHp.minus(extra.amount)
+      monster = { ...monster, currentHp: Decimal.max(afterExtra, new Decimal(0)) }
+      combatLog = pushEvent(combatLog, {
+        type: 'hit',
+        damage: extra.amount,
+        isCrit: extra.isCrit,
+      })
+      ctx.emitAttack({
+        sourceId: 'hero',
+        targetId: monster.id,
+        amount: extra.amount,
+        isCrit: extra.isCrit,
+        abilityId: null,
+        timestamp: swung.playtimeMs.toNumber(),
+      })
+      if (afterExtra.lte(0)) ctx.killedMonster = monster
+    }
   }
   return { ...swung, swingProgress, monster, combatLog }
 }
@@ -251,17 +369,37 @@ const applyEffects: TickStep = (s, ctx) => {
   return { ...s, monster, combatLog, activeEffects: remaining }
 }
 
+/**
+ * Награды за убийство. Здесь же читается флаг «убийство возвращает откаты»:
+ * доля из данных таланта множит и кулдауны, и GCD. Единица — таланта нет,
+ * и тогда не пересобирается ничего.
+ */
 const applyKillRewards: TickStep = (s, ctx) => {
   const killed = ctx.killedMonster
   if (!killed) return s
+  const share = killCooldownMultiplier(s.talents)
+  const refunded =
+    share >= 1
+      ? { abilityCooldownsMs: s.abilityCooldownsMs, gcdMsLeft: s.gcdMsLeft }
+      : {
+          abilityCooldownsMs: Object.fromEntries(
+            Object.entries(s.abilityCooldownsMs).map(([id, left]) => [id, left * share]),
+          ),
+          gcdMsLeft: s.gcdMsLeft * share,
+        }
   return {
     ...s,
+    ...refunded,
     // Убил моба — значит в этой зоне выживает; сюда же вернёт смерть.
     lastSurvivedZoneId: s.currentZoneId,
     gold: s.gold.plus(killed.goldReward),
     combatLog: pushEvent(s.combatLog, {
       type: 'kill',
+      // id моба — это id АРХЕТИПА (см. buildMonster): по нему цель задания
+      // и узнаёт, того ли зверя бьют.
+      monsterId: killed.id,
       monsterName: killed.name,
+      zoneId: s.currentZoneId,
       gold: killed.goldReward,
       xp: killed.xpReward.times(clearedXpBonus(s.dungeonsCleared)),
     }),
@@ -294,12 +432,85 @@ const applyMaterialDrop: TickStep = (s, ctx) => {
   // Материалы падают СВОИМ броском и в свой мешок: места в сумке не занимают
   // и шансы редкости предметов не сдвигают. Бросок идёт ДО дропа предмета —
   // порядок фиксирован, иначе прогоны с сидом перестанут воспроизводиться.
+  let next = s
   const material = rollMaterial(s.currentZoneId, ctx.rng)
-  if (!material) return s
-  return {
-    ...addMaterial(s, material.id),
-    combatLog: pushEvent(s.combatLog, { type: 'material', materialId: material.id }),
+  if (material) {
+    next = {
+      ...addMaterial(next, material.id),
+      combatLog: pushEvent(next.combatLog, { type: 'material', materialId: material.id }),
+    }
   }
+  // Реагент — только с боссов данжа. Индекс босса ещё указывает на убитого:
+  // цепочку двигает applyRespawn, и он идёт позже.
+  const dungeon = activeDungeon(s)
+  if (!dungeon || !s.dungeonRun) return next
+  const reagent = rollBossReagent(dungeon, s.dungeonRun.bossIndex, ctx.rng)
+  if (!reagent) return next
+  return {
+    ...addMaterial(next, reagent.id),
+    combatLog: pushEvent(next.combatLog, { type: 'material', materialId: reagent.id }),
+  }
+}
+
+/**
+ * Проки надетых вещей.
+ *
+ * Стоит ПОСЛЕ ударов обеих рук и ДО эффектов и наград: бросок идёт по ударам,
+ * нанесённым в этом тике, а урон прока — такой же урон, и добить моба он
+ * может. Тики урона по времени в счёт не идут: прок висит на оружии, а не на
+ * кровотечении (см. фильтр в emitAttack).
+ *
+ * Внутренние кулдауны тикают ВСЕГДА, даже когда герой мёртв или на привале:
+ * это таймер вещи, а не действие героя.
+ */
+const applyProcs: TickStep = (s, ctx) => {
+  const cooled = advanceProcCooldowns(s.procCooldownsMs, ctx.dtMs)
+  const base = cooled === s.procCooldownsMs ? s : { ...s, procCooldownsMs: cooled }
+  if (base.heroState !== 'alive' || base.respawnMsLeft > 0) return base
+  const hits = ctx.swingsDealt
+  if (hits <= 0) return base
+  const { fired, cooldowns } = rollProcs(base, hits, ctx.rng)
+  if (fired.length === 0) return base
+  let monster = base.monster
+  let currentHp = base.currentHp
+  let combatLog = base.combatLog
+  for (const fire of fired) {
+    if (fire.damage) {
+      const hpLeft = monster.currentHp.minus(fire.damage)
+      monster = { ...monster, currentHp: Decimal.max(hpLeft, new Decimal(0)) }
+      combatLog = pushEvent(combatLog, {
+        type: 'proc',
+        procId: fire.proc.id,
+        effect: 'damage',
+        amount: fire.damage,
+      })
+      ctx.emitAttack({
+        sourceId: 'hero',
+        targetId: monster.id,
+        amount: fire.damage,
+        isCrit: fire.isCrit,
+        abilityId: null,
+        procId: fire.proc.id,
+        timestamp: base.playtimeMs.toNumber(),
+      })
+      // Моб мог уже пасть от замаха — тогда это перебой, как и у обычного
+      // добивающего удара, и второй раз убийство не оформляется.
+      if (hpLeft.lte(0) && ctx.killedMonster === null) ctx.killedMonster = monster
+      continue
+    }
+    if (fire.heal) {
+      const healed = Decimal.min(currentHp.plus(fire.heal), base.stats.maxHp)
+      const gained = healed.minus(currentHp)
+      currentHp = healed
+      combatLog = pushEvent(combatLog, {
+        type: 'proc',
+        procId: fire.proc.id,
+        effect: 'heal',
+        amount: gained,
+      })
+    }
+  }
+  return { ...base, procCooldownsMs: cooldowns, monster, currentHp, combatLog }
 }
 
 const applyLootDrop: TickStep = (s, ctx) => {
@@ -307,35 +518,19 @@ const applyLootDrop: TickStep = (s, ctx) => {
   // Босс роняет свой пул целиком, а не по общему шансу дропа.
   const boss = currentBoss(s)
   if (boss) return dropBossLoot(s, boss, ctx)
-  // Дроп только при свободном слоте; rng при полном инвентаре не трогаем.
-  if (s.inventory.length >= INVENTORY_SIZE) return s
-  // Предмет наследует уровень убитого моба: находки растут вместе с зоной.
+  // Бросок идёт ВСЕГДА, независимо от заполненности сумки: раньше полная
+  // сумка глушила дроп целиком, и герой переставал находить вещи, пока
+  // игрок не продаст. Куда девать находку — решает stashLoot.
   const item = rollLoot(ctx.rng, s.itemSeq, s.monster.level)
   if (!item) return s
-  const withItem: GameState = {
-    ...s,
-    inventory: [...s.inventory, item],
-    itemSeq: s.itemSeq + 1,
-    combatLog: pushEvent(s.combatLog, { type: 'loot', item }),
-  }
-  // Автонадевание сравнивает предметы по оценочному урону в секунду.
-  return autoEquipIfBetter(withItem, item)
+  return stashLoot({ ...s, itemSeq: s.itemSeq + 1 }, item)
 }
 
-// Лут босса: сколько влезет в инвентарь, остальное пропадает.
+// Лут босса: те же правила разбора, что и у обычной находки.
 function dropBossLoot(s: GameState, boss: BossDef, ctx: TickContext): GameState {
-  const free = INVENTORY_SIZE - s.inventory.length
-  if (free <= 0) return s
-  const items = rollBossLoot(boss.loot, ctx.rng, s.itemSeq, boss.level).slice(0, free)
+  const items = rollBossLoot(boss.loot, ctx.rng, s.itemSeq, boss.level)
   let next: GameState = { ...s, itemSeq: s.itemSeq + items.length }
-  for (const item of items) {
-    next = {
-      ...next,
-      inventory: [...next.inventory, item],
-      combatLog: pushEvent(next.combatLog, { type: 'loot', item }),
-    }
-    next = autoEquipIfBetter(next, item)
-  }
+  for (const item of items) next = stashLoot(next, item)
   return next
 }
 
@@ -367,6 +562,29 @@ const applyOffhandCombat: TickStep = (s, ctx) => {
       timestamp: s.playtimeMs.toNumber(),
     })
     if (hpLeft.lte(0)) ctx.killedMonster = monster
+    for (
+      let i = extraSwings(doubleStrikeChance(s.talents), ctx.rng);
+      i > 0 && ctx.killedMonster === null;
+      i -= 1
+    ) {
+      const extra = rollSwing(s.stats, ctx.rng, new Decimal(1), 'off')
+      const afterExtra = monster.currentHp.minus(extra.amount)
+      monster = { ...monster, currentHp: Decimal.max(afterExtra, new Decimal(0)) }
+      combatLog = pushEvent(combatLog, {
+        type: 'hit',
+        damage: extra.amount,
+        isCrit: extra.isCrit,
+      })
+      ctx.emitAttack({
+        sourceId: 'hero',
+        targetId: monster.id,
+        amount: extra.amount,
+        isCrit: extra.isCrit,
+        abilityId: null,
+        timestamp: s.playtimeMs.toNumber(),
+      })
+      if (afterExtra.lte(0)) ctx.killedMonster = monster
+    }
   }
   return { ...s, offhandSwingProgress: progress, monster, combatLog }
 }
@@ -376,8 +594,14 @@ const applyMonsterAttack: TickStep = (s, ctx) => {
   // На привале по герою не бьют: он вышел из боя, а не отвернулся в нём.
   if (s.heroState !== 'alive' || s.respawnMsLeft > 0 || ctx.killedMonster) return s
   if (s.monster.damageMax.lte(0)) return s
-  let monsterSwing = s.monster.swingProgress + ctx.dtMs / (s.monster.swingTime * 1000)
+  const reflectShare = blockReflectShare(s.talents)
+  const resourceShare = blockResourceShare(s.talents)
+  // Время замаха берём через bossSwingTime: героический босс ускоряется на
+  // низком здоровье, обычный отдаёт своё число как было.
+  let monsterSwing = s.monster.swingProgress + ctx.dtMs / (bossSwingTime(s) * 1000)
+  let monster = s.monster
   let currentHp = s.currentHp
+  let currentMana = s.currentMana
   let combatLog = s.combatLog
   let died = false
   while (monsterSwing >= 1 - SWING_EPS && !died) {
@@ -395,11 +619,37 @@ const applyMonsterAttack: TickStep = (s, ctx) => {
     // зависел бы от того, попал моб или нет.
     const { amount, blocked } = rollBlock(s.stats, raw, ctx.rng)
     currentHp = Decimal.max(currentHp.minus(amount), new Decimal(0))
+    // Два флага живучести, оба срабатывают ТОЛЬКО на удачном блоке; числа
+    // приходят из payload талантов, а не из логики.
+    let reflected: Decimal | undefined
+    if (blocked) {
+      const absorbed = raw.minus(amount)
+      if (reflectShare > 0 && absorbed.gt(0)) {
+        reflected = absorbed.times(reflectShare)
+        const hpAfter = monster.currentHp.minus(reflected)
+        monster = { ...monster, currentHp: Decimal.max(hpAfter, new Decimal(0)) }
+        ctx.emitAttack({
+          sourceId: 'hero',
+          targetId: monster.id,
+          amount: reflected,
+          isCrit: false,
+          abilityId: null,
+          timestamp: s.playtimeMs.toNumber(),
+        })
+      }
+      if (resourceShare > 0) {
+        currentMana = Decimal.min(
+          currentMana.plus(s.stats.maxMana.times(resourceShare)),
+          s.stats.maxMana,
+        )
+      }
+    }
     combatLog = blocked
       ? pushEvent(combatLog, {
           type: 'block',
           damage: amount,
           blocked: raw.minus(amount),
+          ...(reflected ? { reflected } : {}),
           monsterName: s.monster.name,
         })
       : pushEvent(combatLog, { type: 'hurt', damage: amount, monsterName: s.monster.name })
@@ -413,7 +663,16 @@ const applyMonsterAttack: TickStep = (s, ctx) => {
     })
     if (currentHp.lte(0)) died = true
   }
-  const next = { ...s, currentHp, monster: { ...s.monster, swingProgress: monsterSwing }, combatLog }
+  // Отражение может добить моба. Награды за это убийство придут СЛЕДУЮЩИМ
+  // тиком, через applyPendingKill: шаг мобов стоит в конвейере после наград,
+  // и переставлять его ради отражения нельзя — порядок ударов важнее.
+  const next = {
+    ...s,
+    currentHp,
+    currentMana,
+    monster: { ...monster, swingProgress: monsterSwing },
+    combatLog,
+  }
   if (!died) return next
   // Смерть героя: 30 игровых секунд простоя, награды не капают.
   const dead: GameState = {
@@ -499,8 +758,21 @@ const applyResourceGain: TickStep = (s, ctx) => {
 }
 
 const applyRespawn: TickStep = (s, ctx) => {
-  // Смерть моба на этом тике — взводим таймер; отсчёт начнётся со следующего тика.
-  if (ctx.killedMonster) return { ...s, respawnMsLeft: RESPAWN_DELAY_MS }
+  // На привале респауна нет: герой ушёл отдыхать, и встретит его новый моб
+  // в момент возвращения (applyRest), а не тот, что стоял бы тут без него.
+  if (s.heroState === 'resting') return s
+  // Смерть моба на этом тике — взводим таймер; отсчёт начнётся со следующего
+  // тика. В храме пауза своя: волна должна читаться как волна, а не как
+  // мигание.
+  if (ctx.killedMonster) {
+    return { ...s, respawnMsLeft: s.templeRun ? TEMPLE_WAVE_DELAY_MS : RESPAWN_DELAY_MS }
+  }
+  // В храме пауза ведёт к следующей волне, а не к респауну моба зоны.
+  if (s.templeRun && s.respawnMsLeft > 0) {
+    const left = s.respawnMsLeft - ctx.dtMs
+    if (left > 0) return { ...s, respawnMsLeft: left }
+    return advanceTemple(s)
+  }
   // В данже пауза ведёт не к респауну, а к следующему боссу цепочки.
   if (s.dungeonRun && s.respawnMsLeft > 0) {
     const left = s.respawnMsLeft - ctx.dtMs
@@ -524,24 +796,80 @@ const applyAutosaveCounter: TickStep = (s, ctx) => {
   return { ...s, msSinceAutosave: s.msSinceAutosave + ctx.dtMs }
 }
 
+/**
+ * Зелья: отсчёт длительностей. Идёт ИГРОВЫМ временем, тем же dtMs, что и
+ * кулдауны. Шаг стоит ПЕРВЫМ среди боевых и до applyCooldowns: зелье,
+ * истёкшее на этом тике, не должно бить этим тиком.
+ */
+const applyPotions: TickStep = (s, ctx) => advancePotions(s, ctx.dtMs)
+
+/**
+ * Рассеивание героического босса. Стоит ДО applyEnrage: отметки считаются от
+ * ещё не сдвинутого fightMs, ровно по тому же отрезку времени, по которому
+ * дальше посчитается ступень ярости.
+ */
+const applyBossDispel: TickStep = (s, ctx) => bossDispel(s, ctx.dtMs)
+
+/**
+ * Прогресс заданий. Своих счётчиков шаг НЕ ЗАВОДИТ: он берёт события, которые
+ * этот тик уже объявил (убийство, пройденный данж), и отдаёт их чистой
+ * advanceQuests. Стоит ПОСЛЕ applyRespawn намеренно — именно там цепочка
+ * боссов объявляет о полном прохождении.
+ */
+const applyQuests: TickStep = (s, ctx) => advanceQuests(s, freshEvents(s.combatLog, ctx.logHead))
+
+/**
+ * Волна храма засчитана. Отдельным шагом и ДО решения об отдыхе: между
+ * смертью бойца и следующей волной герой может выйти сам, а пройденная
+ * волна обязана остаться в рекорде.
+ */
+const applyTempleWave: TickStep = (s, ctx) => {
+  if (!s.templeRun || !ctx.killedMonster) return s
+  return clearTempleWave(s)
+}
+
+/**
+ * Герой мог упасть не от удара моба: героическая отдача списывает HP в момент
+ * траты ресурса, в том числе при ручном нажатии между тиками. Без этого шага
+ * герой остался бы стоять на нуле «живым», пока моб не соберётся ударить.
+ */
+const applyLethalCheck: TickStep = (s, ctx) =>
+  s.heroState === 'alive' && s.currentHp.lte(0) ? heroDies(s, ctx.rng) : s
+
+/**
+ * Травы: собираются ВРЕМЕНЕМ, а не убийством. Шаг не смотрит на
+ * ctx.killedMonster и не берёт ни одного броска из rng — поэтому его место
+ * в конвейере на воспроизводимость прогонов с сидом не влияет вовсе.
+ */
+const applyHerbGather: TickStep = (s, ctx) => gatherHerbs(s, ctx.dtMs)
+
 const PIPELINE: TickStep[] = [
   applyRevive,
   applyRest,
+  applyPotions,
   applyCooldowns,
+  applyBossDispel,
   applyEnrage,
   applyAutocast,
   applyPendingKill,
   applyCombat,
   applyOffhandCombat,
+  applyProcs,
   applyEffects,
   applyKillRewards,
   applyLevelUps,
   applyMaterialDrop,
   applyLootDrop,
+  // Решение об отдыхе — здесь, за наградами и добычей: моб уже мёртв,
+  // и это единственный момент, когда герой волен уйти.
+  applyRestCheck,
+  applyLethalCheck,
   applyMonsterAttack,
   applyResourceGain,
   applyRegen,
   applyRespawn,
+  applyHerbGather,
+  applyQuests,
   applyAutosaveCounter,
 ]
 
@@ -560,11 +888,15 @@ export function tick(
       if (event.targetId === 'hero') ctx.hitsTaken += 1
       // Тики урона по времени ударами не считаются: иначе одно умение с
       // эффектом кормило бы ресурс втрое лучше остальных.
-      else if (!event.overTime) ctx.swingsDealt += 1
+      // Тики урона по времени и удары ПРОКОВ ударами не считаются: ресурс
+      // копится от замахов героя, а не от того, что сработало само. Иначе
+      // одна реликвия кормила бы ярость лучше любого умения.
+      else if (!event.overTime && !event.procId) ctx.swingsDealt += 1
       emitAttack(event)
     },
     killedMonster: null,
     swingsDealt: 0,
+    logHead: state.combatLog[0] ?? null,
     hitsTaken: 0,
   }
   // Кеш статов: пересчёт только если источники менялись с прошлого тика.

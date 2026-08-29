@@ -2,18 +2,47 @@
   import {
     Decimal,
     compareItem,
+    disenchantStatus,
+    enchantModifiers,
+    enchantOf,
     formatNumber,
     sellPrice,
+    upgradeShare,
     INVENTORY_SIZE,
+    type DisenchantBlockReason,
     type EquipComparison,
   } from '../game'
   import { SLOT_NAMES } from '../data/slots'
-  import { equipInventoryItem, gameState, sellInventoryItem } from '../stores/game'
+  import {
+    disenchantInventoryItem,
+    equipInventoryItem,
+    gameState,
+    sellInventoryItem,
+  } from '../stores/game'
   import ItemMods from './ItemMods.svelte'
   import { RARITY_BY_ID } from '../data/rarity'
   import { Button, IconSlot, NumberText, Panel, Tag } from './kit'
 
   const emptySlots = $derived(Math.max(0, INVENTORY_SIZE - $gameState.inventory.length))
+
+  // МЕТКА АПГРЕЙДА — то, ради чего снесено автонадевание. Видно не только
+  // «лучше», но и НА СКОЛЬКО: доля прироста урона в секунду. Считается тем
+  // же estimateCombatRate, что и сравнение под курсором, — двух мер
+  // «хорошести» в игре нет.
+  const shares = $derived(
+    new Map($gameState.inventory.map((i) => [i.id, upgradeShare($gameState, i)])),
+  )
+  // Сортировка одна и по делу: сверху то, что сильнее всего поднимет урон.
+  const sorted = $derived(
+    [...$gameState.inventory].sort(
+      (a, b) => (shares.get(b.id) ?? -1) - (shares.get(a.id) ?? -1),
+    ),
+  )
+  function upgradeLabel(share: number | null | undefined): string | null {
+    if (share === null || share === undefined) return null
+    if (!Number.isFinite(share)) return 'слот пуст'
+    return `+${Math.round(share * 100)}%`
+  }
 
   // Сравнение считаем только для предмета под курсором: заглядывать в будущее
   // для всего инвентаря каждый кадр незачем.
@@ -23,15 +52,32 @@
     return item ? compareItem($gameState, item) : null
   })
 
+  // Распыление живёт ЗДЕСЬ, рядом с продажей: это две половины одного
+  // решения — «что делать с находкой», — и разносить их по экранам нельзя.
+  const DISENCHANT_REASON: Record<DisenchantBlockReason, string> = {
+    locked: 'Распыление откроется на 50 уровне',
+    equipped: 'Сперва сними предмет',
+    missing: 'Предмета больше нет',
+  }
+  // Подтверждение спрашивается ТОЛЬКО у зачарованной вещи: лишний клик на
+  // каждую находку убил бы разбор сумки.
+  let confirming = $state<string | null>(null)
+
   const seconds = (v: number) => `${v.toFixed(2)}с`
   // Урон в секунду растёт неограниченно: пока читается — десятые доли,
   // дальше короткая запись formatNumber.
   const dps = (value: Decimal) => (value.lt(1000) ? value.toFixed(1) : formatNumber(value))
 </script>
 
-<Panel title="Инвентарь" subtitle="{$gameState.inventory.length} из {INVENTORY_SIZE} слотов">
+<Panel
+  title="Инвентарь"
+  subtitle="{$gameState.inventory.length} из {INVENTORY_SIZE} слотов{$gameState.enchantDust.gt(0)
+    ? ` · ${formatNumber($gameState.enchantDust)} пыли`
+    : ''}"
+>
   <div class="grid">
-    {#each $gameState.inventory as item (item.id)}
+    {#each sorted as item (item.id)}
+      {@const share = shares.get(item.id)}
       <IconSlot
         slotLabel={SLOT_NAMES[item.slot]}
         rarity={item.rarity}
@@ -45,7 +91,14 @@
         <!-- Уровень вещи — её главная сила: без него «Редкий» 3-го уровня
              выглядел бы равным «Редкому» 60-го. -->
         <Tag rarity={item.rarity} label="{RARITY_BY_ID[item.rarity].name} · {item.level} ур." />
+        {#if upgradeLabel(share)}
+          <span class="upgrade" data-upgrade>Апгрейд {upgradeLabel(share)}</span>
+        {/if}
         <ItemMods mods={item.mods} />
+        {#if enchantOf(item)}
+          <span class="enchant">Зачаровано: {enchantOf(item)?.name}</span>
+          <ItemMods mods={enchantModifiers(item)} />
+        {/if}
 
         {#if hovered === item.id && comparison}
           {@const c = comparison}
@@ -72,12 +125,41 @@
         {/if}
 
         {#snippet footer()}
-          <Button size="sm" variant="primary" onclick={() => equipInventoryItem(item.id)}>
-            Надеть
-          </Button>
-          <Button size="sm" onclick={() => sellInventoryItem(item.id)}>
-            Продать за {formatNumber(sellPrice(item))}
-          </Button>
+          {@const dis = disenchantStatus($gameState, item.id)}
+          {#if confirming === item.id}
+            <span class="warn">
+              На вещи «{enchantOf(item)?.name}» — она исчезнет вместе с ней.
+            </span>
+            <Button
+              size="sm"
+              variant="primary"
+              onclick={() => {
+                disenchantInventoryItem(item.id)
+                confirming = null
+              }}
+            >
+              Всё равно распылить
+            </Button>
+            <Button size="sm" onclick={() => (confirming = null)}>Отмена</Button>
+          {:else}
+            <Button size="sm" variant="primary" onclick={() => equipInventoryItem(item.id)}>
+              Надеть
+            </Button>
+            <Button size="sm" onclick={() => sellInventoryItem(item.id)}>
+              Продать за {formatNumber(sellPrice(item))}
+            </Button>
+            {#if dis.reason !== 'locked'}
+              <Button
+                size="sm"
+                disabled={!dis.canDisenchant}
+                title={dis.reason ? DISENCHANT_REASON[dis.reason] : 'Предмет исчезнет навсегда'}
+                onclick={() =>
+                  item.enchantId ? (confirming = item.id) : disenchantInventoryItem(item.id)}
+              >
+                Распылить · {formatNumber(dis.dust)} пыли
+              </Button>
+            {/if}
+          {/if}
         {/snippet}
       </IconSlot>
     {/each}
@@ -97,8 +179,27 @@
     grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
     gap: var(--space-2);
   }
+  .enchant {
+    font-size: var(--text-xs);
+    color: var(--c-accent);
+  }
+  .warn {
+    font-size: var(--text-xs);
+    color: var(--c-warning);
+  }
   .name {
     font-weight: var(--weight-bold);
+  }
+  /* Апгрейд обязан быть виден без наведения: ради этого мгновения лут
+     и существует. Цвет — здоровья: «стало лучше», а не «тут урон». */
+  .upgrade {
+    align-self: flex-start;
+    font-size: var(--text-2xs);
+    font-weight: var(--weight-bold);
+    color: var(--c-heal);
+    border: 1px solid var(--c-heal);
+    border-radius: var(--radius-sm);
+    padding: 0 var(--space-1);
   }
   .compare {
     margin-top: var(--space-1);

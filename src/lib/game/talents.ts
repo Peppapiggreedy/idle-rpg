@@ -1,16 +1,27 @@
+
+// =============================================================================
 // Таланты: сколько очков есть, куда их можно вложить и что из этого выходит.
 // Правила вложения живут здесь, эффекты — в данных: талант либо отдаёт
 // модификаторы в конвейер статов, либо поднимает флаг, по которому меняется
 // поведение. Текста для игрока здесь нет — наружу идут коды причин.
+//
+// НИ ОДНОГО «ЕСЛИ ТАЛАНТ ТАКОЙ-ТО» И НИ ОДНОГО «ЕСЛИ КЛАСС ТАКОЙ-ТО».
+// Дерево берётся по классу героя (talentsOfClass), а поведение — по ИМЕНИ
+// ФЛАГА через общий flagPayload; число всегда приходит из payload данных.
 import { Decimal } from './numbers'
 import {
+  BRANCH_BY_ID,
   TALENTS,
   TALENT_BY_ID,
+  branchesOfClass,
   rankOf,
   talentModifiers,
   talentsInBranch,
+  talentsOfClass,
+  type BranchDef,
   type BranchId,
   type TalentDef,
+  type TalentEffect,
   type TalentFlag,
 } from '../data/talents'
 import {
@@ -22,7 +33,7 @@ import { ensureStats } from './stats'
 import type { GameState } from './state'
 
 // Реэкспорт: чистые производные живут в данных, правила — здесь.
-export { rankOf, talentModifiers } from '../data/talents'
+export { rankOf, talentModifiers, branchesOfClass, talentsOfClass } from '../data/talents'
 
 export type TalentRanks = Record<string, number>
 
@@ -38,9 +49,9 @@ export function spentPoints(ranks: TalentRanks): number {
   return total
 }
 
-export function spentInBranch(ranks: TalentRanks, branch: BranchId): number {
+export function spentInBranch(ranks: TalentRanks, branchId: BranchId): number {
   let total = 0
-  for (const talent of talentsInBranch(branch)) total += rankOf(ranks, talent.id)
+  for (const talent of talentsInBranch(branchId)) total += rankOf(ranks, talent.id)
   return total
 }
 
@@ -49,8 +60,20 @@ export function availablePoints(state: GameState): number {
   return Math.max(0, earnedPoints(state.level) - spentPoints(state.talents))
 }
 
+/** Ветки героя — в порядке колонок дерева. Класс читается из данных. */
+export function heroBranches(state: GameState): BranchDef[] {
+  return branchesOfClass(state.classId)
+}
+
+/** Все таланты, доступные герою этого класса. */
+export function heroTalents(state: GameState): TalentDef[] {
+  return talentsOfClass(state.classId)
+}
+
 // Почему очко сюда не вложить. Каждый случай — свой код, текст рендерит UI.
-export type TalentBlockReason = 'no-points' | 'max-rank' | 'branch-locked'
+// 'other-class' появляется только на правленом руками сейве: в дереве своего
+// класса чужих веток нет вовсе.
+export type TalentBlockReason = 'other-class' | 'no-points' | 'max-rank' | 'branch-locked'
 
 export interface TalentStatus {
   talentId: string
@@ -77,14 +100,17 @@ export function talentStatus(state: GameState, talent: TalentDef): TalentStatus 
     requiredPointsInBranch: talent.requiredPointsInBranch,
   }
   const blocked = (reason: TalentBlockReason) => ({ ...base, canInvest: false, reason })
+  // Дерево читается ПО КЛАССУ: ветка чужого класса не открывается ничем.
+  if (BRANCH_BY_ID[talent.branch]?.classId !== state.classId) return blocked('other-class')
   if (pointsInBranch < talent.requiredPointsInBranch) return blocked('branch-locked')
   if (rank >= talent.maxRank) return blocked('max-rank')
   if (availablePoints(state) <= 0) return blocked('no-points')
   return { ...base, canInvest: true, reason: null }
 }
 
+/** Статусы только СВОЕГО дерева — чужое герою даже не показывается. */
 export function allTalentStatuses(state: GameState): TalentStatus[] {
-  return TALENTS.map((t) => talentStatus(state, t))
+  return heroTalents(state).map((t) => talentStatus(state, t))
 }
 
 /** Вложить одно очко. Недоступный талант состояние не меняет вовсе. */
@@ -120,6 +146,10 @@ export function resetTalents(state: GameState): GameState {
   })
 }
 
+// ---------------------------------------------------------------------------
+// Флаги
+// ---------------------------------------------------------------------------
+
 /** Поднятые флаги: талант-флаг включается с первого же ранга. */
 export function talentFlags(ranks: TalentRanks): Set<TalentFlag> {
   const flags = new Set<TalentFlag>()
@@ -135,41 +165,85 @@ export function hasTalentFlag(ranks: TalentRanks, flag: TalentFlag): boolean {
 }
 
 /**
+ * PAYLOAD ВЗЯТОГО ФЛАГА — ЕДИНСТВЕННЫЙ СПОСОБ, КОТОРЫМ ЛОГИКА ЧИТАЕТ ТАЛАНТ.
+ *
+ * Поиск идёт по ИМЕНИ ФЛАГА, а не по id таланта: два класса поднимают один и
+ * тот же флаг разными талантами и с разными числами, и логике всё равно,
+ * каким именно. Отсюда и правило «ни одного if по id»: добавить талант —
+ * значит дописать строку в data/talents.ts, а не ветку в игру.
+ */
+export function flagPayload<F extends TalentFlag>(
+  ranks: TalentRanks,
+  flag: F,
+): Extract<TalentEffect, { kind: 'flag'; flag: F }> | null {
+  for (const talent of TALENTS) {
+    const effect = talent.effect
+    if (effect.kind !== 'flag' || effect.flag !== flag) continue
+    if (rankOf(ranks, talent.id) <= 0) continue
+    return effect as Extract<TalentEffect, { kind: 'flag'; flag: F }>
+  }
+  return null
+}
+
+/**
  * Эффект, который талант добавляет умению (если такой талант взят).
  * Так «Рваный выпад» учит Скорый выпад накладывать урон по времени, не
  * заставляя abilities.ts знать про таланты по имени.
  */
 export function talentAbilityEffect(ranks: TalentRanks, abilityId: string) {
   for (const talent of TALENTS) {
-    if (talent.effect.kind !== 'flag') continue
-    if (talent.effect.flag !== 'quick-strike-bleeds') continue
-    if (talent.effect.abilityId !== abilityId) continue
-    if (rankOf(ranks, talent.id) > 0) return talent.effect.effect
+    const effect = talent.effect
+    if (effect.kind !== 'flag' || effect.flag !== 'ability-learns-effect') continue
+    if (effect.abilityId !== abilityId) continue
+    if (rankOf(ranks, talent.id) > 0) return effect.effect
   }
   return null
 }
 
-/**
- * Во сколько раз множатся кулдауны после привала (1 — не трогаются).
- *
- * Число приходит из ДАННЫХ таланта, а не зашито здесь: ослабить талант
- * можно правкой одной строки в data/talents.ts, не заходя в логику.
- */
-export function restCooldownMultiplier(ranks: TalentRanks): number {
+/** Сколько ДОПОЛНИТЕЛЬНЫХ зарядов талант даёт этому умению. */
+export function talentExtraCharges(ranks: TalentRanks, abilityId: string): number {
+  let extra = 0
   for (const talent of TALENTS) {
-    if (talent.effect.kind !== 'flag') continue
-    if (talent.effect.flag !== 'rest-clears-cooldowns') continue
-    if (rankOf(ranks, talent.id) > 0) return talent.effect.cooldownShare
+    const effect = talent.effect
+    if (effect.kind !== 'flag' || effect.flag !== 'ability-extra-charge') continue
+    if (effect.abilityId !== abilityId) continue
+    if (rankOf(ranks, talent.id) > 0) extra += Math.max(0, Math.floor(effect.extraCharges))
   }
-  return 1
+  return extra
+}
+
+/** Шанс, что автоатака бьёт дважды. 0 — таланта нет, бросок не делается вовсе. */
+export function doubleStrikeChance(ranks: TalentRanks): number {
+  return flagPayload(ranks, 'double-strike')?.chance ?? 0
+}
+
+/** Какая доля ПОГЛОЩЁННОГО щитом урона уходит обратно в атакующего. */
+export function blockReflectShare(ranks: TalentRanks): number {
+  return flagPayload(ranks, 'block-reflects')?.damageShare ?? 0
+}
+
+/** Какую долю полного запаса ресурса возвращает удачный блок. */
+export function blockResourceShare(ranks: TalentRanks): number {
+  return flagPayload(ranks, 'block-restores-resource')?.resourceShare ?? 0
+}
+
+/** Во сколько раз множатся кулдауны после УБИЙСТВА (1 — не трогаются). */
+export function killCooldownMultiplier(ranks: TalentRanks): number {
+  return flagPayload(ranks, 'kill-refunds-cooldowns')?.cooldownShare ?? 1
+}
+
+/** Во сколько раз множатся кулдауны после ПРИВАЛА (1 — не трогаются). */
+export function restCooldownMultiplier(ranks: TalentRanks): number {
+  return flagPayload(ranks, 'rest-clears-cooldowns')?.cooldownShare ?? 1
+}
+
+/** Во сколько раз короче привал (1 — обычный). */
+export function restDurationMultiplier(ranks: TalentRanks): number {
+  return flagPayload(ranks, 'shorter-rest')?.durationMultiplier ?? 1
 }
 
 /** Множитель времени воскрешения от талантов (1 — без изменений). */
 export function reviveMultiplier(ranks: TalentRanks): number {
-  for (const talent of TALENTS) {
-    if (talent.effect.kind !== 'flag') continue
-    if (talent.effect.flag !== 'halved-revive') continue
-    if (rankOf(ranks, talent.id) > 0) return talent.effect.reviveMultiplier
-  }
-  return 1
+  return flagPayload(ranks, 'faster-revive')?.reviveMultiplier ?? 1
 }
+

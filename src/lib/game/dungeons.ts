@@ -2,29 +2,54 @@
 // в данных; здесь только правила прохождения. Текста для игрока нет.
 import { Decimal } from './numbers'
 import {
+  ALL_DUNGEONS,
   DUNGEONS,
   DUNGEON_BY_ID,
   DUNGEON_CLEAR_XP_BONUS,
   ENRAGE_GROWTH,
   ENRAGE_STEP_SEC,
+  HEROIC_CLEAR_XP_BONUS,
+  HEROIC_DUNGEONS,
   buildBoss,
+  clearKey,
+  dungeonView,
   type BossDef,
   type DungeonDef,
+  type DungeonDifficulty,
 } from '../data/dungeons'
 import { ZONE_BY_ID } from '../data/zones'
 import { monsterFromTemplate, pushEvent, spawnMonster, type GameState } from './state'
 import { currentZone, retreatZone } from './zones'
 import type { Rng } from './rng'
 
-export { DUNGEONS, DUNGEON_BY_ID } from '../data/dungeons'
-export type { DungeonDef, BossDef } from '../data/dungeons'
+export {
+  ALL_DUNGEONS,
+  DUNGEONS,
+  DUNGEON_BY_ID,
+  HEROIC_DUNGEONS,
+  clearKey,
+  dungeonView,
+} from '../data/dungeons'
+export type { DungeonDef, BossDef, DungeonDifficulty } from '../data/dungeons'
+export {
+  bossDispel,
+  bossFrenzyActive,
+  bossSwingTime,
+  currentBossAbility,
+  punishResourceSpend,
+} from './bossAbilities'
 
-export function dungeonById(id: string): DungeonDef | null {
-  return DUNGEON_BY_ID[id] ?? null
+/** Данж нужной сложности; сложность по умолчанию — обычная. */
+export function dungeonById(
+  id: string,
+  difficulty: DungeonDifficulty = 'normal',
+): DungeonDef | null {
+  return dungeonView(id, difficulty)
 }
 
 export function activeDungeon(state: GameState): DungeonDef | null {
-  return state.dungeonRun ? dungeonById(state.dungeonRun.dungeonId) : null
+  const run = state.dungeonRun
+  return run ? dungeonView(run.dungeonId, run.difficulty) : null
 }
 
 export function currentBoss(state: GameState): BossDef | null {
@@ -38,6 +63,8 @@ export type DungeonBlockReason = 'level' | 'wrong-zone' | 'dead' | 'already-insi
 
 export interface DungeonStatus {
   dungeonId: string
+  /** Сложность строки: обычная и героическая живут двумя статусами. */
+  difficulty: DungeonDifficulty
   canEnter: boolean
   reason: DungeonBlockReason | null
   unlockRequirement: number
@@ -50,11 +77,15 @@ export interface DungeonStatus {
  * Вход только из «своей» зоны — данж это дверь в конкретном месте карты.
  */
 export function dungeonStatus(state: GameState, dungeon: DungeonDef): DungeonStatus {
+  // `dungeon` УЖЕ конкретной сложности — все её отличия (уровень входа, ключ
+  // достижения) приехали в него из шаблона, поэтому проверок по сложности
+  // здесь нет ни одной.
   const base = {
     dungeonId: dungeon.id,
+    difficulty: dungeon.difficulty,
     unlockRequirement: dungeon.unlockRequirement,
     zoneId: dungeon.zoneId,
-    cleared: state.dungeonsCleared[dungeon.id] === true,
+    cleared: state.dungeonsCleared[clearKey(dungeon.id, dungeon.difficulty)] === true,
   }
   const blocked = (reason: DungeonBlockReason) => ({ ...base, canEnter: false, reason })
   if (state.dungeonRun) return blocked('already-inside')
@@ -64,8 +95,9 @@ export function dungeonStatus(state: GameState, dungeon: DungeonDef): DungeonSta
   return { ...base, canEnter: true, reason: null }
 }
 
+/** Обе лестницы: обычная и героическая. */
 export function allDungeonStatuses(state: GameState): DungeonStatus[] {
-  return DUNGEONS.map((d) => dungeonStatus(state, d))
+  return ALL_DUNGEONS.map((d) => dungeonStatus(state, d))
 }
 
 // Ставит перед героем указанного босса цепочки: полный HP, сброшенный замах.
@@ -74,7 +106,7 @@ function faceBoss(state: GameState, dungeon: DungeonDef, bossIndex: number): Gam
   const monster = monsterFromTemplate(buildBoss(boss))
   return {
     ...state,
-    dungeonRun: { dungeonId: dungeon.id, bossIndex, fightMs: 0 },
+    dungeonRun: { dungeonId: dungeon.id, difficulty: dungeon.difficulty, bossIndex, fightMs: 0 },
     monster,
     swingProgress: 0,
     respawnMsLeft: 0,
@@ -85,13 +117,18 @@ function faceBoss(state: GameState, dungeon: DungeonDef, bossIndex: number): Gam
       bossName: boss.name,
       index: bossIndex + 1,
       total: dungeon.bosses.length,
+      difficulty: dungeon.difficulty,
     }),
   }
 }
 
-/** Вход в данж. Недоступный данж состояние не меняет вовсе. */
-export function enterDungeon(state: GameState, dungeonId: string): GameState {
-  const dungeon = dungeonById(dungeonId)
+/** Вход в данж выбранной сложности. Недоступный данж состояние не меняет. */
+export function enterDungeon(
+  state: GameState,
+  dungeonId: string,
+  difficulty: DungeonDifficulty = 'normal',
+): GameState {
+  const dungeon = dungeonView(dungeonId, difficulty)
   if (!dungeon) return state
   if (!dungeonStatus(state, dungeon).canEnter) return state
   return faceBoss(state, dungeon, 0)
@@ -148,28 +185,37 @@ export function advanceDungeon(state: GameState, rng: Rng): GameState {
   const nextIndex = state.dungeonRun.bossIndex + 1
   if (nextIndex < dungeon.bosses.length) return faceBoss(state, dungeon, nextIndex)
 
-  // Цепочка пройдена целиком.
-  const firstClear = state.dungeonsCleared[dungeon.id] !== true
+  // Цепочка пройдена целиком. Флаг поднимается СВОЙ у каждой сложности:
+  // обычная и героическая версии одного данжа — два разных достижения.
+  const key = clearKey(dungeon.id, dungeon.difficulty)
+  const firstClear = state.dungeonsCleared[key] !== true
   const cleared = leaveDungeon(state, rng, false)
-  if (!firstClear) {
-    return { ...cleared, combatLog: pushEvent(cleared.combatLog, { type: 'dungeon-clear', dungeonName: dungeon.name, firstClear }) }
-  }
+  const log = pushEvent(cleared.combatLog, {
+    type: 'dungeon-clear',
+    dungeonId: dungeon.id,
+    dungeonName: dungeon.name,
+    difficulty: dungeon.difficulty,
+    firstClear,
+  })
+  if (!firstClear) return { ...cleared, combatLog: log }
   return {
     ...cleared,
-    dungeonsCleared: { ...state.dungeonsCleared, [dungeon.id]: true },
-    combatLog: pushEvent(cleared.combatLog, {
-      type: 'dungeon-clear',
-      dungeonName: dungeon.name,
-      firstClear,
-    }),
+    dungeonsCleared: { ...state.dungeonsCleared, [key]: true },
+    combatLog: log,
   }
 }
 
-/** Постоянный бонус к опыту за пройденные данжи: +5% за каждый, один раз. */
+/**
+ * Постоянный бонус к опыту за пройденные данжи. Героика даёт свой, более
+ * крупный: число живёт в data/heroic.ts, а не здесь.
+ */
 export function clearedXpBonus(cleared: Record<string, boolean>): Decimal {
   let bonus = new Decimal(1)
-  for (const dungeon of DUNGEONS) {
-    if (cleared[dungeon.id] === true) bonus = bonus.plus(DUNGEON_CLEAR_XP_BONUS)
+  for (const dungeon of ALL_DUNGEONS) {
+    if (cleared[clearKey(dungeon.id, dungeon.difficulty)] !== true) continue
+    bonus = bonus.plus(
+      dungeon.difficulty === 'heroic' ? HEROIC_CLEAR_XP_BONUS : DUNGEON_CLEAR_XP_BONUS,
+    )
   }
   return bonus
 }

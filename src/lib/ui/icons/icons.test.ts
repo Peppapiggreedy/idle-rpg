@@ -7,7 +7,15 @@ import { STAT_ICONS } from '../../data/stats'
 import { TALENTS } from '../../data/talents'
 import { CLASSES } from '../../data/classes'
 import { MATERIALS } from '../../data/materials'
+import { HERBS } from '../../data/herbs'
+import { ENCHANTS } from '../../data/enchants'
+import { PROCS } from '../../data/procs'
+import { BOSS_ABILITIES, HEROIC } from '../../data/heroic'
+import { TEMPLES } from '../../data/temple'
+import { QUESTS } from '../../data/quests'
+import { REAGENTS } from '../../data/reagents'
 import { PROFESSIONS, RECIPES } from '../../data/recipes'
+import { PROGRESSION } from '../../data/progression'
 import { ZONES } from '../../data/zones'
 import { STAT_IDS } from '../../game/stats'
 import { ICONS, ICON_NAMES, type IconName } from './manifest'
@@ -24,10 +32,33 @@ const used: IconName[] = [
   ...Object.values(STAT_ICONS),
   ...CLASSES.map((c) => c.icon),
   ...MATERIALS.map((m) => m.icon),
+  ...REAGENTS.map((r) => r.icon),
+  ...PROGRESSION.map((s) => s.icon),
   ...PROFESSIONS.map((p) => p.icon),
   ...RECIPES.map((r) => r.icon),
+  ...RECIPES.flatMap((r) => (r.output.kind === 'potion' ? [r.output.icon] : [])),
+  ...HERBS.map((h) => h.icon),
+  ...ENCHANTS.map((e) => e.icon),
+  ...PROCS.map((p) => p.icon),
+  ...BOSS_ABILITIES.map((a) => a.icon),
+  HEROIC.icon,
+  ...TEMPLES.map((t) => t.icon),
+  ...QUESTS.map((q) => q.icon),
+  // Врата рейда: иконка стоит в панели заданий и в строке лога.
+  'raid-gate',
+  // Волна храма: иконка стоит в рубежах панели и в строке лога.
+  'temple-wave',
+  ...REAGENTS.map((r) => r.icon),
+  ...RECIPES.flatMap((r) => (r.output.kind === 'item' ? [r.icon] : [])),
   'gold',
   'xp',
+  // Иконки интерфейса: их не перечисляют данные — они стоят прямо
+  // в компонентах (ручка выдвижки «Журнал»).
+  'log',
+  // Распыление и пыль: кнопка в инвентаре и строка панели зачарования.
+  'action-disenchant',
+  'material-dust',
+  'profession-enchanting',
 ]
 
 describe('спрайт иконок', () => {

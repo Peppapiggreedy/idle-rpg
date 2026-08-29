@@ -6,7 +6,8 @@ import { rollSwing } from './combat'
 import { AUTOCAST_DELAY_MS, GCD_MS } from '../data/balance'
 import { ABILITIES, ABILITY_BY_ID, type AbilityDef } from '../data/abilities'
 import { abilitiesByPriority } from './rotation'
-import { talentAbilityEffect } from './talents'
+import { talentAbilityEffect, talentExtraCharges } from './talents'
+import { punishResourceSpend } from './bossAbilities'
 import { abilitiesOf, pushEvent, type ActiveEffect, type GameState } from './state'
 import type { Rng } from './rng'
 import type { AttackEvent } from '../types'
@@ -25,6 +26,32 @@ export interface AbilityStatus {
   cooldownFraction: number // 0 — готово, 1 — только что ушло в кулдаун
   gcdMsLeft: number
   queued: boolean // умение стоит в очереди на следующий замах
+  chargesLeft: number // сколько нажатий осталось до отката
+  maxCharges: number // полный комплект зарядов; один по умолчанию
+}
+
+/**
+ * Сколько зарядов у умения сейчас. Один по умолчанию; талант-капстоун
+ * добавляет второй. Число берётся из payload флага — своего числа у логики нет.
+ */
+export function maxCharges(state: GameState, ability: AbilityDef): number {
+  return 1 + talentExtraCharges(state.talents, ability.id)
+}
+
+/**
+ * Сколько зарядов не потрачено. ОТСУТСТВИЕ записи означает полный комплект —
+ * но только если и откат не идёт: откат заводится ровно тогда, когда заряд
+ * потрачен, и состояние «откат идёт, записи нет» приходит либо из сейва
+ * прошлой версии, либо собрано руками. Читаем его как «один заряд потрачен»,
+ * иначе у такого героя умение оказалось бы готово посреди отката.
+ */
+export function chargesLeft(state: GameState, ability: AbilityDef): number {
+  const max = maxCharges(state, ability)
+  const left = state.abilityCharges[ability.id]
+  if (typeof left !== 'number' || !Number.isFinite(left)) {
+    return cooldownLeft(state, ability) > 0 ? Math.max(0, max - 1) : max
+  }
+  return Math.min(max, Math.max(0, Math.floor(left)))
 }
 
 export function cooldownLeft(state: GameState, ability: AbilityDef): number {
@@ -39,6 +66,7 @@ export function cooldownLeft(state: GameState, ability: AbilityDef): number {
  */
 export function abilityStatus(state: GameState, ability: AbilityDef): AbilityStatus {
   const cooldownMsLeft = cooldownLeft(state, ability)
+  const left = chargesLeft(state, ability)
   const queued = state.queuedAbilityId === ability.id
   const base = {
     abilityId: ability.id,
@@ -46,6 +74,8 @@ export function abilityStatus(state: GameState, ability: AbilityDef): AbilitySta
     cooldownFraction: ability.cooldownSec > 0 ? cooldownMsLeft / (ability.cooldownSec * 1000) : 0,
     gcdMsLeft: Math.max(0, state.gcdMsLeft),
     queued,
+    chargesLeft: left,
+    maxCharges: maxCharges(state, ability),
   }
   // Снять своё же умение с очереди можно всегда, чем бы игрок ни был занят.
   if (queued) return { ...base, usable: true, reason: null }
@@ -53,7 +83,10 @@ export function abilityStatus(state: GameState, ability: AbilityDef): AbilitySta
   // Запертое уровнем — первым: эта причина не лечится ни ожиданием, ни маной.
   if (state.level.lt(ability.unlockLevel)) return blocked('locked')
   if (state.heroState === 'dead') return blocked('dead')
-  if (cooldownMsLeft > 0) return blocked('cooldown')
+  // Запирает НЕ «идёт откат», а «зарядов не осталось»: у умения с одним
+  // зарядом это ровно прежнее поведение, у двухзарядного — второе нажатие
+  // проходит, пока откат идёт.
+  if (left <= 0) return blocked('cooldown')
   if (ability.triggersGcd && state.gcdMsLeft > 0) return blocked('gcd')
   if (ability.type === 'instant' && state.currentMana.lt(ability.manaCost)) return blocked('no-mana')
   return { ...base, usable: true, reason: null }
@@ -74,20 +107,32 @@ export function resetsRegenDelay(ability: AbilityDef): boolean {
   return ability.manaCost.gt(0)
 }
 
+/**
+ * Заряд тратится всегда; ОТКАТ ЗАВОДИТСЯ ТОЛЬКО ЕСЛИ ОН НЕ ИДЁТ — заряды
+ * копятся по одному, а не все разом. При одном заряде поведение прежнее:
+ * потратил — откат пошёл.
+ */
 function payFor(state: GameState, ability: AbilityDef): GameState {
   const spends = resetsRegenDelay(ability)
-  return {
+  const running = cooldownLeft(state, ability) > 0
+  const left = Math.max(0, chargesLeft(state, ability) - 1)
+  const paid: GameState = {
     ...state,
     currentMana: state.currentMana.minus(ability.manaCost),
     // Пауза берётся из СТАТА: талант автономности её сокращает, и делает
     // это через конвейер, как всё остальное.
     regenDelayMsLeft: spends ? state.stats.regenDelay * 1000 : state.regenDelayMsLeft,
-    abilityCooldownsMs: {
-      ...state.abilityCooldownsMs,
-      [ability.id]: ability.cooldownSec * 1000,
-    },
+    abilityCharges: { ...state.abilityCharges, [ability.id]: left },
+    abilityCooldownsMs: running
+      ? state.abilityCooldownsMs
+      : { ...state.abilityCooldownsMs, [ability.id]: ability.cooldownSec * 1000 },
     gcdMsLeft: ability.triggersGcd ? GCD_MS : state.gcdMsLeft,
   }
+  // Героическая «отдача»: босс наказывает за саму ТРАТУ ресурса. Хук стоит
+  // здесь, потому что здесь ресурс и списывается — значит покрыты и автокаст,
+  // и очередь, и ручное нажатие между тиками. Вне героики функция возвращает
+  // состояние как есть.
+  return punishResourceSpend(paid, ability.manaCost)
 }
 
 /**
@@ -208,7 +253,7 @@ export function consumeQueuedAbility(
   const cleared = { ...state, queuedAbilityId: null }
   // Мана списывается ЗДЕСЬ, в момент удара, а не при постановке в очередь.
   if (cleared.currentMana.lt(ability.manaCost)) return null
-  if (cooldownLeft(cleared, ability) > 0) return null
+  if (chargesLeft(cleared, ability) <= 0) return null
   return strikeWithAbility(payFor(cleared, ability), ability, rng, emitAttack)
 }
 
@@ -266,17 +311,46 @@ export function autocastStep(
   return cast ? { ...useAbility(next, cast.id, rng, emitAttack), autocastReadyMs } : next
 }
 
-/** Кулдауны и GCD идут игровым временем — тем же dtMs, что и весь бой. */
+/**
+ * Кулдауны и GCD идут игровым временем — тем же dtMs, что и весь бой.
+ * Вышедший откат ВОЗВРАЩАЕТ ОДИН ЗАРЯД и, если полный комплект ещё не набран,
+ * заводится заново с остатка: так второй заряд копится сам, а не ждёт, пока
+ * игрок потратит первый. Полный комплект — это ОТСУТСТВИЕ записи, поэтому у
+ * героя без талантов-зарядов оба словаря пусты, как и раньше.
+ */
 export function advanceCooldowns(state: GameState, dtMs: number): GameState {
   const abilityCooldownsMs: Record<string, number> = {}
+  const abilityCharges: Record<string, number> = { ...state.abilityCharges }
   let changed = false
-  for (const [id, left] of Object.entries(state.abilityCooldownsMs)) {
-    const next = left - dtMs
-    if (next > 0) abilityCooldownsMs[id] = next
-    else changed = true
-    if (next !== left) changed = true
+  for (const [id, leftMs] of Object.entries(state.abilityCooldownsMs)) {
+    const ability = ABILITY_BY_ID[id]
+    if (!ability) {
+      changed = true
+      continue
+    }
+    const max = maxCharges(state, ability)
+    const period = ability.cooldownSec * 1000
+    let next = leftMs - dtMs
+    let charges = abilityCharges[id] ?? max
+    // Один жирный тик может вернуть несколько зарядов — остаток переносится,
+    // как остаток замаха. Нулевой период вернул бы их бесконечно, поэтому он
+    // означает «комплект полон сразу».
+    while (next <= 0 && charges < max) {
+      charges += 1
+      if (period <= 0) break
+      next += period
+    }
+    if (charges >= max) {
+      // Комплект полон: ни отката, ни записи о зарядах.
+      delete abilityCharges[id]
+      changed = true
+      continue
+    }
+    abilityCharges[id] = charges
+    abilityCooldownsMs[id] = next
+    if (next !== leftMs || charges !== (state.abilityCharges[id] ?? max)) changed = true
   }
   const gcdMsLeft = Math.max(0, state.gcdMsLeft - dtMs)
   if (!changed && gcdMsLeft === state.gcdMsLeft) return state
-  return { ...state, abilityCooldownsMs, gcdMsLeft }
+  return { ...state, abilityCooldownsMs, abilityCharges, gcdMsLeft }
 }

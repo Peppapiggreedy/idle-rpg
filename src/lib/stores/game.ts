@@ -13,15 +13,19 @@ import { applyOfflineProgress } from '../game/save'
 import { sellItem } from '../game/loot'
 import { craft as craftAction } from '../game/crafting'
 import { recordDecision, resetTelemetry } from './telemetry'
-import { equipItem, setAutoEquip, unequipItem } from '../game/equipment'
+import { equipItem, unequipItem } from '../game/equipment'
 import { currentZone, travelToZone as travelAction } from '../game/zones'
 import { useAbility as useAbilityAction } from '../game/abilities'
 import { abilitiesByPriority } from '../game/rotation'
 import { investTalent as investTalentAction, resetTalents as resetTalentsAction } from '../game/talents'
+import { drinkPotion as drinkPotionAction } from '../game/potions'
+import { disenchantItem, enchantItem } from '../game/enchanting'
 import {
   enterDungeon as enterDungeonAction,
   leaveDungeon as leaveDungeonAction,
+  type DungeonDifficulty,
 } from '../game/dungeons'
+import { enterTemple as enterTempleAction, leaveTemple as leaveTempleAction } from '../game/temple'
 import { emit as emitAttack, emitLog, freshEvents } from '../game/events'
 import type { SlotId } from '../data/slots'
 import {
@@ -222,10 +226,6 @@ export function unequipSlot(slot: SlotId): void {
   state.update((s) => unequipItem(s, slot))
 }
 
-/** Галочка «надевать автоматически, если лучше». */
-export function toggleAutoEquip(enabled: boolean): void {
-  state.update((s) => setAutoEquip(s, enabled))
-}
 
 /** Переход в зону по клику. В закрытую зону экшен не пустит — состояние как было. */
 export function travelToZone(zoneId: string): void {
@@ -234,8 +234,27 @@ export function travelToZone(zoneId: string): void {
 }
 
 /** Вход в данж по кнопке. Недоступный данж состояние не меняет. */
-export function enterDungeonRun(dungeonId: string): void {
-  state.update((s) => enterDungeonAction(s, dungeonId))
+export function enterDungeonRun(
+  dungeonId: string,
+  difficulty: DungeonDifficulty = 'normal',
+): void {
+  // Сложность НИГДЕ не запоминается: это разовое решение при входе, а не
+  // настройка. Кнопка передаёт её прямо сюда, и второго состояния для неё нет.
+  state.update((s) => enterDungeonAction(s, dungeonId, difficulty))
+}
+
+/**
+ * Вход в храм испытаний. Часы берутся дефолтом инжектируемого параметра
+ * enterTemple: самой логике реальное время не принадлежит.
+ */
+export function enterTempleRun(): void {
+  recordDecision('temple')
+  state.update((s) => enterTempleAction(s))
+}
+
+/** Добровольный выход из храма: попытка уже потрачена, рекорд остаётся. */
+export function leaveTempleRun(): void {
+  state.update((s) => leaveTempleAction(s, rng(), false))
 }
 
 /** Добровольный выход из данжа: цепочка сбрасывается. */
@@ -269,6 +288,35 @@ export function setRestHpThreshold(share: number): void {
 export function craftRecipe(recipeId: string): void {
   recordDecision('craft')
   state.update((s) => craftAction(s, recipeId))
+}
+
+/**
+ * Выпить зелье (клик или хоткей). Недоступная склянка состояние не меняет;
+ * причину показывает potionStatus, текст к ней рендерит UI.
+ *
+ * Экшен ОДИН и только здесь: автокаста у зелий нет и не будет — вся разница
+ * между ручной игрой и предоставленным самому себе героем держится на том,
+ * что эту кнопку жмёт человек.
+ */
+/** Распылить предмет из сумки в пыль. Надетый и запертое уровнем — как было. */
+export function disenchantInventoryItem(itemId: string): void {
+  recordDecision('enchant')
+  state.update((s) => disenchantItem(s, itemId))
+}
+
+/**
+ * Наложить зачарование. Подтверждение «старое исчезнет» спрашивает UI до
+ * вызова: логика молча делает то, о чём попросили, и переспрашивать в сторе
+ * ей нечем — там нет ни диалогов, ни текста.
+ */
+export function enchantInventoryItem(itemId: string, enchantId: string): void {
+  recordDecision('enchant')
+  state.update((s) => enchantItem(s, itemId, enchantId))
+}
+
+export function drinkPotion(outputId: string): void {
+  recordDecision('potion')
+  state.update((s) => drinkPotionAction(s, outputId))
 }
 
 /** Порог ухода на привал по ресурсу. */

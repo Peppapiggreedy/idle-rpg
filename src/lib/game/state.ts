@@ -8,8 +8,8 @@ import { SAFE_ZONE, type Zone } from '../data/zones'
 import { ABILITY_BY_ID, type AbilityDef } from '../data/abilities'
 import { CLASS_BY_ID, DEFAULT_CLASS, classById, type ClassDef } from '../data/classes'
 import { RARITY_BY_ID } from '../data/rarity'
-import { SHIELD_BY_ID, WEAPON_BY_ID } from '../data/items'
-import { shieldMods, weaponMods } from './loot'
+import { ARMOR_NOUNS, SHIELD_BY_ID, WEAPON_BY_ID } from '../data/items'
+import { armorMods, shieldMods, weaponMods } from './loot'
 import {
   AUTOCAST_DELAY_MS,
   REGEN_TICK_S,
@@ -19,7 +19,15 @@ import {
 import { recomputeStats, type StatBlock } from './stats'
 import { SLOT_IDS, type SlotId } from '../data/slots'
 import { createRng, type Rng } from './rng'
-import type { CombatEvent, DungeonRun, Item, Monster, MonsterTemplate } from '../types'
+import type {
+  CombatEvent,
+  DungeonRun,
+  Item,
+  Monster,
+  MonsterTemplate,
+  QuestProgress,
+  TempleRun,
+} from '../types'
 
 // Сколько последних событий боя храним для лога на экране.
 export const COMBAT_LOG_SIZE = 8
@@ -52,6 +60,36 @@ export interface GameState {
   // поэтому множитель скорости из отладочной панели ускоряет и их.
   gcdMsLeft: number // глобальный кулдаун; 0 — свободен
   abilityCooldownsMs: Record<string, number> // id умения -> сколько мс осталось
+  // Нерастраченные заряды умений: id -> сколько осталось. ОТСУТСТВИЕ записи
+  // означает полный комплект, поэтому у героя без талантов-зарядов поле всегда
+  // пустое и в сейв ничего лишнего не едет. Заряды копятся откатом по одному.
+  abilityCharges: Record<string, number>
+  // Действующие зелья. Список, а не одно поле: зелья разных рецептов
+  // складываются, одного и того же — обновляются (см. game/potions.ts).
+  activePotions: ActivePotion[]
+  // Недорезанная доля пучка по каждой траве, 0..1. Служебный счётчик, как
+  // regenTickMsLeft: копится долей, чтобы на медленном шаге ничего не
+  // терялось. В сейв не пишется — терять меньше одного пучка не жалко.
+  herbProgress: Record<string, number>
+  /** Пыль зачарования: копится ТОЛЬКО распылением находок, с мобов не падает.
+   *  Растёт неограниченно (сотни находок за сотню уровней) — значит Decimal. */
+  enchantDust: Decimal
+  // Внутренние кулдауны проков: id прока -> сколько мс осталось. Ключ — ПРОК,
+  // а не предмет: два предмета с одним проком делят один кулдаун, ровно как
+  // их считает оценка (equippedProcs схлопывает дубли).
+  procCooldownsMs: Record<string, number>
+  /** Идентификатор ЭТОЙ игры. Неизменен; вместе с датой даёт сид забега
+   *  по храму — поэтому за один день поток волн один и тот же. */
+  saveId: number
+  /** Активный забег по храму; null — герой снаружи. */
+  templeRun: TempleRun | null
+  /** Личный рекорд по волнам. Он же ключ: рубежи открывают рецепты. */
+  templeBestWave: number
+  /** Отметка РЕАЛЬНОГО времени последнего забега, мс. Часы для храма идут
+   *  только вперёд (см. templeClock), поэтому перевод назад ничего не даёт. */
+  templeLastRunAtMs: number
+  /** Цепочка преквестов: сданные задания и счётчик текущего (game/quests.ts). */
+  questProgress: QuestProgress
   // Умение типа onNextSwing, поставленное в очередь: заменит следующую
   // автоатаку. Одновременно только одно; null — очередь пуста.
   queuedAbilityId: string | null
@@ -85,7 +123,6 @@ export interface GameState {
   talents: Record<string, number>
   talentResets: number // сколько раз игрок сбрасывал таланты; от этого цена
   equipment: Equipment // надетые предметы по слотам (источник статов)
-  autoEquip: boolean // автонадевание, если предмет лучше по урону в секунду
   // Производные статы из конвейера stats.ts. Прямых полей урона/скорости/критов
   // в состоянии НЕТ — только пересчёт из источников (упгрейды, позже экипировка).
   stats: StatBlock
@@ -117,6 +154,18 @@ export interface ActiveEffect {
   damagePerTick: Decimal
   ticksLeft: number
   msToNextTick: number
+}
+
+/**
+ * Действующее зелье. Модификаторы НЕ снимаются с него слепком: они живут в
+ * данных рецепта, и правка баланса зелья действует сразу, а не со следующего
+ * глотка. Это осознанно иначе, чем у ActiveEffect: там заснят урон тика,
+ * потому что он зависит от оружия в момент удара.
+ */
+export interface ActivePotion {
+  recipeId: string
+  // Обычный number: это миллисекунды, а не растущая игровая величина.
+  msLeft: number
 }
 
 // Настройка автокаста одного умения. priority: меньше число — выше в списке.
@@ -164,9 +213,31 @@ export function emptyEquipment(): Equipment {
  */
 export function startingEquipment(hero: ClassDef): Equipment {
   const equipment = emptyEquipment()
-  const rarity = RARITY_BY_ID.common
+  // ТИР СТАРТОВОГО КОМПЛЕКТА — это не щедрость, а точка отсчёта. Контракт
+  // темпа меряется от героя, одетого в TYPICAL_RARITY («лучшее из десятка
+  // находок своей полосы» — во что игрок носится обычно), и стартовый
+  // комплект обязан стоять ровно там же: иначе первые минуты игры идут по
+  // совсем другой кривой, чем всё остальное. Ближайший НАСТОЯЩИЙ тир к этой
+  // точке — редкий: ярлык на предмете не врёт, а числа совпадают с эталоном.
+  const rarity = RARITY_BY_ID.rare
   for (const entry of hero.startingEquipment) {
+    if (entry.kind === 'armor') {
+      // Броня собирается той же armorMods, что и находка: стартовая вещь —
+      // обычный предмет, его можно снять, продать и заменить лучшим.
+      if (entry.slot === 'mainHand' || entry.slot === 'offHand') continue
+      if (!entry.attribute) continue
+      equipment[entry.slot] = {
+        id: `start-${entry.slot}`,
+        name: ARMOR_NOUNS[entry.slot][0],
+        rarity: rarity.id,
+        slot: entry.slot,
+        level: 1,
+        mods: armorMods(entry.slot, rarity, 1, entry.attribute),
+      }
+      continue
+    }
     if (entry.slot !== 'mainHand' && entry.slot !== 'offHand') continue
+    if (!entry.templateId) continue
     if (entry.kind === 'shield') {
       const template = SHIELD_BY_ID[entry.templateId]
       if (!template) continue
@@ -212,6 +283,7 @@ export function spawnMonster(zone: Zone, rng: Rng): Monster {
 export function createInitialState(
   rngSeed: number = randomSeed(),
   classId: string = DEFAULT_CLASS.id,
+  saveId: number = randomSeed(),
 ): GameState {
   const level = new Decimal(1)
   const hero = classById(classId)
@@ -237,6 +309,18 @@ export function createInitialState(
     restResourceThreshold: REST_RESOURCE_THRESHOLD_DEFAULT,
     restSpeedupSource: null,
     abilityCooldownsMs: {},
+    abilityCharges: {},
+    activePotions: [],
+    herbProgress: {},
+    enchantDust: new Decimal(0),
+    procCooldownsMs: {},
+    saveId,
+    templeRun: null,
+    templeBestWave: 0,
+    templeLastRunAtMs: 0,
+    // Литералом, а не вызовом из quests.ts: state.ts не должен зависеть от
+    // модуля, который зависит от него.
+    questProgress: { done: {}, counter: 0 },
     queuedAbilityId: null,
     activeEffects: [],
     abilitySettings: defaultAbilitySettings(hero.id),
@@ -246,7 +330,6 @@ export function createInitialState(
     talents: {},
     talentResets: 0,
     equipment: startingEquipment(hero),
-    autoEquip: true,
     statsDirty: false,
     dungeonRun: null,
     dungeonsCleared: {},

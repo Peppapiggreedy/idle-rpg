@@ -19,6 +19,16 @@ import type { DungeonDef } from '../dungeons'
 import { ARMOR_ATTRIBUTES, type AttributeId, type ShieldTemplate, type WeaponTemplate } from '../items'
 import type { ClassDef } from '../classes'
 import type { MaterialDef } from '../materials'
+import type { HerbDef } from '../herbs'
+import type { EnchantDef } from '../enchants'
+import { clearKey } from '../dungeons'
+import type { ProcDef } from '../procs'
+import type { BossAbilityDef } from '../heroic'
+import type { TempleDef } from '../temple'
+import { QUEST_CHAIN, type QuestDef } from '../quests'
+import { MECHANIC_IDS, type ProgressionStep } from '../progression'
+import type { ReagentDef } from '../reagents'
+import type { DungeonSceneKey } from '../scenery'
 import type { ProfessionDef, RecipeDef } from '../recipes'
 import type { RarityDef } from '../rarity'
 import type { SoundCue } from '../sounds'
@@ -44,6 +54,16 @@ import type { StatId } from '../../game/stats'
  */
 export interface Content {
   abilities: readonly AbilityDef[]
+  herbs: readonly HerbDef[]
+  enchants: readonly EnchantDef[]
+  procs: readonly ProcDef[]
+  bossAbilities: readonly BossAbilityDef[]
+  temples: readonly TempleDef[]
+  quests: readonly QuestDef[]
+  /** Сколько пыли даёт распыление каждого тира (DUST_BY_RARITY). */
+  dustByRarity: Record<string, number>
+  /** Статы, где зачарованию разрешена плоская прибавка (ENCHANT_FLAT_STATS). */
+  enchantFlatStats: readonly StatId[]
   branches: readonly BranchDef[]
   talents: readonly TalentDef[]
   zones: readonly Zone[]
@@ -53,6 +73,10 @@ export interface Content {
   sounds: readonly SoundCue[]
   classes: readonly ClassDef[]
   materials: readonly MaterialDef[]
+  progression: readonly ProgressionStep[]
+  reagents: readonly ReagentDef[]
+  /** Ключи интерьеров данжей из data/scenery.ts. */
+  dungeonSceneKeys: readonly DungeonSceneKey[]
   recipes: readonly RecipeDef[]
   professions: readonly ProfessionDef[]
   props: readonly PropAsset[]
@@ -85,6 +109,9 @@ export interface BalanceNumbers {
   offlineEfficiency: number
   autocastMaxLoss: number
   talentFirstLevel: number
+  enchantUnlockLevel: number
+  potionUnlockLevel: number
+  levelCap: number
   ttkHardFloor: number
   ttkTargetMin: number
   ttkTargetMax: number
@@ -408,6 +435,71 @@ export const BRANCH_SCHEMA: EntitySchema<BranchDef> = {
   },
 }
 
+/**
+ * Числовой пейлоад каждого флага: поле и его диапазон. Ни одного `if (флаг
+ * такой-то)` — новый флаг это новая СТРОКА здесь. У `ability-learns-effect`
+ * числа нет вовсе: он несёт объект эффекта, который проверяет схема умений.
+ */
+const FLAG_PAYLOADS: Record<
+  string,
+  { field: string; min: number; max: number; exclusiveMin?: boolean; integer?: boolean; why: string }
+> = {
+  'ability-extra-charge': {
+    field: 'extraCharges',
+    min: 1,
+    max: 3,
+    integer: true,
+    why: 'сколько ЛИШНИХ зарядов даёт талант: ноль означал бы талант без эффекта',
+  },
+  'double-strike': {
+    field: 'chance',
+    min: 0,
+    exclusiveMin: true,
+    max: 1,
+    why: 'шанс повторного замаха: единица превратила бы автоатаку в удвоенную навсегда',
+  },
+  'block-reflects': {
+    field: 'damageShare',
+    min: 0,
+    exclusiveMin: true,
+    max: 1,
+    why: 'доля поглощённого щитом урона, уходящая обратно в моба',
+  },
+  'block-restores-resource': {
+    field: 'resourceShare',
+    min: 0,
+    exclusiveMin: true,
+    max: 1,
+    why: 'доля запаса ресурса за удачный блок',
+  },
+  'kill-refunds-cooldowns': {
+    field: 'cooldownShare',
+    min: 0,
+    max: 1,
+    why: 'доля, на которую множатся откаты после убийства: больше единицы — талант-наказание',
+  },
+  'rest-clears-cooldowns': {
+    field: 'cooldownShare',
+    min: 0,
+    max: 1,
+    why: 'доля, на которую множатся кулдауны после привала: больше единицы — талант-наказание',
+  },
+  'shorter-rest': {
+    field: 'durationMultiplier',
+    min: 0,
+    exclusiveMin: true,
+    max: 1,
+    why: 'множитель длины привала только сокращает его',
+  },
+  'faster-revive': {
+    field: 'reviveMultiplier',
+    min: 0,
+    exclusiveMin: true,
+    max: 1,
+    why: 'множитель времени воскрешения только сокращает его',
+  },
+}
+
 export const TALENT_SCHEMA: EntitySchema<TalentDef> = {
   kind: 'талант',
   file: 'data/talents.ts',
@@ -468,36 +560,29 @@ export const TALENT_SCHEMA: EntitySchema<TalentDef> = {
         }
       }
     }
-    if (talent.effect.kind === 'flag' && talent.effect.flag === 'rest-clears-cooldowns') {
-      checkNumber(
-        talent.effect,
-        {
-          field: 'effect.cooldownShare',
-          get: (e) => e.cooldownShare,
-          min: 0,
-          max: 1,
-          why: 'доля, на которую множатся кулдауны после привала: больше единицы — талант-наказание',
-        },
-        where,
-        'data/talents.ts',
-        report,
-      )
-    }
-    if (talent.effect.kind === 'flag' && talent.effect.flag === 'halved-revive') {
-      checkNumber(
-        talent.effect,
-        {
-          field: 'effect.reviveMultiplier',
-          get: (e) => e.reviveMultiplier,
-          min: 0,
-          exclusiveMin: true,
-          max: 1,
-          why: 'множитель времени воскрешения только сокращает его',
-        },
-        where,
-        'data/talents.ts',
-        report,
-      )
+    // Пейлоад флага проверяется ПО ТАБЛИЦЕ, а не отдельным `if` на каждый
+    // талант: у флага одно числовое поле со своим диапазоном, и добавить
+    // десятый флаг — значит дописать сюда строку, а не ещё одну ветку.
+    if (talent.effect.kind === 'flag') {
+      const spec = FLAG_PAYLOADS[talent.effect.flag]
+      if (spec) {
+        const effect = talent.effect as unknown as Record<string, number>
+        checkNumber(
+          effect,
+          {
+            field: `effect.${spec.field}`,
+            get: (e) => e[spec.field],
+            min: spec.min,
+            exclusiveMin: spec.exclusiveMin,
+            max: spec.max,
+            integer: spec.integer,
+            why: spec.why,
+          },
+          where,
+          'data/talents.ts',
+          report,
+        )
+      }
     }
   },
 }
@@ -620,10 +705,21 @@ export const DUNGEON_SCHEMA: EntitySchema<DungeonDef> = {
   kind: 'данж',
   file: 'data/dungeons.ts',
   entities: (c) => c.dungeons,
-  id: (d) => d.id,
+  // Единица данжа — ПАРА (данж, сложность): обычная и героическая версии
+  // делят id, но это две разные цепочки с разными числами и достижениями.
+  id: (d) => clearKey(d.id, d.difficulty),
   name: (d) => d.name,
   icon: (d) => d.icon,
-  numbers: [{ field: 'unlockRequirement', get: (d) => d.unlockRequirement, min: 1, integer: true }],
+  numbers: [
+    { field: 'unlockRequirement', get: (d) => d.unlockRequirement, min: 1, integer: true },
+    {
+      field: 'tier',
+      get: (d) => d.tier,
+      min: 1,
+      integer: true,
+      why: 'ступень лестницы данжей: из неё выводятся все числа боссов',
+    },
+  ],
   refs: [
     {
       field: 'zoneId',
@@ -633,14 +729,71 @@ export const DUNGEON_SCHEMA: EntitySchema<DungeonDef> = {
       targetFile: 'data/zones.ts',
       ids: (c) => idsOf(c.zones, (z) => z.id),
     },
+    {
+      field: 'reagentId',
+      get: (d) => d.reagentId,
+      target: 'реагент',
+      which: 'которого',
+      targetFile: 'data/reagents.ts',
+      ids: (c) => idsOf(c.reagents, (r) => r.id),
+    },
   ],
   extra: (dungeon, content, report) => {
     const where = `данж ${dungeon.id}`
+    // Интерьер — ключ, а не собственный конфиг: восемь наборов пропсов руками
+    // держать нельзя, а промах по ключу дал бы пустую сцену без ошибки.
+    if (!content.dungeonSceneKeys.includes(dungeon.scenery)) {
+      report.add(
+        where,
+        `ссылается на обстановку «${dungeon.scenery}», которой нет в DUNGEON_SCENES ` +
+          '(data/scenery.ts)',
+      )
+    } else if (!dungeon.scene) {
+      report.add(where, 'ключ обстановки есть, а конфига нет — проверь DUNGEON_SCENES в data/scenery.ts')
+    }
+    // Реагент обязан быть СВОЕГО тира: перепутанные реагенты сделали бы
+    // два данжа взаимозаменяемыми, и никто бы этого не заметил.
+    const reagent = content.reagents.find((r) => r.id === dungeon.reagentId)
+    if (reagent && reagent.tier !== dungeon.tier) {
+      report.add(
+        where,
+        `тир ${dungeon.tier}, а реагент «${reagent.id}» помечен тиром ${reagent.tier}: ` +
+          'реагент обязан быть своего тира (data/reagents.ts)',
+      )
+    }
     report.need(
       Array.isArray(dungeon.bosses) && dungeon.bosses.length > 0,
       where,
       'пустая цепочка боссов — проходить нечего (data/dungeons.ts)',
     )
+    // Реагент падает ровно с ПОСЛЕДНЕГО босса: с первого он был бы наградой
+    // за одну схватку, а не за пройденную цепочку.
+    const bosses = dungeon.bosses ?? []
+    bosses.forEach((boss, index) => {
+      const isLast = index === bosses.length - 1
+      const carries = typeof boss?.reagentId === 'string' && boss.reagentId.length > 0
+      if (isLast && !carries) {
+        report.add(
+          `босс ${boss?.id ?? `№${index + 1}`} данжа ${dungeon.id}`,
+          'последний босс цепочки не роняет реагент — тир данжа станет недостижим ' +
+            '(data/dungeons.ts)',
+        )
+      }
+      if (!isLast && carries) {
+        report.add(
+          `босс ${boss.id} данжа ${dungeon.id}`,
+          `роняет реагент «${boss.reagentId}», не будучи последним в цепочке — ` +
+            'реагент это отметка о полном прохождении (data/dungeons.ts)',
+        )
+      }
+      if (carries && boss.reagentId !== dungeon.reagentId) {
+        report.add(
+          `босс ${boss.id} данжа ${dungeon.id}`,
+          `роняет реагент «${boss.reagentId}», а данж заявляет «${dungeon.reagentId}» ` +
+            '(data/dungeons.ts)',
+        )
+      }
+    })
     const slots = new Set<string>(content.slots)
     const rarities = idsOf(content.rarities, (r) => r.id)
     const seenBoss = new Set<string>()
@@ -696,6 +849,84 @@ export const DUNGEON_SCHEMA: EntitySchema<DungeonDef> = {
         )
       }
     }
+  },
+}
+
+export const REAGENT_SCHEMA: EntitySchema<ReagentDef> = {
+  kind: 'реагент',
+  file: 'data/reagents.ts',
+  entities: (c) => c.reagents,
+  id: (r) => r.id,
+  name: (r) => r.name,
+  icon: (r) => r.icon,
+  numbers: [
+    {
+      field: 'tier',
+      get: (r) => r.tier,
+      min: 1,
+      integer: true,
+      why: 'реагент принадлежит тиру данжа, а тиры нумеруются с первого',
+    },
+  ],
+  extra: (reagent, content, report) => {
+    // Реагент без данжа — недостижимый контент: уронить его будет некому.
+    report.need(
+      content.dungeons.some((d) => d.reagentId === reagent.id),
+      `реагент ${reagent.id}`,
+      'его не роняет ни один данж — рецепты с ним недостижимы (data/dungeons.ts)',
+    )
+  },
+}
+
+export const PROGRESSION_SCHEMA: EntitySchema<ProgressionStep> = {
+  kind: 'ступень лестницы',
+  file: 'data/progression.ts',
+  entities: (c) => c.progression,
+  id: (s) => s.id,
+  name: (s) => s.name,
+  icon: (s) => s.icon,
+  numbers: [
+    {
+      field: 'level',
+      get: (s) => s.level,
+      min: 1,
+      integer: true,
+      why: 'ступень открывается уровнем героя, а уровни начинаются с первого',
+    },
+  ],
+  extra: (step, content, report) => {
+    const where = `ступень ${step.id}`
+    report.need(
+      !!step.description?.trim(),
+      where,
+      'нет строки о том, что именно откроется (data/progression.ts)',
+    )
+    // Ссылки ступени обязаны вести на существующее. Пустой список законен:
+    // лестница живёт раньше содержимого, и механики может ещё не быть.
+    for (const unlock of step.unlocks ?? []) {
+      if (unlock.kind === 'dungeon') {
+        report.need(
+          content.dungeons.some((d) => d.id === unlock.id),
+          where,
+          `ссылается на данж «${unlock.id}», которого нет в data/dungeons.ts`,
+        )
+        continue
+      }
+      report.need(
+        MECHANIC_IDS.includes(unlock.id),
+        where,
+        `ссылается на механику «${unlock.id}», которой нет в списке MECHANIC_IDS ` +
+          '(data/progression.ts)',
+      )
+    }
+    // Ступень со ссылками не может быть заглушкой, и наоборот: «будет
+    // добавлено» и «вот вход» — взаимоисключающие обещания.
+    report.need(
+      !(step.placeholder && (step.unlocks?.length ?? 0) > 0),
+      where,
+      'помечена заглушкой, но что-то открывает — обещания противоречат друг другу ' +
+        '(data/progression.ts)',
+    )
   },
 }
 
@@ -853,10 +1084,18 @@ export const RECIPE_SCHEMA: EntitySchema<RecipeDef> = {
       'нет ни одного материала на входе — рецепт собирается из ничего (data/recipes.ts)',
     )
     for (const input of recipe.inputs ?? []) {
+      // Вход бывает трёх видов: материал с моба, трава из зоны и реагент
+      // босса. Входы у них разные (бросок, время, цепочка боссов), но в
+      // рецепте они лежат одинаково.
+      const knownInput =
+        content.materials.some((m) => m.id === input.materialId) ||
+        content.herbs.some((h) => h.id === input.materialId) ||
+        content.reagents.some((r) => r.id === input.materialId)
       report.need(
-        content.materials.some((m) => m.id === input.materialId),
+        knownInput,
         where,
-        `требует материал «${input.materialId}», которого нет в data/materials.ts`,
+        `требует материал «${input.materialId}», которого нет ни в data/materials.ts, ` +
+          'ни в data/herbs.ts, ни в data/reagents.ts',
       )
       report.need(
         Number.isInteger(input.count) && input.count > 0,
@@ -874,6 +1113,14 @@ export const RECIPE_SCHEMA: EntitySchema<RecipeDef> = {
           where,
           `материал «${input.materialId}» не падает ни в одной зоне — рецепт ` +
             'недостижим (data/materials.ts)',
+        )
+      }
+      const herb = content.herbs.find((h) => h.id === input.materialId)
+      if (herb && herb.zoneIds.length === 0) {
+        report.add(
+          where,
+          `трава «${input.materialId}» не растёт ни в одной зоне — рецепт ` +
+            'недостижим (data/herbs.ts)',
         )
       }
     }
@@ -908,11 +1155,460 @@ export const RECIPE_SCHEMA: EntitySchema<RecipeDef> = {
             'не из ARMOR_ATTRIBUTES (data/recipes.ts)',
         )
       }
+    } else if (output.kind === 'potion') {
+      report.need(
+        output.id === `potion:${recipe.id}`,
+        where,
+        `id склянки «${output.id}» обязан быть «potion:${recipe.id}»: по нему зелье ` +
+          'лежит в мешке, им же подписан source модификатора (data/recipes.ts)',
+      )
+      checkNumber(
+        output,
+        {
+          field: 'output.durationSec',
+          get: (o) => o.durationSec,
+          min: 0,
+          exclusiveMin: true,
+          max: 3600,
+          why: 'секунды действия: ноль означал бы склянку, которая не успевает подействовать',
+        },
+        where,
+        'data/recipes.ts',
+        report,
+      )
+      report.need(
+        Array.isArray(output.mods) && output.mods.length > 0,
+        where,
+        'зелье без единого модификатора — склянка ничего не делает (data/recipes.ts)',
+      )
+      for (const mod of output.mods ?? []) {
+        if (!content.statIds.includes(mod.stat)) {
+          report.add(
+            where,
+            `зелье меняет стат «${mod.stat}», которого нет среди StatId в game/stats.ts`,
+          )
+        }
+        if (mod.kind === 'base') {
+          report.add(
+            where,
+            `модификатор зелья на «${mod.stat}» помечен kind: 'base' — базу боя задаёт ` +
+              'оружие, и временной склянке её подменять нечем (data/recipes.ts)',
+          )
+        }
+        if (mod.value?.lte(0)) {
+          report.add(
+            where,
+            `модификатор зелья на «${mod.stat}» не положителен — зелье не бывает ` +
+              'наказанием, а на этом держится правило «автокаст <= ручная игра» ' +
+              '(data/recipes.ts)',
+          )
+        }
+        if (POTION_FORBIDDEN_STATS.has(String(mod.stat))) {
+          report.add(
+            where,
+            `зелью нельзя трогать «${mod.stat}»: у этого стата меньше — лучше, и ` +
+              'прибавка к нему была бы штрафом (data/recipes.ts)',
+          )
+        }
+      }
     } else {
       report.need(
         output.id.startsWith('food:'),
         where,
         `id еды «${output.id}» должен начинаться с «food:» — по нему привал её и находит`,
+      )
+    }
+  },
+}
+
+// Статы, у которых МЕНЬШЕ — лучше: положительная прибавка к ним была бы
+// штрафом, а зелье не бывает наказанием. weaponSpeed здесь ещё и по общему
+// правилу: ускорение живёт в haste.
+const POTION_FORBIDDEN_STATS = new Set<string>([
+  'weaponSpeed',
+  'offhandSpeed',
+  'regenDelay',
+  'restDuration',
+  'offhandPenalty',
+])
+
+export const HERB_SCHEMA: EntitySchema<HerbDef> = {
+  kind: 'трава',
+  file: 'data/herbs.ts',
+  entities: (c) => c.herbs,
+  id: (h) => h.id,
+  name: (h) => h.name,
+  icon: (h) => h.icon,
+  numbers: [
+    {
+      field: 'perMinute',
+      get: (h) => h.perMinute,
+      min: 0,
+      exclusiveMin: true,
+      max: 60,
+      why:
+        'пучков в минуту: ноль означал бы траву, которую не срезать никогда, ' +
+        'а шестьдесят — по пучку в секунду',
+    },
+  ],
+  extra: (herb, content, report) => {
+    const where = `трава ${herb.id}`
+    report.need(
+      Array.isArray(herb.zoneIds) && herb.zoneIds.length > 0,
+      where,
+      'не растёт ни в одной зоне — зелья с ней недостижимы (data/herbs.ts)',
+    )
+    for (const id of herb.zoneIds ?? []) {
+      report.need(
+        content.zones.some((z) => z.id === id),
+        where,
+        `растёт в зоне «${id}», которой нет в data/zones.ts`,
+      )
+    }
+  },
+}
+
+export const ENCHANT_SCHEMA: EntitySchema<EnchantDef> = {
+  kind: 'зачарование',
+  file: 'data/enchants.ts',
+  entities: (c) => c.enchants,
+  id: (e) => e.id,
+  name: (e) => e.name,
+  icon: (e) => e.icon,
+  numbers: [
+    {
+      field: 'dustCost',
+      get: (e) => e.dustCost,
+      min: 1,
+      integer: true,
+      why: 'цена в пыли: бесплатное зачарование не стоит ни одного распыления',
+    },
+  ],
+  extra: (enchant, content, report) => {
+    const where = `зачарование ${enchant.id}`
+    report.need(
+      !!enchant.tagline?.trim(),
+      where,
+      'нет строки о том, зачем оно нужно — заполни tagline в data/enchants.ts',
+    )
+    // Без слотов зачарование недостижимо: наложить его будет не на что.
+    if (!Array.isArray(enchant.slots) || enchant.slots.length === 0) {
+      report.add(where, 'не подходит ни одному слоту — наложить его некуда (data/enchants.ts)')
+    }
+    for (const slot of enchant.slots ?? []) {
+      report.need(
+        content.slots.includes(slot),
+        where,
+        `ссылается на слот «${slot}», которого нет в data/slots.ts (SLOT_IDS)`,
+      )
+    }
+    if (!Array.isArray(enchant.mods) || enchant.mods.length === 0) {
+      report.add(where, 'ни одного модификатора — зачарование ничего не делает (data/enchants.ts)')
+      return
+    }
+    for (const mod of enchant.mods) {
+      if (!content.statIds.includes(mod.stat)) {
+        report.add(
+          where,
+          `модификатор ссылается на стат «${mod.stat}», которого нет среди StatId в game/stats.ts`,
+        )
+        continue
+      }
+      // Базу боя задаёт ОРУЖИЕ, ровно одним источником. Зачарование с kind
+      // 'base' стало бы вторым и подменило бы скорость или урон оружия.
+      if (mod.kind === 'base') {
+        report.add(
+          where,
+          `модификатор на «${mod.stat}» помечен kind: 'base' — базу боя задаёт оружие ` +
+            'через weaponMods в game/loot.ts, второй базы быть не должно (data/enchants.ts)',
+        )
+      }
+      // То же правило, что у талантов: ускорение живёт статом haste.
+      if (mod.stat === 'weaponSpeed') {
+        report.add(
+          where,
+          'зачарованию нельзя менять weaponSpeed — ускорение выражается статом haste, ' +
+            'иначе замах уходит в ноль или в бесконечность (data/enchants.ts)',
+        )
+      }
+      // Зачарование НЕ растёт от уровня вещи, поэтому плоская прибавка к
+      // растущему стату обесценится вместе с прогрессом: такие статы
+      // зачарование обязано давать процентом.
+      if (mod.kind === 'flat' && !content.enchantFlatStats.includes(mod.stat)) {
+        report.add(
+          where,
+          `плоская прибавка к стату «${mod.stat}» обесценится с уровнем: зачарование не ` +
+            'растёт от уровня вещи, поэтому растущие статы даются процентом ' +
+            '(ENCHANT_FLAT_STATS в data/enchants.ts)',
+        )
+      }
+    }
+  },
+}
+
+export const PROC_SCHEMA: EntitySchema<ProcDef> = {
+  kind: 'прок',
+  file: 'data/procs.ts',
+  entities: (c) => c.procs,
+  id: (p) => p.id,
+  name: (p) => p.name,
+  icon: (p) => p.icon,
+  numbers: [
+    {
+      field: 'chance',
+      get: (p) => p.chance,
+      min: 0,
+      exclusiveMin: true,
+      max: 1,
+      why: 'вероятность на удар: ноль означал бы прок, который не срабатывает никогда',
+    },
+    {
+      field: 'internalCooldownMs',
+      get: (p) => p.internalCooldownMs,
+      min: 1,
+      max: 120000,
+      integer: true,
+      why:
+        'внутренний кулдаун обязателен: без потолка темп прока рос бы вместе с ' +
+        'ускорением, и быстрое оружие выигрывало бы дважды',
+    },
+  ],
+  extra: (proc, content, report) => {
+    const where = `прок ${proc.id}`
+    // Прок обязан кому-то принадлежать: прок без вещи — мёртвые числа.
+    report.need(
+      content.recipes.some((r) => r.output.kind === 'item' && r.output.procId === proc.id),
+      where,
+      'ни один рецепт не выдаёт вещь с этим проком — он недостижим (data/recipes.ts)',
+    )
+    if (proc.effect.kind === 'damage') {
+      checkNumber(
+        proc.effect,
+        {
+          field: 'effect.weaponDamagePercent',
+          get: (e) => e.weaponDamagePercent.toNumber(),
+          min: 0,
+          exclusiveMin: true,
+          max: 10,
+          why:
+            'урон прока — ДОЛЯ удара оружия, как у умений: своей формулы у него нет, ' +
+            'иначе он перестал бы масштабироваться от оружия',
+        },
+        where,
+        'data/procs.ts',
+        report,
+      )
+    } else {
+      checkNumber(
+        proc.effect,
+        {
+          field: 'effect.healShare',
+          get: (e) => e.healShare,
+          min: 0,
+          exclusiveMin: true,
+          max: 1,
+          why: 'доля запаса здоровья за срабатывание',
+        },
+        where,
+        'data/procs.ts',
+        report,
+      )
+    }
+  },
+}
+
+export const BOSS_ABILITY_SCHEMA: EntitySchema<BossAbilityDef> = {
+  kind: 'способность босса',
+  file: 'data/heroic.ts',
+  entities: (c) => c.bossAbilities,
+  id: (a) => a.id,
+  name: (a) => a.name,
+  icon: (a) => a.icon,
+  numbers: [],
+  extra: (ability, content, report) => {
+    const where = `способность босса ${ability.id}`
+    // Способность, которую никто не носит, — мёртвые числа.
+    report.need(
+      content.dungeons.some((d) => d.bosses.some((b) => b.abilityId === ability.id)),
+      where,
+      'её не носит ни один босс — недостижимый контент (data/dungeons.ts)',
+    )
+    const effect = ability.effect
+    if (effect.kind === 'dispel') {
+      checkNumber(
+        effect,
+        {
+          field: 'effect.intervalSec',
+          get: (e) => e.intervalSec,
+          min: 1,
+          max: 120,
+          why: 'период рассеивания: чаще секунды это не механика, а стена',
+        },
+        where,
+        'data/heroic.ts',
+        report,
+      )
+    } else if (effect.kind === 'frenzy-below-hp') {
+      checkNumber(
+        effect,
+        {
+          field: 'effect.hpShare',
+          get: (e) => e.hpShare,
+          min: 0,
+          exclusiveMin: true,
+          max: 1,
+          why: 'доля здоровья босса, ниже которой он ускоряется',
+        },
+        where,
+        'data/heroic.ts',
+        report,
+      )
+      checkNumber(
+        effect,
+        {
+          field: 'effect.hasteBonus',
+          get: (e) => e.hasteBonus,
+          min: 0,
+          exclusiveMin: true,
+          max: 3,
+          why:
+            'ускорение в ДОЛЯХ: плоская правка времени замаха увела бы его в ноль — ' +
+            'то же правило, что и у героя',
+        },
+        where,
+        'data/heroic.ts',
+        report,
+      )
+    } else {
+      checkNumber(
+        effect,
+        {
+          field: 'effect.hpSharePerResource',
+          get: (e) => e.hpSharePerResource,
+          min: 0,
+          exclusiveMin: true,
+          max: 1,
+          why: 'доля запаса HP за полностью потраченный запас ресурса',
+        },
+        where,
+        'data/heroic.ts',
+        report,
+      )
+    }
+  },
+}
+
+export const TEMPLE_SCHEMA: EntitySchema<TempleDef> = {
+  kind: 'храм',
+  file: 'data/temple.ts',
+  entities: (c) => c.temples,
+  id: (t) => t.id,
+  name: (t) => t.name,
+  icon: (t) => t.icon,
+  numbers: [
+    { field: 'unlockRequirement', get: (t) => t.unlockRequirement, min: 1, integer: true },
+    {
+      field: 'rewardMultiplier',
+      get: (t) => t.rewardMultiplier.toNumber(),
+      min: 0,
+      exclusiveMin: true,
+      max: 20,
+      why: 'множитель наград волны — то же, что rewardMultiplier у зоны',
+    },
+  ],
+  extra: (temple, content, report) => {
+    const where = `храм ${temple.id}`
+    report.need(
+      content.zones.some((z) => z.id === temple.zoneId),
+      where,
+      `вход из зоны «${temple.zoneId}», которой нет в data/zones.ts`,
+    )
+    report.need(
+      Array.isArray(temple.ladder) && temple.ladder.length > 0,
+      where,
+      'пул бойцов пуст — волне некого выставить (data/temple.ts)',
+    )
+    report.need(
+      content.dungeonSceneKeys.includes(temple.scenery),
+      where,
+      `обстановки «${temple.scenery}» нет в DUNGEON_SCENES (data/scenery.ts)`,
+    )
+    // Рубежи строго по возрастанию: иначе «дошёл до пятой» открывало бы
+    // награду десятой, и лестница наград перестала бы быть лестницей.
+    let previous = 0
+    for (const milestone of temple.milestones ?? []) {
+      if (milestone.wave <= previous) {
+        report.add(
+          where,
+          `рубеж волны ${milestone.wave} стоит после рубежа ${previous}: рубежи обязаны ` +
+            'идти строго по возрастанию (data/temple.ts)',
+        )
+      }
+      previous = milestone.wave
+      report.need(
+        content.recipes.some((r) => r.id === milestone.recipeId),
+        where,
+        `рубеж открывает рецепт «${milestone.recipeId}», которого нет в data/recipes.ts`,
+      )
+    }
+  },
+}
+
+export const QUEST_SCHEMA: EntitySchema<QuestDef> = {
+  kind: 'задание',
+  file: 'data/quests.ts',
+  entities: (c) => c.quests,
+  id: (q) => q.id,
+  name: (q) => q.name,
+  icon: (q) => q.icon,
+  numbers: [],
+  extra: (quest, content, report) => {
+    const where = `задание ${quest.id}`
+    report.need(
+      !!quest.flavor?.trim(),
+      where,
+      'нет строки о том, зачем это делать — заполни flavor в data/quests.ts',
+    )
+    // Цель проверяется ПО ТИПУ: пятого типа нет, а у каждого из четырёх своя
+    // ссылка, и промах в ней запер бы цепочку навсегда.
+    const goal = quest.goal
+    if (goal.kind === 'kill') {
+      const zone = content.zones.find((z) => z.id === goal.zoneId)
+      report.need(zone !== undefined, where, `зоны «${goal.zoneId}» нет в data/zones.ts`)
+      report.need(
+        zone?.monsterPool.some((m) => m.id === goal.monsterId) ?? false,
+        where,
+        `в зоне «${goal.zoneId}» не водится «${goal.monsterId}» — задание невыполнимо ` +
+          '(data/zones.ts)',
+      )
+      report.need(
+        Number.isInteger(goal.count) && goal.count > 0,
+        where,
+        'число убийств должно быть целым и больше нуля (data/quests.ts)',
+      )
+    } else if (goal.kind === 'dungeon') {
+      report.need(
+        content.dungeons.some((d) => d.id === goal.dungeonId),
+        where,
+        `данжа «${goal.dungeonId}» нет в data/dungeons.ts`,
+      )
+    } else if (goal.kind === 'craft') {
+      report.need(
+        content.recipes.some((r) => r.id === goal.recipeId),
+        where,
+        `рецепта «${goal.recipeId}» нет в data/recipes.ts`,
+      )
+      report.need(
+        Number.isInteger(goal.count) && goal.count > 0,
+        where,
+        'число крафтов должно быть целым и больше нуля (data/quests.ts)',
+      )
+    } else {
+      report.need(
+        Number.isInteger(goal.level) && goal.level > 0 && goal.level <= content.balance.levelCap,
+        where,
+        `цель «достичь ${goal.level} уровня» выше потолка ${content.balance.levelCap} — ` +
+          'задание невыполнимо (data/quests.ts)',
       )
     }
   },
@@ -969,8 +1665,23 @@ export const CLASS_SCHEMA: EntitySchema<ClassDef> = {
         `ссылается на ветку «${id}», которой нет в data/talents.ts (BRANCHES)`,
       )
     }
-    // Стартовая экипировка ссылается на настоящие шаблоны.
+    // Стартовая экипировка ссылается на настоящие шаблоны. Броне шаблон
+    // не нужен — у неё вместо него главный атрибут, как у кованой вещи.
     for (const item of hero.startingEquipment ?? []) {
+      if (item.kind === 'armor') {
+        report.need(
+          item.slot !== 'mainHand' && item.slot !== 'offHand',
+          where,
+          `стартовая броня лежит в слоте рук «${item.slot}» (data/classes.ts)`,
+        )
+        report.need(
+          ARMOR_ATTRIBUTES.includes(item.attribute as AttributeId),
+          where,
+          `стартовая броня в слоте «${item.slot}» не называет главный атрибут: ` +
+            `«${item.attribute ?? '—'}» не из ARMOR_ATTRIBUTES (data/classes.ts)`,
+        )
+        continue
+      }
       const known =
         item.kind === 'shield'
           ? content.shields.some((sh) => sh.id === item.templateId)
@@ -978,12 +1689,24 @@ export const CLASS_SCHEMA: EntitySchema<ClassDef> = {
       report.need(
         known,
         where,
-        `стартовый предмет «${item.templateId}» не найден среди ${item.kind === 'shield' ? 'щитов' : 'оружия'} (data/items.ts)`,
+        `стартовый предмет «${item.templateId ?? '—'}» не найден среди ${item.kind === 'shield' ? 'щитов' : 'оружия'} (data/items.ts)`,
       )
       report.need(
         item.slot === 'mainHand' || item.slot === 'offHand',
         where,
-        `стартовый предмет лежит в слоте «${item.slot}»: класс раздаёт только руки (data/classes.ts)`,
+        `стартовое оружие лежит в слоте «${item.slot}»: оружие бывает только в руках (data/classes.ts)`,
+      )
+    }
+    // Полный комплект: с голыми руками первые бои идут вдвое дольше коридора,
+    // а автонадевания, которое раньше это чинило, больше нет.
+    const startSlots = new Set((hero.startingEquipment ?? []).map((i) => i.slot))
+    for (const slot of content.slots) {
+      if (slot === 'offHand') continue // двуручным левая рука не нужна
+      report.need(
+        startSlots.has(slot),
+        where,
+        `в стартовом комплекте нет слота «${slot}»: первые бои пойдут дольше ` +
+          'коридора темпа, а надеть находку игроку будет ещё нечего (data/classes.ts)',
       )
     }
     // Ресурс обязан хоть как-то пополняться: либо временем, либо боем.
@@ -1192,6 +1915,14 @@ export const SCHEMAS = [
   PROP_SCHEMA,
   CLASS_SCHEMA,
   MATERIAL_SCHEMA,
+  HERB_SCHEMA,
+  ENCHANT_SCHEMA,
+  PROC_SCHEMA,
+  BOSS_ABILITY_SCHEMA,
+  TEMPLE_SCHEMA,
+  QUEST_SCHEMA,
+  REAGENT_SCHEMA,
+  PROGRESSION_SCHEMA,
   RECIPE_SCHEMA,
   RARITY_SCHEMA,
   MODEL_SCHEMA,
@@ -1207,6 +1938,58 @@ export const SCHEMAS = [
  * а до половины предметов игрок не доберётся никогда.
  */
 function checkReachable(content: Content, report: Report): void {
+  // --- Цепочка преквестов: она отпирает ступень лестницы ---
+  report.need(
+    content.progression.some((step) => step.id === QUEST_CHAIN.opensStepId),
+    'цепочка заданий',
+    `отпирает ступень «${QUEST_CHAIN.opensStepId}», которой нет в data/progression.ts`,
+  )
+  report.need(
+    QUEST_CHAIN.quests.length > 0,
+    'цепочка заданий',
+    'в цепочке нет ни одного задания — ступень рейда не отпереть (data/quests.ts)',
+  )
+
+  // --- Зачарование: пыль и достижимость ---
+  for (const rarity of content.rarities) {
+    const dust = content.dustByRarity[rarity.id]
+    if (!(dust > 0)) {
+      report.add(
+        `редкость ${rarity.id}`,
+        `распыление даёт ${dust} пыли: распылять предметы этого тира бессмысленно ` +
+          '(DUST_BY_RARITY в data/enchants.ts)',
+      )
+    }
+  }
+  for (const slot of content.slots) {
+    const forSlot = content.enchants.filter((e) => e.slots?.includes(slot))
+    report.need(
+      forSlot.length > 0,
+      `слот ${slot}`,
+      'в этот слот предметы падают, а зачаровать их нечем — добавь зачарование ' +
+        'с этим слотом в data/enchants.ts',
+    )
+  }
+
+  // --- Зоны: в каждой растёт хоть одна трава ---
+  for (const zone of content.zones) {
+    report.need(
+      content.herbs.some((h) => h.zoneIds?.includes(zone.id)),
+      `зона ${zone.id}`,
+      'в ней не растёт ни одной травы — травничество в этой зоне мертво (data/herbs.ts)',
+    )
+  }
+
+  // --- Травы: каждая нужна хоть одному рецепту ---
+  for (const herb of content.herbs) {
+    report.need(
+      content.recipes.some((r) => r.inputs?.some((i) => i.materialId === herb.id)),
+      `трава ${herb.id}`,
+      'не входит ни в один рецепт — её некуда девать, это недостижимый контент ' +
+        '(data/recipes.ts)',
+    )
+  }
+
   // --- Зоны: в каждую есть путь ---
   const openAtStart = content.zones.filter((z) => z.unlockRequirement <= 1)
   report.need(
@@ -1272,6 +2055,37 @@ function checkReachable(content: Content, report: Report): void {
       'ни один материал в ней не падает — ремёсла в этой зоне мертвы (data/materials.ts)',
     )
   }
+
+  // --- Данжи: лестница тиров идёт подряд и по возрастанию уровня входа ---
+  //
+  // Данж — не украшение зоны, а ступень: тир задаёт числа боссов, а уровень
+  // входа — когда до неё доходит очередь. Дырка в тирах означала бы пропущенный
+  // реагент и данж, чьи числа выведены не из своего места в лестнице; равные
+  // или убывающие уровни входа — две ступени на одной высоте.
+  // Лестница проверяется ПО СЛОЖНОСТЯМ отдельно: у героики свой ряд тиров и
+  // один уровень входа на все восемь — она не продолжение лестницы, а второй
+  // проход по ней, и сравнивать её ступени с обычными нечем.
+  const normal = content.dungeons.filter((d) => d.difficulty === 'normal')
+  const ladder = [...normal].sort((a, b) => a.tier - b.tier)
+  ladder.forEach((dungeon, index) => {
+    if (dungeon.tier !== index + 1) {
+      report.add(
+        `данж ${dungeon.id}`,
+        `тир ${dungeon.tier} стоит ${index + 1}-м по счёту: тиры обязаны идти подряд ` +
+          'с первого и не повторяться (data/dungeons.ts)',
+      )
+    }
+    if (index === 0) return
+    const prev = ladder[index - 1]
+    if (dungeon.unlockRequirement <= prev.unlockRequirement) {
+      report.add(
+        `данж ${dungeon.id}`,
+        `открывается с ${dungeon.unlockRequirement} уровня, а данж тиром ниже ` +
+          `(${prev.id}) — с ${prev.unlockRequirement}: уровни входа обязаны расти ` +
+          'вместе с тиром (data/dungeons.ts)',
+      )
+    }
+  })
 
   // --- Данжи: вход из зоны, до которой игрок дорос раньше ---
   for (const dungeon of content.dungeons) {
@@ -1390,9 +2204,25 @@ function checkBalance(content: Content, report: Report): void {
     { field: 'OFFLINE_EFFICIENCY', get: (x) => x.offlineEfficiency, min: 0, exclusiveMin: true, max: 1, why: 'оффлайн не бывает выгоднее живой игры' },
     { field: 'AUTOCAST_MAX_LOSS', get: (x) => x.autocastMaxLoss, min: 0, max: 1, why: 'это доля' },
     { field: 'TALENT_FIRST_LEVEL', get: (x) => x.talentFirstLevel, min: 1, integer: true },
+    { field: 'ENCHANT_UNLOCK_LEVEL', get: (x) => x.enchantUnlockLevel, min: 1, integer: true },
+    { field: 'POTION_UNLOCK_LEVEL', get: (x) => x.potionUnlockLevel, min: 1, integer: true },
     { field: 'TTK_DRIFT_MAX', get: (x) => x.ttkDriftMax, min: 0, exclusiveMin: true, max: 1, why: 'это доля разброса' },
   ]
   for (const rule of rules) checkNumber(b, rule, where, 'data/balance.ts', report)
+  // Механика, которая открывается выше потолка, не откроется никогда.
+  for (const [field, level] of [
+    ['TALENT_FIRST_LEVEL', b.talentFirstLevel],
+    ['POTION_UNLOCK_LEVEL', b.potionUnlockLevel],
+    ['ENCHANT_UNLOCK_LEVEL', b.enchantUnlockLevel],
+  ] as const) {
+    if (level > b.levelCap) {
+      report.add(
+        where,
+        `${field} = ${level} выше LEVEL_CAP = ${b.levelCap}: механика не откроется ` +
+          'никогда (data/balance.ts)',
+      )
+    }
+  }
 
   // Коридор темпа обязан быть коридором, а не набором чисел врозь.
   const ordered: Array<[string, number, string, number]> = [

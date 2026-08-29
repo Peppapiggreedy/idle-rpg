@@ -261,6 +261,160 @@ export function brokenCases(): BrokenCase[] {
       expect: [first(real.materials).id, 'нет-зоны'],
     },
     {
+      title: 'трава не растёт ни в одной зоне — зелья с ней недостижимы',
+      content: {
+        ...real,
+        herbs: patch(real.herbs, first(real.herbs).id, { zoneIds: [] }),
+      },
+      expect: [first(real.herbs).id, 'не растёт ни в одной зоне'],
+    },
+    {
+      title: 'трава растёт в зоне, которой нет',
+      content: {
+        ...real,
+        herbs: patch(real.herbs, first(real.herbs).id, { zoneIds: ['нет-зоны'] }),
+      },
+      expect: [first(real.herbs).id, 'нет-зоны'],
+    },
+    {
+      title: 'трава срезается ноль раз в минуту — её не собрать никогда',
+      content: {
+        ...real,
+        herbs: patch(real.herbs, first(real.herbs).id, { perMinute: 0 }),
+      },
+      expect: [first(real.herbs).id, 'perMinute'],
+    },
+    {
+      title: 'зелье лечит наоборот: отрицательный модификатор — это наказание',
+      content: {
+        ...real,
+        recipes: real.recipes.map((r) =>
+          r.output.kind === 'potion'
+            ? {
+                ...r,
+                output: {
+                  ...r.output,
+                  mods: r.output.mods.map((m) => ({ ...m, value: m.value.neg() })),
+                },
+              }
+            : r,
+        ),
+      },
+      expect: ['не положителен'],
+    },
+    {
+      title: 'id склянки не совпадает с id рецепта — мешок её не найдёт',
+      content: {
+        ...real,
+        recipes: real.recipes.map((r) =>
+          r.output.kind === 'potion' ? { ...r, output: { ...r.output, id: 'potion:чужой' } } : r,
+        ),
+      },
+      expect: ['potion:чужой'],
+    },
+    {
+      title: 'зачарование подменяет базу боя: kind base',
+      content: {
+        ...real,
+        enchants: patch(real.enchants, first(real.enchants).id, {
+          mods: [
+            { stat: 'weaponDamageMin' as StatId, kind: 'base' as const, value: new Decimal(50) },
+          ],
+        }),
+      },
+      expect: [first(real.enchants).id, 'base', 'data/enchants.ts'],
+    },
+    {
+      title: 'зачарование ускоряет прибавкой к weaponSpeed вместо haste',
+      content: {
+        ...real,
+        enchants: patch(real.enchants, first(real.enchants).id, {
+          mods: [
+            { stat: 'weaponSpeed' as StatId, kind: 'flat' as const, value: new Decimal(-0.5) },
+          ],
+        }),
+      },
+      expect: [first(real.enchants).id, 'weaponSpeed', 'haste'],
+    },
+    {
+      title: 'зачарование не подходит ни одному слоту — наложить его некуда',
+      content: {
+        ...real,
+        enchants: patch(real.enchants, first(real.enchants).id, { slots: [] }),
+      },
+      expect: [first(real.enchants).id, 'не подходит ни одному слоту'],
+    },
+    {
+      title: 'прок без внутреннего кулдауна — темп рос бы вместе с ускорением',
+      content: {
+        ...real,
+        procs: patch(real.procs, first(real.procs).id, { internalCooldownMs: 0 }),
+      },
+      expect: [first(real.procs).id, 'internalCooldownMs'],
+    },
+    {
+      title: 'прок срабатывает с нулевым шансом — он не сработает никогда',
+      content: {
+        ...real,
+        procs: patch(real.procs, first(real.procs).id, { chance: 0 }),
+      },
+      expect: [first(real.procs).id, 'chance'],
+    },
+    {
+      title: 'героический босс ускоряется прибавкой ниже нуля',
+      content: {
+        ...real,
+        bossAbilities: real.bossAbilities.map((a) =>
+          a.effect.kind === 'frenzy-below-hp'
+            ? { ...a, effect: { ...a.effect, hasteBonus: 0 } }
+            : a,
+        ),
+      },
+      expect: ['hasteBonus'],
+    },
+    {
+      title: 'рубежи храма идут не по возрастанию',
+      content: {
+        ...real,
+        temples: real.temples.map((t) => ({
+          ...t,
+          milestones: [...t.milestones].reverse(),
+        })),
+      },
+      expect: ['рубежи обязаны'],
+    },
+    {
+      title: 'храм открывает рецепт, которого нет',
+      content: {
+        ...real,
+        temples: real.temples.map((t) => ({
+          ...t,
+          milestones: t.milestones.map((m) => ({ ...m, recipeId: 'нет-такого' })),
+        })),
+      },
+      expect: ['нет-такого', 'data/recipes.ts'],
+    },
+    {
+      title: 'задание требует убить того, кого нет в зоне',
+      content: {
+        ...real,
+        quests: real.quests.map((q) =>
+          q.goal.kind === 'kill' ? { ...q, goal: { ...q.goal, monsterId: 'нет-такого' } } : q,
+        ),
+      },
+      expect: ['нет-такого', 'невыполнимо'],
+    },
+    {
+      title: 'задание требует уровень выше потолка',
+      content: {
+        ...real,
+        quests: real.quests.map((q) =>
+          q.goal.kind === 'level' ? { ...q, goal: { ...q.goal, level: 1000 } } : q,
+        ),
+      },
+      expect: ['выше потолка'],
+    },
+    {
       title: 'класс ссылается на несуществующее умение',
       content: {
         ...real,
@@ -275,6 +429,42 @@ export function brokenCases(): BrokenCase[] {
         classes: patch(real.classes, first(real.classes).id, { branchIds: [] }),
       },
       expect: [first(real.classes).id, 'ни одной ветки'],
+    },
+    {
+      title: 'ступень лестницы ссылается на несуществующий данж',
+      content: {
+        ...real,
+        progression: real.progression.map((step) =>
+          step.unlocks.some((u) => u.kind === 'dungeon')
+            ? { ...step, unlocks: [{ kind: 'dungeon' as const, id: 'нет-такого-данжа' }] }
+            : step,
+        ),
+      },
+      expect: ['нет-такого-данжа', 'data/dungeons.ts'],
+    },
+    {
+      title: 'ступень лестницы ссылается на несуществующую механику',
+      content: {
+        ...real,
+        progression: real.progression.map((step) =>
+          step.unlocks.some((u) => u.kind === 'mechanic')
+            ? { ...step, unlocks: [{ kind: 'mechanic' as const, id: 'телепортация' as never }] }
+            : step,
+        ),
+      },
+      expect: ['телепортация', 'MECHANIC_IDS'],
+    },
+    {
+      title: 'ступень-заглушка при этом что-то открывает',
+      content: {
+        ...real,
+        progression: real.progression.map((step) =>
+          step.placeholder
+            ? { ...step, unlocks: [{ kind: 'dungeon' as const, id: real.dungeons[0].id }] }
+            : step,
+        ),
+      },
+      expect: ['заглушкой', 'data/progression.ts'],
     },
     {
       title: 'кованая броня не называет главный атрибут',
@@ -450,6 +640,81 @@ export function brokenCases(): BrokenCase[] {
         zones: real.zones.map((z) => ({ ...z, unlockRequirement: z.unlockRequirement + 5 })),
       },
       expect: ['негде начать', 'data/zones.ts'],
+    },
+    {
+      title: 'данж ссылается на реагент, которого нет в игре',
+      content: {
+        ...real,
+        dungeons: patch(real.dungeons, first(real.dungeons).id, {
+          reagentId: 'reagent-нет-такого',
+        }),
+      },
+      expect: [first(real.dungeons).id, 'reagent-нет-такого', 'data/reagents.ts'],
+    },
+    {
+      title: 'реагент данжа не своего тира: две ступени перепутаны',
+      content: {
+        ...real,
+        dungeons: patch(real.dungeons, first(real.dungeons).id, {
+          reagentId: real.dungeons[1].reagentId,
+          bosses: first(real.dungeons).bosses.map((boss, i, all) =>
+            i === all.length - 1 ? { ...boss, reagentId: real.dungeons[1].reagentId } : boss,
+          ),
+        }),
+      },
+      expect: [first(real.dungeons).id, 'своего тира', 'data/reagents.ts'],
+    },
+    {
+      title: 'у данжа нет обстановки: ключ интерьера промахнулся',
+      content: {
+        ...real,
+        dungeons: patch(real.dungeons, first(real.dungeons).id, {
+          scenery: 'подземелье' as never,
+        }),
+      },
+      expect: [first(real.dungeons).id, 'подземелье', 'data/scenery.ts'],
+    },
+    {
+      title: 'лестница данжей с дыркой: тира нет ни у кого',
+      content: {
+        ...real,
+        dungeons: patch(real.dungeons, real.dungeons[1].id, { tier: real.dungeons[1].tier + 1 }),
+      },
+      expect: [real.dungeons[1].id, 'подряд', 'data/dungeons.ts'],
+    },
+    {
+      title: 'уровень входа не вырос вместе с тиром',
+      content: {
+        ...real,
+        dungeons: patch(real.dungeons, real.dungeons[1].id, {
+          unlockRequirement: first(real.dungeons).unlockRequirement,
+        }),
+      },
+      expect: [real.dungeons[1].id, 'уровни входа обязаны расти', 'data/dungeons.ts'],
+    },
+    {
+      title: 'реагент, которого не роняет ни один данж',
+      content: {
+        ...real,
+        dungeons: real.dungeons.filter((d) => d.id !== real.dungeons[real.dungeons.length - 1].id),
+      },
+      expect: [
+        real.reagents[real.reagents.length - 1].id,
+        'не роняет ни один данж',
+        'data/dungeons.ts',
+      ],
+    },
+    {
+      title: 'реагент падает с первого босса, а не за пройденную цепочку',
+      content: {
+        ...real,
+        dungeons: patch(real.dungeons, first(real.dungeons).id, {
+          bosses: first(real.dungeons).bosses.map((boss, i) =>
+            i === 0 ? { ...boss, reagentId: first(real.dungeons).reagentId } : boss,
+          ),
+        }),
+      },
+      expect: [first(first(real.dungeons).bosses).id, 'не будучи последним', 'data/dungeons.ts'],
     },
     {
       title: 'данж открывается раньше своей зоны',

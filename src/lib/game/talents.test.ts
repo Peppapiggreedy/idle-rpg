@@ -7,6 +7,8 @@ import {
   availablePoints,
   canResetTalents,
   earnedPoints,
+  heroBranches,
+  heroTalents,
   investTalent,
   rankOf,
   resetCost,
@@ -18,28 +20,45 @@ import {
   talentModifiers,
   talentStatus,
 } from './talents'
-import { useAbility } from './abilities'
+import {
+  ABILITY_BY_ID,
+  abilityStatus,
+  chargesLeft,
+  consumeQueuedAbility,
+  maxCharges,
+  useAbility,
+} from './abilities'
 import { WEAPONS } from '../data/items'
+import { CLASSES, classById } from '../data/classes'
 import {
   BRANCHES,
+  BRANCH_DEPTH,
+  BRANCH_RANKS,
+  BRANCH_ROWS,
+  BRANCH_ROW_STEP,
+  CONCEPT_ROWS,
   TALENTS,
   TALENT_BY_ID,
+  fillBranchRanks,
   talentsInBranch,
   type BranchId,
-  type TalentDef,
 } from '../data/talents'
 import {
+  LEVEL_CAP,
   REVIVE_DELAY_MS,
   TALENT_FIRST_LEVEL,
   TALENT_RESET_BASE_COST,
   TALENT_RESET_COST_GROWTH,
 } from '../data/balance'
 
-const EDGE = TALENT_BY_ID['honed-edge'] // ярость, ряд 1, до 5 рангов
-const EYE = TALENT_BY_ID['keen-eye'] // ярость, ряд 2, нужно 5 очков в ветке
-const RUPTURE = TALENT_BY_ID['rupture'] // ярость, последний ряд, флаг
-const HIDE = TALENT_BY_ID['thick-hide'] // стойкость, ряд 1
-const RETURN = TALENT_BY_ID['swift-return'] // стойкость, последний ряд, флаг
+// Дерево у каждого класса своё, поэтому опорные таланты берутся ПО КЛАССУ,
+// а не по общему списку: страж не видит веток изувера и наоборот.
+const WARDEN = classById('warden')
+const WRATH: BranchId = 'warden-wrath'
+const BULWARK: BranchId = 'warden-bulwark'
+const EDGE = TALENT_BY_ID['wrath-honed-edge'] // Гнев, ряд 1
+const EYE = TALENT_BY_ID['wrath-keen-eye'] // Гнев, ряд 2, нужно 5 очков в ветке
+const HIDE = TALENT_BY_ID['bulwark-thick-hide'] // Оплот, ряд 1
 
 function hero(level: number, patch: Partial<GameState> = {}): GameState {
   return ensureStats({
@@ -57,42 +76,98 @@ function invest(state: GameState, talentId: string, times: number): GameState {
 }
 
 /**
- * Вкладывает ветку целиком, по рядам сверху вниз. Списком id это делать
- * нельзя: ветки растут, и тест ломался бы от каждого нового таланта.
+ * Доводит ветку до КОНКРЕТНОГО этажа: вкладывает ровно столько, сколько этот
+ * этаж требует, и берёт сам талант. Заполнять ветку подряд для этого нельзя —
+ * этажи требуют по 5 очков, а вмещают по 6, и «21-е очко» при заполнении
+ * подряд уходит в четвёртый этаж, а не в пятый.
  */
-function fillBranch(state: GameState, branch: BranchId): GameState {
+function reachRow(state: GameState, branch: BranchId, row: number): GameState {
+  const talents = talentsInBranch(branch)
+  const target = talents[row - 1]
   let next = state
+  let spent = 0
+  for (const talent of talents.slice(0, row - 1)) {
+    const take = Math.min(talent.maxRank, target.requiredPointsInBranch - spent)
+    if (take <= 0) break
+    next = invest(next, talent.id, take)
+    spent += take
+  }
+  return invest(next, target.id, 1)
+}
+
+/**
+ * Вкладывает ветку до нужной глубины, по рядам сверху вниз. Списком id это
+ * делать нельзя: ветки растут, и тест ломался бы от каждого нового таланта.
+ */
+function fillBranch(state: GameState, branch: BranchId, points = BRANCH_DEPTH): GameState {
+  let next = state
+  let left = points
   for (const talent of talentsInBranch(branch)) {
-    next = invest(next, talent.id, talent.maxRank)
+    const take = Math.min(left, talent.maxRank)
+    next = invest(next, talent.id, take)
+    left -= take
+    if (left <= 0) break
   }
   return next
 }
 
 describe('данные дерева', () => {
-  it('три ветки по 5-6 талантов, ряды идут подряд и не повторяются', () => {
-    // Ветки — это СТИЛИ игры, а не три способа поднять один и тот же урон:
-    // урон, живучесть, автономность. Их ровно три, и все три полноценные.
-    expect(BRANCHES).toHaveLength(3)
-    for (const branch of BRANCHES) {
-      const talents = talentsInBranch(branch.id)
-      expect(talents.length, branch.id).toBeGreaterThanOrEqual(5)
-      expect(talents.length, branch.id).toBeLessThanOrEqual(6)
-      expect(talents.map((t) => t.row)).toEqual(talents.map((_, i) => i + 1))
+  it('шесть веток — по три на класс, и ни одной общей', () => {
+    // Ветка — это СТИЛЬ РОСТА конкретного класса, а не три способа поднять
+    // один и тот же урон. У каждого класса свои урон, живучесть, автономность.
+    expect(BRANCHES).toHaveLength(CLASSES.length * 3)
+    for (const cls of CLASSES) {
+      const own = BRANCHES.filter((b) => b.classId === cls.id)
+      expect(own.map((b) => b.style), cls.id).toEqual(['damage', 'survival', 'autonomy'])
+      // ClassDef перечисляет ровно свои ветки и в том же порядке.
+      expect(cls.branchIds).toEqual(own.map((b) => b.id))
     }
-    expect(TALENTS.length).toBe(BRANCHES.reduce((n, b) => n + talentsInBranch(b.id).length, 0))
   })
 
-  it('требование по ветке растёт вместе с рядом и достижимо', () => {
+  it('каждая ветка ровно 61 очко глубиной: 13 этажей, шаг требования 5', () => {
+    // Глубина — не украшение: она равна числу очков за путь до сотого уровня,
+    // и от неё зависит, что «влить всё в одну ветку» — законченный выбор.
+    expect(BRANCH_DEPTH).toBe(61)
+    expect(BRANCH_RANKS).toHaveLength(BRANCH_ROWS)
     for (const branch of BRANCHES) {
       const talents = talentsInBranch(branch.id)
-      let reachable = 0
+      expect(talents.map((t) => t.row), branch.id).toEqual(BRANCH_RANKS.map((_, i) => i + 1))
+      expect(talents.map((t) => t.maxRank), branch.id).toEqual([...BRANCH_RANKS])
+      expect(
+        talents.reduce((n, t) => n + t.maxRank, 0),
+        branch.id,
+      ).toBe(BRANCH_DEPTH)
+      expect(talents.map((t) => t.requiredPointsInBranch), branch.id).toEqual(
+        BRANCH_RANKS.map((_, i) => i * BRANCH_ROW_STEP),
+      )
+    }
+    expect(TALENTS).toHaveLength(BRANCHES.length * BRANCH_ROWS)
+  })
+
+  it('концептуальные таланты стоят на своих этажах и все — флаги', () => {
+    // Три «поворота» на ветку, и каждый в один ранг: талант либо взят, либо
+    // нет. Тратить на него шесть очков значило бы размазывать поворот.
+    for (const branch of BRANCHES) {
+      const talents = talentsInBranch(branch.id)
       for (const talent of talents) {
-        expect(talent.requiredPointsInBranch).toBeGreaterThanOrEqual(0)
-        // К моменту, когда ряд открывается, столько очков реально можно вложить.
-        expect(talent.requiredPointsInBranch).toBeLessThanOrEqual(reachable)
-        reachable += talent.maxRank
+        const concept = CONCEPT_ROWS.includes(talent.row)
+        expect(talent.effect.kind === 'flag', `${talent.id} на этаже ${talent.row}`).toBe(concept)
+        if (concept) expect(talent.maxRank, talent.id).toBe(1)
       }
     }
+  })
+
+  it('у каждого класса свой набор флагов, и стили совпадают', () => {
+    // Два класса растут по-разному, но проверяются ОДНИМ набором поворотов:
+    // ни одного «если класс такой-то» ни в данных, ни в логике.
+    const flagsOf = (classId: string) =>
+      BRANCHES.filter((b) => b.classId === classId).map((b) =>
+        talentsInBranch(b.id)
+          .filter((t) => t.effect.kind === 'flag')
+          .map((t) => (t.effect.kind === 'flag' ? t.effect.flag : ''))
+          .join(','),
+      )
+    expect(flagsOf('warden')).toEqual(flagsOf('reaver'))
   })
 
   it('первый ряд открыт сразу, у каждого таланта есть эффект', () => {
@@ -104,6 +179,39 @@ describe('данные дерева', () => {
       if (talent.effect.kind === 'modifiers') expect(talent.effect.mods.length).toBeGreaterThan(0)
       else expect(talent.effect.flag).toBeTruthy()
     }
+  })
+
+  it('требование этажа достижимо тем, что лежит выше', () => {
+    for (const branch of BRANCHES) {
+      let reachable = 0
+      for (const talent of talentsInBranch(branch.id)) {
+        expect(talent.requiredPointsInBranch, talent.id).toBeLessThanOrEqual(reachable)
+        reachable += talent.maxRank
+      }
+    }
+  })
+})
+
+describe('дерево привязано к классу', () => {
+  it('герой видит ровно три свои ветки и 39 своих талантов', () => {
+    const warden = hero(TALENT_FIRST_LEVEL)
+    expect(heroBranches(warden).map((b) => b.id)).toEqual(WARDEN.branchIds)
+    expect(heroTalents(warden)).toHaveLength(3 * BRANCH_ROWS)
+    expect(heroTalents(warden).every((t) => WARDEN.branchIds.includes(t.branch))).toBe(true)
+  })
+
+  it('в ветку чужого класса очко не вложить, и статов она не даёт', () => {
+    // Это защита от правленого руками сейва: в своём дереве чужих веток нет.
+    const warden = hero(TALENT_FIRST_LEVEL + 20)
+    const alien = talentsInBranch('reaver-carnage')[0]
+    expect(talentStatus(warden, alien)).toMatchObject({
+      canInvest: false,
+      reason: 'other-class',
+    })
+    expect(investTalent(warden, alien.id)).toBe(warden)
+    // И даже если ранг всё-таки попал в состояние, конвейер его игнорирует.
+    expect(talentModifiers({ [alien.id]: alien.maxRank }, 'warden')).toEqual([])
+    expect(talentModifiers({ [alien.id]: alien.maxRank }, 'reaver').length).toBeGreaterThan(0)
   })
 })
 
@@ -123,11 +231,27 @@ describe('очки талантов', () => {
     expect(availablePoints(after)).toBe(3)
   })
 
-  it('уровень растёт — очки капают', () => {
-    let s = hero(TALENT_FIRST_LEVEL - 1)
-    expect(availablePoints(s)).toBe(0)
-    s = ensureStats({ ...s, level: s.level.plus(3), statsDirty: true })
-    expect(availablePoints(s)).toBe(3)
+  it('за весь путь хватает на одну ветку целиком и на заход во вторую', () => {
+    // Это и есть цена выбора: ОДНА ветка закрывается целиком, на вторую
+    // остаётся заход до середины, а на третью не остаётся ничего. Хватило бы
+    // на две ветки — капстоуны перестали бы быть выбором.
+    const total = earnedPoints(new Decimal(LEVEL_CAP))
+    expect(total).toBeGreaterThan(BRANCH_DEPTH)
+    expect(total).toBeLessThan(BRANCH_DEPTH * 2)
+
+    const capped = hero(LEVEL_CAP)
+    const full = fillBranch(capped, WRATH)
+    expect(spentInBranch(full.talents, WRATH)).toBe(BRANCH_DEPTH)
+    // И капстоун взят: последний этаж — это то, ради чего ветка добивается.
+    const capstone = talentsInBranch(WRATH)[BRANCH_ROWS - 1]
+    expect(rankOf(full.talents, capstone.id)).toBe(1)
+
+    // Остаток уходит во вторую ветку — и до её капстоуна не дотягивает.
+    const both = fillBranch(full, BULWARK, availablePoints(full))
+    expect(availablePoints(both)).toBe(0)
+    expect(spentInBranch(both.talents, BULWARK)).toBe(total - BRANCH_DEPTH)
+    const secondCapstone = talentsInBranch(BULWARK)[BRANCH_ROWS - 1]
+    expect(rankOf(both.talents, secondCapstone.id)).toBe(0)
   })
 })
 
@@ -155,14 +279,14 @@ describe('правила вложения', () => {
 
     // Вложили ровно сколько нужно — открылось.
     const opened = invest(s, EDGE.id, EYE.requiredPointsInBranch)
-    expect(spentInBranch(opened.talents, 'fury')).toBe(EYE.requiredPointsInBranch)
+    expect(spentInBranch(opened.talents, WRATH)).toBe(EYE.requiredPointsInBranch)
     expect(talentStatus(opened, EYE).canInvest).toBe(true)
   })
 
   it('очки чужой ветки не открывают ряд', () => {
     const s = invest(hero(TALENT_FIRST_LEVEL + 20), HIDE.id, HIDE.maxRank)
-    expect(spentInBranch(s.talents, 'endurance')).toBe(HIDE.maxRank)
-    expect(spentInBranch(s.talents, 'fury')).toBe(0)
+    expect(spentInBranch(s.talents, BULWARK)).toBe(HIDE.maxRank)
+    expect(spentInBranch(s.talents, WRATH)).toBe(0)
     expect(talentStatus(s, EYE)).toMatchObject({ canInvest: false, reason: 'branch-locked' })
   })
 
@@ -178,16 +302,16 @@ describe('эффекты талантов', () => {
     const one = invest(bare, EDGE.id, 1)
     const three = invest(bare, EDGE.id, 3)
     const ratio = (s: GameState) => s.stats.attackPower.div(bare.stats.attackPower).toNumber()
-    // +2.5% за ранг, аддитивно внутри ступени percent.
-    expect(ratio(one)).toBeCloseTo(1.025, 9)
-    expect(ratio(three)).toBeCloseTo(1.075, 9)
+    const step = one.stats.attackPower.div(bare.stats.attackPower).minus(1).toNumber()
+    expect(step).toBeGreaterThan(0)
+    // Аддитивно внутри ступени percent: три ранга — ровно три шага.
+    expect(ratio(three)).toBeCloseTo(1 + step * 3, 9)
   })
 
   it('source модификатора — talent:<id>, как требует раскладка статов', () => {
-    const mods = talentModifiers({ [EDGE.id]: 2 })
+    const mods = talentModifiers({ [EDGE.id]: 2 }, 'warden')
     expect(mods.length).toBeGreaterThan(0)
     expect(mods.every((m) => m.source === `talent:${EDGE.id}`)).toBe(true)
-    expect(mods[0].value.eq(new Decimal(0.025).times(2))).toBe(true)
   })
 
   it('талант второй ветки поднимает запас здоровья', () => {
@@ -197,13 +321,17 @@ describe('эффекты талантов', () => {
   })
 
   it('флаг поднимается с первого ранга и не раньше', () => {
-    const s = hero(TALENT_FIRST_LEVEL + 20)
+    const s = hero(LEVEL_CAP)
     expect(talentFlags(s.talents).size).toBe(0)
-    expect(talentFlags(fillBranch(s, 'fury').talents).has('quick-strike-bleeds')).toBe(true)
+    // Первый поворот — пятый этаж, и он требует 20 очков в ветке.
+    const before = fillBranch(s, WRATH, 20)
+    expect(talentFlags(before.talents).size).toBe(0)
+    const after = reachRow(s, WRATH, CONCEPT_ROWS[0])
+    expect(talentFlags(after.talents).has('ability-learns-effect')).toBe(true)
   })
 
-  it('«Рваный выпад» учит Скорый выпад накладывать урон по времени', () => {
-    const base = hero(TALENT_FIRST_LEVEL + 20, {
+  it('первый поворот учит умение накладывать урон по времени', () => {
+    const base = hero(LEVEL_CAP, {
       currentMana: new Decimal(500),
       abilitySettings: manualOnlySettings(),
     })
@@ -211,39 +339,88 @@ describe('эффекты талантов', () => {
     const plain = useAbility(base, 'quick-strike', () => 1, () => {})
     expect(plain.activeEffects).toEqual([])
 
-    const talented = fillBranch(base, 'fury')
+    const talented = reachRow(base, WRATH, CONCEPT_ROWS[0])
     const bleeding = useAbility(talented, 'quick-strike', () => 1, () => {})
     expect(bleeding.activeEffects).toHaveLength(1)
     expect(bleeding.activeEffects[0].abilityId).toBe('quick-strike')
     expect(bleeding.activeEffects[0].damagePerTick.gt(0)).toBe(true)
   })
 
-  it('«Скорое возвращение» вдвое сокращает простой после смерти', () => {
-    const s = hero(TALENT_FIRST_LEVEL + 20)
+  it('второй поворот ветки живучести сокращает простой после смерти', () => {
+    const s = hero(LEVEL_CAP)
     expect(reviveMultiplier(s.talents)).toBe(1)
-    const swift = fillBranch(s, 'endurance')
-    expect(reviveMultiplier(swift.talents)).toBe(0.5)
+    const swift = reachRow(s, BULWARK, CONCEPT_ROWS[1])
+    expect(reviveMultiplier(swift.talents)).toBeLessThan(1)
 
     // Проверяем на живом тике: герой с нулевым HP уходит в простой.
     // Порог привала снят намеренно — тест про воскрешение, а с порогом герой
-    // ушёл бы отдыхать и до смерти не дожил.
-    // statsDirty обязателен: порог привала входит в конвейер базой стата
-    // restThreshold, и без пересчёта герой ушёл бы отдыхать по старому порогу.
+    // ушёл бы отдыхать и до смерти не дожил. statsDirty обязателен: порог
+    // входит в конвейер базой стата restThreshold.
     const dying: GameState = ensureStats({
       ...swift,
       restHpThreshold: 0,
       restResourceThreshold: 0,
       statsDirty: true,
       currentHp: new Decimal(0.01),
-      monster: { ...swift.monster, damageMin: new Decimal(1e6), damageMax: new Decimal(1e6) },
+      monster: { ...swift.monster, damageMin: new Decimal(1e9), damageMax: new Decimal(1e9) },
     })
     let dead = dying
     for (let i = 0; i < 40 && dead.heroState !== 'dead'; i++) {
       dead = tick(dead, STEP_MS, () => 1, () => {})
     }
     expect(dead.heroState).toBe('dead')
-    expect(dead.reviveMsLeft).toBeLessThanOrEqual(REVIVE_DELAY_MS * 0.5)
-    expect(dead.reviveMsLeft).toBeGreaterThan(REVIVE_DELAY_MS * 0.4)
+    const expected = REVIVE_DELAY_MS * reviveMultiplier(swift.talents)
+    expect(dead.reviveMsLeft).toBeLessThanOrEqual(expected)
+    expect(dead.reviveMsLeft).toBeGreaterThan(expected * 0.8)
+  })
+
+  it('капстоун ветки урона даёт умению второй заряд', () => {
+    // ДВА удара подряд, пока откат первого ещё идёт: это и есть «заряды
+    // копятся по одному», а не «кулдаун снят». Умение стоит в очереди на
+    // замах, поэтому проверяется через consumeQueuedAbility — тем же путём,
+    // которым его применяет бой.
+    const tough = hero(LEVEL_CAP)
+    // Моб с огромным запасом: на сотом уровне обычный падает с первого удара,
+    // и второй заряд было бы некуда девать.
+    const base: GameState = {
+      ...tough,
+      currentMana: new Decimal(1e6),
+      abilitySettings: manualOnlySettings(),
+      monster: { ...tough.monster, maxHp: new Decimal(1e12), currentHp: new Decimal(1e12) },
+    }
+    const full = reachRow(base, WRATH, CONCEPT_ROWS[2])
+    const charged = TALENT_BY_ID['wrath-second-swing']
+    expect(rankOf(full.talents, charged.id)).toBe(1)
+    const ability = ABILITY_BY_ID['shattering-blow']
+    expect(maxCharges(full, ability)).toBe(2)
+
+    const queued = useAbility(full, ability.id, () => 1, () => {})
+    expect(queued.queuedAbilityId).toBe(ability.id)
+    const once = consumeQueuedAbility(queued, () => 1, () => {})!
+    expect(once).not.toBeNull()
+    expect(once.abilityCooldownsMs[ability.id]).toBeGreaterThan(0)
+    expect(chargesLeft(once, ability)).toBe(1)
+
+    // Откат идёт, а умение всё равно доступно: остался второй заряд.
+    expect(abilityStatus(once, ability).usable).toBe(true)
+    const queuedAgain = useAbility(once, ability.id, () => 1, () => {})
+    const twice = consumeQueuedAbility(queuedAgain, () => 1, () => {})!
+    expect(twice.monster.currentHp.lt(once.monster.currentHp)).toBe(true)
+    expect(chargesLeft(twice, ability)).toBe(0)
+    // А третьего нет: зарядов было два.
+    expect(abilityStatus(twice, ability)).toMatchObject({ usable: false, reason: 'cooldown' })
+  })
+})
+
+describe('fillBranchRanks — заполнение ветки для прогонов', () => {
+  it('раскладывает очки по этажам сверху вниз и не превышает потолок', () => {
+    const ranks = fillBranchRanks(WRATH, 21)
+    const total = Object.values(ranks).reduce((n, r) => n + r, 0)
+    expect(total).toBe(21)
+    for (const [id, rank] of Object.entries(ranks)) {
+      expect(rank, id).toBeLessThanOrEqual(TALENT_BY_ID[id].maxRank)
+    }
+    expect(Object.values(fillBranchRanks(WRATH, 1000)).reduce((n, r) => n + r, 0)).toBe(BRANCH_DEPTH)
   })
 })
 
@@ -297,11 +474,11 @@ describe('порядок причин отказа', () => {
   it('закрытая ветка объясняется раньше нехватки очков', () => {
     // Очков нет И ветка закрыта — игроку важнее узнать про ветку.
     const s = hero(TALENT_FIRST_LEVEL - 1)
-    expect(talentStatus(s, EYE as TalentDef).reason).toBe('branch-locked')
+    expect(talentStatus(s, EYE).reason).toBe('branch-locked')
   })
 
   it('потолок ранга объясняется раньше нехватки очков', () => {
-    const s = invest(hero(TALENT_FIRST_LEVEL + 4), EDGE.id, 5)
+    const s = invest(hero(TALENT_FIRST_LEVEL + 5), EDGE.id, EDGE.maxRank)
     expect(availablePoints(s)).toBe(0)
     expect(talentStatus(s, EDGE).reason).toBe('max-rank')
   })
@@ -353,7 +530,8 @@ describe('ускорение: талант и предмет неразличи�
   it('ни один талант дерева не трогает weaponSpeed', () => {
     // Защита правила на данных: талант может ускорять героя только через haste.
     for (const talent of TALENTS) {
-      const mods = talentModifiers({ [talent.id]: talent.maxRank })
+      const branch = BRANCHES.find((b) => b.id === talent.branch)!
+      const mods = talentModifiers({ [talent.id]: talent.maxRank }, branch.classId)
       expect(mods.filter((m) => m.stat === 'weaponSpeed')).toEqual([])
     }
   })

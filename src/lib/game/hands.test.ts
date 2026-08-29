@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest'
 import { Decimal } from './numbers'
 import { STEP_MS } from './loop'
-import { createInitialState, manualOnlySettings, type GameState } from './state'
+import { createInitialState, emptyEquipment, manualOnlySettings, type GameState } from './state'
 import { ensureStats } from './stats'
 import { tick } from './tick'
 import { expectedSwingDamage, hasOffhand, rollBlock } from './combat'
@@ -15,6 +15,18 @@ import { OFFHAND_PENALTY } from '../data/balance'
 import { ONE_HANDED, SHIELDS, WEAPONS } from '../data/items'
 import type { WeaponTemplate } from '../data/items'
 import type { AttackEvent, Item } from '../types'
+
+// Голый герой: стартовый комплект снят. Эти тесты про КОНВЕЙЕР и формулы,
+// а не про то, во что игра одевает новобранца, — база должна быть чистой,
+// иначе они мерили бы ещё и стартовые вещи.
+function bareHero(seed = 1): GameState {
+  return ensureStats({
+    ...createInitialState(seed),
+    equipment: emptyEquipment(),
+    statsDirty: true,
+  })
+}
+
 
 const HALF = () => 0.5
 
@@ -54,7 +66,7 @@ function shield(): Item {
 // Герой на манекене: моб с огромным запасом HP и без урона. Бой не кончается,
 // значит счёт ударов за минуту меряет ровно таймеры рук.
 function dummy(patch: Partial<GameState> = {}): GameState {
-  const base = createInitialState(1)
+  const base = bareHero(1)
   return ensureStats({
     ...base,
     abilitySettings: manualOnlySettings(),
@@ -82,7 +94,7 @@ function swingsOver(state: GameState, ms: number): AttackEvent[] {
 describe('таймеры рук идут независимо', () => {
   const main = weapon(ONE_HANDED[0], 'mainHand') // 1.4 c
   const off = weapon(ONE_HANDED[1], 'offHand') // 2.2 c
-  const dual = dummy({ equipment: { ...createInitialState(1).equipment, mainHand: main, offHand: off } })
+  const dual = dummy({ equipment: { ...bareHero(1).equipment, mainHand: main, offHand: off } })
 
   it('за минуту каждая рука бьёт по своей скорости', () => {
     expect(hasOffhand(dual.stats)).toBe(true)
@@ -110,7 +122,7 @@ describe('таймеры рук идут независимо', () => {
 
   it('пустая левая рука не бьёт вовсе', () => {
     const single = dummy({
-      equipment: { ...createInitialState(1).equipment, mainHand: main },
+      equipment: { ...bareHero(1).equipment, mainHand: main },
     })
     expect(hasOffhand(single.stats)).toBe(false)
     const events = swingsOver(single, 30_000)
@@ -122,7 +134,7 @@ describe('таймеры рук идут независимо', () => {
 describe('штраф левой руки', () => {
   it('удар левой равен OFFHAND_PENALTY от того же оружия в правой', () => {
     const t = ONE_HANDED[0]
-    const equipment = createInitialState(1).equipment
+    const equipment = bareHero(1).equipment
     const dual = dummy({
       equipment: { ...equipment, mainHand: weapon(t, 'mainHand'), offHand: weapon(t, 'offHand') },
     })
@@ -134,7 +146,7 @@ describe('штраф левой руки', () => {
 
   it('штраф виден и в реальных ударах, а не только в оценке', () => {
     const t = ONE_HANDED[0]
-    const equipment = createInitialState(1).equipment
+    const equipment = bareHero(1).equipment
     const dual = dummy({
       equipment: { ...equipment, mainHand: weapon(t, 'mainHand'), offHand: weapon(t, 'offHand') },
     })
@@ -148,11 +160,11 @@ describe('штраф левой руки', () => {
 
 describe('щит блокирует', () => {
   const ALWAYS = () => 0
-  const equipment = createInitialState(1).equipment
+  const equipment = bareHero(1).equipment
 
   it('блок снимает ровно blockValue, а не долю', () => {
     const s = ensureStats({
-      ...createInitialState(1),
+      ...bareHero(1),
       equipment: { ...equipment, offHand: shield() },
       statsDirty: true,
     })
@@ -165,12 +177,12 @@ describe('щит блокирует', () => {
   })
 
   it('без щита блока нет ни при каком броске', () => {
-    const bare = ensureStats({ ...createInitialState(1), statsDirty: true })
+    const bare = ensureStats({ ...bareHero(1), statsDirty: true })
     expect(rollBlock(bare.stats, new Decimal(40), ALWAYS).blocked).toBe(false)
   })
 
   it('в бою блок эмитится отдельным событием и уменьшает вход', () => {
-    const base = createInitialState(1)
+    const base = bareHero(1)
     // Моб с фиксированным ударом: разброс здесь только мешал бы.
     const hit = new Decimal(30)
     let s = ensureStats({
@@ -201,10 +213,12 @@ describe('щит блокирует', () => {
     const expected = hit.times(1 - s.stats.damageReduction).minus(s.stats.blockValue)
     expect(event.damage.eq(expected)).toBe(true)
     // Без щита событие обычное, и урона прошло ровно на blockValue больше.
-    expect(bareAfter.combatLog.some((e) => e.type === 'hurt')).toBe(true)
-    expect(
-      shieldedAfter.currentHp.minus(bareAfter.currentHp).eq(s.stats.blockValue),
-    ).toBe(true)
+    // Сравниваем СОБЫТИЯ, а не остаток HP: щит даёт ещё и живучесть, то есть
+    // меняет и запас, и потолок регена, — разница в HP мерила бы не блок.
+    const plain = bareAfter.combatLog.find((e) => e.type === 'hurt')
+    expect(plain).toBeDefined()
+    if (plain?.type !== 'hurt') throw new Error('unreachable')
+    expect(plain.damage.minus(event.damage).eq(s.stats.blockValue)).toBe(true)
   })
 
   it('щит и второй клинок исключают друг друга по стилю', () => {

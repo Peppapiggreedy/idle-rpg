@@ -4,6 +4,7 @@
   import { formatNumber, type StatId, type StatModifier } from '../game'
   import { gameState } from '../stores/game'
   import { resourceWords } from './resource'
+  import { flatText } from './statText'
 
   interface Props {
     mods: StatModifier[]
@@ -62,7 +63,7 @@
     if (mod.kind === 'percent' || PERCENT_STATS.includes(mod.stat)) {
       return `${sign}${mod.value.times(100).toFixed(mod.value.times(100).lt(10) ? 1 : 0)}% ${name}`
     }
-    return `${sign}${formatNumber(mod.value)} ${name}`
+    return `${flatText(mod.value)} ${name}`
   }
 </script>
 

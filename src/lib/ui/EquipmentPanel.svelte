@@ -3,7 +3,7 @@
   import { formatNumber, INVENTORY_SIZE } from '../game'
   import { OFFHAND_PENALTY, UNARMED } from '../data/balance'
   import { SLOT_ICONS, SLOT_IDS, SLOT_NAMES } from '../data/slots'
-  import { gameState, toggleAutoEquip, unequipSlot } from '../stores/game'
+  import { gameState, unequipSlot } from '../stores/game'
   import ItemMods from './ItemMods.svelte'
   import { RARITY_BY_ID } from '../data/rarity'
   import { Button, IconSlot, Panel, Tag } from './kit'
@@ -15,18 +15,10 @@
   const twoHanded = $derived($gameState.equipment.mainHand?.hands === 2)
 </script>
 
+<!-- Автонадевания больше нет: предметы надевает только игрок. Оно съедало
+     то самое ощущение, ради которого лут и существует, — апгрейд проходил
+     незамеченным. Что нашлось и насколько оно лучше, показывает сумка. -->
 <Panel title="Экипировка">
-  {#snippet header()}
-    <label class="auto">
-      <input
-        type="checkbox"
-        checked={$gameState.autoEquip}
-        onchange={(e) => toggleAutoEquip(e.currentTarget.checked)}
-      />
-      Надевать автоматически, если лучше
-    </label>
-  {/snippet}
-
   <div class="grid">
     {#each SLOT_IDS as slot (slot)}
       {@const item = $gameState.equipment[slot]}
@@ -76,14 +68,6 @@
 </Panel>
 
 <style>
-  .auto {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    font-size: var(--text-sm);
-    color: var(--c-text-muted);
-    cursor: pointer;
-  }
   .grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
