@@ -139,6 +139,7 @@ export interface SavePayloadV17 {
 export interface SaveStorage {
   getItem(key: string): string | null
   setItem(key: string, value: string): void
+  removeItem(key: string): void
 }
 
 export interface SaveDeps {
@@ -540,7 +541,13 @@ function handItemV14toV15(raw: unknown): unknown {
   return { ...old, slot: 'mainHand', hands: 1 }
 }
 
-const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
+/**
+ * Миграции сейва. КАЖДАЯ поднимает ровно на ОДНУ версию: цепочка гоняется в
+ * цикле, и шаг через ступеньку молча пропускает всё, что лежало между ними.
+ * Экспортируется ради теста, который это и стережёт, — однажды 14-я миграция
+ * прыгнула сразу на 17 и лишила старых героев и класса, и мешка материалов.
+ */
+export const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
   // 16 -> 17: появились профессии. Мешок материалов у старого героя пуст —
   // собирать он начнёт с ближайшего убитого моба. Прогресс не затронут.
   16: (raw) => ({ ...raw, version: 17, materials: {}, restSpeedupSource: null }),
@@ -560,7 +567,7 @@ const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
     delete equipment.weapon
     return {
       ...raw,
-      version: 17,
+      version: 15,
       inventory: Array.isArray(raw.inventory) ? raw.inventory.map(handItemV14toV15) : [],
       equipment: {
         ...equipment,
@@ -760,6 +767,17 @@ export function saveGame(state: GameState, deps: SaveDeps = {}): void {
   const storage = deps.storage ?? defaultStorage()
   const now = deps.now ?? Date.now
   storage.setItem(SAVE_KEY, JSON.stringify(payloadFromState(state, now())))
+}
+
+/**
+ * Стирает сейв. Именно СТИРАЕТ, а не перезаписывает пустым: перезаписанный
+ * сейв — это по-прежнему сейв, и следующая загрузка сочтёт игру начатой.
+ * Для «начать заново» разница принципиальная — с ней возвращается выбор
+ * класса, без неё игрок молча остаётся тем, кем был.
+ */
+export function clearSave(deps: SaveDeps = {}): void {
+  const storage = deps.storage ?? defaultStorage()
+  storage.removeItem(SAVE_KEY)
 }
 
 // Причины отказа загрузки; текст для игрока по коду рендерит UI.

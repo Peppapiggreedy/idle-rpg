@@ -21,6 +21,7 @@ import {
   decodeSaveString,
   encodeSaveString,
   loadGame,
+  MIGRATIONS,
   migrateSave,
   stateFromPayload,
   type SaveStorage,
@@ -33,7 +34,11 @@ function fixture(name: string): string {
 
 function storageWith(raw: string): SaveStorage {
   const data = new Map<string, string>([[SAVE_KEY, raw]])
-  return { getItem: (k) => data.get(k) ?? null, setItem: (k, v) => void data.set(k, v) }
+  return {
+    getItem: (k) => data.get(k) ?? null,
+    setItem: (k, v) => void data.set(k, v),
+    removeItem: (k) => void data.delete(k),
+  }
 }
 
 function loadFixture(name: string): GameState {
@@ -68,6 +73,30 @@ describe('фикстуры сейвов', () => {
     expect(payload).not.toBeNull()
     expect(payload!.version).toBe(SAVE_VERSION)
   })
+
+  // ЭТОТ ТЕСТ ПОЯВИЛСЯ ИЗ ПОЛОМКИ. Проверки «дошло до текущей версии» мало:
+  // миграция 14-й версии возвращала сразу version: 17 и перепрыгивала через
+  // 15→16 (классы) и 16→17 (материалы). Номер сходился, а поля не появлялись —
+  // старый герой оставался без classId и без мешка, и держалось всё это на
+  // запасных значениях в stateFromPayload.
+  it('каждая миграция поднимает ровно на одну версию', () => {
+    for (const [from, migrate] of Object.entries(MIGRATIONS)) {
+      const version = Number(from)
+      const next = migrate({ version } as never)
+      expect(next.version, `миграция ${version}`).toBe(version + 1)
+    }
+  })
+
+  // И то же самое по сути, но на настоящих данных: поля, которые добавляют
+  // поздние миграции, обязаны появиться у сейва любой давности.
+  it.each([['save-v13.json'], ['save-v14.json'], ['save-v15.json']])(
+    '%s получает и класс, и мешок материалов',
+    (name) => {
+      const payload = migrateSave(JSON.parse(fixture(name)))!
+      expect(CLASS_BY_ID[payload.classId]).toBeDefined()
+      expect(payload.materials).toBeDefined()
+    },
+  )
 
   it('save-v0: доверсионные поля (xp, damagePerSecond) не потеряны', () => {
     const s = loadFixture('save-v0.json')
