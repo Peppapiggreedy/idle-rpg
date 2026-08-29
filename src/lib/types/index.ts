@@ -3,6 +3,7 @@ import type { IconName } from '../ui/icons/manifest'
 // Игровые величины — Decimal; служебные (version, lastTimestamp, счётчики) — number.
 import type { Decimal } from '../game/numbers'
 import type { StatModifier } from '../game/stats'
+import type { DungeonDifficulty } from '../data/dungeons'
 import type { SlotId } from '../data/slots'
 
 export interface Monster {
@@ -44,6 +45,10 @@ export interface Item {
    *  зачарования В mods НЕ КОПИРУЮТСЯ — их разворачивает enchantModifiers
    *  внутри конвейера, иначе снять зачарование было бы нечем. */
   enchantId?: string
+  /** Прок вещи (data/procs.ts). Сама механика живёт в game/combat.ts, предмет
+   *  только называет id: так один прок нельзя описать дважды по-разному,
+   *  а внутренний кулдаун у него один на всю игру. */
+  procId?: string
 }
 
 // Структурированные события боя для лога. Логика их эмитит,
@@ -70,9 +75,22 @@ export type CombatEvent =
   // Смена зоны: 'travel' — по воле игрока, 'retreat' — откат после смерти.
   | { type: 'zone'; zoneName: string; reason: 'travel' | 'retreat' }
   // Данж: очередной босс цепочки, выход наружу, полное прохождение.
-  | { type: 'boss'; bossName: string; index: number; total: number }
+  | {
+      type: 'boss'
+      bossName: string
+      index: number
+      total: number
+      difficulty: DungeonDifficulty
+    }
   | { type: 'dungeon-exit'; defeated: boolean }
-  | { type: 'dungeon-clear'; dungeonName: string; firstClear: boolean }
+  | {
+      type: 'dungeon-clear'
+      dungeonName: string
+      difficulty: DungeonDifficulty
+      firstClear: boolean
+    }
+  // Способность героического босса сработала. `damage` есть только у отдачи.
+  | { type: 'boss-ability'; abilityId: string; damage?: Decimal }
   | { type: 'enrage'; bossName: string; multiplier: number }
   // Привал: управляемая пауза по порогу. 'interrupted' — игрок прервал сам,
   // и восстановление вышло частичным.
@@ -96,6 +114,8 @@ export type CombatEvent =
   // Распыление и зачарование: id и предмет, текст рендерит UI.
   | { type: 'disenchant'; item: Item; dust: Decimal }
   | { type: 'enchant'; itemName: string; enchantId: string }
+  // Прок: что сработало и на сколько. Текст рендерит UI.
+  | { type: 'proc'; procId: string; effect: 'damage' | 'heal'; amount: Decimal }
   | { type: 'rest-start' }
   | { type: 'rest-end'; interrupted: boolean }
 
@@ -103,6 +123,9 @@ export type CombatEvent =
 // продолжить после перезагрузки, но не после смерти внутри.
 export interface DungeonRun {
   dungeonId: string
+  /** Сложность забега. Обычная и героическая — один и тот же данж и один и
+   *  тот же id, но разные числа и разные достижения. */
+  difficulty: DungeonDifficulty
   bossIndex: number
   fightMs: number // сколько идёт бой с текущим боссом; от него ярость
 }
@@ -120,5 +143,8 @@ export interface AttackEvent {
    * эффектом кормило бы ресурс втрое лучше остальных.
    */
   overTime?: boolean
+  /** Сработавший прок (data/procs.ts). Удар прока замахом НЕ считается —
+   *  ресурс копится от замахов героя, а не от того, что сработало само. */
+  procId?: string
   timestamp: number // игровое время (playtimeMs) на момент удара
 }

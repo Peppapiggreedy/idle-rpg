@@ -11,7 +11,13 @@
 // Иначе тест мерил бы не ту игру, в которую играют.
 import { describe, expect, it } from 'vitest'
 import { RESPAWN_DELAY_MS } from '../../data/balance'
-import { DUNGEONS, buildBoss, type BossDef } from '../../data/dungeons'
+import {
+  ALL_DUNGEONS,
+  DUNGEONS,
+  HEROIC_DUNGEONS,
+  buildBoss,
+  type BossDef,
+} from '../../data/dungeons'
 import { REAGENTS } from '../../data/reagents'
 import { zoneForMonsterLevel } from '../../data/zones'
 import { estimateCombatRate, expectedMonsterDamage } from '../combat'
@@ -92,9 +98,13 @@ describe('лестница данжей', () => {
   it('восемь ступеней: тиры подряд, вход каждые десять уровней', () => {
     expect(DUNGEONS.map((d) => d.tier)).toEqual([1, 2, 3, 4, 5, 6, 7, 8])
     expect(DUNGEONS.map((d) => d.unlockRequirement)).toEqual([20, 30, 40, 50, 60, 70, 80, 90])
-    // Реагент на каждый тир, и ровно один.
-    expect(REAGENTS.map((r) => r.tier)).toEqual(DUNGEONS.map((d) => d.tier))
-    expect(new Set(DUNGEONS.map((d) => d.reagentId)).size).toBe(DUNGEONS.length)
+    // Реагент на каждый тир КАЖДОЙ сложности, и ровно один: у героики свой,
+    // иначе ходить в неё было бы незачем.
+    const normalReagents = REAGENTS.filter((r) => r.difficulty === 'normal')
+    const heroicReagents = REAGENTS.filter((r) => r.difficulty === 'heroic')
+    expect(normalReagents.map((r) => r.tier)).toEqual(DUNGEONS.map((d) => d.tier))
+    expect(heroicReagents.map((r) => r.tier)).toEqual(HEROIC_DUNGEONS.map((d) => d.tier))
+    expect(new Set(ALL_DUNGEONS.map((d) => d.reagentId)).size).toBe(ALL_DUNGEONS.length)
   })
 
   it('таблица цепочек', () => {
@@ -112,7 +122,10 @@ describe('лестница данжей', () => {
     })
     console.table(rows)
     expect(rows).toHaveLength(8)
-  })
+    // Своя рамка времени: таблица гоняет оценку боя по всем восьми цепочкам,
+    // и на общем прогоне вместе с остальными файлами она не укладывалась
+    // в стандартные пять секунд.
+  }, 120_000)
 
   it.each(DUNGEONS.map((d) => [`${d.tier}. ${d.name}`, d] as const))(
     '%s: обычные удары герой переживает',

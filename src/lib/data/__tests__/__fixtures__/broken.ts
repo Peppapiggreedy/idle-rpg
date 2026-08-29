@@ -345,6 +345,34 @@ export function brokenCases(): BrokenCase[] {
       expect: [first(real.enchants).id, 'не подходит ни одному слоту'],
     },
     {
+      title: 'прок без внутреннего кулдауна — темп рос бы вместе с ускорением',
+      content: {
+        ...real,
+        procs: patch(real.procs, first(real.procs).id, { internalCooldownMs: 0 }),
+      },
+      expect: [first(real.procs).id, 'internalCooldownMs'],
+    },
+    {
+      title: 'прок срабатывает с нулевым шансом — он не сработает никогда',
+      content: {
+        ...real,
+        procs: patch(real.procs, first(real.procs).id, { chance: 0 }),
+      },
+      expect: [first(real.procs).id, 'chance'],
+    },
+    {
+      title: 'героический босс ускоряется прибавкой ниже нуля',
+      content: {
+        ...real,
+        bossAbilities: real.bossAbilities.map((a) =>
+          a.effect.kind === 'frenzy-below-hp'
+            ? { ...a, effect: { ...a.effect, hasteBonus: 0 } }
+            : a,
+        ),
+      },
+      expect: ['hasteBonus'],
+    },
+    {
       title: 'класс ссылается на несуществующее умение',
       content: {
         ...real,

@@ -21,6 +21,9 @@ import type { ClassDef } from '../classes'
 import type { MaterialDef } from '../materials'
 import type { HerbDef } from '../herbs'
 import type { EnchantDef } from '../enchants'
+import { clearKey } from '../dungeons'
+import type { ProcDef } from '../procs'
+import type { BossAbilityDef } from '../heroic'
 import { MECHANIC_IDS, type ProgressionStep } from '../progression'
 import type { ReagentDef } from '../reagents'
 import type { DungeonSceneKey } from '../scenery'
@@ -51,6 +54,8 @@ export interface Content {
   abilities: readonly AbilityDef[]
   herbs: readonly HerbDef[]
   enchants: readonly EnchantDef[]
+  procs: readonly ProcDef[]
+  bossAbilities: readonly BossAbilityDef[]
   /** Сколько пыли даёт распыление каждого тира (DUST_BY_RARITY). */
   dustByRarity: Record<string, number>
   /** Статы, где зачарованию разрешена плоская прибавка (ENCHANT_FLAT_STATS). */
@@ -696,7 +701,9 @@ export const DUNGEON_SCHEMA: EntitySchema<DungeonDef> = {
   kind: 'данж',
   file: 'data/dungeons.ts',
   entities: (c) => c.dungeons,
-  id: (d) => d.id,
+  // Единица данжа — ПАРА (данж, сложность): обычная и героическая версии
+  // делят id, но это две разные цепочки с разными числами и достижениями.
+  id: (d) => clearKey(d.id, d.difficulty),
   name: (d) => d.name,
   icon: (d) => d.icon,
   numbers: [
@@ -1073,16 +1080,18 @@ export const RECIPE_SCHEMA: EntitySchema<RecipeDef> = {
       'нет ни одного материала на входе — рецепт собирается из ничего (data/recipes.ts)',
     )
     for (const input of recipe.inputs ?? []) {
-      // Вход бывает и материалом с моба, и травой из зоны: у них разные входы
-      // (убийство против времени), но в рецепте они лежат одинаково.
+      // Вход бывает трёх видов: материал с моба, трава из зоны и реагент
+      // босса. Входы у них разные (бросок, время, цепочка боссов), но в
+      // рецепте они лежат одинаково.
       const knownInput =
         content.materials.some((m) => m.id === input.materialId) ||
-        content.herbs.some((h) => h.id === input.materialId)
+        content.herbs.some((h) => h.id === input.materialId) ||
+        content.reagents.some((r) => r.id === input.materialId)
       report.need(
         knownInput,
         where,
         `требует материал «${input.materialId}», которого нет ни в data/materials.ts, ` +
-          'ни в data/herbs.ts',
+          'ни в data/herbs.ts, ни в data/reagents.ts',
       )
       report.need(
         Number.isInteger(input.count) && input.count > 0,
@@ -1329,6 +1338,158 @@ export const ENCHANT_SCHEMA: EntitySchema<EnchantDef> = {
             '(ENCHANT_FLAT_STATS в data/enchants.ts)',
         )
       }
+    }
+  },
+}
+
+export const PROC_SCHEMA: EntitySchema<ProcDef> = {
+  kind: 'прок',
+  file: 'data/procs.ts',
+  entities: (c) => c.procs,
+  id: (p) => p.id,
+  name: (p) => p.name,
+  icon: (p) => p.icon,
+  numbers: [
+    {
+      field: 'chance',
+      get: (p) => p.chance,
+      min: 0,
+      exclusiveMin: true,
+      max: 1,
+      why: 'вероятность на удар: ноль означал бы прок, который не срабатывает никогда',
+    },
+    {
+      field: 'internalCooldownMs',
+      get: (p) => p.internalCooldownMs,
+      min: 1,
+      max: 120000,
+      integer: true,
+      why:
+        'внутренний кулдаун обязателен: без потолка темп прока рос бы вместе с ' +
+        'ускорением, и быстрое оружие выигрывало бы дважды',
+    },
+  ],
+  extra: (proc, content, report) => {
+    const where = `прок ${proc.id}`
+    // Прок обязан кому-то принадлежать: прок без вещи — мёртвые числа.
+    report.need(
+      content.recipes.some((r) => r.output.kind === 'item' && r.output.procId === proc.id),
+      where,
+      'ни один рецепт не выдаёт вещь с этим проком — он недостижим (data/recipes.ts)',
+    )
+    if (proc.effect.kind === 'damage') {
+      checkNumber(
+        proc.effect,
+        {
+          field: 'effect.weaponDamagePercent',
+          get: (e) => e.weaponDamagePercent.toNumber(),
+          min: 0,
+          exclusiveMin: true,
+          max: 10,
+          why:
+            'урон прока — ДОЛЯ удара оружия, как у умений: своей формулы у него нет, ' +
+            'иначе он перестал бы масштабироваться от оружия',
+        },
+        where,
+        'data/procs.ts',
+        report,
+      )
+    } else {
+      checkNumber(
+        proc.effect,
+        {
+          field: 'effect.healShare',
+          get: (e) => e.healShare,
+          min: 0,
+          exclusiveMin: true,
+          max: 1,
+          why: 'доля запаса здоровья за срабатывание',
+        },
+        where,
+        'data/procs.ts',
+        report,
+      )
+    }
+  },
+}
+
+export const BOSS_ABILITY_SCHEMA: EntitySchema<BossAbilityDef> = {
+  kind: 'способность босса',
+  file: 'data/heroic.ts',
+  entities: (c) => c.bossAbilities,
+  id: (a) => a.id,
+  name: (a) => a.name,
+  icon: (a) => a.icon,
+  numbers: [],
+  extra: (ability, content, report) => {
+    const where = `способность босса ${ability.id}`
+    // Способность, которую никто не носит, — мёртвые числа.
+    report.need(
+      content.dungeons.some((d) => d.bosses.some((b) => b.abilityId === ability.id)),
+      where,
+      'её не носит ни один босс — недостижимый контент (data/dungeons.ts)',
+    )
+    const effect = ability.effect
+    if (effect.kind === 'dispel') {
+      checkNumber(
+        effect,
+        {
+          field: 'effect.intervalSec',
+          get: (e) => e.intervalSec,
+          min: 1,
+          max: 120,
+          why: 'период рассеивания: чаще секунды это не механика, а стена',
+        },
+        where,
+        'data/heroic.ts',
+        report,
+      )
+    } else if (effect.kind === 'frenzy-below-hp') {
+      checkNumber(
+        effect,
+        {
+          field: 'effect.hpShare',
+          get: (e) => e.hpShare,
+          min: 0,
+          exclusiveMin: true,
+          max: 1,
+          why: 'доля здоровья босса, ниже которой он ускоряется',
+        },
+        where,
+        'data/heroic.ts',
+        report,
+      )
+      checkNumber(
+        effect,
+        {
+          field: 'effect.hasteBonus',
+          get: (e) => e.hasteBonus,
+          min: 0,
+          exclusiveMin: true,
+          max: 3,
+          why:
+            'ускорение в ДОЛЯХ: плоская правка времени замаха увела бы его в ноль — ' +
+            'то же правило, что и у героя',
+        },
+        where,
+        'data/heroic.ts',
+        report,
+      )
+    } else {
+      checkNumber(
+        effect,
+        {
+          field: 'effect.hpSharePerResource',
+          get: (e) => e.hpSharePerResource,
+          min: 0,
+          exclusiveMin: true,
+          max: 1,
+          why: 'доля запаса HP за полностью потраченный запас ресурса',
+        },
+        where,
+        'data/heroic.ts',
+        report,
+      )
     }
   },
 }
@@ -1636,6 +1797,8 @@ export const SCHEMAS = [
   MATERIAL_SCHEMA,
   HERB_SCHEMA,
   ENCHANT_SCHEMA,
+  PROC_SCHEMA,
+  BOSS_ABILITY_SCHEMA,
   REAGENT_SCHEMA,
   PROGRESSION_SCHEMA,
   RECIPE_SCHEMA,
@@ -1765,7 +1928,11 @@ function checkReachable(content: Content, report: Report): void {
   // входа — когда до неё доходит очередь. Дырка в тирах означала бы пропущенный
   // реагент и данж, чьи числа выведены не из своего места в лестнице; равные
   // или убывающие уровни входа — две ступени на одной высоте.
-  const ladder = [...content.dungeons].sort((a, b) => a.tier - b.tier)
+  // Лестница проверяется ПО СЛОЖНОСТЯМ отдельно: у героики свой ряд тиров и
+  // один уровень входа на все восемь — она не продолжение лестницы, а второй
+  // проход по ней, и сравнивать её ступени с обычными нечем.
+  const normal = content.dungeons.filter((d) => d.difficulty === 'normal')
+  const ladder = [...normal].sort((a, b) => a.tier - b.tier)
   ladder.forEach((dungeon, index) => {
     if (dungeon.tier !== index + 1) {
       report.add(

@@ -38,7 +38,7 @@ import {
 } from '../../data/balance'
 import { ZONES, ZONE_BY_ID, zoneMonsterVariants, type Zone } from '../../data/zones'
 import { ONE_HANDED, WEAPONS } from '../../data/items'
-import { BRANCHES } from '../../data/talents'
+import { BRANCHES, type BranchDef, type BranchStyle } from '../../data/talents'
 import { CLASSES } from '../../data/classes'
 import { ABILITY_BY_ID } from '../../data/abilities'
 
@@ -338,8 +338,19 @@ describe('стиль боя', () => {
     // баланса, а следствие шага 35: привал переехал между боями, и в тяжёлой
     // зоне живучесть напрямую превращается во время под мобами. Платит щит
     // именно УРОНОМ — это и проверяется отдельно, ниже и выше по файлу.
-    const damageLoss = 1 - meanAuto(shield).div(meanAuto(dual)).toNumber()
-    log(`Щит стоит ${pct(damageLoss)} урона автоатаки.`)
+    // Урон нормируется на ВРЕМЯ ПОД МОБАМИ, а не берётся суммой за прогон:
+    // щит поднимает живучесть, а значит и время в бою, и суммарный урон со
+    // щитом может оказаться больше при заметно меньшем уроне в секунду.
+    // Сравнивать суммы значило бы мерить живучесть под видом урона.
+    const autoRate = (runs: SimResult[]): Decimal =>
+      runs
+        .reduce(
+          (sum, r) => sum.plus(r.autoDamage.div(Math.max(r.uptime - r.restShare, 1e-9))),
+          new Decimal(0),
+        )
+        .div(runs.length)
+    const damageLoss = 1 - autoRate(shield).div(autoRate(dual)).toNumber()
+    log(`Щит стоит ${pct(damageLoss)} урона автоатаки в секунду боя.`)
     expect(damageLoss).toBeGreaterThan(0.15)
   }, 300_000)
 
@@ -444,10 +455,12 @@ describe('ветки талантов', () => {
   const { branchHours, branchLevel, branchSpreadLimit, branchRestShareMax, weaponSeeds } =
     BALANCE_PRESET
   const points = branchPoints(branchLevel)
-  const BRANCH_KIND: Record<string, string> = {
-    fury: 'урон',
-    endurance: 'живучесть',
-    composure: 'автономность',
+  // Название стиля берётся ИЗ ДАННЫХ ветки, а не из таблицы по id: веток
+  // шесть, и таблица разъехалась бы с деревом при первой же правке.
+  const STYLE_NAMES_RU: Record<BranchStyle, string> = {
+    damage: 'урон',
+    survival: 'живучесть',
+    autonomy: 'автономность',
   }
 
   // ЧЕМ МЕРИТЬ. Взять «урон в секунду» напрямую нельзя: ветка живучести не
@@ -460,7 +473,10 @@ describe('ветки талантов', () => {
   // каждая ветка играет СВОЮ лучшую зону — самую глубокую, где она ещё не
   // умирает и не просиживает на привалах больше четверти времени. Ровно так
   // и играет живой игрок.
-  function runBranch(branch: string, zoneId: string): SimResult[] {
+  // Ветка играется ГЕРОЕМ СВОЕГО КЛАССА: дерево привязано к классу, и
+  // прогнать ветку изувера на страже значило бы прогнать её впустую —
+  // конвейер статов чужие ранги игнорирует.
+  function runBranch(branch: BranchDef, zoneId: string): SimResult[] {
     return weaponSeeds.map((seed) =>
       simulate({
         hours: branchHours,
@@ -468,8 +484,9 @@ describe('ветки талантов', () => {
         seed,
         freezeLevel: true,
         build: {
-          ...referenceBuild(branchLevel),
-          talents: pureBranchTalents(branch as never, points),
+          ...referenceBuild(branchLevel, branch.classId),
+          classId: branch.classId,
+          talents: pureBranchTalents(branch.id, points),
         },
       }),
     )
@@ -483,7 +500,7 @@ describe('ветки талантов', () => {
   /** Самая глубокая ОТКРЫТАЯ зона, которую ветка тянет: без смертей и без
    *  просиживания. Вход по уровню обязателен: «какую зону тянет билд» в живой
    *  игре упирается в travelToZone, и мерить закрытые значит мерить не игру. */
-  function bestZone(branch: string): { zoneId: string; runs: SimResult[] } {
+  function bestZone(branch: BranchDef): { zoneId: string; runs: SimResult[] } {
     for (let i = ZONES.length - 1; i >= 0; i -= 1) {
       if (ZONES[i].unlockRequirement > branchLevel) continue
       const runs = runBranch(branch, ZONES[i].id)
@@ -500,52 +517,68 @@ describe('ветки талантов', () => {
         `${branchHours} ч на сид. Каждая ветка играет самую глубокую зону, которую тянет.`,
       'ветка            стиль          зона                 золота/ч   отклонение   простой',
     )
-    const rows = BRANCHES.map((branch) => ({ branch, ...bestZone(branch.id) }))
+    const rows = BRANCHES.map((branch) => ({ branch, ...bestZone(branch) }))
     const gold = rows.map((r) => mean(r.runs).toNumber())
     const average = gold.reduce((a, b) => a + b, 0) / gold.length
     rows.forEach((row, i) => {
       const idle = avg(row.runs, (r) => r.restShare + (1 - r.uptime))
       log(
-        `${row.branch.name.padEnd(16)} ${BRANCH_KIND[row.branch.id].padEnd(14)} ` +
+        `${`${row.branch.classId}/${row.branch.name}`.padEnd(24)} ` +
+          `${STYLE_NAMES_RU[row.branch.style].padEnd(14)} ` +
           `${(ZONE_BY_ID[row.zoneId]?.name ?? row.zoneId).padEnd(20)} ${gold[i].toFixed(0).padStart(8)}   ` +
           `${(((gold[i] - average) / average >= 0 ? '+' : '') + pct((gold[i] - average) / average)).padStart(10)}   ` +
           `${pct(idle).padStart(7)}`,
       )
     })
-    const spread = spreadOf(rows.map((r) => mean(r.runs)))
-    log(`Разброс ${pct(spread)} при потолке ${pct(branchSpreadLimit)}.`)
-    // Ветка, отставшая сильнее этого, — ловушка: игрок вложил очки и получил
-    // меньше, чем если бы вложил куда угодно ещё. Сброс стоит золота, так что
-    // ошибка выбора наказывает дважды.
-    expect(spread).toBeLessThanOrEqual(branchSpreadLimit)
+    // Разброс считается ВНУТРИ КЛАССА: ветки одного класса — это выбор игрока
+    // между собой, а страж против изувера — другой вопрос, и меряется он
+    // таблицей темпа, а не здесь.
+    for (const cls of CLASSES) {
+      const own = rows.filter((r) => r.branch.classId === cls.id)
+      const spread = spreadOf(own.map((r) => mean(r.runs)))
+      log(`${cls.name}: разброс ${pct(spread)} при потолке ${pct(branchSpreadLimit)}.`)
+      // Ветка, отставшая сильнее этого, — ловушка: игрок вложил очки и получил
+      // меньше, чем если бы вложил куда угодно ещё. Сброс стоит золота, так что
+      // ошибка выбора наказывает дважды.
+      expect(spread, cls.id).toBeLessThanOrEqual(branchSpreadLimit)
+    }
   }, 600_000)
 
   it('ветки различаются СТИЛЕМ, а не только числом', () => {
     // Итог сопоставим, а путь разный — иначе выбор ветки декоративен.
     // Сравниваем В ОДНОЙ зоне: здесь важно не «сколько», а «чем».
+    // И проверяется это у ОБОИХ классов: обещание стиля одно на игру.
     const zone = intendedZone(branchLevel).id
-    const fury = runBranch('fury', zone)
-    const endurance = runBranch('endurance', zone)
-    const composure = runBranch('composure', zone)
     const damage = (runs: SimResult[]) =>
       avg(runs, (r) => r.autoDamage.plus(r.abilityDamage).div(r.hours).toNumber())
-    log(
-      `В зоне ${ZONE_BY_ID[zone].name}. Урон/ч: ярость ${damage(fury).toFixed(0)}, ` +
-        `стойкость ${damage(endurance).toFixed(0)}, самообладание ${damage(composure).toFixed(0)}.`,
-    )
-    log(
-      `Доля простоя: ярость ${pct(avg(fury, (r) => r.restShare))}, ` +
-        `стойкость ${pct(avg(endurance, (r) => r.restShare))}, ` +
-        `самообладание ${pct(avg(composure, (r) => r.restShare))}.`,
-    )
-    // Ярость бьёт сильнее всех — это её обещание.
-    expect(damage(fury)).toBeGreaterThan(damage(endurance))
-    expect(damage(fury)).toBeGreaterThan(damage(composure))
-    // Стойкость меньше всех простаивает — это её обещание.
-    expect(avg(endurance, (r) => r.restShare)).toBeLessThanOrEqual(
-      avg(fury, (r) => r.restShare) + 1e-9,
-    )
-  }, 600_000)
+    for (const cls of CLASSES) {
+      const byStyle = new Map<BranchStyle, SimResult[]>()
+      for (const branch of BRANCHES.filter((b) => b.classId === cls.id)) {
+        byStyle.set(branch.style, runBranch(branch, zone))
+      }
+      const damageRuns = byStyle.get('damage')!
+      const survivalRuns = byStyle.get('survival')!
+      const autonomyRuns = byStyle.get('autonomy')!
+      log(
+        `${cls.name} в зоне ${ZONE_BY_ID[zone].name}. Урон/ч: ` +
+          `урон ${damage(damageRuns).toFixed(0)}, ` +
+          `живучесть ${damage(survivalRuns).toFixed(0)}, ` +
+          `автономность ${damage(autonomyRuns).toFixed(0)}.`,
+      )
+      log(
+        `Доля простоя: урон ${pct(avg(damageRuns, (r) => r.restShare))}, ` +
+          `живучесть ${pct(avg(survivalRuns, (r) => r.restShare))}, ` +
+          `автономность ${pct(avg(autonomyRuns, (r) => r.restShare))}.`,
+      )
+      // Ветка урона бьёт сильнее всех — это её обещание.
+      expect(damage(damageRuns), cls.id).toBeGreaterThan(damage(survivalRuns))
+      expect(damage(damageRuns), cls.id).toBeGreaterThan(damage(autonomyRuns))
+      // Ветка живучести меньше всех простаивает — это её обещание.
+      expect(avg(survivalRuns, (r) => r.restShare), cls.id).toBeLessThanOrEqual(
+        avg(damageRuns, (r) => r.restShare) + 1e-9,
+      )
+    }
+  }, 900_000)
 })
 
 // ---------------------------------------------------------------------------

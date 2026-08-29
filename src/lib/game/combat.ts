@@ -30,6 +30,8 @@ import { ABILITY_BY_ID } from '../data/abilities'
 import { classById } from '../data/classes'
 import { blockReflectShare, blockResourceShare, doubleStrikeChance } from './talents'
 import { statsWithPotionPlan, statsWithoutPotions } from './potions'
+import { PROC_BY_ID, type ProcDef } from '../data/procs'
+import { SLOT_IDS } from '../data/slots'
 
 // Какой рукой бьём. Правило нормализации скорости одно на обе, отличаются
 // только база боя и штраф левой руки.
@@ -165,6 +167,8 @@ export interface CombatRate {
   // слагаемых. Складывать их напрямую нельзя.
   damagePerSecond: Decimal
   autoDamagePerSecond: Decimal // только автоатака
+  /** Сколько из damagePerSecond приносят проки — UI показывает это строкой. */
+  procDamagePerSecond: Decimal
   abilityDamagePerSecond: Decimal // только умения при выбранном режиме игры
   killsPerSecond: Decimal // убийств в секунду С УЧЁТОМ смертей героя (uptime)
   idealKillsPerSecond: Decimal // то же без учёта смертей — герой бессмертен
@@ -282,7 +286,144 @@ export function uptimeFromHpLoss(
  * умения относительно моба, тем больше уходит мимо. Это второе (и последнее)
  * правило, из которого берётся отставание авто.
  */
-function damagePerKill(state: GameState, rotation: RotationRate, plan: RotationPlan): Decimal {
+// ---------------------------------------------------------------------------
+// ПРОКИ
+// ---------------------------------------------------------------------------
+//
+// Прок — это «само сработало от удара». Механика живёт ЗДЕСЬ, а не в предмете:
+// предмет только называет id прока, а числа лежат в data/procs.ts. Два правила
+// и оба общие для всех проков:
+//   1) бросок делается на КАЖДЫЙ удар героя (замахи обеих рук и мгновенные
+//      умения; тики урона по времени ударами не считаются — прок висит на
+//      оружии, а не на кровотечении);
+//   2) сработав, прок уходит во внутренний кулдаун и до его конца не бросается
+//      вовсе.
+
+/**
+ * Проки надетых вещей в фиксированном порядке слотов.
+ *
+ * Порядок важен дважды: от него зависит порядок бросков (а значит и
+ * воспроизводимость прогонов) и порядок строк в оценке. Один и тот же прок с
+ * двух предметов считается ОДИН раз: внутренний кулдаун у него общий, и
+ * вторая строка дала бы удвоенный темп в оценке при том же темпе в бою.
+ */
+export function equippedProcs(state: GameState): ProcDef[] {
+  const procs: ProcDef[] = []
+  for (const slot of SLOT_IDS) {
+    const id = state.equipment?.[slot]?.procId
+    if (!id) continue
+    const proc = PROC_BY_ID[id]
+    if (proc && !procs.includes(proc)) procs.push(proc)
+  }
+  return procs
+}
+
+/** Внутренние кулдауны тикают игровым временем, как и кулдауны умений. */
+export function advanceProcCooldowns(
+  cooldowns: Record<string, number>,
+  dtMs: number,
+): Record<string, number> {
+  const next: Record<string, number> = {}
+  let changed = false
+  for (const [id, left] of Object.entries(cooldowns)) {
+    const value = left - dtMs
+    if (value > 0) next[id] = value
+    if (value !== left) changed = true
+  }
+  return changed ? next : cooldowns
+}
+
+export function procReady(state: GameState, proc: ProcDef): boolean {
+  return (state.procCooldownsMs[proc.id] ?? 0) <= 0
+}
+
+/** Что сработало за тик. Урон или лечение — ровно одно из двух. */
+export interface ProcFire {
+  proc: ProcDef
+  damage: Decimal | null
+  heal: Decimal | null
+  isCrit: boolean
+}
+
+/**
+ * Броски проков по ударам, нанесённым в этом тике. ЧИСТАЯ функция: она ничего
+ * не применяет — только считает, что сработало и какими стали кулдауны.
+ * Применяет результат конвейер тика.
+ *
+ * Ни одного прока — ни одного обращения к rng: поток случайности героя без
+ * ключевой вещи обязан остаться ровно прежним (это же держит golden).
+ */
+export function rollProcs(
+  state: GameState,
+  hits: number,
+  rng: Rng,
+): { fired: ProcFire[]; cooldowns: Record<string, number> } {
+  const procs = equippedProcs(state)
+  if (procs.length === 0 || hits <= 0) return { fired: [], cooldowns: state.procCooldownsMs }
+  const cooldowns = { ...state.procCooldownsMs }
+  const fired: ProcFire[] = []
+  for (const proc of procs) {
+    if ((cooldowns[proc.id] ?? 0) > 0) continue
+    // По броску на удар; первый удачный взводит кулдаун, и остальные удары
+    // этого тика для этого прока уже не бросаются — иначе жирный тик
+    // (возврат из оффлайна, отладочное ускорение) дал бы пачку срабатываний,
+    // которой в оценке нет и быть не может.
+    let hit = false
+    for (let i = 0; i < hits && !hit; i += 1) hit = rng() < proc.chance
+    if (!hit) continue
+    cooldowns[proc.id] = proc.internalCooldownMs
+    if (proc.effect.kind === 'damage') {
+      // Своей формулы урона у прока НЕТ: тот же rollSwing, что у автоатаки и
+      // умений, только со своей долей удара оружия. Значит прок масштабируется
+      // от оружия и критует по общим правилам.
+      const swing = rollSwing(state.stats, rng, proc.effect.weaponDamagePercent)
+      fired.push({ proc, damage: swing.amount, heal: null, isCrit: swing.isCrit })
+      continue
+    }
+    fired.push({
+      proc,
+      damage: null,
+      heal: state.stats.maxHp.times(proc.effect.healShare),
+      isCrit: false,
+    })
+  }
+  return { fired, cooldowns }
+}
+
+/**
+ * СРАБАТЫВАНИЙ В СЕКУНДУ — то самое число, ради которого всё это считается:
+ *
+ *   min(шанс × ударов_в_секунду, 1000 / internalCooldownMs)
+ *
+ * Слева — сколько бросков вообще выпадает, справа — потолок внутреннего
+ * кулдауна: чаще, чем раз в ICD, прок не срабатывает никогда. На медленном
+ * оружии работает левая часть, на быстром — правая, и именно поэтому прок
+ * НЕ даёт быстрому оружию второй выгоды поверх первой.
+ *
+ * Если это число не входит в estimateCombatRate, показатель урона в секунду
+ * начинает врать ровно в тот момент, когда игрок наденет ключевую вещь, — и
+ * вместе с ним врут метка апгрейда, прогноз зоны и весь оффлайн.
+ */
+export function procRatePerSecond(proc: ProcDef, hitsPerSecond: Decimal): Decimal {
+  if (hitsPerSecond.lte(0)) return new Decimal(0)
+  const rolled = hitsPerSecond.times(proc.chance)
+  const cap = new Decimal(1000).div(Math.max(1, proc.internalCooldownMs))
+  return Decimal.min(rolled, cap)
+}
+
+/** Матожидание урона одного срабатывания БЕЗ крита — как expectedSwingDamage:
+ *  крит навешивается там, где считается урон в секунду. */
+export function expectedProcDamage(stats: StatBlock, proc: ProcDef): Decimal {
+  if (proc.effect.kind !== 'damage') return new Decimal(0)
+  return expectedSwingDamage(stats).times(proc.effect.weaponDamagePercent)
+}
+
+/** Сколько здоровья возвращает одно срабатывание оберега. */
+export function expectedProcHeal(stats: StatBlock, proc: ProcDef): Decimal {
+  return proc.effect.kind === 'ward' ? stats.maxHp.times(proc.effect.healShare) : new Decimal(0)
+}
+
+function damagePerKill(state: GameState, plan: RotationPlan, stream: HitStream): Decimal {
   const hp = state.monster.maxHp
   const swing = expectedSwingDamage(state.stats)
   // Минимум перебоя — половина обычного замаха: меньше не теряет никто.
@@ -291,7 +432,6 @@ function damagePerKill(state: GameState, rotation: RotationRate, plan: RotationP
   // добивает чем придётся. Рука бурст придерживает, у неё перебоя сверх
   // обычного замаха нет.
   if (!plan.delayed) return floor
-  const stream = hitStream(state.stats, rotation)
   if (stream.rate.lte(0)) return floor
   const averageHit = stream.killing.div(stream.rate)
   // Целое число ударов среднего размера: последний почти всегда с перебоем.
@@ -306,11 +446,22 @@ function damagePerKill(state: GameState, rotation: RotationRate, plan: RotationP
  * `paced` — удар вместе с его эффектом: по нему считается длина боя, ведь
  * эффект всё равно доедает моба следом.
  */
+interface HitStream {
+  rate: Decimal
+  killing: Decimal
+  paced: Decimal
+  /** Урон проков в секунду БЕЗ крита — как killing и paced. */
+  procDamage: Decimal
+  /** Лечение проков в секунду. */
+  procHeal: Decimal
+}
+
 function hitStream(
   stats: StatBlock,
   rotation: RotationRate,
   doubleChance = 0,
-): { rate: Decimal; killing: Decimal; paced: Decimal } {
+  procs: ProcDef[] = [],
+): HitStream {
   const swingRate = new Decimal(1).div(stats.swingTime)
   const swing = expectedSwingDamage(stats)
   const replaced = replacedSwingsPerSecond(stats, rotation)
@@ -337,7 +488,26 @@ function hitStream(
     killing = killing.plus(cast.hitDamage.times(castRate))
     paced = paced.plus(cast.totalDamage.times(castRate))
   }
-  return { rate, killing, paced }
+  // Проки считаются ПОСЛЕДНИМИ и от УЖЕ сложившегося потока: они срабатывают
+  // от ударов, но сами новых бросков не порождают — прок от прока не идёт.
+  const baseRate = rate
+  let procDamage = new Decimal(0)
+  let procHeal = new Decimal(0)
+  for (const proc of procs) {
+    const per = procRatePerSecond(proc, baseRate)
+    if (per.lte(0)) continue
+    const damage = expectedProcDamage(stats, proc)
+    if (damage.gt(0)) {
+      procDamage = procDamage.plus(damage.times(per))
+      // Удар прока — такой же удар потока: он и добивает моба, и квантует бой,
+      // поэтому входит и в rate, и в killing, и в paced.
+      rate = rate.plus(per)
+      killing = killing.plus(damage.times(per))
+      paced = paced.plus(damage.times(per))
+    }
+    procHeal = procHeal.plus(expectedProcHeal(stats, proc).times(per))
+  }
+  return { rate, killing, paced, procDamage, procHeal }
 }
 
 /**
@@ -573,18 +743,25 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
   // сравниваются предметы, и на нём держится инвариант нормализации скорости.
   // Автоатака — это ОБЕ руки: у каждой свой таймер и свой урон за удар.
   const doubleChance = doubleStrikeChance(s.talents)
+  const procs = equippedProcs(s)
   const autoDps = autoDamagePerSecond(stats, doubleChance)
+  // Поток ударов считается ОДИН раз и уходит и в перебой, и в длину боя, и в
+  // урон проков: две копии этого расчёта разошлись бы на первой же правке.
+  const stream = hitStream(stats, rotation, doubleChance, procs)
   // Сложить автоатаку и умения напрямую НЕЛЬЗЯ: умение «на следующий удар»
   // ЗАМЕНЯЕТ автоатаку, а не добавляется к ней, — эти замахи посчитаны дважды.
   // Пока бой длился полтора удара, ошибка была незаметной; на длинном бою она
   // делала оффлайн выгоднее живой игры, то есть ломала железное правило.
   const replaced = replacedSwingsPerSecond(stats, rotation).times(avgSwing).times(critFactor(stats))
   // Урон в секунду, реально дошедший до мобов: сырой темп минус перебой.
+  // Урон проков — с критом: внутри потока он лежит без него, как killing и paced.
+  const procDps = stream.procDamage.times(critFactor(stats))
   const raw = autoDps
     .plus(rotation.damagePerSecond)
     .minus(replaced)
+    .plus(procDps)
     .plus(reflectPerSecond(s, expectedMonsterDamage(s.monster, stats)))
-  const perKill = damagePerKill(s, rotation, plan)
+  const perKill = damagePerKill(s, plan, stream)
   const damagePerSecond = raw.times(s.monster.maxHp.div(perKill))
   // Длина боя — из уже посчитанного урона в секунду (он уже с поправкой на
   // перебой). Дискретность ударов сидит внутри damagePerKill, поэтому здесь
@@ -594,7 +771,6 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
   // заново, автокаст выжидает задержку реакции. Непрерывная модель этого не
   // видит и торопит бой процентов на пятнадцать, а от длины боя зависит
   // весь оффлайн.
-  const stream = hitStream(stats, rotation, doubleChance)
   const averagePaced = stream.rate.gt(0) ? stream.paced.div(stream.rate) : new Decimal(1)
   const hitsPerKill = averagePaced.gt(0)
     ? Decimal.max(perKill.div(averagePaced).ceil(), new Decimal(1))
@@ -612,9 +788,13 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
     ? fightSec.div(s.monster.swingTime).floor()
     : new Decimal(0)
   const incomingPerCycle = monsterHitsPerCycle.times(avgIncoming)
+  // Оберег лечит ТОЛЬКО в бою: он срабатывает от ударов, а в паузе респауна
+  // герой не бьёт. Перелив через максимум модель не считает — она и не может:
+  // в оценке нет текущего HP, а на длинной череде боёв перелив редок.
   const regenPerCycle = stats.hpRegen
     .times(fightSec)
     .plus(stats.hpRegenOutOfCombat.times(respawnSec))
+    .plus(stream.procHeal.times(fightSec))
   const netLossPerSec = incomingPerCycle.minus(regenPerCycle).div(killCycleSec)
 
   if (netLossPerSec.lte(0)) {
@@ -622,6 +802,7 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
       damagePerSecond,
       autoDamagePerSecond: autoDps,
       abilityDamagePerSecond: rotation.damagePerSecond,
+      procDamagePerSecond: procDps,
       killsPerSecond: idealKillsPerSecond,
       idealKillsPerSecond,
       hpLossPerSecond: new Decimal(0),
@@ -645,6 +826,7 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
     damagePerSecond,
     autoDamagePerSecond: autoDps,
     abilityDamagePerSecond: rotation.damagePerSecond,
+    procDamagePerSecond: procDps,
     killsPerSecond: idealKillsPerSecond.times(cycle.uptime),
     idealKillsPerSecond,
     hpLossPerSecond: netLossPerSec,

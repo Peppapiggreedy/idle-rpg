@@ -23,6 +23,7 @@ import { disenchantItem, enchantItem } from '../game/enchanting'
 import {
   enterDungeon as enterDungeonAction,
   leaveDungeon as leaveDungeonAction,
+  type DungeonDifficulty,
 } from '../game/dungeons'
 import { emit as emitAttack, emitLog, freshEvents } from '../game/events'
 import type { SlotId } from '../data/slots'
@@ -232,8 +233,13 @@ export function travelToZone(zoneId: string): void {
 }
 
 /** Вход в данж по кнопке. Недоступный данж состояние не меняет. */
-export function enterDungeonRun(dungeonId: string): void {
-  state.update((s) => enterDungeonAction(s, dungeonId))
+export function enterDungeonRun(
+  dungeonId: string,
+  difficulty: DungeonDifficulty = 'normal',
+): void {
+  // Сложность НИГДЕ не запоминается: это разовое решение при входе, а не
+  // настройка. Кнопка передаёт её прямо сюда, и второго состояния для неё нет.
+  state.update((s) => enterDungeonAction(s, dungeonId, difficulty))
 }
 
 /** Добровольный выход из данжа: цепочка сбрасывается. */

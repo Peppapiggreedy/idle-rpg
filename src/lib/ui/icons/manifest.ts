@@ -85,6 +85,37 @@ export const ICONS = {
   'enchant-clear-sight': { file: 'lorc/psychic-waves.svg', author: 'Lorc' },
   'enchant-stone-core': { file: 'lorc/stone-sphere.svg', author: 'Lorc' },
 
+  // --- Реликвии и проки ---
+  'relic-echo': { file: 'lorc/relic-blade.svg', author: 'Lorc' },
+  'relic-thorn': { file: 'lorc/crown-of-thorns.svg', author: 'Lorc' },
+  'relic-storm': { file: 'lorc/lightning-shadow.svg', author: 'Lorc' },
+  'relic-shell': { file: 'lorc/spiral-shell.svg', author: 'Lorc' },
+  'relic-facet': { file: 'lorc/diamond-hard.svg', author: 'Lorc' },
+  'relic-sign': { file: 'lorc/holy-symbol.svg', author: 'Lorc' },
+  'relic-spark': { file: 'lorc/tesla-coil.svg', author: 'Lorc' },
+  'relic-gilded': { file: 'lorc/gold-shell.svg', author: 'Lorc' },
+  'proc-strike': { file: 'lorc/thunder-struck.svg', author: 'Lorc' },
+  'proc-ward': { file: 'lorc/shining-heart.svg', author: 'Lorc' },
+  'profession-relics': { file: 'lorc/gem-chain.svg', author: 'Lorc' },
+
+  // --- Героика: режим, способности боссов и её реагенты ---
+  'dungeon-heroic': { file: 'lorc/crowned-skull.svg', author: 'Lorc' },
+  'boss-ability-dispel': { file: 'lorc/vortex.svg', author: 'Lorc' },
+  'boss-ability-frenzy': { file: 'lorc/flame-spin.svg', author: 'Lorc' },
+  'boss-ability-backlash': { file: 'lorc/burning-dot.svg', author: 'Lorc' },
+  'reagent-drowned-whorl': { file: 'lorc/spiral-shell.svg', author: 'Lorc' },
+  'reagent-drift-charge': { file: 'lorc/mine-explosion.svg', author: 'Lorc' },
+  'reagent-bottom-tear': { file: 'lorc/drop.svg', author: 'Lorc' },
+  'reagent-seething-coal': { file: 'lorc/burning-embers.svg', author: 'Lorc' },
+  'reagent-booming-whirl': { file: 'lorc/tornado.svg', author: 'Lorc' },
+  'reagent-brine-druse': { file: 'lorc/crystalize.svg', author: 'Lorc' },
+  'reagent-rime-core': { file: 'lorc/frozen-orb.svg', author: 'Lorc' },
+  'reagent-mute-stone': { file: 'lorc/tombstone.svg', author: 'Lorc' },
+
+  'recipe-relic-blade': { file: 'lorc/relic-blade.svg', author: 'Lorc' },
+  'recipe-relic-plate': { file: 'lorc/breastplate.svg', author: 'Lorc' },
+  'recipe-relic-charm': { file: 'lorc/gem-chain.svg', author: 'Lorc' },
+
   // --- Классы ---
   'class-warden': { file: 'delapouite/spiked-shield.svg', author: 'Delapouite' },
   'class-reaver': { file: 'lorc/axe-swing.svg', author: 'Lorc' },

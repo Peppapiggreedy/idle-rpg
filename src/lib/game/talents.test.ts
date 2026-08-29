@@ -20,7 +20,14 @@ import {
   talentModifiers,
   talentStatus,
 } from './talents'
-import { useAbility } from './abilities'
+import {
+  ABILITY_BY_ID,
+  abilityStatus,
+  chargesLeft,
+  consumeQueuedAbility,
+  maxCharges,
+  useAbility,
+} from './abilities'
 import { WEAPONS } from '../data/items'
 import { CLASSES, classById } from '../data/classes'
 import {
@@ -69,6 +76,26 @@ function invest(state: GameState, talentId: string, times: number): GameState {
 }
 
 /**
+ * Доводит ветку до КОНКРЕТНОГО этажа: вкладывает ровно столько, сколько этот
+ * этаж требует, и берёт сам талант. Заполнять ветку подряд для этого нельзя —
+ * этажи требуют по 5 очков, а вмещают по 6, и «21-е очко» при заполнении
+ * подряд уходит в четвёртый этаж, а не в пятый.
+ */
+function reachRow(state: GameState, branch: BranchId, row: number): GameState {
+  const talents = talentsInBranch(branch)
+  const target = talents[row - 1]
+  let next = state
+  let spent = 0
+  for (const talent of talents.slice(0, row - 1)) {
+    const take = Math.min(talent.maxRank, target.requiredPointsInBranch - spent)
+    if (take <= 0) break
+    next = invest(next, talent.id, take)
+    spent += take
+  }
+  return invest(next, target.id, 1)
+}
+
+/**
  * Вкладывает ветку до нужной глубины, по рядам сверху вниз. Списком id это
  * делать нельзя: ветки растут, и тест ломался бы от каждого нового таланта.
  */
@@ -102,7 +129,6 @@ describe('данные дерева', () => {
     // и от неё зависит, что «влить всё в одну ветку» — законченный выбор.
     expect(BRANCH_DEPTH).toBe(61)
     expect(BRANCH_RANKS).toHaveLength(BRANCH_ROWS)
-    expect(earnedPoints(new Decimal(LEVEL_CAP))).toBe(BRANCH_DEPTH)
     for (const branch of BRANCHES) {
       const talents = talentsInBranch(branch.id)
       expect(talents.map((t) => t.row), branch.id).toEqual(BRANCH_RANKS.map((_, i) => i + 1))
@@ -205,16 +231,27 @@ describe('очки талантов', () => {
     expect(availablePoints(after)).toBe(3)
   })
 
-  it('очков за весь путь хватает ровно на одну ветку целиком', () => {
-    // Это и есть цена выбора: на сотом уровне ветка закрывается ЦЕЛИКОМ, но
-    // ровно одна. Хватило бы на полторы — капстоуны перестали бы быть выбором.
+  it('за весь путь хватает на одну ветку целиком и на заход во вторую', () => {
+    // Это и есть цена выбора: ОДНА ветка закрывается целиком, на вторую
+    // остаётся заход до середины, а на третью не остаётся ничего. Хватило бы
+    // на две ветки — капстоуны перестали бы быть выбором.
+    const total = earnedPoints(new Decimal(LEVEL_CAP))
+    expect(total).toBeGreaterThan(BRANCH_DEPTH)
+    expect(total).toBeLessThan(BRANCH_DEPTH * 2)
+
     const capped = hero(LEVEL_CAP)
     const full = fillBranch(capped, WRATH)
     expect(spentInBranch(full.talents, WRATH)).toBe(BRANCH_DEPTH)
-    expect(availablePoints(full)).toBe(0)
     // И капстоун взят: последний этаж — это то, ради чего ветка добивается.
     const capstone = talentsInBranch(WRATH)[BRANCH_ROWS - 1]
     expect(rankOf(full.talents, capstone.id)).toBe(1)
+
+    // Остаток уходит во вторую ветку — и до её капстоуна не дотягивает.
+    const both = fillBranch(full, BULWARK, availablePoints(full))
+    expect(availablePoints(both)).toBe(0)
+    expect(spentInBranch(both.talents, BULWARK)).toBe(total - BRANCH_DEPTH)
+    const secondCapstone = talentsInBranch(BULWARK)[BRANCH_ROWS - 1]
+    expect(rankOf(both.talents, secondCapstone.id)).toBe(0)
   })
 })
 
@@ -286,15 +323,14 @@ describe('эффекты талантов', () => {
   it('флаг поднимается с первого ранга и не раньше', () => {
     const s = hero(LEVEL_CAP)
     expect(talentFlags(s.talents).size).toBe(0)
-    // 21-е очко ветки — первый поворот.
+    // Первый поворот — пятый этаж, и он требует 20 очков в ветке.
     const before = fillBranch(s, WRATH, 20)
     expect(talentFlags(before.talents).size).toBe(0)
-    const after = fillBranch(s, WRATH, 21)
-    expect(after.talents).toBeTruthy()
+    const after = reachRow(s, WRATH, CONCEPT_ROWS[0])
     expect(talentFlags(after.talents).has('ability-learns-effect')).toBe(true)
   })
 
-  it('поворот на 21 очке учит умение накладывать урон по времени', () => {
+  it('первый поворот учит умение накладывать урон по времени', () => {
     const base = hero(LEVEL_CAP, {
       currentMana: new Decimal(500),
       abilitySettings: manualOnlySettings(),
@@ -303,17 +339,17 @@ describe('эффекты талантов', () => {
     const plain = useAbility(base, 'quick-strike', () => 1, () => {})
     expect(plain.activeEffects).toEqual([])
 
-    const talented = fillBranch(base, WRATH, 21)
+    const talented = reachRow(base, WRATH, CONCEPT_ROWS[0])
     const bleeding = useAbility(talented, 'quick-strike', () => 1, () => {})
     expect(bleeding.activeEffects).toHaveLength(1)
     expect(bleeding.activeEffects[0].abilityId).toBe('quick-strike')
     expect(bleeding.activeEffects[0].damagePerTick.gt(0)).toBe(true)
   })
 
-  it('поворот на 41 очке ветки живучести сокращает простой после смерти', () => {
+  it('второй поворот ветки живучести сокращает простой после смерти', () => {
     const s = hero(LEVEL_CAP)
     expect(reviveMultiplier(s.talents)).toBe(1)
-    const swift = fillBranch(s, BULWARK, 41)
+    const swift = reachRow(s, BULWARK, CONCEPT_ROWS[1])
     expect(reviveMultiplier(swift.talents)).toBeLessThan(1)
 
     // Проверяем на живом тике: герой с нулевым HP уходит в простой.
@@ -339,23 +375,40 @@ describe('эффекты талантов', () => {
   })
 
   it('капстоун ветки урона даёт умению второй заряд', () => {
-    // Второе нажатие проходит, пока откат первого ещё идёт: это и есть
-    // «заряды копятся по одному», а не «кулдаун снят».
-    const base = hero(LEVEL_CAP, {
+    // ДВА удара подряд, пока откат первого ещё идёт: это и есть «заряды
+    // копятся по одному», а не «кулдаун снят». Умение стоит в очереди на
+    // замах, поэтому проверяется через consumeQueuedAbility — тем же путём,
+    // которым его применяет бой.
+    const tough = hero(LEVEL_CAP)
+    // Моб с огромным запасом: на сотом уровне обычный падает с первого удара,
+    // и второй заряд было бы некуда девать.
+    const base: GameState = {
+      ...tough,
       currentMana: new Decimal(1e6),
       abilitySettings: manualOnlySettings(),
-    })
-    const full = fillBranch(base, WRATH)
+      monster: { ...tough.monster, maxHp: new Decimal(1e12), currentHp: new Decimal(1e12) },
+    }
+    const full = reachRow(base, WRATH, CONCEPT_ROWS[2])
     const charged = TALENT_BY_ID['wrath-second-swing']
     expect(rankOf(full.talents, charged.id)).toBe(1)
-    const once = useAbility(full, 'shattering-blow', () => 1, () => {})
-    expect(once.abilityCooldownsMs['shattering-blow']).toBeGreaterThan(0)
-    const twice = useAbility(once, 'shattering-blow', () => 1, () => {})
-    // Второй удар прошёл — моб потерял ещё здоровья.
+    const ability = ABILITY_BY_ID['shattering-blow']
+    expect(maxCharges(full, ability)).toBe(2)
+
+    const queued = useAbility(full, ability.id, () => 1, () => {})
+    expect(queued.queuedAbilityId).toBe(ability.id)
+    const once = consumeQueuedAbility(queued, () => 1, () => {})!
+    expect(once).not.toBeNull()
+    expect(once.abilityCooldownsMs[ability.id]).toBeGreaterThan(0)
+    expect(chargesLeft(once, ability)).toBe(1)
+
+    // Откат идёт, а умение всё равно доступно: остался второй заряд.
+    expect(abilityStatus(once, ability).usable).toBe(true)
+    const queuedAgain = useAbility(once, ability.id, () => 1, () => {})
+    const twice = consumeQueuedAbility(queuedAgain, () => 1, () => {})!
     expect(twice.monster.currentHp.lt(once.monster.currentHp)).toBe(true)
-    // А третий уже нет: зарядов было два.
-    const thrice = useAbility(twice, 'shattering-blow', () => 1, () => {})
-    expect(thrice.monster.currentHp.eq(twice.monster.currentHp)).toBe(true)
+    expect(chargesLeft(twice, ability)).toBe(0)
+    // А третьего нет: зарядов было два.
+    expect(abilityStatus(twice, ability)).toMatchObject({ usable: false, reason: 'cooldown' })
   })
 })
 

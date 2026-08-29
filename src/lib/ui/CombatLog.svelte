@@ -8,6 +8,8 @@
   import { MATERIAL_BY_ID } from '../data/materials'
   import { RECIPE_BY_ID } from '../data/recipes'
   import { ENCHANT_BY_ID } from '../data/enchants'
+  import { PROC_BY_ID } from '../data/procs'
+  import { BOSS_ABILITY_BY_ID } from '../data/heroic'
   import { rarityName, rarityStyle } from './kit'
   import { Icon } from './icons'
   import type { IconName } from './icons'
@@ -53,6 +55,14 @@
         return `Собрано: ${MATERIAL_BY_ID[e.materialId]?.name ?? e.materialId}`
       case 'craft':
         return `Готово: ${RECIPE_BY_ID[e.recipeId]?.name ?? e.recipeId}`
+      case 'boss-ability': {
+        const name = BOSS_ABILITY_BY_ID[e.abilityId]?.name ?? 'Уловка босса'
+        return e.damage ? `${name}: −${formatNumber(e.damage)} здоровья` : `${name} сработал`
+      }
+      case 'proc':
+        return e.effect === 'damage'
+          ? `${PROC_BY_ID[e.procId]?.name ?? 'Реликвия'}: ${formatNumber(e.amount)} урона`
+          : `${PROC_BY_ID[e.procId]?.name ?? 'Реликвия'} возвращает ${formatNumber(e.amount)} здоровья`
       case 'disenchant':
         return `Распылено: ${e.item.name} → ${formatNumber(e.dust)} пыли`
       case 'enchant':
@@ -128,6 +138,8 @@
     // ровно про неё. Заводить вторую такую же незачем.
     material: 'material-ore',
     craft: 'profession-smithing',
+    'boss-ability': 'dungeon-heroic',
+    proc: 'proc-strike',
     disenchant: 'action-disenchant',
     enchant: 'profession-enchanting',
     potion: 'potion-fury',

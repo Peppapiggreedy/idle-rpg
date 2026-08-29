@@ -66,6 +66,10 @@ export interface GameState {
   /** Пыль зачарования: копится ТОЛЬКО распылением находок, с мобов не падает.
    *  Растёт неограниченно (сотни находок за сотню уровней) — значит Decimal. */
   enchantDust: Decimal
+  // Внутренние кулдауны проков: id прока -> сколько мс осталось. Ключ — ПРОК,
+  // а не предмет: два предмета с одним проком делят один кулдаун, ровно как
+  // их считает оценка (equippedProcs схлопывает дубли).
+  procCooldownsMs: Record<string, number>
   // Умение типа onNextSwing, поставленное в очередь: заменит следующую
   // автоатаку. Одновременно только одно; null — очередь пуста.
   queuedAbilityId: string | null
@@ -288,6 +292,7 @@ export function createInitialState(
     activePotions: [],
     herbProgress: {},
     enchantDust: new Decimal(0),
+    procCooldownsMs: {},
     queuedAbilityId: null,
     activeEffects: [],
     abilitySettings: defaultAbilitySettings(hero.id),

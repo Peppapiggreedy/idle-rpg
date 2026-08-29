@@ -8,7 +8,12 @@ import { ensureStats } from '../stats'
 import { expectedSwingDamage } from '../combat'
 import { SAFE_ZONE, ZONE_BY_ID } from '../../data/zones'
 import { ABILITY_BY_ID } from '../../data/abilities'
-import { GCD_MS, REST_HP_THRESHOLD_DEFAULT, itemLevelScale } from '../../data/balance'
+import {
+  GCD_MS,
+  REST_HP_THRESHOLD_DEFAULT,
+  VIT_BLOCK_VALUE,
+  itemLevelScale,
+} from '../../data/balance'
 import { TALENT_BY_ID } from '../../data/talents'
 import { availablePoints, earnedPoints, spentPoints } from '../talents'
 import { clearedXpBonus } from '../dungeons'
@@ -352,7 +357,11 @@ describe('фикстуры сейвов', () => {
     // домножена миграцией v18 на масштаб уровня вещи (полоса 16–20 → 18),
     // шанс блока — вероятность, её миграция не трогает.
     expect(s.stats.blockChance).toBeCloseTo(0.25, 9)
-    expect(s.stats.blockValue.toNumber()).toBeCloseTo(24 * itemLevelScale(18).toNumber(), 9)
+    // Сила блока — сумма щита и вклада живучести: щит задаёт базу, атрибут
+    // прибавляется к ней плоским модификатором, как и везде в конвейере.
+    const fromShield = 24 * itemLevelScale(18).toNumber()
+    const fromVitality = s.stats.vitality.times(VIT_BLOCK_VALUE).toNumber()
+    expect(s.stats.blockValue.toNumber()).toBeCloseTo(fromShield + fromVitality, 9)
     // Левая рука урона не даёт: щит — не оружие.
     expect(s.stats.offhandDamageMax.toNumber()).toBe(0)
   })
@@ -420,15 +429,26 @@ describe('фикстуры сейвов', () => {
 
   it('save-v11: ранги и счётчик сбросов переживают загрузку', () => {
     const s = loadFixture('save-v11.json')
-    expect(s.talents).toEqual({ 'honed-edge': 5, 'keen-eye': 2, 'thick-hide': 3 })
+    // Дерево переехало на класс: старые id перенесены картой соответствия
+    // внутри стиля, ранги при этом не потеряны ни на очко.
+    expect(s.talents).toEqual({
+      'wrath-honed-edge': 5,
+      'wrath-keen-eye': 2,
+      'bulwark-thick-hide': 3,
+    })
     expect(s.talentResets).toBe(2)
     expect(spentPoints(s.talents)).toBe(10)
     expect(availablePoints(s)).toBe(earnedPoints(s.level) - 10)
     // Таланты пересчитаны в статы при загрузке, а не забыты. Ловкость с
     // уровней тоже даёт крит — она входит в ожидание, а не в допуск.
     expect(s.statsDirty).toBe(false)
+    const keenEye = TALENT_BY_ID['wrath-keen-eye']
+    const critPerRank =
+      keenEye.effect.kind === 'modifiers'
+        ? (keenEye.effect.mods.find((m) => m.stat === 'critChance')?.value.toNumber() ?? 0)
+        : 0
     const agiCrit = (s.level.toNumber() - 1) * 0.0005
-    expect(s.stats.critChance).toBeCloseTo(0.05 + 2 * 0.02 + agiCrit, 9)
+    expect(s.stats.critChance).toBeCloseTo(0.05 + 2 * critPerRank + agiCrit, 9)
   })
 
   it('мусорные ранги из сейва режутся по maxRank и по списку талантов', () => {
@@ -444,9 +464,11 @@ describe('фикстуры сейвов', () => {
         talentResets: -7,
       })!,
     )
-    expect(s.talents['honed-edge']).toBe(TALENT_BY_ID['honed-edge'].maxRank)
+    // Ранг выше потолка режется по maxRank НОВОГО таланта, чужой id и мусор
+    // отбрасываются вовсе — и очки за них возвращаются свободными.
+    expect(s.talents['wrath-honed-edge']).toBe(TALENT_BY_ID['wrath-honed-edge'].maxRank)
     expect(s.talents['talent-from-the-future']).toBeUndefined()
-    expect(s.talents['keen-eye']).toBeUndefined()
+    expect(s.talents['wrath-keen-eye']).toBeUndefined()
     expect(s.talentResets).toBe(0)
   })
 

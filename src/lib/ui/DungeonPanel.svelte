@@ -7,13 +7,21 @@
     type DungeonBlockReason,
     type DungeonDef,
   } from '../game'
-  import { DUNGEONS } from '../data/dungeons'
+  import { DUNGEONS, HEROIC, HEROIC_DUNGEONS, clearKey } from '../data/dungeons'
+  import { REAGENT_BY_ID } from '../data/reagents'
   import { ZONE_BY_ID } from '../data/zones'
   import { enterDungeonRun, gameState } from '../stores/game'
   import { Button, Panel, Tag } from './kit'
   import { Icon } from './icons'
 
-  const statuses = $derived(new Map(allDungeonStatuses($gameState).map((s) => [s.dungeonId, s])))
+  // Ключ статуса — пара (данж, сложность): у одного данжа их две, и вторая
+  // затирала бы первую, будь ключом голый id.
+  const statuses = $derived(
+    new Map(
+      allDungeonStatuses($gameState).map((s) => [clearKey(s.dungeonId, s.difficulty), s]),
+    ),
+  )
+  const heroicById = $derived(new Map(HEROIC_DUNGEONS.map((d) => [d.id, d])))
 
   const REASON_TEXT: Record<DungeonBlockReason, (d: DungeonDef) => string> = {
     level: (d) => `Откроется с ${d.unlockRequirement} уровня`,
@@ -48,6 +56,41 @@
           {#if !status.cleared}
             <span class="reward">За первое прохождение: +5% опыта навсегда</span>
           {/if}
+
+          <!-- Героика — вторая строка того же данжа, а не отдельная запись:
+               это один и тот же путь, пройденный второй раз и тяжелее. -->
+          {#if heroicById.get(d.id) && statuses.get(clearKey(d.id, 'heroic'))}
+            {@const heroic = heroicById.get(d.id)!}
+            {@const hStatus = statuses.get(clearKey(d.id, 'heroic'))!}
+            <div class="heroic" class:locked={!hStatus.canEnter}>
+              <div class="head">
+                <Icon name="dungeon-heroic" /><span class="name">Героика</span>
+                {#if hStatus.cleared}<Tag tone="gold" label="героика пройдена" />{/if}
+              </div>
+              <div class="facts">
+                Боссы крепче и злее, ярость подступает раньше. У каждого — своя уловка.
+              </div>
+              <div class="facts">
+                Находки от эпических и выше · роняет «{REAGENT_BY_ID[heroic.reagentId]?.name ??
+                  heroic.reagentId}»
+              </div>
+              {#if hStatus.canEnter}
+                <Button size="sm" onclick={() => enterDungeonRun(d.id, 'heroic')}>
+                  Войти в героику
+                </Button>
+              {:else if hStatus.reason === 'level'}
+                <span class="reason">Героика откроется с {HEROIC.unlockRequirement} уровня</span>
+              {:else}
+                <span class="reason">{REASON_TEXT[hStatus.reason ?? 'level'](heroic)}</span>
+              {/if}
+              {#if !hStatus.cleared}
+                <span class="reward">
+                  За первое прохождение героики: +{Math.round(HEROIC.clearXpBonus * 100)}% опыта
+                  навсегда
+                </span>
+              {/if}
+            </div>
+          {/if}
         </li>
       {/if}
     {/each}
@@ -74,6 +117,21 @@
     font-size: var(--text-sm);
   }
   .entry.locked {
+    opacity: 0.55;
+  }
+  /* Героика — вложенная строка того же данжа: отступ показывает, что это
+     второй проход по той же цепочке, а не девятый данж. */
+  .heroic {
+    width: 100%;
+    margin-top: var(--space-1);
+    padding-top: var(--space-2);
+    border-top: 1px solid var(--c-border);
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-1);
+  }
+  .heroic.locked {
     opacity: 0.55;
   }
   .head {

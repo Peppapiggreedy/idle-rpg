@@ -11,10 +11,13 @@ import type { StatModifier } from '../game/stats'
 import { HERB_BY_ID } from './herbs'
 import type { IconName } from '../ui/icons/manifest'
 import type { SlotId } from './slots'
-import type { AttributeId } from './items'
+import { ARMOR_ATTRIBUTES, type AttributeId } from './items'
+import { DUNGEONS } from './dungeons'
+import { procIdOf, relicTier } from './procs'
+import { LEVEL_CAP, UNIQUE_RECIPE_LEVEL } from './balance'
 import type { Rarity } from '../types'
 
-export type ProfessionId = 'cooking' | 'smithing' | 'herbalism'
+export type ProfessionId = 'cooking' | 'smithing' | 'herbalism' | 'relics'
 
 export interface ProfessionDef {
   id: ProfessionId
@@ -36,6 +39,12 @@ export const PROFESSIONS: ProfessionDef[] = [
     name: 'Кузнечное дело',
     icon: 'profession-smithing',
     tagline: 'Предмет уровня хорошей находки своей зоны — на случай, если не везёт.',
+  },
+  {
+    id: 'relics',
+    name: 'Реликварий',
+    icon: 'profession-relics',
+    tagline: 'Известная вещь без единого броска: что обещано в рецепте, то и выйдет.',
   },
   {
     id: 'herbalism',
@@ -76,8 +85,15 @@ export interface ItemOutput {
    *  кузнец куёт то, что обещал. Для оружия и щита не нужен — атрибуты там
    *  из шаблона. */
   attribute?: AttributeId
-  /** Прилагательное в имени: «Кованый Панцирь». */
-  adjective: string
+  /** Прилагательное в имени: «Кованый Панцирь». Не задано — имя берётся
+   *  целиком из `name`: у уникальной вещи имя собственное, а не «Кованый X». */
+  adjective?: string
+  /** Готовое имя вещи. Задано — оно и есть имя, прилагательное не нужно. */
+  name?: string
+  /** Прок вещи (data/procs.ts). Сама механика живёт в game/combat.ts,
+   *  предмет только называет id: так один прок нельзя описать дважды
+   *  по-разному, а внутренний кулдаун у него один на всю игру. */
+  procId?: string
 }
 
 /** Модификатор зелья БЕЗ source: source проставляется как 'potion:<id>'. */
@@ -106,11 +122,13 @@ export interface RecipeDef {
   name: string
   icon: IconName
   profession: ProfessionId
+  /** С какого уровня рецепт доступен. Не задан — с первого. */
+  unlockLevel?: number
   inputs: RecipeInput[]
   output: FoodOutput | ItemOutput | PotionOutput
 }
 
-export const RECIPES: RecipeDef[] = [
+const CRAFT_RECIPES: RecipeDef[] = [
   // --- Кулинария ---
   {
     id: 'herb-broth',
@@ -313,11 +331,122 @@ export const RECIPES: RecipeDef[] = [
       ],
     },
   },
+  // --- Легендарные уникумы на реагентах ГЕРОИКИ ---
+  //
+  // Открываются на сотом: это последняя вещь, которую можно сделать руками, и
+  // добывается она только вторым проходом по лестнице. Реагенты просятся из
+  // РАЗНЫХ героик — одной любимой не обойтись, надо пройти всю лестницу.
+  {
+    id: 'relic-fang',
+    name: 'Реликтовый змеезуб',
+    icon: 'recipe-relic-blade',
+    profession: 'smithing',
+    unlockLevel: LEVEL_CAP,
+    inputs: [
+      { materialId: 'reagent-mute-stone', count: 2 },
+      { materialId: 'reagent-seething-coal', count: 3 },
+      { materialId: 'ember-shard', count: 8 },
+    ],
+    output: {
+      kind: 'item',
+      slot: 'mainHand',
+      rarity: 'legendary',
+      level: 100,
+      templateId: 'fang',
+      adjective: 'Реликтовый',
+    },
+  },
+  {
+    id: 'relic-cuirass',
+    name: 'Реликтовый панцирь',
+    icon: 'recipe-relic-plate',
+    profession: 'smithing',
+    unlockLevel: LEVEL_CAP,
+    inputs: [
+      { materialId: 'reagent-rime-core', count: 2 },
+      { materialId: 'reagent-brine-druse', count: 3 },
+      { materialId: 'quarry-ore', count: 10 },
+    ],
+    output: {
+      kind: 'item',
+      slot: 'chest',
+      rarity: 'legendary',
+      level: 100,
+      attribute: 'vitality',
+      adjective: 'Реликтовый',
+    },
+  },
+  {
+    id: 'relic-charm',
+    name: 'Реликтовый оберег',
+    icon: 'recipe-relic-charm',
+    profession: 'smithing',
+    unlockLevel: LEVEL_CAP,
+    inputs: [
+      { materialId: 'reagent-drowned-whorl', count: 2 },
+      { materialId: 'reagent-booming-whirl', count: 2 },
+      { materialId: 'reagent-bottom-tear', count: 2 },
+      { materialId: 'reagent-drift-charge', count: 2 },
+    ],
+    output: {
+      kind: 'item',
+      slot: 'trinket',
+      rarity: 'legendary',
+      level: 100,
+      attribute: 'agility',
+      adjective: 'Реликтовый',
+    },
+  },
 ]
+
+/**
+ * Уникальные рецепты — ВЫВОДЯТСЯ ИЗ ТИРА данжа: добавили девятый данж, и
+ * девятая реликвия появилась сама.
+ *
+ * Уровень реликвии растёт со ступенью, но начинается с уровня открытия
+ * рецепта. Ровнять его по уровню боссов данжа нельзя — реликвия первого тира
+ * вышла бы двадцатого уровня, а крафтить её открывают на шестидесятом, и она
+ * была бы мёртвым контентом с первого дня.
+ */
+export const RELIC_LEVEL_BASE = UNIQUE_RECIPE_LEVEL
+export const RELIC_LEVEL_STEP = 5
+/** Сколько реагентов стоит реликвия: около пяти полных прохождений. */
+export const RELIC_REAGENT_COST = 5
+
+export const UNIQUE_RECIPES: RecipeDef[] = DUNGEONS.map((dungeon) => {
+  const relic = relicTier(dungeon.tier)
+  const tier = Math.max(1, Math.floor(dungeon.tier || 1))
+  return {
+    id: `relic-${dungeon.id}`,
+    name: relic.name,
+    icon: relic.icon,
+    profession: 'relics' as const,
+    unlockLevel: UNIQUE_RECIPE_LEVEL,
+    inputs: [{ materialId: dungeon.reagentId, count: RELIC_REAGENT_COST }],
+    output: {
+      kind: 'item' as const,
+      slot: 'trinket' as const,
+      rarity: 'legendary' as const,
+      level: RELIC_LEVEL_BASE + (tier - 1) * RELIC_LEVEL_STEP,
+      // Главный атрибут тоже от тира: четыре атрибута по кругу — так лестница
+      // реликвий не оказывается восемью вещами под один билд.
+      attribute: ARMOR_ATTRIBUTES[(tier - 1) % ARMOR_ATTRIBUTES.length],
+      name: relic.name,
+      procId: procIdOf(dungeon.id),
+    },
+  }
+})
+
+export const RECIPES: RecipeDef[] = [...CRAFT_RECIPES, ...UNIQUE_RECIPES]
 
 export const RECIPE_BY_ID: Record<string, RecipeDef> = Object.fromEntries(
   RECIPES.map((r) => [r.id, r]),
 )
+
+/** Уровень открытия рецепта. Одно место, где живёт умолчание. */
+export function recipeUnlockLevel(recipe: RecipeDef): number {
+  return recipe.unlockLevel ?? 1
+}
 
 export function recipesOf(profession: ProfessionId): RecipeDef[] {
   return RECIPES.filter((r) => r.profession === profession)

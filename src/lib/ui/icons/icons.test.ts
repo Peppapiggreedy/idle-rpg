@@ -9,6 +9,8 @@ import { CLASSES } from '../../data/classes'
 import { MATERIALS } from '../../data/materials'
 import { HERBS } from '../../data/herbs'
 import { ENCHANTS } from '../../data/enchants'
+import { PROCS } from '../../data/procs'
+import { BOSS_ABILITIES, HEROIC } from '../../data/heroic'
 import { REAGENTS } from '../../data/reagents'
 import { PROFESSIONS, RECIPES } from '../../data/recipes'
 import { PROGRESSION } from '../../data/progression'
@@ -35,6 +37,11 @@ const used: IconName[] = [
   ...RECIPES.flatMap((r) => (r.output.kind === 'potion' ? [r.output.icon] : [])),
   ...HERBS.map((h) => h.icon),
   ...ENCHANTS.map((e) => e.icon),
+  ...PROCS.map((p) => p.icon),
+  ...BOSS_ABILITIES.map((a) => a.icon),
+  HEROIC.icon,
+  ...REAGENTS.map((r) => r.icon),
+  ...RECIPES.flatMap((r) => (r.output.kind === 'item' ? [r.icon] : [])),
   'gold',
   'xp',
   // Иконки интерфейса: их не перечисляют данные — они стоят прямо

@@ -22,7 +22,14 @@
 import { Decimal } from './numbers'
 import { applyXp } from './formulas'
 import { rollLoot, stashLoot } from './loot'
-import { hasOffhand, rollBlock, rollMonsterDamage, rollSwing } from './combat'
+import {
+  advanceProcCooldowns,
+  hasOffhand,
+  rollBlock,
+  rollMonsterDamage,
+  rollProcs,
+  rollSwing,
+} from './combat'
 import type { Rng } from './rng'
 import { pushEvent, spawnMonster, type ActiveEffect, type GameState } from './state'
 import { ensureStats } from './stats'
@@ -49,6 +56,26 @@ import {
 } from './talents'
 
 /**
+ * Смерть героя одним местом. Раньше она была вписана внутрь applyMonsterAttack;
+ * теперь герой может упасть и не от удара моба (героическая отдача списывает
+ * HP в момент траты ресурса), и оформлять смерть двумя способами нельзя.
+ */
+function heroDies(state: GameState, rng: Rng): GameState {
+  const dead: GameState = {
+    ...state,
+    heroState: 'dead',
+    // Талант «Скорое возвращение» режет простой; множитель живёт в данных.
+    reviveMsLeft: REVIVE_DELAY_MS * reviveMultiplier(state.talents),
+    queuedAbilityId: null,
+    activeEffects: [],
+    combatLog: pushEvent(state.combatLog, { type: 'death' }),
+  }
+  // Смерть в данже выкидывает наружу: лут за убитых боссов уже в сумке,
+  // а прогресс цепочки не сохраняется — заходить придётся заново.
+  return dead.dungeonRun ? leaveDungeon(dead, rng, true) : dead
+}
+
+/**
  * Двойной удар: талант-флаг даёт замаху шанс повториться.
  *
  * Бросок делается ТОЛЬКО когда шанс положительный. Это не оптимизация:
@@ -58,7 +85,10 @@ import {
 function extraSwings(chance: number, rng: Rng): number {
   return chance > 0 && rng() < chance ? 1 : 0
 }
+import { rollBossReagent } from './crafting'
+import { bossDispel, bossSwingTime } from './bossAbilities'
 import {
+  activeDungeon,
   advanceDungeon,
   clearedXpBonus,
   currentBoss,
@@ -386,12 +416,85 @@ const applyMaterialDrop: TickStep = (s, ctx) => {
   // Материалы падают СВОИМ броском и в свой мешок: места в сумке не занимают
   // и шансы редкости предметов не сдвигают. Бросок идёт ДО дропа предмета —
   // порядок фиксирован, иначе прогоны с сидом перестанут воспроизводиться.
+  let next = s
   const material = rollMaterial(s.currentZoneId, ctx.rng)
-  if (!material) return s
-  return {
-    ...addMaterial(s, material.id),
-    combatLog: pushEvent(s.combatLog, { type: 'material', materialId: material.id }),
+  if (material) {
+    next = {
+      ...addMaterial(next, material.id),
+      combatLog: pushEvent(next.combatLog, { type: 'material', materialId: material.id }),
+    }
   }
+  // Реагент — только с боссов данжа. Индекс босса ещё указывает на убитого:
+  // цепочку двигает applyRespawn, и он идёт позже.
+  const dungeon = activeDungeon(s)
+  if (!dungeon || !s.dungeonRun) return next
+  const reagent = rollBossReagent(dungeon, s.dungeonRun.bossIndex, ctx.rng)
+  if (!reagent) return next
+  return {
+    ...addMaterial(next, reagent.id),
+    combatLog: pushEvent(next.combatLog, { type: 'material', materialId: reagent.id }),
+  }
+}
+
+/**
+ * Проки надетых вещей.
+ *
+ * Стоит ПОСЛЕ ударов обеих рук и ДО эффектов и наград: бросок идёт по ударам,
+ * нанесённым в этом тике, а урон прока — такой же урон, и добить моба он
+ * может. Тики урона по времени в счёт не идут: прок висит на оружии, а не на
+ * кровотечении (см. фильтр в emitAttack).
+ *
+ * Внутренние кулдауны тикают ВСЕГДА, даже когда герой мёртв или на привале:
+ * это таймер вещи, а не действие героя.
+ */
+const applyProcs: TickStep = (s, ctx) => {
+  const cooled = advanceProcCooldowns(s.procCooldownsMs, ctx.dtMs)
+  const base = cooled === s.procCooldownsMs ? s : { ...s, procCooldownsMs: cooled }
+  if (base.heroState !== 'alive' || base.respawnMsLeft > 0) return base
+  const hits = ctx.swingsDealt
+  if (hits <= 0) return base
+  const { fired, cooldowns } = rollProcs(base, hits, ctx.rng)
+  if (fired.length === 0) return base
+  let monster = base.monster
+  let currentHp = base.currentHp
+  let combatLog = base.combatLog
+  for (const fire of fired) {
+    if (fire.damage) {
+      const hpLeft = monster.currentHp.minus(fire.damage)
+      monster = { ...monster, currentHp: Decimal.max(hpLeft, new Decimal(0)) }
+      combatLog = pushEvent(combatLog, {
+        type: 'proc',
+        procId: fire.proc.id,
+        effect: 'damage',
+        amount: fire.damage,
+      })
+      ctx.emitAttack({
+        sourceId: 'hero',
+        targetId: monster.id,
+        amount: fire.damage,
+        isCrit: fire.isCrit,
+        abilityId: null,
+        procId: fire.proc.id,
+        timestamp: base.playtimeMs.toNumber(),
+      })
+      // Моб мог уже пасть от замаха — тогда это перебой, как и у обычного
+      // добивающего удара, и второй раз убийство не оформляется.
+      if (hpLeft.lte(0) && ctx.killedMonster === null) ctx.killedMonster = monster
+      continue
+    }
+    if (fire.heal) {
+      const healed = Decimal.min(currentHp.plus(fire.heal), base.stats.maxHp)
+      const gained = healed.minus(currentHp)
+      currentHp = healed
+      combatLog = pushEvent(combatLog, {
+        type: 'proc',
+        procId: fire.proc.id,
+        effect: 'heal',
+        amount: gained,
+      })
+    }
+  }
+  return { ...base, procCooldownsMs: cooldowns, monster, currentHp, combatLog }
 }
 
 const applyLootDrop: TickStep = (s, ctx) => {
@@ -477,7 +580,9 @@ const applyMonsterAttack: TickStep = (s, ctx) => {
   if (s.monster.damageMax.lte(0)) return s
   const reflectShare = blockReflectShare(s.talents)
   const resourceShare = blockResourceShare(s.talents)
-  let monsterSwing = s.monster.swingProgress + ctx.dtMs / (s.monster.swingTime * 1000)
+  // Время замаха берём через bossSwingTime: героический босс ускоряется на
+  // низком здоровье, обычный отдаёт своё число как было.
+  let monsterSwing = s.monster.swingProgress + ctx.dtMs / (bossSwingTime(s) * 1000)
   let monster = s.monster
   let currentHp = s.currentHp
   let currentMana = s.currentMana
@@ -673,6 +778,21 @@ const applyAutosaveCounter: TickStep = (s, ctx) => {
 const applyPotions: TickStep = (s, ctx) => advancePotions(s, ctx.dtMs)
 
 /**
+ * Рассеивание героического босса. Стоит ДО applyEnrage: отметки считаются от
+ * ещё не сдвинутого fightMs, ровно по тому же отрезку времени, по которому
+ * дальше посчитается ступень ярости.
+ */
+const applyBossDispel: TickStep = (s, ctx) => bossDispel(s, ctx.dtMs)
+
+/**
+ * Герой мог упасть не от удара моба: героическая отдача списывает HP в момент
+ * траты ресурса, в том числе при ручном нажатии между тиками. Без этого шага
+ * герой остался бы стоять на нуле «живым», пока моб не соберётся ударить.
+ */
+const applyLethalCheck: TickStep = (s, ctx) =>
+  s.heroState === 'alive' && s.currentHp.lte(0) ? heroDies(s, ctx.rng) : s
+
+/**
  * Травы: собираются ВРЕМЕНЕМ, а не убийством. Шаг не смотрит на
  * ctx.killedMonster и не берёт ни одного броска из rng — поэтому его место
  * в конвейере на воспроизводимость прогонов с сидом не влияет вовсе.
@@ -684,11 +804,13 @@ const PIPELINE: TickStep[] = [
   applyRest,
   applyPotions,
   applyCooldowns,
+  applyBossDispel,
   applyEnrage,
   applyAutocast,
   applyPendingKill,
   applyCombat,
   applyOffhandCombat,
+  applyProcs,
   applyEffects,
   applyKillRewards,
   applyLevelUps,
@@ -697,6 +819,7 @@ const PIPELINE: TickStep[] = [
   // Решение об отдыхе — здесь, за наградами и добычей: моб уже мёртв,
   // и это единственный момент, когда герой волен уйти.
   applyRestCheck,
+  applyLethalCheck,
   applyMonsterAttack,
   applyResourceGain,
   applyRegen,
@@ -720,7 +843,10 @@ export function tick(
       if (event.targetId === 'hero') ctx.hitsTaken += 1
       // Тики урона по времени ударами не считаются: иначе одно умение с
       // эффектом кормило бы ресурс втрое лучше остальных.
-      else if (!event.overTime) ctx.swingsDealt += 1
+      // Тики урона по времени и удары ПРОКОВ ударами не считаются: ресурс
+      // копится от замахов героя, а не от того, что сработало само. Иначе
+      // одна реликвия кормила бы ярость лучше любого умения.
+      else if (!event.overTime && !event.procId) ctx.swingsDealt += 1
       emitAttack(event)
     },
     killedMonster: null,

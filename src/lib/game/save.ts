@@ -20,6 +20,7 @@ import {
 import { createRng } from './rng'
 import { advancePotions, gatherHerbs } from './potions'
 import { ENCHANT_BY_ID } from '../data/enchants'
+import { PROC_BY_ID } from '../data/procs'
 import { ensureStats, STAT_IDS, type ModifierKind, type StatId, type StatModifier } from './stats'
 import { SLOT_IDS, type SlotId } from '../data/slots'
 import {
@@ -41,7 +42,14 @@ import { DEFAULT_CLASS, classById } from '../data/classes'
 import { MATERIAL_BY_ID } from '../data/materials'
 import { FOOD_BY_ID, POTION_RECIPE_BY_ID, isBagId } from '../data/recipes'
 import { BRANCHES, talentsInBranch, talentsOfClass } from '../data/talents'
-import { DUNGEONS, DUNGEON_BY_ID, buildBoss } from '../data/dungeons'
+import {
+  ALL_DUNGEONS,
+  DUNGEON_BY_ID,
+  buildBoss,
+  clearKey,
+  dungeonView,
+  type DungeonDifficulty,
+} from '../data/dungeons'
 import { currentBoss } from './dungeons'
 import type { DungeonRun } from '../types'
 import { rankOf } from './talents'
@@ -80,6 +88,8 @@ export interface SavedItem {
   hands?: number
   /** Наложенное зачарование. Нет поля — предмет не зачарован. */
   enchantId?: string
+  /** Прок вещи. Нет поля — прока нет. */
+  procId?: string
   mods: SavedModifier[]
 }
 
@@ -92,6 +102,8 @@ export interface SavedAbilitySetting {
 
 export interface SavedDungeonRun {
   dungeonId: string
+  /** Сложность забега: обычная и героическая — разные числа одной цепочки. */
+  difficulty: DungeonDifficulty
   bossIndex: number
   fightMs: number
 }
@@ -102,6 +114,8 @@ export interface SavePayloadV19 {
   materials: Record<string, string>
   /** Пыль зачарования: величина растущая, поэтому строкой. */
   enchantDust: string
+  /** Внутренние кулдауны проков: id прока -> сколько мс осталось. */
+  procCooldownsMs: Record<string, number>
   /** Действующие зелья. Переживают перезагрузку: склянка выпита и оплачена
    *  травами, отнимать её за F5 нельзя. Оффлайн их дожигает. */
   activePotions: Array<{ recipeId: string; msLeft: number }>
@@ -183,6 +197,7 @@ function savedFromItem(item: Item): SavedItem {
     level: item.level,
     ...(item.hands ? { hands: item.hands } : {}),
     ...(item.enchantId ? { enchantId: item.enchantId } : {}),
+    ...(item.procId ? { procId: item.procId } : {}),
     mods: item.mods.map((m) => ({
       stat: m.stat,
       kind: m.kind,
@@ -217,8 +232,9 @@ export function payloadFromState(state: GameState, lastTimestamp: number): SaveP
   }
   // Пишем только реально пройденные данжи — false в сейве это мусор.
   const dungeonsCleared: Record<string, boolean> = {}
-  for (const dungeon of DUNGEONS) {
-    if (state.dungeonsCleared[dungeon.id] === true) dungeonsCleared[dungeon.id] = true
+  for (const dungeon of ALL_DUNGEONS) {
+    const key = clearKey(dungeon.id, dungeon.difficulty)
+    if (state.dungeonsCleared[key] === true) dungeonsCleared[key] = true
   }
   return {
     version: 19,
@@ -233,6 +249,11 @@ export function payloadFromState(state: GameState, lastTimestamp: number): SaveP
       .filter((p) => p.msLeft > 0 && p.recipeId in POTION_RECIPE_BY_ID)
       .map((p) => ({ recipeId: p.recipeId, msLeft: Math.max(0, p.msLeft) })),
     enchantDust: state.enchantDust.floor().toString(),
+    // Нулевой кулдаун — мусор, а не прогресс: полная готовность это отсутствие
+    // записи, ровно как у зарядов умений.
+    procCooldownsMs: Object.fromEntries(
+      Object.entries(state.procCooldownsMs).filter(([id, left]) => left > 0 && id in PROC_BY_ID),
+    ),
     restSpeedupSource: state.restSpeedupSource,
     lastTimestamp,
     inventory: state.inventory.map(savedFromItem),
@@ -315,6 +336,9 @@ function itemFromSaved(raw: SavedItem, index: number): Item {
   // повесил бы руну оружия на талисман и подменил базу боя.
   const enchant = typeof raw.enchantId === 'string' ? ENCHANT_BY_ID[raw.enchantId] : undefined
   const enchantId = enchant && enchant.slots.includes(slot) ? enchant.id : undefined
+  // Прок принимаем только СВОЙ: неизвестный молча отбрасывается, а предмет
+  // остаётся носимым — терять из-за переименования вещь целиком нельзя.
+  const procId = typeof raw.procId === 'string' && raw.procId in PROC_BY_ID ? raw.procId : undefined
   return {
     id: typeof raw.id === 'string' ? raw.id : `item-restored-${index}`,
     name: typeof raw.name === 'string' ? raw.name : FALLBACK_ITEM_NAME,
@@ -323,6 +347,7 @@ function itemFromSaved(raw: SavedItem, index: number): Item {
     level,
     ...(hands ? { hands } : {}),
     ...(enchantId ? { enchantId } : {}),
+    ...(procId ? { procId } : {}),
     mods,
   }
 }
@@ -503,29 +528,51 @@ function potionsFromSaved(raw: unknown): ActivePotion[] {
   return potions
 }
 
+// Внутренние кулдауны проков из сейва: чужие id отбрасываем, свои режем по
+// длительности — иначе правленый сейв запер бы прок навсегда.
+function procCooldownsFromSaved(raw: unknown): Record<string, number> {
+  const result: Record<string, number> = {}
+  if (typeof raw !== 'object' || raw === null) return result
+  for (const [id, left] of Object.entries(raw as Record<string, unknown>)) {
+    const proc = PROC_BY_ID[id]
+    if (!proc) continue
+    if (typeof left !== 'number' || !Number.isFinite(left) || left <= 0) continue
+    result[id] = Math.min(left, proc.internalCooldownMs)
+  }
+  return result
+}
+
 // Забег из сейва: чужой данж или индекс за пределами цепочки — забега нет.
 // Лучше выйти наружу, чем застрять перед несуществующим боссом.
 function dungeonRunFromSaved(raw: unknown): DungeonRun | null {
   if (typeof raw !== 'object' || raw === null) return null
-  const { dungeonId, bossIndex, fightMs } = raw as Record<string, unknown>
+  const { dungeonId, difficulty, bossIndex, fightMs } = raw as Record<string, unknown>
   if (typeof dungeonId !== 'string') return null
-  const dungeon = DUNGEON_BY_ID[dungeonId]
+  // Мусорная сложность деградирует до обычной, а не выкидывает героя наружу:
+  // потерять забег хуже, чем пройти его на ступень легче. Сейвы прошлых
+  // версий поля не знают вовсе — и это ровно тот же случай.
+  const mode: DungeonDifficulty = difficulty === 'heroic' ? 'heroic' : 'normal'
+  const dungeon = dungeonView(dungeonId, mode)
   if (!dungeon) return null
   if (typeof bossIndex !== 'number' || !Number.isInteger(bossIndex)) return null
   if (bossIndex < 0 || bossIndex >= dungeon.bosses.length) return null
   return {
     dungeonId,
+    difficulty: mode,
     bossIndex,
     fightMs: typeof fightMs === 'number' && Number.isFinite(fightMs) && fightMs > 0 ? fightMs : 0,
   }
 }
 
+// Ключи двух видов: голый id обычной версии (так лежат все старые сейвы) и
+// '<id>:heroic'. Формат поля не менялся, значит и миграция ему не нужна.
 function clearedFromSaved(raw: unknown): Record<string, boolean> {
   const cleared: Record<string, boolean> = {}
   if (typeof raw !== 'object' || raw === null) return cleared
   const saved = raw as Record<string, unknown>
-  for (const dungeon of DUNGEONS) {
-    if (saved[dungeon.id] === true) cleared[dungeon.id] = true
+  for (const dungeon of ALL_DUNGEONS) {
+    const key = clearKey(dungeon.id, dungeon.difficulty)
+    if (saved[key] === true) cleared[key] = true
   }
   return cleared
 }
@@ -550,6 +597,7 @@ export function stateFromPayload(p: SavePayloadV19): GameState {
     // Мусор и отсутствие поля означают ноль, а не потерю сейва: v19 в этой
     // же ветке писался ещё без пыли, и такие сейвы обязаны читаться.
     enchantDust: parseDec(p.enchantDust, '0').floor(),
+    procCooldownsMs: procCooldownsFromSaved(p.procCooldownsMs),
     talentResets:
       typeof p.talentResets === 'number' && Number.isFinite(p.talentResets) && p.talentResets > 0
         ? Math.floor(p.talentResets)

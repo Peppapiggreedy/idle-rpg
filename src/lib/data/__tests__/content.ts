@@ -22,7 +22,7 @@ import {
   TTK_TARGET_MAX,
   TTK_TARGET_MIN,
 } from '../balance'
-import { DUNGEONS } from '../dungeons'
+import { ALL_DUNGEONS } from '../dungeons'
 import { ARMOR_NOUNS, SHIELDS, WEAPONS } from '../items'
 import { DROP_CHANCE } from '../loot'
 import { RARITIES } from '../rarity'
@@ -31,6 +31,8 @@ import { CLASSES } from '../classes'
 import { MATERIALS } from '../materials'
 import { HERBS } from '../herbs'
 import { DUST_BY_RARITY, ENCHANTS, ENCHANT_FLAT_STATS } from '../enchants'
+import { PROCS } from '../procs'
+import { BOSS_ABILITIES } from '../heroic'
 import { PROGRESSION } from '../progression'
 import { REAGENTS } from '../reagents'
 import { DUNGEON_SCENE_KEYS } from '../scenery'
@@ -85,7 +87,9 @@ export function realContent(): Content {
     branches: BRANCHES,
     talents: TALENTS,
     zones: ZONES,
-    dungeons: DUNGEONS,
+    // Обе лестницы: героика — тот же шаблон, и её реагенты, лут и уровни
+    // проверяются теми же схемами, а не отдельным списком.
+    dungeons: ALL_DUNGEONS,
     weapons: WEAPONS,
     shields: SHIELDS,
     rarities: RARITIES,
@@ -104,6 +108,8 @@ export function realContent(): Content {
     materials: MATERIALS,
     herbs: HERBS,
     enchants: ENCHANTS,
+    procs: PROCS,
+    bossAbilities: BOSS_ABILITIES,
     dustByRarity: DUST_BY_RARITY,
     enchantFlatStats: ENCHANT_FLAT_STATS,
     progression: PROGRESSION,

@@ -2,6 +2,9 @@
   "version": 19,
   "classId": "warden",
   "materials": {},
+  "activePotions": [],
+  "enchantDust": "0",
+  "procCooldownsMs": {},
   "restSpeedupSource": null,
   "lastTimestamp": 1700000000000,
   "inventory": [
@@ -494,10 +497,9 @@
   "heroState": "alive",
   "reviveMsLeft": 0,
   "talents": {
-    "honed-edge": 5,
-    "keen-eye": 3,
-    "savage-blows": 3,
-    "frenzy": 2
+    "wrath-honed-edge": 6,
+    "wrath-keen-eye": 6,
+    "wrath-savage-blows": 1
   },
   "talentResets": 2,
   "totalTicks": "0",

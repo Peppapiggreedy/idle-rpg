@@ -694,9 +694,12 @@ const REAVER_INSTINCT = branch('reaver-instinct', [
     id: 'instinct-rage-capacity',
     name: 'Ёмкость ярости',
     icon: 'talent-deep-well',
-    // Доход ярости — ДОЛЯ запаса, а цены умений — числа: глубже запас,
-    // значит больше касты за тот же бой.
-    effect: mods(m('maxMana', 'percent', 0.1)),
+    // СТАВКА НАМЕРЕННО НИЖЕ, чем у «Глубокого колодца» стража, и вот почему.
+    // Доход ярости — ДОЛЯ запаса (resourceIncome), а цены умений — числа:
+    // у изувера ёмкость это ещё и урон, а у стража только глубина. С равной
+    // ставкой ветка автономности изувера обгоняла бы по урону его же ветку
+    // урона — то есть выбор стиля переставал бы существовать.
+    effect: mods(m('maxMana', 'percent', 0.04)),
   },
   {
     id: 'instinct-beast-sense',
@@ -721,7 +724,8 @@ const REAVER_INSTINCT = branch('reaver-instinct', [
     id: 'instinct-hunger',
     name: 'Голод',
     icon: 'talent-deep-well',
-    effect: mods(m('maxMana', 'percent', 0.08)),
+    // Та же поправка, что и у «Ёмкости ярости» этажом выше.
+    effect: mods(m('maxMana', 'percent', 0.03)),
   },
   {
     id: 'instinct-second-breath',

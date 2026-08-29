@@ -16,6 +16,8 @@ import { buildMonster, COMMON, type MonsterRole } from './monsters'
 import { DUNGEON_SCENES, type DungeonSceneKey, type SceneConfig } from './scenery'
 import { zoneForMonsterLevel } from './zones'
 import type { SlotId } from './slots'
+import { BOSS_ABILITY_BY_ID, HEROIC } from './heroic'
+import { reagentOf } from './reagents'
 import type { MonsterTemplate, Rarity } from '../types'
 
 // Лут-пул босса: какие слоты падают и какого качества НЕ НИЖЕ.
@@ -41,6 +43,8 @@ export interface BossDef {
   // Не null только у последнего босса цепочки: реагент — отметка о том,
   // что данж пройден до конца, а не награда за первую же схватку.
   reagentId: string | null
+  /** Дополнительная способность героики. null — обычная версия босса. */
+  abilityId: string | null
 }
 
 export interface DungeonDef {
@@ -50,6 +54,10 @@ export interface DungeonDef {
   icon: IconName
   /** Ступень лестницы данжей, 1..8. Уникален: по нему выводятся числа. */
   tier: number
+  /** Сложность этого разворота шаблона. */
+  difficulty: DungeonDifficulty
+  /** Тир лут-пула: пригождается и проверке целостности, и UI. */
+  lootTier: LootTier
   zoneId: string // из какой зоны вход
   unlockRequirement: number // уровень персонажа
   /** Реагент тира: его роняет последний босс цепочки. */
@@ -150,8 +158,16 @@ export const TIER_GROWTH = {
   enrage: 0.97,
 }
 
-/** Тир лут-пула: с какого качества начинается цепочка находок данжа. */
-export type LootTier = 1 | 2
+/**
+ * Сложность забега. Это ПАРАМЕТР ШАБЛОНА рядом с тиром, а не отдельная
+ * сущность: один и тот же DungeonSpec разворачивается в две цепочки.
+ */
+export type DungeonDifficulty = 'normal' | 'heroic'
+export const DUNGEON_DIFFICULTIES: readonly DungeonDifficulty[] = ['normal', 'heroic']
+
+/** Тир лут-пула: с какого качества начинается цепочка находок данжа.
+ *  Третий тир — героический: эпик там пол, а не потолок. */
+export type LootTier = 1 | 2 | 3
 
 // Качество растёт от первого босса к третьему ВНУТРИ цепочки, а тир пула
 // поднимает всю тройку разом. Второй тир — данжи второй половины лестницы:
@@ -159,6 +175,7 @@ export type LootTier = 1 | 2
 const LOOT_FLOORS: Record<LootTier, readonly Rarity[]> = {
   1: ['uncommon', 'rare', 'epic'],
   2: ['rare', 'epic', 'legendary'],
+  3: ['epic', 'legendary', 'legendary'],
 }
 
 /** Множитель тира: единица на первом, дальше степень ставки. */
@@ -336,22 +353,43 @@ export const DUNGEON_SPECS: readonly DungeonSpec[] = [
   },
 ]
 
-/** Развернуть параметры данжа в полное описание с числами боссов. */
-export function buildDungeon(spec: DungeonSpec): DungeonDef {
-  const floors = LOOT_FLOORS[spec.lootTier]
-  const hp = tierScale(TIER_GROWTH.hp, spec.tier)
-  const damage = tierScale(TIER_GROWTH.damage, spec.tier)
-  const reward = tierScale(TIER_GROWTH.reward, spec.tier)
-  const enrage = tierScale(TIER_GROWTH.enrage, spec.tier)
+/**
+ * Ключ достижения. Обычная версия оставляет ключом ГОЛЫЙ id — так уже лежат
+ * все существующие сейвы, и миграция им не нужна. Героика дописывает суффикс:
+ * это отдельное достижение и отдельный бонус к опыту.
+ */
+export function clearKey(dungeonId: string, difficulty: DungeonDifficulty): string {
+  return difficulty === 'heroic' ? `${dungeonId}:heroic` : dungeonId
+}
+
+/** Развернуть параметры данжа в описание с числами боссов заданной сложности. */
+export function buildDungeon(
+  spec: DungeonSpec,
+  difficulty: DungeonDifficulty = 'normal',
+): DungeonDef {
+  const heroic = difficulty === 'heroic'
+  const lootTier = heroic ? HEROIC.lootTier : spec.lootTier
+  const floors = LOOT_FLOORS[lootTier]
+  // Уровень входа у героики один на все восемь — от него же считается и
+  // уровень боссов, той же формулой bossLevel. Своей формулы у героики нет.
+  const unlockRequirement = heroic ? HEROIC.unlockRequirement : spec.unlockRequirement
+  // Реагент: обычный из спеки, героический — по тиру из data/reagents.ts.
+  const reagentId = heroic ? (reagentOf(spec.tier, 'heroic')?.id ?? spec.reagentId) : spec.reagentId
+  const hp = tierScale(TIER_GROWTH.hp, spec.tier) * (heroic ? HEROIC.hpMult : 1)
+  const damage = tierScale(TIER_GROWTH.damage, spec.tier) * (heroic ? HEROIC.damageMult : 1)
+  const reward = tierScale(TIER_GROWTH.reward, spec.tier) * (heroic ? HEROIC.rewardMult : 1)
+  const enrage = tierScale(TIER_GROWTH.enrage, spec.tier) * (heroic ? HEROIC.enrageShare : 1)
   const last = spec.bosses.length - 1
   return {
     id: spec.id,
     name: spec.name,
     icon: spec.icon,
     tier: spec.tier,
+    difficulty,
+    lootTier,
     zoneId: spec.zoneId,
-    unlockRequirement: spec.unlockRequirement,
-    reagentId: spec.reagentId,
+    unlockRequirement,
+    reagentId,
     scenery: spec.scenery,
     scene: DUNGEON_SCENES[spec.scenery],
     bosses: spec.bosses.map((boss, index) => {
@@ -359,7 +397,7 @@ export function buildDungeon(spec: DungeonSpec): DungeonDef {
       return {
         id: boss.id,
         name: boss.name,
-        level: bossLevel(spec.unlockRequirement, index),
+        level: bossLevel(unlockRequirement, index),
         hpMult: new Decimal(step.hpMult * hp),
         damageMult: new Decimal(step.damageMult * damage),
         goldMult: new Decimal(step.goldMult * reward),
@@ -371,20 +409,50 @@ export function buildDungeon(spec: DungeonSpec): DungeonDef {
           minRarity: floors[Math.min(index, floors.length - 1)],
         },
         // Реагент — только за последнего: он и есть отметка «пройдено».
-        reagentId: index === last ? spec.reagentId : null,
+        reagentId: index === last ? reagentId : null,
+        // Способность приходит от МЕСТА в цепочке: три ступени одинаковы во
+        // всех восьми данжах, значит и добавка к ним одна и та же.
+        abilityId: heroic
+          ? (HEROIC.abilityIds[Math.min(index, HEROIC.abilityIds.length - 1)] ?? null)
+          : null,
       }
     }),
   }
 }
 
-export const DUNGEONS: DungeonDef[] = DUNGEON_SPECS.map(buildDungeon)
+export const DUNGEONS: DungeonDef[] = DUNGEON_SPECS.map((s) => buildDungeon(s, 'normal'))
+export const HEROIC_DUNGEONS: DungeonDef[] = DUNGEON_SPECS.map((s) => buildDungeon(s, 'heroic'))
+/** Обе лестницы подряд: по ним считаются достижения и бонус к опыту. */
+export const ALL_DUNGEONS: DungeonDef[] = [...DUNGEONS, ...HEROIC_DUNGEONS]
+
+/** Самый глубокий тир лестницы. По нему растут реагенты, реликвии и проки:
+ *  добавили девятый данж — всё, что считается от тира, продолжилось само. */
+export const MAX_DUNGEON_TIER = DUNGEONS.reduce((max, d) => Math.max(max, d.tier), 0)
 
 export const DUNGEON_BY_ID: Record<string, DungeonDef> = Object.fromEntries(
   DUNGEONS.map((d) => [d.id, d]),
 )
+const HEROIC_BY_ID: Record<string, DungeonDef> = Object.fromEntries(
+  HEROIC_DUNGEONS.map((d) => [d.id, d]),
+)
+
+/** Данж нужной сложности. Ровно один способ добраться до чисел героики. */
+export function dungeonView(
+  id: string,
+  difficulty: DungeonDifficulty = 'normal',
+): DungeonDef | null {
+  return (difficulty === 'heroic' ? HEROIC_BY_ID[id] : DUNGEON_BY_ID[id]) ?? null
+}
 
 // Награда за первое полное прохождение — постоянный бонус к опыту.
+// У героики он свой и крупнее: и проход дороже, и лестница вторая.
 export const DUNGEON_CLEAR_XP_BONUS = new Decimal(0.05)
+export const HEROIC_CLEAR_XP_BONUS = new Decimal(HEROIC.clearXpBonus)
+
+// Реэкспорт: способности боссов приезжают вместе с данжем, чтобы UI и логика
+// не искали их в двух местах.
+export { BOSS_ABILITIES, BOSS_ABILITY_BY_ID, HEROIC } from './heroic'
+export type { BossAbilityDef, BossAbilityEffect, HeroicSpec } from './heroic'
 
 /** Шаблон босса: та же buildMonster, что и у обычных мобов, но с ролью босса. */
 export function buildBoss(boss: BossDef): MonsterTemplate {

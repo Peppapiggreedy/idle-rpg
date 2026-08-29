@@ -82,7 +82,7 @@ describe('задержка регенерации маны', () => {
     expect(s.regenDelayMsLeft).toBe(REGEN_DELAY_S * 1000 - 1000)
     // Снимаем кулдаун И глобальный кулдаун: проверяем поведение паузы, а не
     // доступность кнопки.
-    s = useAbility({ ...s, abilityCooldownsMs: {}, gcdMsLeft: 0 }, QUICK.id, NO_LUCK, () => {})
+    s = useAbility({ ...s, abilityCooldownsMs: {}, abilityCharges: {}, gcdMsLeft: 0 }, QUICK.id, NO_LUCK, () => {})
     expect(s.regenDelayMsLeft).toBe(REGEN_DELAY_S * 1000)
   })
 })

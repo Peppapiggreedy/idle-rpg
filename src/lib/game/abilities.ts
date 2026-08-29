@@ -7,6 +7,7 @@ import { AUTOCAST_DELAY_MS, GCD_MS } from '../data/balance'
 import { ABILITIES, ABILITY_BY_ID, type AbilityDef } from '../data/abilities'
 import { abilitiesByPriority } from './rotation'
 import { talentAbilityEffect, talentExtraCharges } from './talents'
+import { punishResourceSpend } from './bossAbilities'
 import { abilitiesOf, pushEvent, type ActiveEffect, type GameState } from './state'
 import type { Rng } from './rng'
 import type { AttackEvent } from '../types'
@@ -37,11 +38,19 @@ export function maxCharges(state: GameState, ability: AbilityDef): number {
   return 1 + talentExtraCharges(state.talents, ability.id)
 }
 
-/** Сколько зарядов не потрачено. Пустая запись означает «полный комплект». */
+/**
+ * Сколько зарядов не потрачено. ОТСУТСТВИЕ записи означает полный комплект —
+ * но только если и откат не идёт: откат заводится ровно тогда, когда заряд
+ * потрачен, и состояние «откат идёт, записи нет» приходит либо из сейва
+ * прошлой версии, либо собрано руками. Читаем его как «один заряд потрачен»,
+ * иначе у такого героя умение оказалось бы готово посреди отката.
+ */
 export function chargesLeft(state: GameState, ability: AbilityDef): number {
   const max = maxCharges(state, ability)
   const left = state.abilityCharges[ability.id]
-  if (typeof left !== 'number' || !Number.isFinite(left)) return max
+  if (typeof left !== 'number' || !Number.isFinite(left)) {
+    return cooldownLeft(state, ability) > 0 ? Math.max(0, max - 1) : max
+  }
   return Math.min(max, Math.max(0, Math.floor(left)))
 }
 
@@ -107,7 +116,7 @@ function payFor(state: GameState, ability: AbilityDef): GameState {
   const spends = resetsRegenDelay(ability)
   const running = cooldownLeft(state, ability) > 0
   const left = Math.max(0, chargesLeft(state, ability) - 1)
-  return {
+  const paid: GameState = {
     ...state,
     currentMana: state.currentMana.minus(ability.manaCost),
     // Пауза берётся из СТАТА: талант автономности её сокращает, и делает
@@ -119,6 +128,11 @@ function payFor(state: GameState, ability: AbilityDef): GameState {
       : { ...state.abilityCooldownsMs, [ability.id]: ability.cooldownSec * 1000 },
     gcdMsLeft: ability.triggersGcd ? GCD_MS : state.gcdMsLeft,
   }
+  // Героическая «отдача»: босс наказывает за саму ТРАТУ ресурса. Хук стоит
+  // здесь, потому что здесь ресурс и списывается — значит покрыты и автокаст,
+  // и очередь, и ручное нажатие между тиками. Вне героики функция возвращает
+  // состояние как есть.
+  return punishResourceSpend(paid, ability.manaCost)
 }
 
 /**
