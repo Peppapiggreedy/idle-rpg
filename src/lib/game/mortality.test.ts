@@ -13,9 +13,8 @@ import { applyOfflineProgress } from './save'
 import { zoneRate } from './zones'
 import { ensureStats } from './stats'
 import { COMMON, MONSTER_BASE, buildMonster } from '../data/monsters'
-import { WEAPON_SHARPENING } from '../data/upgrades'
 import { SAFE_ZONE, ZONES, ZONE_BY_ID } from '../data/zones'
-import { PACING_MAX_LEVEL } from './simulate'
+import { PACING_MAX_LEVEL, averageGear } from './simulate'
 import type { MonsterTemplate } from '../types'
 
 const NO_LUCK = () => 1 // без критов и без дропа
@@ -146,7 +145,8 @@ describe('оффлайн моделирует цикл фарм -> смерть 
     const veteran: GameState = ensureStats({
       ...rookie,
       level: new Decimal(PACING_MAX_LEVEL),
-      upgrades: { [WEAPON_SHARPENING.id]: new Decimal(400) },
+      // Ветеран одет по своей глубине: сила теперь на вещах, а не в счётчике.
+      equipment: averageGear(83),
       statsDirty: true,
     })
     const rookieUptime = zoneRate(rookie, RIDGE).uptime

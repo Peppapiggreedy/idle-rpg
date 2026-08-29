@@ -41,6 +41,7 @@ const item = (rarity: Item['rarity']): Item => ({
   name: 'Предмет',
   rarity,
   slot: 'trinket',
+  level: 1,
   mods: [],
 })
 

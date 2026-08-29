@@ -54,6 +54,10 @@ export interface ItemOutput {
   kind: 'item'
   slot: SlotId
   rarity: Rarity
+  /** Уровень кованого предмета — уровень мобов зоны, чьи материалы он просит.
+   *  «Предмет уровня хорошей находки своей зоны»: тир и уровень как у дропа,
+   *  который в тех местах и падает, — сравнимый, а не строго лучший. */
+  level: number
   /** Шаблон оружия или щита; для брони не нужен. */
   templateId?: string
   /** Прилагательное в имени: «Кованый Панцирь». */
@@ -112,7 +116,7 @@ export const RECIPES: RecipeDef[] = [
       { materialId: 'quarry-ore', count: 4 },
       { materialId: 'bog-hide', count: 2 },
     ],
-    output: { kind: 'item', slot: 'head', rarity: 'uncommon', adjective: 'Кованый' },
+    output: { kind: 'item', slot: 'head', rarity: 'uncommon', level: 13, adjective: 'Кованый' },
   },
   {
     id: 'forged-cuirass',
@@ -123,7 +127,7 @@ export const RECIPES: RecipeDef[] = [
       { materialId: 'quarry-ore', count: 6 },
       { materialId: 'bog-hide', count: 3 },
     ],
-    output: { kind: 'item', slot: 'chest', rarity: 'uncommon', adjective: 'Кованый' },
+    output: { kind: 'item', slot: 'chest', rarity: 'uncommon', level: 13, adjective: 'Кованый' },
   },
   {
     id: 'forged-greaves',
@@ -134,7 +138,7 @@ export const RECIPES: RecipeDef[] = [
       { materialId: 'quarry-ore', count: 5 },
       { materialId: 'ember-shard', count: 1 },
     ],
-    output: { kind: 'item', slot: 'legs', rarity: 'uncommon', adjective: 'Кованый' },
+    output: { kind: 'item', slot: 'legs', rarity: 'uncommon', level: 23, adjective: 'Кованый' },
   },
   {
     id: 'forged-fang',
@@ -149,6 +153,7 @@ export const RECIPES: RecipeDef[] = [
       kind: 'item',
       slot: 'mainHand',
       rarity: 'uncommon',
+      level: 23,
       templateId: 'fang',
       adjective: 'Кованый',
     },
@@ -166,6 +171,7 @@ export const RECIPES: RecipeDef[] = [
       kind: 'item',
       slot: 'offHand',
       rarity: 'uncommon',
+      level: 58,
       templateId: 'bulwark',
       adjective: 'Кованый',
     },

@@ -30,6 +30,7 @@ import {
   OFFLINE_CAP_HOURS,
   OFFLINE_CHUNK_MIN,
   OFFLINE_EFFICIENCY,
+  itemLevelScale,
 } from '../data/balance'
 import { ABILITIES, ABILITY_BY_ID } from '../data/abilities'
 import { DEFAULT_CLASS, classById } from '../data/classes'
@@ -45,7 +46,7 @@ import { SAFE_ZONE, ZONE_BY_ID } from '../data/zones'
 import { currentZone, zoneRate } from './zones'
 
 export const SAVE_KEY = 'idle-rpg-save'
-export const SAVE_VERSION = 17
+export const SAVE_VERSION = 18
 export const AUTOSAVE_INTERVAL_MS = AUTOSAVE_INTERVAL_S * 1000
 // Потолок оффлайн-прогресса: дольше отсутствовать можно, но не оплачивается.
 export const OFFLINE_CAP_MS = OFFLINE_CAP_HOURS * 60 * 60 * 1000
@@ -69,6 +70,8 @@ export interface SavedItem {
   name: string
   rarity: string
   slot: string
+  /** Уровень предмета: с какого моба упал, от него растёт сила. */
+  level: number
   /** Сколько рук занимает оружие. Нет поля — предмет не оружие. */
   hands?: number
   mods: SavedModifier[]
@@ -87,8 +90,8 @@ export interface SavedDungeonRun {
   fightMs: number
 }
 
-export interface SavePayloadV17 {
-  version: 17
+export interface SavePayloadV18 {
+  version: 18
   /** Материалы и готовая еда: id -> количество строкой (величина растущая). */
   materials: Record<string, string>
   /** Порция еды, уже потраченная на текущий привал. */
@@ -108,7 +111,6 @@ export interface SavePayloadV17 {
   restHpThreshold: number
   restResourceThreshold: number
   reviveMsLeft: number
-  upgrades: Record<string, string>
   // Таланты: id -> ранг (обычные числа, не Decimal — рангов единицы).
   talents: Record<string, number>
   talentResets: number
@@ -168,6 +170,7 @@ function savedFromItem(item: Item): SavedItem {
     name: item.name,
     rarity: item.rarity,
     slot: item.slot,
+    level: item.level,
     ...(item.hands ? { hands: item.hands } : {}),
     mods: item.mods.map((m) => ({
       stat: m.stat,
@@ -178,9 +181,7 @@ function savedFromItem(item: Item): SavedItem {
   }
 }
 
-export function payloadFromState(state: GameState, lastTimestamp: number): SavePayloadV17 {
-  const upgrades: Record<string, string> = {}
-  for (const [id, owned] of Object.entries(state.upgrades)) upgrades[id] = owned.toString()
+export function payloadFromState(state: GameState, lastTimestamp: number): SavePayloadV18 {
   const equipment: Record<string, SavedItem | null> = {}
   for (const slot of SLOT_IDS) {
     const item = state.equipment[slot]
@@ -208,7 +209,7 @@ export function payloadFromState(state: GameState, lastTimestamp: number): SaveP
     if (state.dungeonsCleared[dungeon.id] === true) dungeonsCleared[dungeon.id] = true
   }
   return {
-    version: 17,
+    version: 18,
     classId: state.classId,
     materials: Object.fromEntries(
       Object.entries(state.materials)
@@ -238,7 +239,6 @@ export function payloadFromState(state: GameState, lastTimestamp: number): SaveP
     currentMana: state.currentMana.toString(),
     heroState: state.heroState,
     reviveMsLeft: state.reviveMsLeft,
-    upgrades,
     talents,
     talentResets: Math.max(0, Math.floor(state.talentResets)),
     totalTicks: state.totalTicks.toString(),
@@ -289,11 +289,15 @@ function itemFromSaved(raw: SavedItem, index: number): Item {
   // Двуручность — свойство предмета, а не слота: без неё связка рук
   // рассыпалась бы, и двуручное молча уживалось бы со щитом.
   const hands = raw.hands === 2 ? 2 : raw.hands === 1 ? 1 : undefined
+  // Уровень предмета из сейва принимаем только конечным числом не меньше 1:
+  // мусор деградирует до первого уровня, а не до NaN в силе вещи.
+  const level = Number.isFinite(raw.level) && raw.level >= 1 ? Math.floor(raw.level) : 1
   return {
     id: typeof raw.id === 'string' ? raw.id : `item-restored-${index}`,
     name: typeof raw.name === 'string' ? raw.name : FALLBACK_ITEM_NAME,
     rarity,
     slot,
+    level,
     ...(hands ? { hands } : {}),
     mods,
   }
@@ -412,10 +416,9 @@ function clearedFromSaved(raw: unknown): Record<string, boolean> {
   return cleared
 }
 
-export function stateFromPayload(p: SavePayloadV17): GameState {
+export function stateFromPayload(p: SavePayloadV18): GameState {
   const level = Decimal.max(parseDec(p.level, '1'), new Decimal(1))
-  const upgrades: Record<string, Decimal> = {}
-  for (const [id, owned] of Object.entries(p.upgrades ?? {})) upgrades[id] = parseDec(owned, '0')
+
   // Класс восстанавливается ПЕРВЫМ: от него зависят стартовые статы, набор
   // умений и стартовая экипировка, поверх которых кладётся всё сохранённое.
   // Неизвестный класс (переименовали, откатили версию) деградирует до
@@ -428,7 +431,6 @@ export function stateFromPayload(p: SavePayloadV17): GameState {
     level,
     currentXp: parseDec(p.currentXp, '0'),
     xpToNext: xpToNextLevel(level),
-    upgrades,
     talents: talentsFromSaved(p.talents),
     talentResets:
       typeof p.talentResets === 'number' && Number.isFinite(p.talentResets) && p.talentResets > 0
@@ -550,6 +552,61 @@ function handItemV14toV15(raw: unknown): unknown {
 export const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
   // 16 -> 17: появились профессии. Мешок материалов у старого героя пуст —
   // собирать он начнёт с ближайшего убитого моба. Прогресс не затронут.
+  // 17 -> 18: заточка снесена, у предметов появился уровень. Прогресс героя
+  // НЕ теряется, хотя счётчик покупок исчезает: сила переезжает в вещи —
+  // каждый предмет получает уровень мобов зоны, где герой фармит, а его
+  // ЧИСЛА домножаются на масштаб этого уровня, ровно как у тамошней находки.
+  // Голый ярлык уровня без домножения оставил бы ветерана со старыми слабыми
+  // вещами и без заточки — то есть ограбил бы его.
+  //
+  // Домножается то же, что растёт у честного дропа: base-урон и сила блока,
+  // плюс любые плоские прибавки. Скорости, шансы и проценты не трогаются.
+  17: (raw) => {
+    const zone = ZONE_BY_ID[String(raw.currentZoneId)]
+    const heroLevel = Number(raw.level)
+    const fallback = Number.isFinite(heroLevel) ? Math.max(1, Math.floor(heroLevel)) : 1
+    const itemLevel = zone
+      ? Math.round((zone.monsterLevelRange.min + zone.monsterLevelRange.max) / 2)
+      : fallback
+    const scale = itemLevelScale(itemLevel)
+    const SCALED_BASE = new Set([
+      'weaponDamageMin',
+      'weaponDamageMax',
+      'offhandDamageMin',
+      'offhandDamageMax',
+      'blockValue',
+    ])
+    const scaleMod = (mod: unknown): unknown => {
+      if (typeof mod !== 'object' || mod === null) return mod
+      const m = mod as { kind?: unknown; stat?: unknown; value?: unknown }
+      const grows =
+        m.kind === 'flat' || (m.kind === 'base' && SCALED_BASE.has(String(m.stat)))
+      if (!grows) return mod
+      return { ...m, value: parseDec(m.value, '0').times(scale).toString() }
+    }
+    const withLevel = (item: unknown): unknown => {
+      if (typeof item !== 'object' || item === null) return item
+      const it = item as { mods?: unknown }
+      return {
+        ...it,
+        level: itemLevel,
+        mods: Array.isArray(it.mods) ? it.mods.map(scaleMod) : it.mods,
+      }
+    }
+    const equipment =
+      typeof raw.equipment === 'object' && raw.equipment !== null
+        ? Object.fromEntries(
+            Object.entries(raw.equipment).map(([slot, item]) => [slot, withLevel(item)]),
+          )
+        : raw.equipment
+    const { upgrades: _upgrades, ...rest } = raw
+    return {
+      ...rest,
+      version: 18,
+      inventory: Array.isArray(raw.inventory) ? raw.inventory.map(withLevel) : [],
+      equipment,
+    }
+  },
   16: (raw) => ({ ...raw, version: 17, materials: {}, restSpeedupSource: null }),
   // 15 -> 16: появились классы. Все прежние герои — Стражи: ресурс маны,
   // правило задержки и те же три умения, что у них и были. Прогресс не
@@ -667,7 +724,7 @@ export const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
 }
 
 // null = сейв непригоден (не объект или из более новой версии игры).
-export function migrateSave(raw: unknown): SavePayloadV17 | null {
+export function migrateSave(raw: unknown): SavePayloadV18 | null {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null
   let data = raw as RawSave
   let version = typeof data.version === 'number' ? data.version : 0
@@ -678,7 +735,7 @@ export function migrateSave(raw: unknown): SavePayloadV17 | null {
     data = step(data)
     version = typeof data.version === 'number' ? data.version : version + 1
   }
-  return data as unknown as SavePayloadV17
+  return data as unknown as SavePayloadV18
 }
 
 export interface OfflineReport {
@@ -834,7 +891,7 @@ export function encodeSaveString(state: GameState, now: () => number = Date.now)
 }
 
 // Понимает base64 от экспорта и, на всякий случай, голый JSON.
-export function decodeSaveString(input: string): SavePayloadV17 | null {
+export function decodeSaveString(input: string): SavePayloadV18 | null {
   const attempts = [
     () => JSON.parse(fromBase64(input.trim())),
     () => JSON.parse(input.trim()),

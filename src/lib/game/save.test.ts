@@ -34,7 +34,6 @@ function richState(): GameState {
     level: new Decimal(42),
     currentXp: new Decimal(1500),
     xpToNext: xpToNextLevel(new Decimal(42)),
-    upgrades: { 'weapon-sharpening': new Decimal(54) },
     totalTicks: new Decimal(100000),
     playtimeMs: new Decimal(10_000_000),
     inventory: [
@@ -43,6 +42,7 @@ function richState(): GameState {
         name: 'Звёздный Оберег',
         rarity: 'epic',
         slot: 'trinket',
+        level: 9,
         mods: [
           { stat: 'attackPower', kind: 'flat', value: new Decimal(8), source: 'equipment:trinket' },
         ],
@@ -55,6 +55,7 @@ function richState(): GameState {
         name: 'Верный Полуторник',
         rarity: 'rare',
         slot: 'mainHand',
+        level: 12,
         hands: 1,
         mods: [
           { stat: 'weaponSpeed', kind: 'base', value: new Decimal(2.2), source: 'equipment:mainHand' },
@@ -108,7 +109,6 @@ describe('save/load', () => {
     expect(s.level.toNumber()).toBe(42)
     expect(s.currentXp.toNumber()).toBe(1500)
     expect(s.xpToNext.eq(xpToNextLevel(new Decimal(42)))).toBe(true)
-    expect(s.upgrades['weapon-sharpening'].toNumber()).toBe(54)
     expect(result.offline).toBeNull()
     // Моб после загрузки свежий и с полным HP.
     expect(s.monster.currentHp.eq(s.monster.maxHp)).toBe(true)
@@ -138,9 +138,9 @@ describe('save/load', () => {
     expect(s.gold.toNumber()).toBe(77)
     expect(s.level.toNumber()).toBe(5)
     expect(s.currentXp.toNumber()).toBe(3)
-    // v1 хранил 12 dps = 10 базовых + 2 заточки; средний удар: 20 + 2*2 = 24
-    expect(expectedSwingDamage(s.stats).toNumber()).toBe(24)
-    expect(s.upgrades['weapon-sharpening'].toNumber()).toBe(2)
+    // v1 хранил 12 dps = 10 базовых + 2 заточки. Заточку снесла миграция v18;
+    // остались база и сила с уровней: 10 + (70 + 4 силы * 2) * 2 / 14.
+    expect(expectedSwingDamage(s.stats).toNumber()).toBeCloseTo(10 + ((70 + 8) * 2) / 14, 9)
     expect(s.inventory).toEqual([])
     expect(s.itemSeq).toBe(0)
   })
@@ -156,6 +156,8 @@ describe('save/load', () => {
     expect(item.rarity).toBe('epic')
     expect(item.slot).toBe('trinket')
     expect(item.mods[0].value.toNumber()).toBe(8)
+    // Уровень предмета — часть его силы и обязан переживать сейв.
+    expect(item.level).toBe(9)
     expect(result.state.itemSeq).toBe(2)
   })
 

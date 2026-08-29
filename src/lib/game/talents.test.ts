@@ -178,16 +178,16 @@ describe('эффекты талантов', () => {
     const one = invest(bare, EDGE.id, 1)
     const three = invest(bare, EDGE.id, 3)
     const ratio = (s: GameState) => s.stats.attackPower.div(bare.stats.attackPower).toNumber()
-    // +4% за ранг, аддитивно внутри ступени percent.
-    expect(ratio(one)).toBeCloseTo(1.04, 9)
-    expect(ratio(three)).toBeCloseTo(1.12, 9)
+    // +2.5% за ранг, аддитивно внутри ступени percent.
+    expect(ratio(one)).toBeCloseTo(1.025, 9)
+    expect(ratio(three)).toBeCloseTo(1.075, 9)
   })
 
   it('source модификатора — talent:<id>, как требует раскладка статов', () => {
     const mods = talentModifiers({ [EDGE.id]: 2 })
     expect(mods.length).toBeGreaterThan(0)
     expect(mods.every((m) => m.source === `talent:${EDGE.id}`)).toBe(true)
-    expect(mods[0].value.eq(new Decimal(0.04).times(2))).toBe(true)
+    expect(mods[0].value.eq(new Decimal(0.025).times(2))).toBe(true)
   })
 
   it('талант второй ветки поднимает запас здоровья', () => {

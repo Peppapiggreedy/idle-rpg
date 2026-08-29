@@ -19,19 +19,18 @@ import {
   representativeMonster,
 } from '../data/zones'
 import { MONSTER_BASE, buildMonster, COMMON, RUNT, BRUTE } from '../data/monsters'
-import { PACING_MAX_LEVEL } from './simulate'
-import { WEAPON_SHARPENING } from '../data/upgrades'
+import { PACING_MAX_LEVEL, averageGear } from './simulate'
 
 const QUARRY = ZONE_BY_ID['hollow-quarry']
 const RIDGE = ZONE_BY_ID['ashen-ridge']
 // Последняя ступень лестницы: до неё новичку не дожить ни при каком раскладе.
 const LAST = ZONES[ZONES.length - 1]
 
-function heroAt(level: number, sharpenings: number): GameState {
+function heroAt(level: number, gearLevel: number): GameState {
   return ensureStats({
     ...createInitialState(1),
     level: new Decimal(level),
-    upgrades: { [WEAPON_SHARPENING.id]: new Decimal(sharpenings) },
+    equipment: averageGear(gearLevel),
     statsDirty: true,
   })
 }
@@ -149,7 +148,7 @@ describe('доступ к зонам', () => {
   })
 
   it('в открытую зону войти можно: моб оттуда, замах сброшен', () => {
-    const s = { ...heroAt(9, 0), swingProgress: 0.4, respawnMsLeft: 200 }
+    const s = { ...heroAt(9, 1), swingProgress: 0.4, respawnMsLeft: 200 }
     expect(isZoneUnlocked(s, QUARRY)).toBe(true)
     const after = travelToZone(s, QUARRY.id, createRng(1))
     expect(after.currentZoneId).toBe(QUARRY.id)
@@ -160,7 +159,7 @@ describe('доступ к зонам', () => {
   })
 
   it('несуществующая зона и переход в самого себя ничего не меняют', () => {
-    const s = heroAt(20, 0)
+    const s = heroAt(20, 1)
     expect(travelToZone(s, 'нет-такой-зоны', createRng(1))).toBe(s)
     expect(travelToZone(s, s.currentZoneId, createRng(1))).toBe(s)
   })
@@ -181,7 +180,7 @@ describe('доступ к зонам', () => {
 
 describe('честный прогноз опасности', () => {
   it('новичок в стартовой зоне выживает, в дальней — нет', () => {
-    const rookie = heroAt(1, 0)
+    const rookie = heroAt(1, 1)
     expect(forecastZone(rookie, SAFE_ZONE).verdict).not.toBe('hopeless')
     const far = forecastZone(rookie, LAST)
     expect(far.verdict).toBe('hopeless')
@@ -191,8 +190,8 @@ describe('честный прогноз опасности', () => {
   })
 
   it('прокачка превращает смертельную зону в безопасную', () => {
-    const before = forecastZone(heroAt(4, 15), QUARRY)
-    const after = forecastZone(heroAt(16, 120), QUARRY)
+    const before = forecastZone(heroAt(4, 3), QUARRY)
+    const after = forecastZone(heroAt(16, 18), QUARRY)
     expect(after.uptime).toBeGreaterThanOrEqual(before.uptime)
     expect(after.killsPerHour.gt(before.killsPerHour)).toBe(true)
     expect(after.verdict).toBe('safe')

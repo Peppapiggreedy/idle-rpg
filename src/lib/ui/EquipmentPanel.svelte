@@ -5,6 +5,7 @@
   import { SLOT_ICONS, SLOT_IDS, SLOT_NAMES } from '../data/slots'
   import { gameState, toggleAutoEquip, unequipSlot } from '../stores/game'
   import ItemMods from './ItemMods.svelte'
+  import { RARITY_BY_ID } from '../data/rarity'
   import { Button, IconSlot, Panel, Tag } from './kit'
   import { Icon } from './icons'
 
@@ -38,7 +39,7 @@
         {#snippet badge()}<Icon name={SLOT_ICONS[slot]} size="lg" />{/snippet}
         {#if item}
           <span class="name">{item.name}</span>
-          <Tag rarity={item.rarity} />
+          <Tag rarity={item.rarity} label="{RARITY_BY_ID[item.rarity].name} · {item.level} ур." />
           <ItemMods mods={item.mods} />
         {/if}
         {#snippet footer()}

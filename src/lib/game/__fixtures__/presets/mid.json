@@ -1,5 +1,5 @@
 {
-  "version": 17,
+  "version": 18,
   "classId": "warden",
   "materials": {},
   "restSpeedupSource": null,
@@ -10,17 +10,18 @@
       "name": "Сумрачный Наруч",
       "rarity": "uncommon",
       "slot": "hands",
+      "level": 8,
       "mods": [
         {
-          "stat": "attackPower",
+          "stat": "agility",
           "kind": "flat",
-          "value": "14",
+          "value": "16.96",
           "source": "equipment:hands"
         },
         {
-          "stat": "maxHp",
+          "stat": "vitality",
           "kind": "flat",
-          "value": "20",
+          "value": "8.48",
           "source": "equipment:hands"
         }
       ]
@@ -30,17 +31,18 @@
       "name": "Сумрачный Капюшон",
       "rarity": "common",
       "slot": "head",
+      "level": 8,
       "mods": [
         {
-          "stat": "attackPower",
+          "stat": "intellect",
           "kind": "flat",
-          "value": "7",
+          "value": "8.48",
           "source": "equipment:head"
         },
         {
-          "stat": "maxHp",
+          "stat": "vitality",
           "kind": "flat",
-          "value": "10",
+          "value": "4.24",
           "source": "equipment:head"
         }
       ]
@@ -50,17 +52,12 @@
       "name": "Звёздный Нагрудник",
       "rarity": "common",
       "slot": "chest",
+      "level": 8,
       "mods": [
         {
-          "stat": "attackPower",
+          "stat": "vitality",
           "kind": "flat",
-          "value": "7",
-          "source": "equipment:chest"
-        },
-        {
-          "stat": "maxHp",
-          "kind": "flat",
-          "value": "10",
+          "value": "12.72",
           "source": "equipment:chest"
         }
       ]
@@ -70,17 +67,12 @@
       "name": "Пастуший Нагрудник",
       "rarity": "common",
       "slot": "chest",
+      "level": 8,
       "mods": [
         {
-          "stat": "attackPower",
+          "stat": "vitality",
           "kind": "flat",
-          "value": "7",
-          "source": "equipment:chest"
-        },
-        {
-          "stat": "maxHp",
-          "kind": "flat",
-          "value": "10",
+          "value": "12.72",
           "source": "equipment:chest"
         }
       ]
@@ -92,6 +84,7 @@
       "name": "Ржавый Полуторник",
       "rarity": "uncommon",
       "slot": "mainHand",
+      "level": 8,
       "hands": 1,
       "mods": [
         {
@@ -103,19 +96,19 @@
         {
           "stat": "weaponDamageMin",
           "kind": "base",
-          "value": "22",
+          "value": "46.64000000000001",
           "source": "equipment:mainHand"
         },
         {
           "stat": "weaponDamageMax",
           "kind": "base",
-          "value": "44",
+          "value": "93.28000000000002",
           "source": "equipment:mainHand"
         },
         {
-          "stat": "attackPower",
+          "stat": "strength",
           "kind": "flat",
-          "value": "14",
+          "value": "29.68",
           "source": "equipment:mainHand"
         }
       ]
@@ -126,17 +119,18 @@
       "name": "Гремящий Капюшон",
       "rarity": "common",
       "slot": "head",
+      "level": 8,
       "mods": [
         {
-          "stat": "attackPower",
+          "stat": "intellect",
           "kind": "flat",
-          "value": "7",
+          "value": "8.48",
           "source": "equipment:head"
         },
         {
-          "stat": "maxHp",
+          "stat": "vitality",
           "kind": "flat",
-          "value": "10",
+          "value": "4.24",
           "source": "equipment:head"
         }
       ]
@@ -146,17 +140,12 @@
       "name": "Верный Панцирь",
       "rarity": "common",
       "slot": "chest",
+      "level": 8,
       "mods": [
         {
-          "stat": "attackPower",
+          "stat": "vitality",
           "kind": "flat",
-          "value": "7",
-          "source": "equipment:chest"
-        },
-        {
-          "stat": "maxHp",
-          "kind": "flat",
-          "value": "10",
+          "value": "12.72",
           "source": "equipment:chest"
         }
       ]
@@ -166,17 +155,18 @@
       "name": "Сумрачный Хват",
       "rarity": "common",
       "slot": "hands",
+      "level": 8,
       "mods": [
         {
-          "stat": "attackPower",
+          "stat": "agility",
           "kind": "flat",
-          "value": "7",
+          "value": "8.48",
           "source": "equipment:hands"
         },
         {
-          "stat": "maxHp",
+          "stat": "vitality",
           "kind": "flat",
-          "value": "10",
+          "value": "4.24",
           "source": "equipment:hands"
         }
       ]
@@ -187,17 +177,18 @@
       "name": "Верный Амулет",
       "rarity": "common",
       "slot": "trinket",
+      "level": 8,
       "mods": [
         {
-          "stat": "attackPower",
+          "stat": "strength",
           "kind": "flat",
-          "value": "7",
+          "value": "8.48",
           "source": "equipment:trinket"
         },
         {
-          "stat": "maxHp",
+          "stat": "vitality",
           "kind": "flat",
-          "value": "10",
+          "value": "4.24",
           "source": "equipment:trinket"
         }
       ]
@@ -236,14 +227,11 @@
   "itemSeq": 9,
   "gold": "4820",
   "level": "10",
-  "currentXp": "537",
-  "currentHp": "164",
-  "currentMana": "42",
+  "currentXp": "429",
+  "currentHp": "250",
+  "currentMana": "61",
   "heroState": "alive",
   "reviveMsLeft": 0,
-  "upgrades": {
-    "weapon-sharpening": "24"
-  },
   "talents": {
     "honed-edge": 1
   },

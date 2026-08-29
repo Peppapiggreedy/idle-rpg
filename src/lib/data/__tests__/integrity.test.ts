@@ -43,7 +43,6 @@ describe('целостность контента', () => {
       'data/rarity.ts',
       'data/sounds.ts',
       'data/talents.ts',
-      'data/upgrades.ts',
       'data/zones.ts',
     ]) {
       expect(covered, `${file} без схемы`).toContain(file)
@@ -65,7 +64,6 @@ describe('целостность контента', () => {
       'материал',
       'рецепт',
       'редкость',
-      'улучшение',
       'модель',
     ]) {
       expect(kinds, `тип «${kind}» без схемы`).toContain(kind)

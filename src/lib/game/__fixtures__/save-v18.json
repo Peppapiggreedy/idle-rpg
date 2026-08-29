@@ -1,0 +1,174 @@
+{
+  "version": 18,
+  "lastTimestamp": 0,
+  "gold": "760000",
+  "level": "28",
+  "currentXp": "40",
+  "currentHp": "150",
+  "currentMana": "42",
+  "heroState": "alive",
+  "reviveMsLeft": 0,
+  "inventory": [
+    {
+      "id": "item-3",
+      "name": "Гремящий Оберег",
+      "rarity": "uncommon",
+      "slot": "trinket",
+      "mods": [
+        {
+          "stat": "attackPower",
+          "kind": "flat",
+          "value": "52.08",
+          "source": "equipment:trinket"
+        },
+        {
+          "stat": "maxHp",
+          "kind": "flat",
+          "value": "74.4",
+          "source": "equipment:trinket"
+        }
+      ],
+      "level": 18
+    }
+  ],
+  "equipment": {
+    "head": null,
+    "chest": {
+      "id": "item-2",
+      "name": "Пастуший Кафтан",
+      "rarity": "common",
+      "slot": "chest",
+      "mods": [
+        {
+          "stat": "attackPower",
+          "kind": "flat",
+          "value": "26.04",
+          "source": "equipment:chest"
+        },
+        {
+          "stat": "maxHp",
+          "kind": "flat",
+          "value": "37.2",
+          "source": "equipment:chest"
+        }
+      ],
+      "level": 18
+    },
+    "hands": null,
+    "legs": null,
+    "trinket": null,
+    "mainHand": {
+      "id": "item-1",
+      "name": "Закалённый Крушитель",
+      "rarity": "rare",
+      "slot": "mainHand",
+      "mods": [
+        {
+          "stat": "weaponSpeed",
+          "kind": "base",
+          "value": "3.4",
+          "source": "equipment:mainHand"
+        },
+        {
+          "stat": "weaponDamageMin",
+          "kind": "base",
+          "value": "252.95999999999998",
+          "source": "equipment:mainHand"
+        },
+        {
+          "stat": "weaponDamageMax",
+          "kind": "base",
+          "value": "505.9200000000001",
+          "source": "equipment:mainHand"
+        },
+        {
+          "stat": "attackPower",
+          "kind": "percent",
+          "value": "0.1",
+          "source": "equipment:mainHand"
+        }
+      ],
+      "hands": 1,
+      "level": 18
+    },
+    "offHand": {
+      "id": "item-9",
+      "name": "Дубовый Заслон",
+      "rarity": "uncommon",
+      "slot": "offHand",
+      "mods": [
+        {
+          "stat": "blockChance",
+          "kind": "base",
+          "value": "0.25",
+          "source": "equipment:offHand"
+        },
+        {
+          "stat": "blockValue",
+          "kind": "base",
+          "value": "89.28",
+          "source": "equipment:offHand"
+        },
+        {
+          "stat": "maxHp",
+          "kind": "flat",
+          "value": "223.20000000000002",
+          "source": "equipment:offHand"
+        }
+      ],
+      "level": 18
+    }
+  },
+  "autoEquip": true,
+  "itemSeq": 4,
+  "totalTicks": "520000",
+  "playtimeMs": "52000000",
+  "currentZoneId": "mirefen-hollows",
+  "lastSurvivedZoneId": "mirefen-hollows",
+  "gcdMsLeft": 900,
+  "abilityCooldownsMs": {
+    "gut-rip": 1200,
+    "skull-splitter": 6000
+  },
+  "abilitySettings": {
+    "gut-rip": {
+      "autocast": true,
+      "priority": 2,
+      "reserve": 0.3
+    },
+    "blood-frenzy": {
+      "autocast": false,
+      "priority": 0,
+      "reserve": 0
+    },
+    "skull-splitter": {
+      "autocast": true,
+      "priority": 1,
+      "reserve": 0
+    }
+  },
+  "talents": {
+    "honed-edge": 5,
+    "keen-eye": 2,
+    "thick-hide": 3
+  },
+  "talentResets": 2,
+  "dungeonRun": {
+    "dungeonId": "sunken-barrow",
+    "bossIndex": 1,
+    "fightMs": 21000
+  },
+  "dungeonsCleared": {
+    "sunken-barrow": true
+  },
+  "regenDelayMsLeft": 2500,
+  "restHpThreshold": 0.6,
+  "restResourceThreshold": 0.2,
+  "classId": "reaver",
+  "materials": {
+    "quarry-ore": "7",
+    "meadow-herb": "4",
+    "food:herb-broth": "2"
+  },
+  "restSpeedupSource": null
+}

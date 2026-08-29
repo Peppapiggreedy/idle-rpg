@@ -25,7 +25,7 @@ async function probe(page: Page, label: string): Promise<number> {
 }
 
 test('за полчаса игрового времени сцена и DOM не разрастаются', async ({ page }) => {
-  test.setTimeout(240_000)
+  test.setTimeout(360_000)
   await openLiveGame(page)
 
   // ×100 отладочного ускорения. Потолок шагов за кадр (10) и лимит кадров
@@ -41,8 +41,10 @@ test('за полчаса игрового времени сцена и DOM не
   // Сумку ждём по счётчику на вкладке, а не по таймеру: сколько реального
   // времени уйдёт на двенадцать находок, зависит от машины, и таймер здесь
   // означал бы «иногда успело, иногда нет».
+  // Таймаут щедрый: дроп на старте редкий (25% с моба при TTK ~13 игровых
+  // секунд), и на двенадцать находок уходит пара минут даже на ×100.
   const bagTab = page.locator('nav[aria-label="Разделы"] button', { hasText: 'Сумка' })
-  await expect(bagTab).toContainText('12/12', { timeout: 60_000 })
+  await expect(bagTab).toContainText('12/12', { timeout: 240_000 })
   await page.waitForTimeout(5_000)
   const nodesBefore = await domNodes(page)
   const geometriesBefore = await probe(page, 'geometries')

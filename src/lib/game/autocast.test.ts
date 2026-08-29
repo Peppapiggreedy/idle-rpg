@@ -22,19 +22,19 @@ import {
   OFFLINE_EFFICIENCY,
 } from '../data/balance'
 import { ABILITY_BY_ID } from '../data/abilities'
-import { WEAPON_SHARPENING } from '../data/upgrades'
 import { ZONES } from '../data/zones'
+import { averageGear } from './simulate'
 
 const NO_LUCK = () => 1
 const QUICK = ABILITY_BY_ID['quick-strike']
 const WOUND = ABILITY_BY_ID['rending-wound']
 const BLOW = ABILITY_BY_ID['shattering-blow']
 
-function hero(level: number, sharpenings = 0, patch: Partial<GameState> = {}): GameState {
+function hero(level: number, gearLevel = 1, patch: Partial<GameState> = {}): GameState {
   return ensureStats({
     ...createInitialState(1),
     level: new Decimal(level),
-    upgrades: { [WEAPON_SHARPENING.id]: new Decimal(sharpenings) },
+    equipment: averageGear(gearLevel),
     statsDirty: true,
     ...patch,
   })
@@ -173,8 +173,8 @@ describe('автокаст в бою', () => {
 describe('честная разница авто и ручной игры', () => {
   const cases: GameState[] = []
   for (const level of [1, 4, 9, 16, 30]) {
-    for (const sharpenings of [0, 15, 120, 800]) {
-      for (const zone of ZONES) cases.push(stateInZone(hero(level, sharpenings), zone))
+    for (const gearLevel of [1, 8, 33, 93]) {
+      for (const zone of ZONES) cases.push(stateInZone(hero(level, gearLevel), zone))
     }
   }
 

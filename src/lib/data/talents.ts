@@ -62,6 +62,9 @@ export interface TalentDef {
 
 export const TALENTS: TalentDef[] = [
   {
+    // Числа ветки урона срезаны под контракт паритета веток (≤25% разброса
+    // золота между чистыми билдами): сила героя теперь на вещах, и щедрая
+    // ветка урона перекрывала бы вклад всей экипировки.
     id: 'honed-edge',
     icon: 'talent-honed-edge',
     name: 'Отточенный клинок',
@@ -71,7 +74,7 @@ export const TALENTS: TalentDef[] = [
     requiredPointsInBranch: 0,
     effect: {
       kind: 'modifiers',
-      mods: [{ stat: 'attackPower', kind: 'percent', value: new Decimal(0.04) }],
+      mods: [{ stat: 'attackPower', kind: 'percent', value: new Decimal(0.025) }],
     },
   },
   {
@@ -84,7 +87,7 @@ export const TALENTS: TalentDef[] = [
     requiredPointsInBranch: 5,
     effect: {
       kind: 'modifiers',
-      mods: [{ stat: 'critChance', kind: 'flat', value: new Decimal(0.03) }],
+      mods: [{ stat: 'critChance', kind: 'flat', value: new Decimal(0.02) }],
     },
   },
   {
@@ -97,7 +100,7 @@ export const TALENTS: TalentDef[] = [
     requiredPointsInBranch: 8,
     effect: {
       kind: 'modifiers',
-      mods: [{ stat: 'critMultiplier', kind: 'flat', value: new Decimal(0.25) }],
+      mods: [{ stat: 'critMultiplier', kind: 'flat', value: new Decimal(0.15) }],
     },
   },
   {
@@ -113,7 +116,7 @@ export const TALENTS: TalentDef[] = [
       // Ускорение ВСЕГДА flat по haste и никогда прибавкой к weaponSpeed:
       // процент от нуля даёт ноль, а плоская правка скорости оружия увела бы
       // её в минус. Правило записано в CLAUDE.md и закреплено тестом.
-      mods: [{ stat: 'haste', kind: 'flat', value: new Decimal(0.035) }],
+      mods: [{ stat: 'haste', kind: 'flat', value: new Decimal(0.02) }],
     },
   },
   {

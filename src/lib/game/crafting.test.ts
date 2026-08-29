@@ -53,8 +53,12 @@ describe('данные профессий', () => {
   it('уровней у профессий нет: в данных нет ни одного требования по опыту', () => {
     // Прокачка профессии — это второй счётчик, который надо гриндить.
     // Гриндить в этой игре уже есть что, и заводить второй незачем.
-    const json = JSON.stringify(RECIPES)
-    expect(/level|уровен|experience|опыт/i.test(json)).toBe(false)
+    // Поле level у ВЫХОДНОГО ПРЕДМЕТА — не в счёт: это уровень вещи (как у
+    // дропа), а не требование к кузнецу; требований и опыта быть не должно.
+    const json = JSON.stringify(
+      RECIPES.map((r) => (r.output.kind === 'item' ? { ...r, output: { ...r.output, level: 0 } } : r)),
+    )
+    expect(/требует|requirement|experience|опыт/i.test(json)).toBe(false)
   })
 
   it('каждый материал падает хотя бы в одной существующей зоне', () => {
@@ -88,6 +92,7 @@ describe('материалы падают своим броском', () => {
         name: 'хлам',
         rarity: 'common' as const,
         slot: 'trinket' as const,
+        level: 1,
         mods: [],
       })),
       monster: { ...hero().monster, currentHp: new Decimal(0.0001) },
@@ -131,6 +136,7 @@ describe('крафт', () => {
         name: 'хлам',
         rarity: 'common' as const,
         slot: 'trinket' as const,
+        level: 1,
         mods: [],
       })),
     })

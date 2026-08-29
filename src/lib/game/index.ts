@@ -12,9 +12,8 @@ export {
   COMBAT_LOG_SIZE,
 } from './tick'
 export type { GameState, Equipment } from './tick'
-export { upgradeCost, xpToNextLevel, applyXp, MAX_LEVELUPS_PER_CALL } from './formulas'
+export { xpToNextLevel, applyXp, MAX_LEVELUPS_PER_CALL } from './formulas'
 export type { XpResult } from './formulas'
-export { buyUpgrade, ownedCount } from './upgrades'
 export { rollRarity, rollLoot, rollSlot, sellItem, sellPrice, INVENTORY_SIZE } from './loot'
 export {
   equipItem,
@@ -143,7 +142,7 @@ export {
   OFFLINE_MODAL_MIN_MS,
 } from './save'
 export type {
-  SavePayloadV17,
+  SavePayloadV18,
   SavedDungeonRun,
   SavedItem,
   SavedModifier,

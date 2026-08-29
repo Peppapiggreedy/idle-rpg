@@ -63,10 +63,9 @@ export interface Zone {
 //     зонами тоже задана, и подгонять под неё можно только ОДНО — с какого
 //     уровня героя зона становится его;
 //   * unlockRequirement — это границы «правления» зоны, то есть отрезок
-//     уровней, на котором она актуальна. Числа подобраны прогоном так, чтобы
-//     за это правление герой усиливался ровно на одну ступеньку. Отсюда
-//     неровный шаг: 1, 3, 4, 5, ... 24, 25 — вначале ступеньки HP крупные
-//     (линейный рост от единицы), к концу мелкие, и правление удлиняется.
+//     уровней, на котором она актуальна. Сила героя приходит с ВЕЩАМИ уровня
+//     его зоны, поэтому отношение сил внутри правления почти постоянно, и
+//     правления — чистый темп игры: три уровня на зону, ровным шагом.
 //
 // Уровень моба намеренно не равен уровню героя: это ярлык сложности, а не
 // возраст противника. Менять эти числа врозь нельзя — контракт темпа
@@ -103,7 +102,7 @@ export const ZONES: Zone[] = [
       { id: 'rumbling-caver', name: 'Гулкий обвальщик', role: BRUTE },
     ],
     rewardMultiplier: new Decimal(1.06),
-    unlockRequirement: 3,
+    unlockRequirement: 4,
     isSafe: false,
   },
   {
@@ -118,7 +117,7 @@ export const ZONES: Zone[] = [
       { id: 'clay-heaver', name: 'Глиняный вздымщик', role: BRUTE },
     ],
     rewardMultiplier: new Decimal(1.124),
-    unlockRequirement: 5,
+    unlockRequirement: 7,
     isSafe: false,
   },
   {
@@ -133,7 +132,7 @@ export const ZONES: Zone[] = [
       { id: 'bog-drifter', name: 'Топляк', role: BRUTE },
     ],
     rewardMultiplier: new Decimal(1.191),
-    unlockRequirement: 6,
+    unlockRequirement: 10,
     isSafe: false,
   },
   {
@@ -148,7 +147,7 @@ export const ZONES: Zone[] = [
       { id: 'prism-lurker', name: 'Призменный залёгший', role: BRUTE },
     ],
     rewardMultiplier: new Decimal(1.262),
-    unlockRequirement: 8,
+    unlockRequirement: 13,
     isSafe: false,
   },
   {
@@ -163,7 +162,7 @@ export const ZONES: Zone[] = [
       { id: 'flint-colossus', name: 'Кремнёвый исполин', role: BRUTE },
     ],
     rewardMultiplier: new Decimal(1.338),
-    unlockRequirement: 9,
+    unlockRequirement: 16,
     isSafe: false,
   },
   {
@@ -178,7 +177,7 @@ export const ZONES: Zone[] = [
       { id: 'beam-breaker', name: 'Крепёжный ломщик', role: BRUTE },
     ],
     rewardMultiplier: new Decimal(1.419),
-    unlockRequirement: 10,
+    unlockRequirement: 19,
     isSafe: false,
   },
   {
@@ -193,7 +192,7 @@ export const ZONES: Zone[] = [
       { id: 'bole-oaf', name: 'Комлевый увалень', role: BRUTE },
     ],
     rewardMultiplier: new Decimal(1.504),
-    unlockRequirement: 12,
+    unlockRequirement: 22,
     isSafe: false,
   },
   {
@@ -208,7 +207,7 @@ export const ZONES: Zone[] = [
       { id: 'column-clinger', name: 'Колонный держун', role: BRUTE },
     ],
     rewardMultiplier: new Decimal(1.594),
-    unlockRequirement: 13,
+    unlockRequirement: 25,
     isSafe: false,
   },
   {
@@ -223,7 +222,7 @@ export const ZONES: Zone[] = [
       { id: 'rot-uproot', name: 'Гнилой выворотень', role: BRUTE },
     ],
     rewardMultiplier: new Decimal(1.689),
-    unlockRequirement: 15,
+    unlockRequirement: 28,
     isSafe: false,
   },
   {
@@ -238,7 +237,7 @@ export const ZONES: Zone[] = [
       { id: 'mud-bruiser', name: 'Грязевой бугай', role: BRUTE },
     ],
     rewardMultiplier: new Decimal(1.791),
-    unlockRequirement: 17,
+    unlockRequirement: 31,
     isSafe: false,
   },
   {
@@ -253,7 +252,7 @@ export const ZONES: Zone[] = [
       { id: 'slag-bearer', name: 'Шлаковый носитель', role: BRUTE },
     ],
     rewardMultiplier: new Decimal(1.898),
-    unlockRequirement: 19,
+    unlockRequirement: 34,
     isSafe: false,
   },
   {
@@ -268,7 +267,7 @@ export const ZONES: Zone[] = [
       { id: 'weathered-hunch', name: 'Обветренный горбач', role: BRUTE },
     ],
     rewardMultiplier: new Decimal(2.012),
-    unlockRequirement: 22,
+    unlockRequirement: 37,
     isSafe: false,
   },
   {
@@ -283,7 +282,7 @@ export const ZONES: Zone[] = [
       { id: 'drywind-crag', name: 'Суховейный кряжень', role: BRUTE },
     ],
     rewardMultiplier: new Decimal(2.133),
-    unlockRequirement: 24,
+    unlockRequirement: 40,
     isSafe: false,
   },
   {
@@ -298,7 +297,7 @@ export const ZONES: Zone[] = [
       { id: 'crust-hauler', name: 'Корковый тягач', role: BRUTE },
     ],
     rewardMultiplier: new Decimal(2.261),
-    unlockRequirement: 25,
+    unlockRequirement: 43,
     isSafe: false,
   },
   {
@@ -313,7 +312,7 @@ export const ZONES: Zone[] = [
       { id: 'weathered-boulderer', name: 'Заветренный глыбарь', role: BRUTE },
     ],
     rewardMultiplier: new Decimal(2.397),
-    unlockRequirement: 28,
+    unlockRequirement: 46,
     isSafe: false,
   },
   {
@@ -328,7 +327,7 @@ export const ZONES: Zone[] = [
       { id: 'glacier-brute', name: 'Ледниковый громила', role: BRUTE },
     ],
     rewardMultiplier: new Decimal(2.54),
-    unlockRequirement: 31,
+    unlockRequirement: 49,
     isSafe: false,
   },
   {
@@ -343,7 +342,7 @@ export const ZONES: Zone[] = [
       { id: 'frozen-snag', name: 'Мёрзлый коряжник', role: BRUTE },
     ],
     rewardMultiplier: new Decimal(2.693),
-    unlockRequirement: 34,
+    unlockRequirement: 52,
     isSafe: false,
   },
   {
@@ -358,7 +357,7 @@ export const ZONES: Zone[] = [
       { id: 'drift-slab', name: 'Наносный горбыль', role: BRUTE },
     ],
     rewardMultiplier: new Decimal(2.854),
-    unlockRequirement: 38,
+    unlockRequirement: 55,
     isSafe: false,
   },
   {
@@ -373,7 +372,7 @@ export const ZONES: Zone[] = [
       { id: 'craggy-idol', name: 'Кряжистый истукан', role: BRUTE },
     ],
     rewardMultiplier: new Decimal(3.026),
-    unlockRequirement: 42,
+    unlockRequirement: 58,
     isSafe: false,
   },
 ]

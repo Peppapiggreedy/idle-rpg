@@ -5,7 +5,6 @@ import { DUNGEONS } from '../../data/dungeons'
 import { SLOT_ICONS, SLOT_IDS } from '../../data/slots'
 import { STAT_ICONS } from '../../data/stats'
 import { TALENTS } from '../../data/talents'
-import { WEAPON_SHARPENING } from '../../data/upgrades'
 import { CLASSES } from '../../data/classes'
 import { MATERIALS } from '../../data/materials'
 import { PROFESSIONS, RECIPES } from '../../data/recipes'
@@ -21,7 +20,6 @@ const used: IconName[] = [
   ...TALENTS.map((t) => t.icon),
   ...ZONES.map((z) => z.icon),
   ...DUNGEONS.map((d) => d.icon),
-  WEAPON_SHARPENING.icon,
   ...SLOT_IDS.map((s) => SLOT_ICONS[s]),
   ...Object.values(STAT_ICONS),
   ...CLASSES.map((c) => c.icon),

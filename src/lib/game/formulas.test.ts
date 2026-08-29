@@ -1,46 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { Decimal } from './numbers'
-import { applyXp, upgradeCost, xpToNextLevel } from './formulas'
+import { applyXp, xpToNextLevel } from './formulas'
 import { XP_CURVE_BASE, XP_CURVE_EXPONENT } from '../data/balance'
-import { buyUpgrade, ownedCount } from './upgrades'
-import { createInitialState, type GameState } from './tick'
-import { WEAPON_SHARPENING } from '../data/upgrades'
-
-describe('upgradeCost и покупка', () => {
-  // Числа заточки — часть контракта темпа и живут в data/upgrades.ts, поэтому
-  // тест берёт их оттуда, а не повторяет: иначе он ловил бы не поломку формулы,
-  // а осознанную правку баланса.
-  const cost = (owned: number) =>
-    Math.floor(
-      WEAPON_SHARPENING.baseCost.times(WEAPON_SHARPENING.costGrowth.pow(owned)).toNumber() *
-        (1 + 1e-9),
-    )
-
-  it('цена растёт как baseCost * costGrowth^owned, целым золотом', () => {
-    for (const owned of [0, 1, 5, 20]) {
-      expect(upgradeCost(WEAPON_SHARPENING, new Decimal(owned)).toNumber()).toBe(cost(owned))
-    }
-  })
-
-  it('покупка 10 апгрейдов подряд списывает ровно сумму их цен', () => {
-    const total = [...Array(10).keys()].reduce((sum, k) => sum + cost(k), 0)
-    const purse = total * 5
-    let s: GameState = { ...createInitialState(), gold: new Decimal(purse) }
-    const damageBefore = s.stats.attackPower
-    for (let i = 0; i < 10; i++) s = buyUpgrade(s, WEAPON_SHARPENING)
-    expect(s.gold.toNumber()).toBe(purse - total)
-    expect(ownedCount(s, WEAPON_SHARPENING).toNumber()).toBe(10)
-    expect(s.stats.attackPower.minus(damageBefore).toNumber()).toBe(
-      WEAPON_SHARPENING.damageBonus.times(10).toNumber(),
-    )
-  })
-
-  it('при нехватке золота покупка ничего не меняет', () => {
-    const s: GameState = { ...createInitialState(), gold: new Decimal(cost(0) - 1) }
-    const after = buyUpgrade(s, WEAPON_SHARPENING)
-    expect(after).toBe(s)
-  })
-})
 
 describe('уровни', () => {
   // Порог уровня — floor(XP_CURVE_BASE * level^XP_CURVE_EXPONENT). Числа кривой

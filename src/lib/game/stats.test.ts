@@ -11,15 +11,34 @@ import {
   type StatModifier,
 } from './stats'
 import { createInitialState, type GameState } from './state'
-import { buyUpgrade } from './upgrades'
-import { WEAPON_SHARPENING } from '../data/upgrades'
 import { UNARMED } from '../data/balance'
 import { expectedSwingDamage } from './combat'
 
 function withUpgrades(count: number): GameState {
+  const base = createInitialState(1)
   const s = {
-    ...createInitialState(1),
-    upgrades: { 'weapon-sharpening': new Decimal(count) },
+    ...base,
+    equipment: {
+      ...base.equipment,
+      trinket: {
+        id: 'str-trinket',
+        name: 'str',
+        rarity: 'common' as const,
+        slot: 'trinket' as const,
+        level: 1,
+        mods:
+          count > 0
+            ? [
+                {
+                  stat: 'strength' as const,
+                  kind: 'flat' as const,
+                  value: new Decimal(7 * count),
+                  source: 'equipment:trinket',
+                },
+              ]
+            : [],
+      },
+    },
     statsDirty: true,
   }
   return ensureStats(s)
@@ -138,21 +157,78 @@ describe('конвейер статов', () => {
     expect(stats.damageReduction).toBe(0)
   })
 
-  it('апгрейды дают flat-модификатор из СЧЁТЧИКА покупок', () => {
-    // Порог привала тоже приходит источником (настройка игрока — база стата),
-    // поэтому ищем именно апгрейд, а не «единственный модификатор».
-    const mods = collectModifiers(withUpgrades(7)).filter((m) => m.source.startsWith('upgrade:'))
+  it('сила разворачивается в flat-модификатор силы атаки с source attribute:', () => {
+    // Атрибут — обычный стат конвейера, а его вклад в производные — обычные
+    // flat-модификаторы: раскладка панели статов показывает их построчно.
+    const mods = collectModifiers(withUpgrades(7)).filter((m) => m.source === 'attribute:strength')
     expect(mods).toHaveLength(1)
-    expect(mods[0]).toMatchObject({ stat: 'attackPower', kind: 'flat', source: 'upgrade:weapon-sharpening' })
-    expect(mods[0].value.toNumber()).toBe(98) // 7 покупок по +14 силы атаки
+    expect(mods[0]).toMatchObject({ stat: 'attackPower', kind: 'flat' })
+    expect(mods[0].value.toNumber()).toBe(98) // 49 силы по +2 силы атаки
   })
 
-  it('20 купленных апгрейдов дают прежний средний удар 60', () => {
-    // Эквивалентность прежней накопительной схеме теперь проверяется по
-    // среднему урону удара (детально — в damage-model.test.ts).
+  it('140 силы дают прежний средний удар 60', () => {
+    // Эквивалентность прежней арифметике заточки: 20 порций по +14 силы атаки
+    // (детально — в damage-model.test.ts).
     const s = withUpgrades(20)
+    expect(s.stats.strength.toNumber()).toBe(140)
     expect(s.stats.attackPower.toNumber()).toBe(70 + 20 * 14)
     expect(expectedSwingDamage(s.stats).toNumber()).toBe(60)
+  })
+
+  it('ловкость даёт скорость и криты, интеллект ману, живучесть здоровье', () => {
+    const base = createInitialState(1)
+    const s = ensureStats({
+      ...base,
+      equipment: {
+        ...base.equipment,
+        trinket: {
+          id: 'attr-trinket',
+          name: 'attr',
+          rarity: 'common' as const,
+          slot: 'trinket' as const,
+          level: 1,
+          mods: (['agility', 'intellect', 'vitality'] as const).map((stat) => ({
+            stat,
+            kind: 'flat' as const,
+            value: new Decimal(10),
+            source: 'equipment:trinket',
+          })),
+        },
+      },
+      statsDirty: true,
+    })
+    expect(s.stats.haste).toBeCloseTo(0.01, 10) // 10 ловкости * 0.001
+    expect(s.stats.critChance).toBeCloseTo(0.05 + 0.005, 10)
+    expect(s.stats.maxMana.toNumber()).toBe(50 + 50) // 10 интеллекта * 5
+    expect(s.stats.manaRegen.toNumber()).toBe(9 + 5)
+    expect(s.stats.maxHp.toNumber()).toBe(100 + 70) // 10 живучести * 7
+    expect(s.stats.hpRegen.toNumber()).toBe(1 + 1) // 10 живучести * 0.1
+  })
+
+  it('процент на атрибут множит и его вклады: конвейер один', () => {
+    // «+10% силы» талантом обязан прибавить и силу атаки: атрибут считается
+    // до разворота, а разворот читает итог.
+    const base = withUpgrades(10) // 70 силы
+    const s = ensureStats({
+      ...base,
+      talents: {},
+      equipment: {
+        ...base.equipment,
+        head: {
+          id: 'str-head',
+          name: 'head',
+          rarity: 'common' as const,
+          slot: 'head' as const,
+          level: 1,
+          mods: [
+            { stat: 'strength' as const, kind: 'percent' as const, value: new Decimal(0.1), source: 'equipment:head' },
+          ],
+        },
+      },
+      statsDirty: true,
+    })
+    expect(s.stats.strength.toNumber()).toBe(77) // 70 * 1.1
+    expect(s.stats.attackPower.toNumber()).toBe(70 + 154) // 77 * 2
   })
 
   it('порядок применения: base -> +flat -> *(1+сумма percent) -> *multiplier', () => {
@@ -184,10 +260,9 @@ describe('конвейер статов', () => {
     expect(recomputed.statsDirty).toBe(false)
   })
 
-  it('покупка апгрейда меняет урон только через пересчёт источников', () => {
-    const before = { ...createInitialState(1), gold: new Decimal(100) }
-    const after = buyUpgrade(before, WEAPON_SHARPENING)
-    expect(after.stats.attackPower.toNumber()).toBe(84) // 70 + 14
+  it('надетая вещь меняет урон только через пересчёт источников', () => {
+    const after = withUpgrades(1)
+    expect(after.stats.attackPower.toNumber()).toBe(84) // 70 + 7 силы * 2
     expect(after.statsDirty).toBe(false)
     // Урон нигде не хранится суммой: пересчёт с нуля даёт то же.
     expect(recomputeStats(after).attackPower.toNumber()).toBe(84)
@@ -197,8 +272,8 @@ describe('конвейер статов', () => {
     const b = explainStat(withUpgrades(20), 'attackPower')
     expect(b.base.toNumber()).toBe(70)
     expect(b.entries).toHaveLength(1)
-    expect(b.entries[0].source).toBe('upgrade:weapon-sharpening')
-    expect(b.entries[0].value.toNumber()).toBe(280) // 20 * 14
+    expect(b.entries[0].source).toBe('attribute:strength')
+    expect(b.entries[0].value.toNumber()).toBe(280) // 140 силы * 2
     expect(b.total.toNumber()).toBe(350)
   })
 })

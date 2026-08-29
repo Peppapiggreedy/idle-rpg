@@ -44,6 +44,7 @@ const MANA_TRINKET: Item = {
   name: 'Тестовый оберег',
   rarity: 'common',
   slot: 'trinket',
+  level: 1,
   mods: [
     { stat: 'maxMana', kind: 'flat', value: new Decimal(500), source: 'equipment:trinket' },
   ],
@@ -354,6 +355,7 @@ describe('умения масштабируются от оружия', () => {
           name: w.noun,
           rarity: 'common',
           slot: 'mainHand',
+          level: 1,
           hands: w.hands,
           mods: [
             { stat: 'weaponSpeed', kind: 'base', value: w.weaponSpeed, source },

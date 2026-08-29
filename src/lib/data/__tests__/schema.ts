@@ -31,7 +31,6 @@ import {
 import type { SlotId } from '../slots'
 import type { BranchDef, TalentDef } from '../talents'
 import type { Zone } from '../zones'
-import type { UpgradeDef } from '../../types'
 import type { StatId } from '../../game/stats'
 
 // ---------------------------------------------------------------------------
@@ -62,7 +61,6 @@ export interface Content {
   /** Пути звуковых файлов, реально лежащих в public/. */
   audioFiles: readonly string[]
   rarities: readonly RarityDef[]
-  upgrades: readonly UpgradeDef[]
   models: readonly ModelAsset[]
   slots: readonly SlotId[]
   slotNames: Record<SlotId, string>
@@ -914,7 +912,7 @@ export const CLASS_SCHEMA: EntitySchema<ClassDef> = {
   numbers: [
     { field: 'resource.perSwingDealt', get: (c) => c.resource?.perSwingDealt, min: 0 },
     { field: 'resource.perHitTaken', get: (c) => c.resource?.perHitTaken, min: 0 },
-    { field: 'resource.decayPerSecond', get: (c) => c.resource?.decayPerSecond, min: 0 },
+    { field: 'resource.decayShare', get: (c) => c.resource?.decayShare, min: 0, max: 1 },
   ],
   extra: (hero, content, report) => {
     const where = `класс ${hero.id}`
@@ -979,7 +977,7 @@ export const CLASS_SCHEMA: EntitySchema<ClassDef> = {
     // Ярость без утечки — копилка на потом, а не ресурс непрерывного боя.
     if (fromCombat) {
       report.need(
-        resource.decayPerSecond?.gt(0) ?? false,
+        resource.decayShare?.gt(0) ?? false,
         where,
         'ресурс копится боем, но не тает вне боя: его можно накопить впрок, ' +
           'и ритм класса пропадает (data/classes.ts)',
@@ -1104,26 +1102,6 @@ export const RARITY_SCHEMA: EntitySchema<RarityDef> = {
   },
 }
 
-export const UPGRADE_SCHEMA: EntitySchema<UpgradeDef> = {
-  kind: 'улучшение',
-  file: 'data/upgrades.ts',
-  entities: (c) => c.upgrades,
-  id: (u) => u.id,
-  name: (u) => u.name,
-  icon: (u) => u.icon,
-  numbers: [
-    { field: 'baseCost', get: (u) => u.baseCost, min: 0, exclusiveMin: true },
-    {
-      field: 'costGrowth',
-      get: (u) => u.costGrowth,
-      min: 1,
-      exclusiveMin: true,
-      why: 'без удорожания покупок улучшение скупается бесконечно',
-    },
-    { field: 'damageBonus', get: (u) => u.damageBonus, min: 0, exclusiveMin: true },
-  ],
-}
-
 export const MODEL_SCHEMA: EntitySchema<ModelAsset> = {
   kind: 'модель',
   file: 'data/assets.ts',
@@ -1190,7 +1168,6 @@ export const SCHEMAS = [
   MATERIAL_SCHEMA,
   RECIPE_SCHEMA,
   RARITY_SCHEMA,
-  UPGRADE_SCHEMA,
   MODEL_SCHEMA,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- разные типы сущностей
 ] as unknown as EntitySchema<unknown>[]
