@@ -17,7 +17,9 @@ test('постоянная зона — ровно три блока', async ({ 
   const blocks = page.locator('[data-permanent] > *')
   await expect(blocks).toHaveCount(3)
   // И порядок именно такой: сцена сверху, под ней действия, под ними полоски.
-  await expect(blocks.nth(0)).toContainText(/Противник|Бой|Здоровье моба|HP/i)
+  // Верхний блок узнаём по строке замаха: она есть и у сцены, и у текстовой
+  // панели, которая встаёт на её место, а имя моба меняется от спавна.
+  await expect(blocks.nth(0)).toContainText('Замах')
   await expect(blocks.nth(1)).toHaveAttribute('aria-label', 'Действия')
   await expect(blocks.nth(2)).toContainText('Здоровье')
 })
@@ -71,11 +73,33 @@ test('открытие выдвижки не двигает боевую сце�
   for (const name of ['Герой', 'Журнал']) {
     await page.getByRole('button', { name, exact: true }).click()
     const after = await stage.boundingBox()
+    // Закрываем своей же кнопкой в шапке листа. Тянуться к соседней ручке
+    // поверх открытого листа нельзя: лист прибит к низу окна и накрывает
+    // их обе, и браузер, доставая ручку из-под него, прокрутит страницу —
+    // сцена уедет не от вёрстки, а от прокрутки.
+    await page.getByRole('button', { name: 'Закрыть' }).click()
     expect(Math.round(after!.x)).toBe(Math.round(before!.x))
     expect(Math.round(after!.y)).toBe(Math.round(before!.y))
     expect(Math.round(after!.width)).toBe(Math.round(before!.width))
     expect(Math.round(after!.height)).toBe(Math.round(before!.height))
   }
+})
+
+test('открытой выдвижки всегда не больше одной', async ({ page }) => {
+  // Оба листа прибиты к низу окна одним и тем же `bottom`: открытые разом,
+  // они лежат друг на друге, и виден только тот, что позже в разметке.
+  // Открыть второй — значит закрыть первый.
+  await open(page)
+  const sheets = page.locator('[role="region"]:has(button[aria-label="Закрыть"])')
+  await page.getByRole('button', { name: 'Герой', exact: true }).click()
+  await expect(sheets).toHaveCount(1)
+  await expect(sheets).toHaveAttribute('aria-label', 'Герой')
+  // Ручка «Журнала» уходит под открытый лист, и мышью до неё не достать:
+  // отправляем событие прямо кнопке. Проверяется правило стора, а не то,
+  // куда попадёт курсор, — живой игрок закрывает лист крестиком в шапке.
+  await page.getByRole('button', { name: 'Журнал', exact: true }).dispatchEvent('click')
+  await expect(sheets).toHaveCount(1)
+  await expect(sheets).toHaveAttribute('aria-label', 'Журнал')
 })
 
 test('хоткеи умений живы в любом разделе и при открытых выдвижках', async ({ page }) => {

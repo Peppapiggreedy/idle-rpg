@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
+import { openHeroDrawer } from './screen.js'
 
 // Снимки трёх заранее заданных состояний игры в трёх ширинах плюс витрина.
 // Состояние приходит из ?state=<пресет> — это обычный сейв из
@@ -156,15 +157,20 @@ test('на мобильном вкладки прибиты к низу экра
   const nav = page.locator('nav[aria-label="Разделы"]')
   const before = await nav.boundingBox()
   expect(Math.round(before!.y + before!.height)).toBe(height)
-  await page.mouse.wheel(0, 4000)
+  // Крутим до САМОГО низа, а не на фиксированные четыре тысячи пикселей:
+  // страница растёт вместе с игрой, и колесо на постоянное число once
+  // уже переставало доезжать до конца — тест тогда мерил не полосу вкладок,
+  // а то, сколько содержимого успело накопиться выше.
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight))
   await page.waitForTimeout(200)
   const after = await nav.boundingBox()
   expect(Math.round(after!.y)).toBe(Math.round(before!.y))
-  // И под полосой не прячется низ раздела. Меряем сам раздел, а не его
-  // последнего ребёнка: на десктопе панели разложены по колонкам-обёрткам,
-  // а на мобильном обёртки растворены в `display: contents` — у такого
-  // элемента своей рамки нет, и замер по нему ничего бы не значил.
-  const box = await page.locator('main .section').boundingBox()
+  // И под полосой не прячется последняя панель раздела. Берём именно панели:
+  // на десктопе они разложены по колонкам-обёрткам, а на мобильном обёртки
+  // растворены в `display: contents` — своей рамки у такого элемента нет,
+  // и замер по нему ничего бы не значил.
+  const panels = page.locator('main .section > .col > *, main .section > *:not(.col)')
+  const box = await panels.last().boundingBox()
   expect(box!.y + box!.height).toBeLessThanOrEqual(before!.y + 1)
 })
 
@@ -178,6 +184,9 @@ test('левая рука под двуручным объясняет, поче
   // В пресете rich надето двуручное: пресет лежит в репозитории и не меняется
   // сам по себе, поэтому проверять можно прямо по нему.
   await openPreset(page, 'rich', true)
+  // Экипировка живёт в выдвижке «Герой», а не во вкладке: без неё слотов
+  // на странице нет вовсе.
+  await openHeroDrawer(page)
   const offhand = page.locator('.slot', { hasText: 'Левая рука' }).first()
   await expect(offhand).toContainText('Занята двуручным')
 })
@@ -199,7 +208,7 @@ test('вкладки разделов держат 44px на нажатие', as
 test('выдвижка героя', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 })
   await openPreset(page, 'rich', true)
-  await page.getByRole('button', { name: 'Герой', exact: true }).click()
+  await openHeroDrawer(page)
   expect(await capture(page, 'drawer-hero-1280')).toMatchSnapshot('drawer-hero-1280.png')
 })
 

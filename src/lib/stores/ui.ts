@@ -149,9 +149,17 @@ export function sanitizeUiSettings(raw: unknown): UiSettings {
   const drawers = { ...DEFAULTS.drawers }
   const rawDrawers = (data as { drawers?: unknown }).drawers
   if (typeof rawDrawers === 'object' && rawDrawers !== null) {
+    let taken = false
     for (const id of DRAWER_IDS) {
       const value = (rawDrawers as Record<string, unknown>)[id]
-      if (typeof value === 'boolean') drawers[id] = value
+      // Открытая может быть только одна: листы прибиты к низу окна одним
+      // и тем же `bottom` и, открытые разом, лежат друг на друге. Запись
+      // с двумя открытыми — это либо правка руками, либо настройки старой
+      // сборки; берём первую и закрываем вторую.
+      if (typeof value === 'boolean' && value && !taken) {
+        drawers[id] = true
+        taken = true
+      }
     }
   }
   return { textMode, fpsLimit, volumes, drawers }
@@ -204,7 +212,13 @@ export function setFpsLimit(limit: FpsLimit): void {
 export function setDrawer(id: DrawerId, open: boolean): void {
   settings.update((s) => {
     if (s.drawers[id] === open) return s
-    const next = { ...s, drawers: { ...s.drawers, [id]: open } }
+    // Открытая выдвижка ЗАКРЫВАЕТ вторую. Обе прибиты к низу окна одним и
+    // тем же `bottom` — открытые разом, они просто лежали друг на друге,
+    // и виден был только тот лист, что позже в разметке.
+    const drawers = open
+      ? (Object.fromEntries(DRAWER_IDS.map((x) => [x, x === id])) as Record<DrawerId, boolean>)
+      : { ...s.drawers, [id]: false }
+    const next = { ...s, drawers }
     persist(next)
     return next
   })

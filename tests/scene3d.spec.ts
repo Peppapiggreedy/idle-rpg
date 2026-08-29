@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { openSettings, sectionTab } from './screen.js'
 
 // Поведение боевой сцены в живом браузере. Пиксели здесь не сравниваются
 // (см. screenshots.spec.ts, почему их сравнивать нельзя) — проверяется то,
@@ -60,7 +61,7 @@ test('в текстовом режиме сцены нет вовсе, а не �
   await openGame(page)
   await expect(page.locator(SCENE_READY)).toBeAttached({ timeout: 30_000 })
 
-  await page.locator('nav[aria-label="Разделы"] button').nth(4).click()
+  await openSettings(page)
   await page.getByRole('button', { name: 'Всегда текст' }).click()
   // Не «остановленный рендерер», а отсутствие холста: контекст WebGL
   // отдан браузеру целиком.
@@ -96,7 +97,7 @@ test('в текстовом режиме цикл рендера действи�
     running,
   )
 
-  await page.locator('nav[aria-label="Разделы"] button').nth(4).click()
+  await openSettings(page)
   await page.getByRole('button', { name: 'Всегда текст' }).click()
   await expect(page.locator('canvas')).toHaveCount(0)
   // Даём долететь уже назначенному кадру и замеряем.
@@ -155,18 +156,22 @@ test('двадцать смен зоны не растят память виде
   // на экране обязана стоить той же памяти, сколько бы раз её ни пересобрали.
   await openGame(page)
   await expect(page.locator(SCENE_READY)).toBeAttached({ timeout: 30_000 })
-  await page.locator('nav[aria-label="Разделы"] button').nth(3).click()
+  await sectionTab(page, 'Мир').click()
 
-  const travel = page.locator('button:has-text("Отправиться")')
-  const names = await page
-    .locator('li:has(button:has-text("Отправиться")) .name')
-    .allInnerTexts()
+  // Зоны сложены по десяткам, и раскрыт только десяток героя: берём соседей
+  // по нему — именно между ними и переключаемся туда-обратно. Строки из
+  // свёрнутых десятков в разметке есть, но нажать на них нельзя, поэтому
+  // отбираем ВИДИМЫЕ: без этого выбор упирался в кнопку под закрытой
+  // складкой и тест ждал её тридцать секунд.
+  const rows = page.locator('li:has(button:has-text("Отправиться"))').filter({ visible: true })
+  const names = await rows.locator('.name').allInnerTexts()
   expect(names.length, 'нужно хотя бы две доступные зоны').toBeGreaterThan(1)
   const [first, second] = names
 
   async function goTo(zone: string): Promise<void> {
-    const row = page.locator('li').filter({ hasText: zone })
-    const button = row.locator('button:has-text("Отправиться")')
+    const button = rows
+      .filter({ hasText: zone })
+      .locator('button:has-text("Отправиться")')
     if ((await button.count()) > 0) await button.first().click()
   }
 
@@ -188,7 +193,6 @@ test('двадцать смен зоны не растят память виде
 
   console.log(`geometries: было ${before}, стало ${after}`)
   expect(after, `было ${before}, стало ${after}`).toBeLessThanOrEqual(before + 1)
-  void travel
 })
 
 test('модели встают на место коробок и играют клип покоя', async ({ page }) => {

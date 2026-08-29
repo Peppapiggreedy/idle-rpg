@@ -10,9 +10,9 @@ async function open(page: Page, width: number): Promise<void> {
   await expect(page.locator('html')).toHaveAttribute('data-ready', 'preset')
 }
 
-/** Кнопка умения: она обёрнута в подсказку и есть в любом разделе. */
+/** Кнопка ряда действий: она обёрнута в подсказку и есть в любом разделе. */
 function ability(page: Page, last = false) {
-  const all = page.locator('button.ability')
+  const all = page.locator('[aria-label="Действия"] button.slot')
   return last ? all.last() : all.first()
 }
 

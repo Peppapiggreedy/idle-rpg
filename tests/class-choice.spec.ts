@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { actionButtons } from './screen.js'
 
 // Выбор класса — единственное необратимое решение в игре, и ломается оно
 // не в компоненте, а в жизненном цикле страницы: кто и когда успел записать
@@ -8,6 +9,11 @@ const SAVE_KEY = 'idle-rpg-save'
 
 const picker = (page: Page) => page.getByRole('heading', { name: 'С кем ты играешь' })
 const savedRaw = (page: Page) => page.evaluate((k) => localStorage.getItem(k), SAVE_KEY)
+
+/** Класс героя подписан в строке полосок: отдельного заголовка с классом
+ *  и уровнем на экране больше нет — он занимал строку над самой сценой. */
+const heroClass = (page: Page, name: string) =>
+  page.locator('.vitals .klass').filter({ hasText: name })
 
 async function openFresh(page: Page): Promise<void> {
   await page.goto('?debug=1')
@@ -44,7 +50,7 @@ test('до выбора класса игры нет вовсе, а не «сп�
   await openFresh(page)
   await expect(picker(page)).toBeVisible()
 
-  expect(await page.locator('button.ability').count(), 'кнопок умений быть не должно').toBe(0)
+  expect(await actionButtons(page).count(), 'кнопок умений быть не должно').toBe(0)
   expect(await page.locator('canvas').count(), 'сцены быть не должно').toBe(0)
   expect(await page.locator('nav[aria-label="Разделы"]').count(), 'вкладок быть не должно').toBe(0)
 
@@ -54,18 +60,18 @@ test('до выбора класса игры нет вовсе, а не «сп�
 
   // Всё это появляется ровно после выбора.
   await page.getByRole('button', { name: 'Играть за стража' }).click()
-  await expect(page.locator('button.ability').first()).toBeVisible()
+  await expect(actionButtons(page).first()).toBeVisible()
 })
 
 test('выбранный класс переживает перезагрузку', async ({ page }) => {
   await openFresh(page)
   await page.getByRole('button', { name: 'Играть за изувера' }).click()
   await expect(picker(page)).toBeHidden()
-  await expect(page.getByRole('heading', { name: /^Изувер · Уровень/ })).toBeVisible()
+  await expect(heroClass(page, 'Изувер')).toBeVisible()
 
   await page.reload()
   await expect(picker(page)).toBeHidden()
-  await expect(page.getByRole('heading', { name: /^Изувер · Уровень/ })).toBeVisible()
+  await expect(heroClass(page, 'Изувер')).toBeVisible()
 })
 
 test('сброс сейва возвращает выбор класса', async ({ page }) => {
@@ -84,5 +90,5 @@ test('сброс сейва возвращает выбор класса', async
 
   // И теперь можно выбрать другой класс.
   await page.getByRole('button', { name: 'Играть за стража' }).click()
-  await expect(page.getByRole('heading', { name: /^Страж · Уровень/ })).toBeVisible()
+  await expect(heroClass(page, 'Страж')).toBeVisible()
 })

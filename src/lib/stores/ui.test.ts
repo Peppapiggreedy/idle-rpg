@@ -102,12 +102,23 @@ describe('выдвижки', () => {
   })
 
   it('состояние выдвижек переживает перезагрузку и чинится от мусора', () => {
-    expect(sanitizeUiSettings({ drawers: { hero: true, log: true } }).drawers).toEqual({
-      hero: true,
+    expect(sanitizeUiSettings({ drawers: { hero: false, log: true } }).drawers).toEqual({
+      hero: false,
       log: true,
     })
     // Мусор в localStorage не должен оставить наполовину открытую панель.
     const junk = sanitizeUiSettings({ drawers: { hero: 'да', log: 1 } })
     expect(junk.drawers).toEqual({ hero: false, log: false })
+  })
+
+  it('открытой может быть только одна', () => {
+    // Оба листа прибиты к низу окна одним и тем же `bottom`: открытые
+    // разом, они лежат друг на друге, и виден только тот, что позже
+    // в разметке. Запись с двумя открытыми приходит из старой сборки
+    // или из правки localStorage руками — вторую закрываем.
+    expect(sanitizeUiSettings({ drawers: { hero: true, log: true } }).drawers).toEqual({
+      hero: true,
+      log: false,
+    })
   })
 })
