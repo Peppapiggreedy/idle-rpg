@@ -86,6 +86,8 @@ export interface Content {
   audioFiles: readonly string[]
   rarities: readonly RarityDef[]
   models: readonly ModelAsset[]
+  /** Уровень, с которого открыта цепочка преквестов (QUEST_CHAIN.unlockLevel). */
+  questChainUnlockLevel: number
   slots: readonly SlotId[]
   slotNames: Record<SlotId, string>
   slotIcons: Record<SlotId, string>
@@ -2195,6 +2197,22 @@ function checkReachable(content: Content, report: Report): void {
               `${prev.id}: две зоны спорят за одни и те же уровни мобов (data/zones.ts)`,
       )
     }
+    // ВЕРХ ЛЕСТНИЦЫ ПРИВЯЗАН К ПОТОЛКУ. Сегодня это совпадение (20 полос по
+    // пять, верх ровно 100), и держалось оно ни на чём.
+    //
+    // Подними потолок под рейд, оставив зоны прежними, — и
+    // zoneForMonsterLevel начнёт МОЛЧА отдавать последнюю зону для всех
+    // уровней выше: стоимость последних уровней посчитается по наградам не
+    // тех мобов, intendedZone покажет зону, где мобов твоего уровня нет
+    // вовсе, а в разделе «Мир» она будет помечена «по силам».
+    const top = bands[bands.length - 1]
+    report.need(
+      top.max === content.balance.levelCap,
+      `зона ${top.id}`,
+      `самая глубокая полоса кончается на ${top.max}, а LEVEL_CAP = ` +
+        `${content.balance.levelCap}: на последних уровнях герою не с кем драться ` +
+        '(data/zones.ts)',
+    )
   }
 
   // --- Зоны: в каждой что-то падает из материалов ---
@@ -2453,12 +2471,65 @@ function checkBalance(content: Content, report: Report): void {
 // ---------------------------------------------------------------------------
 
 /** Полная проверка контента. Пустой список — всё в порядке. */
+
+/**
+ * ТОТ ЖЕ ДОВОД, НО ПРО ВЕСЬ КОНТЕНТ, А НЕ ПРО ТРИ КОНСТАНТЫ.
+ *
+ * Правило «выше потолка — значит никогда» было написано для трёх чисел из
+ * data/balance.ts, а уровни входа зон, данжей, храмов, умений, ступеней
+ * лестницы и цепочки заданий с потолком не сверялись вовсе.
+ *
+ * Запас здесь нулевой уже сегодня: ступень рейда стоит РОВНО на сотом
+ * уровне. Опечатка в одну цифру — и главный контент итерации не открывается
+ * никогда, а прогон остаётся зелёным.
+ *
+ * Сравнение НЕСТРОГОЕ: ровно на потолке — законно, это последний уровень.
+ */
+function checkUnlockLevels(content: Content, report: Report): void {
+  const cap = content.balance.levelCap
+  type Entry = { where: string; field: string; level: number; file: string }
+  const entries: Entry[] = [
+    ...content.zones.map((z) => ({
+      where: `зона ${z.id}`, field: 'unlockRequirement', level: z.unlockRequirement,
+      file: 'data/zones.ts',
+    })),
+    ...content.dungeons.map((d) => ({
+      where: `данж ${clearKey(d.id, d.difficulty)}`, field: 'unlockRequirement',
+      level: d.unlockRequirement, file: 'data/dungeons.ts',
+    })),
+    ...content.temples.map((t) => ({
+      where: `храм ${t.id}`, field: 'unlockRequirement', level: t.unlockRequirement,
+      file: 'data/temple.ts',
+    })),
+    ...content.abilities.map((a) => ({
+      where: `умение ${a.id}`, field: 'unlockLevel', level: a.unlockLevel,
+      file: 'data/abilities.ts',
+    })),
+    ...content.progression.map((p) => ({
+      where: `ступень ${p.id}`, field: 'level', level: p.level, file: 'data/progression.ts',
+    })),
+    {
+      where: 'цепочка заданий', field: 'unlockLevel', level: content.questChainUnlockLevel,
+      file: 'data/quests.ts',
+    },
+  ]
+  for (const e of entries) {
+    if (!Number.isFinite(e.level) || e.level <= cap) continue
+    report.add(
+      e.where,
+      `${e.field} = ${e.level} выше LEVEL_CAP = ${cap}: до этого уровня не дойти, ` +
+        `контент не откроется никогда (${e.file})`,
+    )
+  }
+}
+
 export function checkContent(content: Content): ContentIssue[] {
   const report = new Report()
   for (const schema of SCHEMAS) runSchema(schema, content, report)
   checkReachable(content, report)
   checkInstanceEntrances(content, report)
   checkBalance(content, report)
+  checkUnlockLevels(content, report)
   return report.issues
 }
 

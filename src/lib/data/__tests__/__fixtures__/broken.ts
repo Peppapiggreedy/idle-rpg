@@ -791,6 +791,78 @@ export function brokenCases(): BrokenCase[] {
       },
       expect: ['SHIELD_SHARE', 'доля'],
     },
+
+    // --- Ничто не открывается выше потолка уровней ---
+    //
+    // Довод был написан для трёх констант баланса, а уровни входа зон,
+    // данжей, храмов, умений, ступеней и цепочки заданий с потолком не
+    // сверялись вовсе. Запас нулевой уже сегодня: ступень рейда стоит РОВНО
+    // на сотом уровне, и опечатка в одну цифру закрыла бы её навсегда.
+    {
+      title: 'зона открывается выше потолка уровней',
+      content: {
+        ...real,
+        zones: real.zones.map((z, i) =>
+          i === 0 ? { ...z, unlockRequirement: real.balance.levelCap + 1 } : z,
+        ),
+      },
+      expect: ['unlockRequirement', 'LEVEL_CAP', 'никогда'],
+    },
+    {
+      title: 'данж открывается выше потолка уровней',
+      content: {
+        ...real,
+        dungeons: real.dungeons.map((d, i) =>
+          i === 0 ? { ...d, unlockRequirement: real.balance.levelCap + 5 } : d,
+        ),
+      },
+      expect: ['unlockRequirement', 'LEVEL_CAP'],
+    },
+    {
+      title: 'храм открывается выше потолка уровней',
+      content: {
+        ...real,
+        temples: real.temples.map((t) => ({ ...t, unlockRequirement: real.balance.levelCap + 1 })),
+      },
+      expect: ['unlockRequirement', 'LEVEL_CAP'],
+    },
+    {
+      title: 'умение открывается выше потолка уровней',
+      content: {
+        ...real,
+        abilities: real.abilities.map((a, i) =>
+          i === 0 ? { ...a, unlockLevel: real.balance.levelCap + 1 } : a,
+        ),
+      },
+      expect: ['unlockLevel', 'LEVEL_CAP'],
+    },
+    {
+      title: 'ступень лестницы открывается выше потолка уровней',
+      content: {
+        ...real,
+        progression: real.progression.map((p, i) =>
+          i === 0 ? { ...p, level: real.balance.levelCap + 1 } : p,
+        ),
+      },
+      expect: ['level', 'LEVEL_CAP'],
+    },
+    {
+      title: 'цепочка заданий открывается выше потолка уровней',
+      content: { ...real, questChainUnlockLevel: real.balance.levelCap + 1 },
+      expect: ['unlockLevel', 'LEVEL_CAP'],
+    },
+    {
+      title: 'верх полос мобов не достаёт до потолка уровней',
+      content: {
+        ...real,
+        zones: real.zones.map((z) =>
+          z.monsterLevelRange.max === real.balance.levelCap
+            ? { ...z, monsterLevelRange: { ...z.monsterLevelRange, max: z.monsterLevelRange.max - 1 } }
+            : z,
+        ),
+      },
+      expect: ['полоса', 'LEVEL_CAP'],
+    },
     {
       title: 'ступени штрафа опыта идут не по возрастанию разрыва',
       content: {

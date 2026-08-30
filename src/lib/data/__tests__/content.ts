@@ -35,7 +35,7 @@ import { DUST_BY_RARITY, ENCHANTS, ENCHANT_FLAT_STATS } from '../enchants'
 import { PROCS } from '../procs'
 import { BOSS_ABILITIES } from '../heroic'
 import { TEMPLES } from '../temple'
-import { QUESTS } from '../quests'
+import { QUESTS, QUEST_CHAIN } from '../quests'
 import { PROGRESSION } from '../progression'
 import { REAGENTS } from '../reagents'
 import { DUNGEON_SCENE_KEYS } from '../scenery'
@@ -125,6 +125,7 @@ export function realContent(): Content {
     props: PROP_ASSETS,
     propFiles: readdirSync(PROPS_DIR),
     audioFiles: audioFiles(),
+    questChainUnlockLevel: QUEST_CHAIN.unlockLevel,
     balance: {
       dropChance: DROP_CHANCE,
       shieldShare: SHIELD_SHARE,

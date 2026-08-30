@@ -136,3 +136,23 @@ describe('проверка ловит битые данные', () => {
     }
   })
 })
+
+describe('потолок уровней', () => {
+  it('ровно на потолке — законно: ступень рейда стоит именно там', () => {
+    // Граница НЕСТРОГАЯ, и это не мелочь: сотый уровень — последний, до него
+    // доходят, и контент на нём открывается. Проверить это отдельной битой
+    // фикстурой нельзя (она обязана давать замечание), поэтому смотрим на
+    // ЖИВЫЕ данные: ступень рейда стоит ровно на LEVEL_CAP, и замечаний по
+    // ним нет ни одного — значит, нестрогость работает.
+    const content = realContent()
+    const top = content.progression.filter((s) => s.level === content.balance.levelCap)
+    expect(top.length, 'ни одна ступень не стоит на потолке — проверять нечего').toBeGreaterThan(0)
+    expect(checkContent(content)).toEqual([])
+  })
+
+  it('запас до потолка нулевой — об этом стоит помнить, планируя рейд', () => {
+    const content = realContent()
+    const highest = Math.max(...content.progression.map((s) => s.level))
+    expect(highest).toBe(content.balance.levelCap)
+  })
+})
