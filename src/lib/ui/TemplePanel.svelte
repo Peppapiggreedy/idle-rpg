@@ -10,6 +10,7 @@
   import { enterTempleRun, gameState } from '../stores/game'
   import { Button, Panel, Tag } from './kit'
   import { Icon } from './icons'
+  import { CLOSED_RUN_WARNING } from './runText'
 
   // Счётчик до следующей попытки живой сам собой: стор обновляется каждым
   // тиком, и $derived пересчитывается вместе с ним. Своего setInterval здесь
@@ -41,6 +42,7 @@
     Волны идут, пока ты жив. Одна попытка в сутки · вход из зоны «{ZONE_BY_ID[TEMPLE.zoneId]
       ?.name ?? TEMPLE.zoneId}»
   </p>
+  <p class="closed-run">{CLOSED_RUN_WARNING}</p>
 
   {#if status.canEnter}
     <Button size="sm" variant="primary" onclick={() => enterTempleRun()}>Войти</Button>
@@ -76,6 +78,13 @@
 
 <style>
   .facts,
+  /* Предупреждение про закрытую вкладку: приглушённое, но читаемое —
+     оно снимает страх, а не пугает. */
+  .closed-run {
+    margin: 0;
+    font-size: var(--text-xs);
+    color: var(--c-text-faint);
+  }
   .reason {
     margin: 0;
     font-size: var(--text-xs);
