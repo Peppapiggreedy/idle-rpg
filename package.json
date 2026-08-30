@@ -16,6 +16,8 @@
     "content:check": "vitest run src/lib/data/__tests__/integrity.test.ts",
     "screenshots": "npm run test:visual",
     "screenshots:update": "playwright test --update-snapshots",
+    "screenshots:update:one": "playwright test --update-snapshots -g",
+    "screenshots:list": "playwright test --list",
     "presets:update": "UPDATE_PRESETS=1 vitest run src/lib/game/__tests__/presets.test.ts",
     "icons:build": "node scripts/build-icons.mjs"
   },
