@@ -104,6 +104,7 @@ export interface Content {
 
 export interface BalanceNumbers {
   dropChance: number
+  shieldShare: number
   baseCritChance: number
   baseDamageReduction: number
   offlineEfficiency: number
@@ -2349,6 +2350,7 @@ function checkBalance(content: Content, report: Report): void {
   const where = 'баланс'
   const rules: NumberRule<BalanceNumbers>[] = [
     { field: 'DROP_CHANCE', get: (x) => x.dropChance, min: 0, exclusiveMin: true, max: 1, why: 'это вероятность' },
+    { field: 'SHIELD_SHARE', get: (x) => x.shieldShare, min: 0, max: 1, why: 'это доля находок в левую руку' },
     { field: 'BASE_STATS.critChance', get: (x) => x.baseCritChance, min: 0, max: 1, why: 'это вероятность' },
     { field: 'BASE_STATS.damageReduction', get: (x) => x.baseDamageReduction, min: 0, max: 0.99, why: 'доля срезаемого урона; единица означала бы бессмертие' },
     { field: 'OFFLINE_EFFICIENCY', get: (x) => x.offlineEfficiency, min: 0, exclusiveMin: true, max: 1, why: 'оффлайн не бывает выгоднее живой игры' },

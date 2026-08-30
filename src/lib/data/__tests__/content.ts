@@ -25,7 +25,7 @@ import {
 } from '../balance'
 import { ALL_DUNGEONS } from '../dungeons'
 import { ARMOR_NOUNS, SHIELDS, WEAPONS } from '../items'
-import { DROP_CHANCE } from '../loot'
+import { DROP_CHANCE, SHIELD_SHARE } from '../loot'
 import { RARITIES } from '../rarity'
 import { SOUNDS } from '../sounds'
 import { CLASSES } from '../classes'
@@ -127,6 +127,7 @@ export function realContent(): Content {
     audioFiles: audioFiles(),
     balance: {
       dropChance: DROP_CHANCE,
+      shieldShare: SHIELD_SHARE,
       baseCritChance: BASE_STATS.critChance.toNumber(),
       baseDamageReduction: BASE_STATS.damageReduction.toNumber(),
       offlineEfficiency: OFFLINE_EFFICIENCY,

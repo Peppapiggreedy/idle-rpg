@@ -781,6 +781,17 @@ export function brokenCases(): BrokenCase[] {
       expect: ['DROP_CHANCE', 'вероятность'],
     },
     {
+      // Число переехало из game/loot.ts в data/loot.ts (правило «весь баланс
+      // живёт в data»), и вместе с ним появился диапазон: доля не бывает
+      // больше единицы.
+      title: 'доля щитов среди находок больше единицы',
+      content: {
+        ...real,
+        balance: { ...real.balance, shieldShare: 1.4 },
+      },
+      expect: ['SHIELD_SHARE', 'доля'],
+    },
+    {
       title: 'ступени штрафа опыта идут не по возрастанию разрыва',
       content: {
         ...real,

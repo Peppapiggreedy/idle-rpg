@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import { Decimal } from './numbers'
-import { INVENTORY_SIZE, rollLoot, rollRarity, rollSlot, sellItem, sellPrice } from './loot'
+import {
+  INVENTORY_SIZE,
+  armorMods,
+  averageArmorMods,
+  rollLoot,
+  rollRarity,
+  rollSlot,
+  sellItem,
+  sellPrice,
+} from './loot'
 import { equipItem } from './equipment'
 import { SLOT_IDS } from '../data/slots'
 import { createInitialState, emptyEquipment, tick, type GameState } from './tick'
@@ -9,6 +18,12 @@ import { ensureStats } from './stats'
 import { STEP_MS } from './loop'
 import { DROP_CHANCE } from '../data/loot'
 import { RARITIES, RARITY_BY_ID } from '../data/rarity'
+import {
+  ARMOR_ATTRIBUTES,
+  ARMOR_BASE_PRIMARY,
+  ARMOR_BASE_VITALITY,
+  ARMOR_BONUS_STAT,
+} from '../data/items'
 import type { Item } from '../types'
 
 // rng из заготовленной последовательности значений.
@@ -309,5 +324,50 @@ describe('продажа', () => {
   it('несуществующий id — состояние не меняется', () => {
     const s: GameState = { ...createInitialState(1), inventory: [item] }
     expect(sellItem(s, 'нет-такого')).toBe(s)
+  })
+})
+
+// ДОВЕСОК БРОНИ — ДАННЫЕ, А НЕ ИМЯ В КОДЕ (находка 1.4 в AUDIT.md).
+//
+// Логика знала, что живучесть особая: `if (primary === 'vitality')` сливал
+// главный атрибут с общим довеском. Появись пятый атрибут или переедь
+// довесок на другой стат — броня начала бы выдавать ДВЕ записи об одном
+// стате, и в карточке предмета игрок читал бы «+12 живучести, +4 живучести»
+// двумя строками.
+describe('модификаторы брони', () => {
+  const rarity = RARITY_BY_ID.common
+
+  it('в модификаторах брони НЕТ двух записей об одном стате', () => {
+    for (const slot of ['head', 'chest', 'hands', 'legs', 'trinket'] as const) {
+      for (const primary of ARMOR_ATTRIBUTES) {
+        const mods = armorMods(slot, rarity, 7, primary)
+        const seen = mods.map((m) => `${m.stat}:${m.kind}`)
+        expect(new Set(seen).size, `${slot}/${primary}`).toBe(seen.length)
+      }
+    }
+  })
+
+  it('довесок идёт тому стату, который назван довеском В ДАННЫХ', () => {
+    // Главный атрибут совпал с довеском — одна строка на удвоенный бюджет.
+    const merged = armorMods('head', rarity, 1, ARMOR_BONUS_STAT)
+    expect(merged).toHaveLength(1)
+    expect(merged[0].stat).toBe(ARMOR_BONUS_STAT)
+    expect(merged[0].value.eq(ARMOR_BASE_PRIMARY.plus(ARMOR_BASE_VITALITY))).toBe(true)
+
+    // Не совпал — две строки, и вторая именно у довеска.
+    const other = ARMOR_ATTRIBUTES.find((a) => a !== ARMOR_BONUS_STAT)!
+    const split = armorMods('head', rarity, 1, other)
+    expect(split).toHaveLength(2)
+    expect(split.map((m) => m.stat)).toEqual([other, ARMOR_BONUS_STAT])
+  })
+
+  it('средняя броня прогона слита по тому же признаку', () => {
+    const avg = averageArmorMods('head', rarity, 1)
+    const seen = avg.map((m) => m.stat)
+    expect(new Set(seen).size).toBe(seen.length)
+    const bonus = avg.find((m) => m.stat === ARMOR_BONUS_STAT)!
+    const plain = avg.find((m) => m.stat !== ARMOR_BONUS_STAT)!
+    // Довесок делает свой стат тяжелее ровно на ARMOR_BASE_VITALITY.
+    expect(bonus.value.minus(plain.value).eq(ARMOR_BASE_VITALITY)).toBe(true)
   })
 })
