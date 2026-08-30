@@ -4,9 +4,13 @@
   import { ZONES, ZONE_BY_ID } from '../data/zones'
   import { REST_DURATION_S, REST_HP_PRESETS } from '../data/balance'
   import { zoneSafety } from '../game/rest'
-  import { gameState, setRestHpThreshold, travelToZone } from '../stores/game'
+  import { enterDungeonRun, gameState, setRestHpThreshold, travelToZone } from '../stores/game'
+  import { allDungeonStatuses, type DungeonBlockReason, type DungeonDef } from '../game'
+  import { DUNGEONS, HEROIC, HEROIC_DUNGEONS, clearKey } from '../data/dungeons'
   import { Button, NumberText, Panel, Tag } from './kit'
   import { Icon } from './icons'
+  import ZoneMap from './ZoneMap.svelte'
+  import { CLOSED_RUN_WARNING } from './runText'
 
   const forecasts = $derived(forecastAllZones($gameState))
   const byId = $derived(new Map(forecasts.map((f) => [f.zoneId, f])))
@@ -66,96 +70,118 @@
     return `держишь ${f.hitsSurvived.toFixed(1)} ударов`
   }
 
-  // Двадцать зон одним списком читаются как простыня, поэтому они сложены
-  // ДЕСЯТКАМИ УРОВНЕЙ ВХОДА. Раскрыта та группа, где герой стоит сейчас:
-  // список открывается на том месте, где игрок и находится.
-  interface ZoneGroup {
-    decade: number
-    label: string
-    zones: typeof ZONES
-  }
-  const groups = $derived.by((): ZoneGroup[] => {
-    const map = new Map<number, ZoneGroup>()
-    for (const zone of ZONES) {
-      const decade = Math.floor((zone.unlockRequirement - 1) / 10) * 10
-      let group = map.get(decade)
-      if (!group) {
-        group = { decade, label: `Уровни ${decade + 1}–${decade + 10}`, zones: [] }
-        map.set(decade, group)
-      }
-      group.zones.push(zone)
-    }
-    return [...map.values()].sort((a, b) => a.decade - b.decade)
-  })
-  const currentDecade = $derived(
-    Math.floor(((ZONE_BY_ID[$gameState.currentZoneId]?.unlockRequirement ?? 1) - 1) / 10) * 10,
+  // Выбранный узел карты. По умолчанию — тот, где герой стоит сейчас:
+  // экран открывается там, где игрок и находится.
+  let picked = $state<string | null>(null)
+  const selectedId = $derived(picked ?? $gameState.currentZoneId)
+  const zone = $derived(ZONE_BY_ID[selectedId] ?? ZONE_BY_ID[$gameState.currentZoneId])
+  const f = $derived(byId.get(selectedId) ?? null)
+
+  // Инстансы ВЫБРАННОЙ зоны. Отдельного списка данжей больше нет: данж —
+  // это дверь в конкретном месте карты, и жить он должен рядом с местом.
+  const statuses = $derived(
+    new Map(allDungeonStatuses($gameState).map((st) => [clearKey(st.dungeonId, st.difficulty), st])),
   )
+  const heroicById = $derived(new Map(HEROIC_DUNGEONS.map((d) => [d.id, d])))
+  const zoneDungeons = $derived(DUNGEONS.filter((d) => d.zoneId === selectedId))
+
+  const DUNGEON_REASON: Record<DungeonBlockReason, (d: DungeonDef) => string> = {
+    level: (d) => `Откроется с ${d.unlockRequirement} уровня`,
+    'wrong-zone': () => 'Сначала перейди в эту зону',
+    dead: () => 'Сначала воскресни',
+    'already-inside': () => 'Ты уже внутри',
+  }
 </script>
 
-<Panel title="Зоны">
-  {#each groups as group (group.decade)}
-  <details class="group" open={group.decade === currentDecade}>
-    <summary>{group.label} <span class="count">{group.zones.length}</span></summary>
-  <ul>
-    {#each group.zones as zone (zone.id)}
-      {@const f = byId.get(zone.id)}
-      {@const safety = zoneSafety($gameState, zone)}
-      {#if f}
-        <li
-          class="zone {f.verdict}"
-          class:current={zone.id === $gameState.currentZoneId}
-          class:locked={!f.unlocked}
-        >
-          <div class="head">
-            <span class="title"><Icon name={zone.icon} /><span class="name">{zone.name}</span></span>
-            <span class="verdict">{VERDICT_LABEL[f.verdict]}</span>
-          </div>
-          <div class="facts">
-            Мобы {zone.monsterLevelRange.min}–{zone.monsterLevelRange.max} ур. · награда ×{zone.rewardMultiplier.toFixed(
-              1,
-            )} · <NumberText value={f.goldPerHour} tone="gold" /> золота/ч ·
-            <NumberText value={f.xpPerHour} tone="xp" /> опыта/ч
-          </div>
-          {#if f.xpShare < 1}
-            <!-- Штраф за отставание. Цифра золота выше остаётся полной
-                 намеренно: штраф бьёт только по опыту, и строка обязана
-                 сказать это вслух — иначе просевший опыт прочтётся как баг. -->
-            <div class="xp-gap" class:none={f.xpShare <= 0}>
-              {xpGapText(f)}
+<Panel title="Мир">
+  <ZoneMap {selectedId} onselect={(id) => (picked = id)} />
+
+  {#if f}
+    {@const safety = zoneSafety($gameState, zone)}
+    <div class="detail {f.verdict}">
+      <div class="head">
+        <span class="title"><Icon name={zone.icon} /><span class="name">{zone.name}</span></span>
+        <span class="verdict">{VERDICT_LABEL[f.verdict]}</span>
+      </div>
+      <div class="facts">
+        Мобы {zone.monsterLevelRange.min}–{zone.monsterLevelRange.max} ур. · награда ×{zone.rewardMultiplier.toFixed(
+          1,
+        )} · <NumberText value={f.goldPerHour} tone="gold" /> золота/ч ·
+        <NumberText value={f.xpPerHour} tone="xp" /> опыта/ч
+      </div>
+      {#if f.xpShare < 1}
+        <!-- Штраф за отставание. Цифра золота выше остаётся полной
+             намеренно: штраф бьёт только по опыту, и строка обязана
+             сказать это вслух — иначе просевший опыт прочтётся как баг. -->
+        <div class="xp-gap" class:none={f.xpShare <= 0}>{xpGapText(f)}</div>
+      {/if}
+      <div class="warning">{warning(f)}, {toughness(f)}.</div>
+      <!-- Основание метки поменялось вместе с привалом: он теперь между
+           боями, поэтому пережить надо ВСЮ схватку, а не один удар. -->
+      <div class="safety" class:safe={safety.safe}>
+        {#if safety.safe}
+          Безопасно при пороге {restShare}%: тяжёлый бой здесь снимает
+          <NumberText value={safety.worstFight} tone="damage" />, а на привал ты уходишь
+          с <NumberText value={safety.thresholdHp} tone="hp" /> HP — запаса хватает,
+          умереть нельзя.
+        {:else if $gameState.stats.restThreshold <= 0}
+          Порог привала снят — единственной паузой снова стала смерть.
+        {:else}
+          Опасно при пороге {restShare}%: тяжёлый бой здесь снимает
+          <NumberText value={safety.worstFight} tone="damage" />, а входишь ты
+          в него с <NumberText value={safety.thresholdHp} tone="hp" /> HP.
+          Из боя ты выходишь только победителем или мёртвым — отдохнуть
+          посреди схватки нельзя.
+        {/if}
+      </div>
+      {#if zone.id === $gameState.currentZoneId}
+        <Tag tone="accent" label="ты здесь" />
+      {:else if f.unlocked}
+        <Button size="sm" onclick={() => travelToZone(zone.id)}>Отправиться</Button>
+      {:else}
+        <span class="lock">Откроется с {zone.unlockRequirement} уровня</span>
+      {/if}
+
+      <!-- ВХОДЫ ЭТОЙ ЗОНЫ. Данж живёт рядом со своим местом на карте, а не
+           отдельным списком: «вход из зоны X» в списке приходилось читать
+           строкой, а на карте это просто соседство. -->
+      {#each zoneDungeons as d (d.id)}
+        {@const status = statuses.get(clearKey(d.id, 'normal'))}
+        {#if status}
+          <div class="entry" class:locked={!status.canEnter}>
+            <div class="head">
+              <Icon name={d.icon} /><span class="name">{d.name}</span>
+              {#if status.cleared}<Tag tone="gold" label="пройден" />{/if}
             </div>
-          {/if}
-          <div class="warning">{warning(f)}, {toughness(f)}.</div>
-          <!-- Основание метки поменялось вместе с привалом: он теперь между
-               боями, поэтому пережить надо ВСЮ схватку, а не один удар. -->
-          <div class="safety" class:safe={safety.safe}>
-            {#if safety.safe}
-              Безопасно при пороге {restShare}%: тяжёлый бой здесь снимает
-              <NumberText value={safety.worstFight} tone="damage" />, а на привал ты уходишь
-              с <NumberText value={safety.thresholdHp} tone="hp" /> HP — запаса хватает,
-              умереть нельзя.
-            {:else if $gameState.stats.restThreshold <= 0}
-              Порог привала снят — единственной паузой снова стала смерть.
+            <div class="facts">{d.bosses.length} босса подряд</div>
+            <p class="closed-run">{CLOSED_RUN_WARNING}</p>
+            {#if status.canEnter}
+              <Button size="sm" variant="primary" onclick={() => enterDungeonRun(d.id)}>
+                Войти
+              </Button>
             {:else}
-              Опасно при пороге {restShare}%: тяжёлый бой здесь снимает
-              <NumberText value={safety.worstFight} tone="damage" />, а входишь ты
-              в него с <NumberText value={safety.thresholdHp} tone="hp" /> HP.
-              Из боя ты выходишь только победителем или мёртвым — отдохнуть
-              посреди схватки нельзя.
+              <span class="reason">{DUNGEON_REASON[status.reason ?? 'level'](d)}</span>
+            {/if}
+            {#if heroicById.get(d.id) && statuses.get(clearKey(d.id, 'heroic'))}
+              {@const heroic = heroicById.get(d.id)!}
+              {@const hStatus = statuses.get(clearKey(d.id, 'heroic'))!}
+              <div class="heroic">
+                <Icon name="dungeon-heroic" /><span class="name">Героика</span>
+                {#if hStatus.cleared}<Tag tone="gold" label="пройдена" />{/if}
+                {#if hStatus.canEnter}
+                  <Button size="sm" onclick={() => enterDungeonRun(d.id, 'heroic')}>Войти</Button>
+                {:else if hStatus.reason === 'level'}
+                  <span class="reason">с {HEROIC.unlockRequirement} уровня</span>
+                {:else}
+                  <span class="reason">{DUNGEON_REASON[hStatus.reason ?? 'level'](heroic)}</span>
+                {/if}
+              </div>
             {/if}
           </div>
-          {#if zone.id === $gameState.currentZoneId}
-            <Tag tone="accent" label="ты здесь" />
-          {:else if f.unlocked}
-            <Button size="sm" onclick={() => travelToZone(zone.id)}>Отправиться</Button>
-          {:else}
-            <span class="lock">Откроется с {zone.unlockRequirement} уровня</span>
-          {/if}
-        </li>
-      {/if}
-    {/each}
-  </ul>
-  </details>
-  {/each}
+        {/if}
+      {/each}
+    </div>
+  {/if}
 
   <div class="rest">
     <span class="label">Уходить на привал при HP ниже:</span>
@@ -189,33 +215,53 @@
 </Panel>
 
 <style>
-  .group {
+  .detail {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    padding: var(--space-3);
+    border: 1px solid var(--c-border);
+    border-left: var(--space-1) solid var(--verdict-color, var(--c-border));
+    border-radius: var(--radius-md);
+    margin-bottom: var(--space-3);
+  }
+  .detail.safe {
+    --verdict-color: var(--c-heal);
+  }
+  .detail.risky {
+    --verdict-color: var(--c-warning);
+  }
+  .detail.deadly,
+  .detail.hopeless {
+    --verdict-color: var(--c-damage);
+  }
+  .entry {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    margin-top: var(--space-2);
+    padding: var(--space-2);
     border: 1px solid var(--c-border);
     border-radius: var(--radius-md);
-    margin-bottom: var(--space-2);
   }
-  summary {
-    cursor: pointer;
-    padding: var(--space-2) var(--space-3);
-    font-size: var(--text-sm);
-    font-weight: var(--weight-medium);
-    color: var(--c-text-muted);
-    min-height: var(--tap-min);
+  .entry.locked {
+    opacity: 0.7;
+  }
+  .heroic {
     display: flex;
     align-items: center;
     gap: var(--space-2);
+    padding-top: var(--space-1);
+    border-top: 1px solid var(--c-border);
   }
-  .count {
-    font-size: var(--text-2xs);
-    font-variant-numeric: tabular-nums;
+  .closed-run {
+    margin: 0;
+    font-size: var(--text-xs);
     color: var(--c-text-faint);
   }
-  .group[open] summary {
-    color: var(--c-text);
-    border-bottom: 1px solid var(--c-border);
-  }
-  .group ul {
-    padding: var(--space-2);
+  .reason {
+    font-size: var(--text-sm);
+    color: var(--c-text-faint);
   }
   .safety {
     font-size: var(--text-sm);
@@ -234,14 +280,6 @@
   .rest .label {
     font-size: var(--text-sm);
     color: var(--c-text-muted);
-  }
-  ul {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
   }
   /* Цвет вердикта — семантика: «по силам» зелёное, «смертельно» красное.
      Полоска слева красится им же, чтобы список читался одним взглядом. */

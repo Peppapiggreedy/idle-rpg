@@ -39,7 +39,6 @@
   import CraftPanel from './lib/ui/CraftPanel.svelte'
   import EnchantPanel from './lib/ui/EnchantPanel.svelte'
   import ZonePanel from './lib/ui/ZonePanel.svelte'
-  import DungeonPanel from './lib/ui/DungeonPanel.svelte'
   import TemplePanel from './lib/ui/TemplePanel.svelte'
   import SettingsPanel from './lib/ui/SettingsPanel.svelte'
 
@@ -159,12 +158,14 @@
         <CraftPanel />
         <EnchantPanel />
       {:else if $activeSection === 'world'}
+        <!-- Карта — один широкий блок, а не колонка: путь из двадцати узлов
+             скроллится по горизонтали и делить его пополам нечем. Данжи
+             живут ВНУТРИ карты, у своих зон; отдельного списка больше нет. -->
         <div class="col">
           <ZonePanel />
-          <TemplePanel />
         </div>
         <div class="col">
-          <DungeonPanel />
+          <TemplePanel />
         </div>
       {:else}
         <SettingsPanel />

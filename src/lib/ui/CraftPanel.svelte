@@ -4,7 +4,13 @@
   // Кнопка недоступного рецепта ОБЪЯСНЯЕТ причину, а не просто гаснет:
   // «нет двух Луговых сборов» полезнее, чем серый прямоугольник. Логика
   // отдаёт код отказа и список нехватки — текст живёт здесь.
-  import { formatNumber } from '../game'
+  import { formatNumber, type Decimal, type StatId } from '../game'
+  import { craftedItem } from '../game/crafting'
+  import { REST_DURATION_S, REST_FOOD_SPEEDUP } from '../data/balance'
+  import { potionEffectText } from './potionText'
+  import { statNames } from './statFormat'
+  import { GRIP_TEXT } from './itemText'
+  import type { PotionRecipe } from '../data/recipes'
   import { materialCount, recipeStatus, type CraftBlockReason } from '../game/crafting'
   import { craftRecipe, gameState } from '../stores/game'
   import { MATERIALS, MATERIAL_BY_ID } from '../data/materials'
@@ -13,7 +19,7 @@
   import { PROFESSIONS, recipesOf, type RecipeDef } from '../data/recipes'
   import { SLOT_NAMES } from '../data/slots'
   import { rarityName } from './kit'
-  import { Button, Panel } from './kit'
+  import { Button, Panel, Tooltip } from './kit'
   import { Icon } from './icons'
 
   const REASON_TEXT: Record<CraftBlockReason, string> = {
@@ -43,6 +49,52 @@
     }
     return `${SLOT_NAMES[recipe.output.slot]}, ${rarityName(recipe.output.rarity)}`
   }
+
+  /**
+   * ЧТО ИМЕННО ПОЛУЧИТСЯ. Числа берутся из ТЕХ ЖЕ данных, из которых предмет
+   * будет создан: у вещи — из craftedItem (той самой функции, что зовёт крафт),
+   * у зелья — из его модификаторов, у еды — из ставки ускорения привала.
+   * Ни одно число здесь не выписано текстом в рецепте: выпишешь — и оно
+   * разъедется с настоящим предметом при первой же правке данных.
+   */
+  function recipeTooltip(recipe: RecipeDef): string {
+    const out = recipe.output
+    const parts = [recipe.name]
+    if (out.kind === 'food') {
+      parts.push(`Еда: привал короче в ${REST_FOOD_SPEEDUP} раза`)
+      parts.push(`${REST_DURATION_S} с превращаются в ${(REST_DURATION_S / REST_FOOD_SPEEDUP).toFixed(0)} с`)
+      parts.push('Порция тратится за один привал.')
+    } else if (out.kind === 'potion') {
+      parts.push(`Склянка, ${Math.round(out.durationSec / 60)} мин действия`)
+      parts.push(potionEffectText({ ...recipe, output: out } as PotionRecipe))
+      parts.push('Зелья пьются только руками: ни автокаст, ни оффлайн их не трогают.')
+    } else {
+      const item = craftedItem(out, 0)
+      parts.push(`${SLOT_NAMES[out.slot]} · ${rarityName(out.rarity)} · ${out.level} ур.`)
+      if (item) {
+        for (const mod of item.mods) parts.push(modLine(mod))
+        if (item.grip) parts.push(GRIP_TEXT[item.grip])
+      }
+    }
+    const need = recipe.inputs
+      .map((i) => `${MATERIAL_LABEL(i.materialId)} ×${i.count}`)
+      .join(', ')
+    parts.push(`Нужно: ${need}`)
+    return parts.join('\n')
+  }
+
+  const MATERIAL_LABEL = (id: string) =>
+    MATERIAL_BY_ID[id]?.name ?? HERB_BY_ID[id]?.name ?? REAGENT_BY_ID[id]?.name ?? id
+
+  // Строка модификатора теми же словами, что в подсказке зелья: два разных
+  // способа назвать «+8 силы» игрок прочитал бы как две разные механики.
+  function modLine(mod: { stat: StatId; kind: string; value: Decimal }): string {
+    const name = statLabels[mod.stat] ?? mod.stat
+    if (mod.kind === 'percent') return `+${mod.value.times(100).toFixed(0)}% ${name}`
+    if (mod.kind === 'multiplier') return `×${mod.value.toFixed(2)} ${name}`
+    return `+${formatNumber(mod.value)} ${name}`
+  }
+  const statLabels = $derived(statNames($gameState.classId))
 </script>
 
 <Panel title="Ремёсла">
@@ -76,13 +128,18 @@
         {#each recipesOf(profession.id) as recipe (recipe.id)}
           {@const status = recipeStatus($gameState, recipe)}
           <li class="recipe" class:blocked={!status.canCraft}>
-            <div class="head">
-              <Icon name={recipe.icon} size="lg" />
-              <div>
-                <span class="name">{recipe.name}</span>
-                <span class="out">{outputText(recipe)}</span>
+            <!-- Подсказка говорит, ЧТО ПОЛУЧИТСЯ, — теми же числами, из
+                 которых предмет и будет создан. На тач-экране открывается
+                 нажатием: это умеет сам примитив, второго кода нет. -->
+            <Tooltip text={recipeTooltip(recipe)} width="wide" block>
+              <div class="head">
+                <Icon name={recipe.icon} size="lg" />
+                <div>
+                  <span class="name">{recipe.name}</span>
+                  <span class="out">{outputText(recipe)}</span>
+                </div>
               </div>
-            </div>
+            </Tooltip>
             <ul class="inputs">
               {#each recipe.inputs as input (input.materialId)}
                 {@const have = materialCount($gameState, input.materialId)}
