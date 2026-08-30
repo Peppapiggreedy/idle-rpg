@@ -10,7 +10,7 @@ import { createInitialState, type GameState } from './tick'
 import { ensureStats } from './stats'
 import { enterDungeon } from './dungeons'
 import { enterTemple } from './temple'
-import { offlineZone } from './zones'
+import { forecastZone, offlineZone } from './zones'
 import { loadGame, saveGame, type SaveStorage } from './save'
 import { DUNGEONS } from '../data/dungeons'
 import { TEMPLE } from '../data/temple'
@@ -75,14 +75,28 @@ describe('выбор зоны для выхода наружу', () => {
     // Выбранная зона открыта, не отстала и герой в ней не гибнет.
     expect(picked.unlockRequirement).toBeLessThanOrEqual(level)
     expect(level - picked.monsterLevelRange.min).toBeLessThanOrEqual(FULL_GAP)
-    // И это САМАЯ ВЫСОКАЯ из подходящих: выше — либо закрыто, либо смерть,
-    // либо мобы отстали.
-    const higher = ZONES.filter((z) => z.monsterLevelRange.min > picked.monsterLevelRange.min)
-    for (const z of higher) {
-      const openAndFresh =
-        z.unlockRequirement <= level && level - z.monsterLevelRange.min <= FULL_GAP
-      if (openAndFresh) expect(offlineZone(s).id).not.toBe(z.id)
-    }
+
+    // И ЭТО САМАЯ ВЫСОКАЯ ИЗ ПОДХОДЯЩИХ — утверждением, а не условием.
+    //
+    // Здесь стоял цикл по зонам выше выбранной с проверкой внутри `if`.
+    // Условие было истинно ровно для тех зон, которых по построению не
+    // бывает: `picked` уже самая высокая подходящая, значит выше неё
+    // подходящих нет, и тело `if` не выполнялось НИ РАЗУ. Ревизия доказала
+    // это мутацией: перевёрнутый обход в offlineZone оставлял зелёными все
+    // 825 тестов проекта, хотя цена такой ошибки для игрока — до минус 48 %
+    // оффлайнового опыта за ночь.
+    //
+    // Список подходящих зон перечисляется ЗДЕСЬ и проверяется на непустоту:
+    // иначе тест снова стал бы проверять пустое множество.
+    const fits = ZONES.filter(
+      (z) =>
+        z.unlockRequirement <= level &&
+        level - z.monsterLevelRange.min <= FULL_GAP &&
+        ['safe', 'risky'].includes(forecastZone(s, z).verdict),
+    )
+    expect(fits.length).toBeGreaterThan(1)
+    const deepest = Math.max(...fits.map((z) => z.monsterLevelRange.min))
+    expect(picked.monsterLevelRange.min).toBe(deepest)
   })
 
   it('подходящей нет — безопасная', () => {

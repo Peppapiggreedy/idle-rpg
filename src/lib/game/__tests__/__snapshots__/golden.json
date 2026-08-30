@@ -36,7 +36,7 @@
     "inventorySellTotal": "380"
   },
   "step-36000": {
-    "gold": "12236.62",
+    "gold": "12206.619999999999",
     "level": "12",
     "currentXp": "835.4799999999999",
     "attackPower": "138.5",
@@ -51,6 +51,6 @@
     "abilityCasts": 2,
     "totalTicks": "36000",
     "inventoryCount": 24,
-    "inventorySellTotal": "410"
+    "inventorySellTotal": "440"
   }
 }

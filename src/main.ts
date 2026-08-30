@@ -12,7 +12,12 @@ import {
   initGame,
   startGameLoop,
 } from './lib/stores/game'
-import { attachUiSounds, startAudio, unlockAudioOnGesture } from './lib/audio'
+import {
+  attachUiSounds,
+  resumeAudioOnVisible,
+  startAudio,
+  unlockAudioOnGesture,
+} from './lib/audio'
 import { uiSettings } from './lib/stores/ui'
 
 const target = document.getElementById('app')!
@@ -33,6 +38,8 @@ function startGame(): void {
   // это игра, которую закрывают.
   startAudio(import.meta.env.BASE_URL)
   unlockAudioOnGesture()
+  // Звук возвращается после блокировки экрана и переключения приложений.
+  resumeAudioOnVisible()
   attachUiSounds()
   startGameLoop()
   // Уход в фон и возврат из фона — ОБА события, а не одно.

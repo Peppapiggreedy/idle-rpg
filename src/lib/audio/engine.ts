@@ -58,8 +58,19 @@ export class WebAudioEngine implements SoundEngine {
     if (ctx.state === 'suspended') await ctx.resume()
   }
 
+  /**
+   * ЗВУК ИДЁТ, а не «контекст когда-то создали».
+   *
+   * Здесь стояло `this.nodes !== null`. На iOS AudioContext уходит в
+   * `suspended` при блокировке экрана, входящем звонке и переключении
+   * приложений, — и игра продолжала исправно «проигрывать» звуки в
+   * остановленный контекст, считая себя разблокированной. Для игрока это
+   * выглядело так: вернулся к телефону, а звука больше нет вообще, при
+   * включённой громкости и всех галках на месте. Помогала только
+   * перезагрузка страницы, о чём в игре не написано нигде.
+   */
   get unlocked(): boolean {
-    return this.nodes !== null
+    return this.nodes !== null && this.nodes.ctx.state === 'running'
   }
 
   setVolumes(volumes: Volumes): void {

@@ -425,7 +425,9 @@ export function expectedProcHeal(stats: StatBlock, proc: ProcDef): Decimal {
 
 function damagePerKill(state: GameState, plan: RotationPlan, stream: HitStream): Decimal {
   const hp = state.monster.maxHp
-  const swing = expectedSwingDamage(state.stats)
+  // Замах берётся С КРИТОМ — тем же множителем, что и весь поток ударов:
+  // «обычный замах» у героя с критом крупнее, и перебой у него крупнее тоже.
+  const swing = expectedSwingDamage(state.stats).times(critFactor(state.stats))
   // Минимум перебоя — половина обычного замаха: меньше не теряет никто.
   const floor = hp.plus(swing.div(2))
   // Перебой — следствие второго правила: авто не придерживает кулдауны и
@@ -507,7 +509,19 @@ function hitStream(
     }
     procHeal = procHeal.plus(expectedProcHeal(stats, proc).times(per))
   }
-  return { rate, killing, paced, procDamage, procHeal }
+  // КРИТ ВХОДИТ В УРОН ПОТОКА, а не только в число «урон в секунду».
+  //
+  // Раньше killing и paced считались БЕЗ крита, и от них идут hitsPerKill ->
+  // fightSec -> killsPerSecond. То есть темп убийств не зависел от крита
+  // вовсе — а killsPerSecond и есть единственная мера «лучше» во всей игре:
+  // на ней держатся сравнение предметов, значок «Апгрейд», автопродажа при
+  // полной сумке, прогноз зоны и оффлайн-агрегат. Предмет с критом показывал
+  // «без изменений», а при полной сумке игра его продавала.
+  //
+  // procDamage возвращается БЕЗ крита намеренно: rawRate домножает его сам,
+  // и удвоить множитель здесь значило бы посчитать проки дважды.
+  const crit = critFactor(stats)
+  return { rate, killing: killing.times(crit), paced: paced.times(crit), procDamage, procHeal }
 }
 
 /**

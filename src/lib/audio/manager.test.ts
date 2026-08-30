@@ -166,3 +166,47 @@ describe('слой звука только читает', () => {
     }
   })
 })
+
+// ЗВУК ПОСЛЕ ПЕРЕРЫВА (находка 5.1 в AUDIT.md).
+//
+// На iOS AudioContext уходит в suspended при блокировке экрана, звонке и
+// переключении приложений. Слушатель жеста висит с { once: true } и уже
+// отписался, звать resume() было некому, а `unlocked` при этом означал
+// «контекст СОЗДАН», а не «контекст ИГРАЕТ». Игра исправно проигрывала звуки
+// в остановленный контекст: для игрока звук пропадал до перезагрузки.
+describe('перерыв в звуке', () => {
+  it('остановленный контекст — значит НЕ слышно', () => {
+    expect(isAudible({ ...OPEN, unlocked: false })).toBe(false)
+  })
+
+  it('движок считает себя разблокированным только пока контекст играет', async () => {
+    // Настоящий WebAudioEngine с подставным AudioContext: проверяем ровно то
+    // свойство, из-за которого звук и терялся.
+    const { WebAudioEngine } = await import('./engine')
+    let state: AudioContextState = 'running'
+    const gain = () => ({ connect() {}, gain: { value: 0 } })
+    class FakeCtx {
+      get state() {
+        return state
+      }
+      destination = {}
+      createGain = gain
+      resume = async () => {
+        state = 'running'
+      }
+    }
+    ;(globalThis as unknown as { window: unknown }).window = { AudioContext: FakeCtx }
+
+    const engine = new WebAudioEngine('')
+    await engine.unlock()
+    expect(engine.unlocked).toBe(true)
+
+    // Телефон заблокировали — контекст встал.
+    state = 'suspended'
+    expect(engine.unlocked).toBe(false)
+
+    // Вернулись во вкладку: resumeAudioOnVisible зовёт unlock() ещё раз.
+    await engine.unlock()
+    expect(engine.unlocked).toBe(true)
+  })
+})
