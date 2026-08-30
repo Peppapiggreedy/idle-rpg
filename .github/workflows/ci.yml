@@ -1,75 +1,133 @@
-# Проверки на каждый pull request: типы, целостность контента, тесты.
+# Проверки на каждый pull request.
+#
+# ДЖОБЫ ИДУТ ПАРАЛЛЕЛЬНО, и это главное в этом файле: общее время равно
+# самому долгому шагу, а не их сумме. Раньше всё висело в двух джобах,
+# и типы ждали, пока досчитается одиннадцатиминутная матрица баланса.
+#
+# Два самых дорогих набора запускаются НЕ ВСЕГДА:
+#   visual  — только если тронут экран (ui, render3d, App.svelte, стили);
+#   balance — только если тронуты данные или логика (data/, game/).
+# Оба можно включить принудительно меткой `full-checks` на PR — это нужно,
+# когда правка выглядит безобидной, а трогает то, о чём фильтр не знает.
 name: CI
 
 on:
+  # labeled/unlabeled обязательны: без них метка `full-checks` не делала бы
+  # ничего до следующего пуша, а перезапуск джоба повторяет СТАРОЕ событие,
+  # в котором метки ещё не было.
   pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
   workflow_dispatch:
 
+# Один PR — один живой прогон. Новый коммит отменяет предыдущий: раннеры
+# освобождаются сразу, и свежий коммит не стоит в очереди за устаревшим.
+# Отменяется при этом ПРОШЛЫЙ коммит, а не текущий: то, что отменили,
+# уже никого не интересует, а снимки нового прогона всё равно уедут.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  check:
+  # Что вообще тронуто в этом PR. Один дешёвый джоб решает за всех
+  # остальных: без него каждый считал бы диапазон коммитов сам.
+  changes:
     runs-on: ubuntu-latest
+    outputs:
+      ui: ${{ steps.filter.outputs.ui }}
+      logic: ${{ steps.filter.outputs.logic }}
+      full: ${{ steps.filter.outputs.full }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-      - name: Set up Node
-        uses: actions/setup-node@v5
         with:
-          node-version: lts/*
-          cache: npm
-      - name: Install dependencies
-        run: npm ci
-      - name: Type check
-        run: npm run check
-      # Отдельным шагом до общего прогона: если сломана ссылка в data/, это
-      # видно сразу и по имени шага, а не поиском по логу тестов.
-      - name: Проверка контента
-        run: npm run content:check
-      - name: Tests
-        run: npm run test
+          fetch-depth: 0
+      - name: Что изменилось
+        id: filter
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        run: |
+          set -eu
+          # workflow_dispatch: базы для сравнения нет — гоняем всё.
+          if [ -z "${BASE:-}" ]; then
+            echo "ui=true"   >> "$GITHUB_OUTPUT"
+            echo "logic=true" >> "$GITHUB_OUTPUT"
+            echo "full=true"  >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          FILES=$(git diff --name-only "$BASE" "$HEAD")
+          echo "Тронуто файлов: $(echo "$FILES" | wc -l)"
+          echo "$FILES"
+          # Метка на PR перебивает фильтры: «прогони всё, я не уверен».
+          case ",$LABELS," in *,full-checks,*) FULL=true ;; *) FULL=false ;; esac
+          match() { echo "$FILES" | grep -qE "$1" && echo true || echo false; }
+          UI=$(match '^(src/lib/ui/|src/lib/render3d/|src/App\.svelte|src/app\.css|tests/)')
+          LOGIC=$(match '^(src/lib/data/|src/lib/game/)')
+          [ "$FULL" = true ] && UI=true && LOGIC=true
+          echo "ui=$UI"       >> "$GITHUB_OUTPUT"
+          echo "logic=$LOGIC" >> "$GITHUB_OUTPUT"
+          echo "full=$FULL"   >> "$GITHUB_OUTPUT"
+          echo "Итог: ui=$UI logic=$LOGIC full=$FULL"
+
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+      - run: npm run check
+
+  # Юниты и golden. Матрицы прогонов здесь нет — она в balance.
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+      - name: Юниты и golden
+        run: npx vitest run --exclude "src/lib/game/__tests__/balance.test.ts" --exclude "src/lib/game/__tests__/run.test.ts"
+
+  # Отдельным джобом ради ИМЕНИ: сломанная ссылка в data/ видна по названию
+  # проверки, а не поиском по логу тестов.
+  content:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+      - run: npm run content:check
+
+  # ВЫБОРКА, а не полная матрица: три зоны, два уровня, один класс. Пороги и
+  # ассерты те же — сужен охват. Полная матрица идёт ночью (nightly.yml) и по
+  # метке full-checks; перед PR, который правит кривые, её гоняют локально.
+  balance:
+    needs: changes
+    if: needs.changes.outputs.logic == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+      - name: Прогон баланса (выборка)
+        if: needs.changes.outputs.full != 'true'
+        run: npm run test:balance:sample
+      - name: Прогон баланса (полная матрица)
+        if: needs.changes.outputs.full == 'true'
+        run: npm run test:balance
 
   # Визуальная регрессия: собирает игру и снимает заранее заданные состояния
-  # в двух режимах — интерфейс без сцены (он сравнивается с эталонами) и
-  # экран со сценой (он только на посмотреть). ОБА комплекта уходят
-  # артефактом при любом исходе: смысл этой работы в том, чтобы посмотреть
-  # игру ДО merge, а не после.
-  screenshots:
+  # в двух режимах — интерфейс без сцены (сравнивается с эталонами) и экран
+  # со сценой (только на посмотреть). ОБА комплекта уходят артефактом при
+  # любом исходе: смысл этой работы в том, чтобы посмотреть игру ДО merge,
+  # а не после, и оптимизация не имеет права этого отнять.
+  visual:
+    needs: changes
+    if: needs.changes.outputs.ui == 'true'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-      - name: Set up Node
-        uses: actions/setup-node@v5
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
         with:
-          node-version: lts/*
-          cache: npm
-      - name: Install dependencies
-        run: npm ci
-      # Браузер кладём в кеш и переиспользуем: качается он один раз на
-      # версию @playwright/test, а не на каждый прогон. Версия закреплена
-      # точно — от неё зависит отрисовка, а значит и эталоны.
-      #
-      # Почему не системный chromium раннера (он на ubuntu-latest есть):
-      # эталоны сняты сборкой Chromium 1194 из @playwright/test, и другая
-      # сборка рисует шрифт иначе — снимки разойдутся не потому, что игра
-      # изменилась. Кеш даёт то же «не качать лишний раз», но с ТОЙ ЖЕ
-      # сборкой, что и локально.
-      - name: Cache Playwright browser
-        id: playwright-cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-      - name: Install Chromium
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: npx playwright install --with-deps chromium
-      - name: System libraries for cached Chromium
-        if: steps.playwright-cache.outputs.cache-hit == 'true'
-        run: npx playwright install-deps chromium
-      - name: Screenshots
-        run: npm run screenshots
-      # test-results/current — всё, что снято в этом прогоне: и интерфейс,
-      # и сцена. tests/screenshots — эталоны, чтобы было с чем сравнить
-      # глазами, не открывая репозиторий.
+          playwright: 'true'
+      - name: Скриншоты
+        run: npm run test:visual
       - name: Upload screenshots
         if: always()
         uses: actions/upload-artifact@v4
@@ -80,8 +138,6 @@ jobs:
             tests/screenshots
           if-no-files-found: warn
           retention-days: 14
-      # Отчёт с картинками «эталон / получилось / разница» — нужен, только
-      # когда что-то разошлось.
       - name: Upload diff report
         if: failure()
         uses: actions/upload-artifact@v4

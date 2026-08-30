@@ -1,0 +1,52 @@
+# Ночной прогон на main: ВСЁ и без выборок.
+#
+# Зачем он нужен. На PR два самых дорогих набора запускаются по фильтру, а
+# баланс к тому же выборкой — это осознанный размен: быстрый ответ важнее
+# полноты, пока правка маленькая. Полноту добирает эта ночь.
+#
+# Красный ночной прогон означает ровно одно: виноват один из мержей
+# прошедшего дня. Диапазон подозреваемых — коммиты со времени последнего
+# зелёного ночного, и это гораздо уже, чем «когда-то сломалось».
+name: Ночной полный прогон
+
+on:
+  schedule:
+    # 03:00 UTC — после рабочего дня и до утра владельца.
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+jobs:
+  full:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+        with:
+          playwright: 'true'
+
+      - name: Типы
+        run: npm run check
+
+      - name: Юниты и golden
+        run: npx vitest run --exclude "src/lib/game/__tests__/balance.test.ts" --exclude "src/lib/game/__tests__/run.test.ts"
+
+      # ПОЛНАЯ матрица: двадцать зон, пять уровней, оба класса, все сиды.
+      - name: Прогон баланса целиком
+        run: npm run test:balance
+
+      - name: Скриншоты
+        run: npm run test:visual
+
+      # Артефакт уезжает и ночью: если утром прогон красный, смотреть на игру
+      # придётся сразу, а не перезапускать всё руками ради картинок.
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-screenshots
+          path: |
+            test-results/current
+            tests/screenshots
+          if-no-files-found: warn
+          retention-days: 14

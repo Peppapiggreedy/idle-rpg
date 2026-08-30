@@ -41,8 +41,11 @@ npm run dev
 npm run build              # продакшен-сборка в dist/
 npm run preview            # локальный просмотр сборки
 npm run check              # проверка типов (svelte-check + tsc)
-npm run test               # тесты
-npm run screenshots        # визуальная проверка (Playwright)
+npm run test               # быстрый набор: типы, юниты, golden, контент (~30 с)
+npm run test:balance       # прогон баланса целиком (~13 мин)
+npm run test:balance:sample # он же выборкой (~2 мин)
+npm run test:visual        # сборка + скриншоты (Playwright)
+npm run test:all           # всё подряд
 npm run screenshots:update # обновить эталоны скриншотов
 ```
 

@@ -1,0 +1,63 @@
+# Общая подготовка джоба: node, зависимости и (по требованию) браузер.
+#
+# Вынесено в composite action, потому что джобов стало пять и одни и те же
+# шесть строк расползлись бы по файлу пять раз — а кеш обязан быть настроен
+# ОДИНАКОВО, иначе половина джобов будет качать зависимости заново.
+name: Подготовка окружения
+description: Node с кешем npm, npm ci и по флагу — браузер Playwright из кеша
+
+inputs:
+  playwright:
+    description: Ставить ли Chromium для Playwright ('true' — да)
+    required: false
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Node
+      uses: actions/setup-node@v5
+      with:
+        node-version: lts/*
+        cache: npm
+
+    - name: Install dependencies
+      shell: bash
+      run: npm ci
+
+    # Кеш трансформации vitest: между джобами и прогонами не меняется ничего,
+    # кроме тронутых файлов, а пересборка модулей — это те самые секунды
+    # «import», которые видно в отчёте vitest.
+    - name: Cache vitest
+      uses: actions/cache@v4
+      with:
+        path: node_modules/.vite
+        key: vitest-${{ runner.os }}-${{ hashFiles('package-lock.json', 'vitest.config.ts', 'vite.config.ts') }}-${{ github.sha }}
+        restore-keys: |
+          vitest-${{ runner.os }}-${{ hashFiles('package-lock.json', 'vitest.config.ts', 'vite.config.ts') }}-
+          vitest-${{ runner.os }}-
+
+    # Браузер кладём в кеш и переиспользуем: качается он один раз на версию
+    # @playwright/test, а не на каждый прогон. Версия закреплена ТОЧНО — от
+    # неё зависит сборка Chromium, а значит и эталоны.
+    #
+    # Почему не системный chromium раннера (он на ubuntu-latest есть):
+    # эталоны сняты сборкой из @playwright/test, и другая сборка рисует шрифт
+    # иначе — снимки разойдутся не потому, что игра изменилась.
+    - name: Cache Playwright browser
+      if: inputs.playwright == 'true'
+      id: playwright-cache
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/ms-playwright
+        key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+    - name: Install Chromium
+      if: inputs.playwright == 'true' && steps.playwright-cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: npx playwright install --with-deps chromium
+
+    - name: System libraries for cached Chromium
+      if: inputs.playwright == 'true' && steps.playwright-cache.outputs.cache-hit == 'true'
+      shell: bash
+      run: npx playwright install-deps chromium
