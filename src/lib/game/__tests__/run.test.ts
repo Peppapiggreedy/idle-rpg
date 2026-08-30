@@ -24,6 +24,15 @@ const REST_SHARE_MAX = 0.25
 /** Сколько игровых часов даём прогону, прежде чем считать путь непроходимым. */
 const RUN_HOURS_CAP = 30
 
+/**
+ * БЫСТРЫЙ РЕЖИМ: `BALANCE_SAMPLE=1` — тот же флаг, что у таблицы баланса.
+ * Путь проходит ОДИН класс вместо двух. Ассерты те же самые: потолок, цена
+ * пути, привал, смерти, доля полосы. Сравнение классов между собой при этом
+ * проверить нечем — этот тест в выборке пропускается, а не ослабляется.
+ */
+const SAMPLE = process.env.BALANCE_SAMPLE === '1'
+const CLASS_SET = SAMPLE ? CLASSES.slice(0, 1) : CLASSES
+
 const runs = new Map<string, RunResult>()
 function run(classId: string): RunResult {
   const cached = runs.get(classId)
@@ -35,7 +44,7 @@ function run(classId: string): RunResult {
 
 describe('полный путь 1..100', () => {
   it('таблица пути', () => {
-    for (const cls of CLASSES) {
+    for (const cls of CLASS_SET) {
       const r = run(cls.id)
       const rows = RUN_BANDS.map((band) => {
         const levels = r.levels.filter((x) => x.level >= band.from && x.level <= band.to)
@@ -61,7 +70,7 @@ describe('полный путь 1..100', () => {
     }
   }, 1_800_000)
 
-  it.each(CLASSES.map((c) => [c.name, c.id] as const))(
+  it.each(CLASS_SET.map((c) => [c.name, c.id] as const))(
     '%s доходит до потолка',
     (_name, classId) => {
       // Главное свойство конечной игры: конец достижим. И достижим он ОБОИМ
@@ -73,7 +82,7 @@ describe('полный путь 1..100', () => {
     1_800_000,
   )
 
-  it.each(CLASSES.map((c) => [c.name, c.id] as const))(
+  it.each(CLASS_SET.map((c) => [c.name, c.id] as const))(
     '%s: путь стоит 4700-5400 убийств',
     (_name, classId) => {
       // Цена пути задана ТАБЛИЦЕЙ (KILLS_PER_LEVEL), и прогон обязан её
@@ -85,7 +94,7 @@ describe('полный путь 1..100', () => {
     1_800_000,
   )
 
-  it.each(CLASSES.map((c) => [c.name, c.id] as const))(
+  it.each(CLASS_SET.map((c) => [c.name, c.id] as const))(
     '%s: привал не съедает игру, и путь идёт без смертей',
     (_name, classId) => {
       // Привал — плата за глубину, а не занятие. Смерти на СВОЕЙ полосе быть
@@ -98,7 +107,7 @@ describe('полный путь 1..100', () => {
     1_800_000,
   )
 
-  it.each(CLASSES.map((c) => [c.name, c.id] as const))(
+  it.each(CLASS_SET.map((c) => [c.name, c.id] as const))(
     '%s: ни одна полоса не съедает больше половины пути',
     (_name, classId) => {
       // Провал в лестнице виден именно так: одна полоса вдруг стоит дороже
@@ -113,7 +122,9 @@ describe('полный путь 1..100', () => {
     1_800_000,
   )
 
-  it('оба класса проходят путь за сопоставимое время', () => {
+  // Сравнение классов между собой требует ОБОИХ: в выборке класс один,
+  // и проверять нечего — тест пропускается целиком, а не смягчается.
+  it.skipIf(SAMPLE)('оба класса проходят путь за сопоставимое время', () => {
     // Не «одинаково», а сопоставимо: разница в четверть — это выбор стиля,
     // разница в разы — это сломанный класс. Ровно так и выглядел страж до
     // того, как сравнение предметов стало считать темп, а не голый урон:

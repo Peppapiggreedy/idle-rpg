@@ -22,6 +22,7 @@ import {
   ttkDrift,
   PACING_MAX_LEVEL,
   SIM_STYLES,
+  type PacingRow,
   type SimResult,
   type SimStyle,
 } from '../simulate'
@@ -39,8 +40,45 @@ import {
 import { ZONES, ZONE_BY_ID, zoneMonsterVariants, type Zone } from '../../data/zones'
 import { ONE_HANDED, WEAPONS } from '../../data/items'
 import { BRANCHES, type BranchDef, type BranchStyle } from '../../data/talents'
-import { CLASSES } from '../../data/classes'
+import { CLASSES, DEFAULT_CLASS } from '../../data/classes'
 import { ABILITY_BY_ID } from '../../data/abilities'
+
+/**
+ * БЫСТРЫЙ РЕЖИМ ПРОГОНА: `BALANCE_SAMPLE=1`.
+ *
+ * Сужается ОХВАТ, а не строгость. Пороги, сравнения и сами ассерты — те же
+ * самые до буквы: коридор темпа, отсутствие доминирующей зоны, привал короче
+ * боя, разброс веток. Меняется только то, СКОЛЬКО клеток матрицы прогоняется:
+ * три зоны вместо двадцати, два уровня вместо пяти, один класс вместо двух,
+ * меньше игровых часов на клетку.
+ *
+ * Зачем: полная матрица стоит одиннадцать минут и держит на себе 89% времени
+ * всего набора юнит-тестов. Столько ждать после каждой правки нельзя, а не
+ * гонять баланс вовсе — значит узнать о сломанной кривой из игры.
+ *
+ * Полная матрица никуда не делась: `npm run test:balance` гоняет её целиком,
+ * и она же идёт ночью и на каждом PR, который трогает `data/` или `game/`.
+ */
+const SAMPLE = process.env.BALANCE_SAMPLE === '1'
+
+/** Представительная выборка зон: начало лестницы, середина и конец. Именно
+ *  начало и конец, а не соседи: между ними разница максимальная, и монотонность
+ *  с «нет доминирующей зоны» на них проверяются строже, а не слабее. */
+const ZONE_SET: Zone[] = SAMPLE
+  ? [ZONES[0], ZONES[Math.floor(ZONES.length / 2)], ZONES[ZONES.length - 1]]
+  : ZONES
+
+/** Классы: в выборке один. Дерево привязано к классу, поэтому вместе с ним
+ *  сужается и набор веток — иначе ветки чужого класса прогонялись бы впустую. */
+const CLASS_SET = SAMPLE ? CLASSES.slice(0, 1) : CLASSES
+
+/** Часы игрового времени на клетку матрицы. Вчетверо меньше в выборке. */
+const sampleHours = (full: number) => (SAMPLE ? Math.max(1, Math.round(full / 4)) : full)
+
+/** Сиды: в выборке половина. Меньше двух брать нельзя — среднее по одному
+ *  прогону это уже не среднее, а один бросок, и порог начнёт мигать. */
+const sampleSeeds = (seeds: readonly number[]) =>
+  SAMPLE ? seeds.slice(0, Math.max(2, Math.ceil(seeds.length / 2))) : [...seeds]
 
 // Таблицы печатаются в вывод теста: прогон баланса нужен глазами, а не только
 // зелёной галкой. Числа крупные, поэтому раскладываем по колонкам.
@@ -90,11 +128,11 @@ describe('прогон баланса: таблица зон', () => {
     const zoneBuild = referenceBuild(zoneLevel)
     header(
       `Эталонный герой ${zoneLevel} уровня (вещи ${zoneBuild.gearLevel} уровня, средняя ` +
-        `редкость), автокаст включён, ${zoneHours} часов в каждой зоне.`,
+        `редкость), автокаст включён, ${sampleHours(zoneHours)} часов в каждой зоне.`,
       COLUMNS,
     )
-    for (const zone of ZONES) {
-      const result = simulate({ hours: zoneHours, zoneId: zone.id, build: zoneBuild })
+    for (const zone of ZONE_SET) {
+      const result = simulate({ hours: sampleHours(zoneHours), zoneId: zone.id, build: zoneBuild })
       log(row(result, zone.name))
       // Прогон обязан быть осмысленным ТАМ, ГДЕ ГЕРОЙ И ДОЛЖЕН БЫТЬ: в своей
       // полосе и во всех, что мельче. Глубже — законный ноль: зоны
@@ -117,11 +155,11 @@ describe('прогресс монотонный', () => {
     const build = referenceBuild(LEVEL)
     header(
       `Эталонный герой ${LEVEL} уровня (вещи ${build.gearLevel} уровня), уровень заморожен, ` +
-        '4 часа на зону.',
+        `${sampleHours(4)} часа на зону.`,
       COLUMNS,
     )
-    const results = ZONES.map((zone) => {
-      const result = simulate({ hours: 4, zoneId: zone.id, freezeLevel: true, build })
+    const results = ZONE_SET.map((zone) => {
+      const result = simulate({ hours: sampleHours(4), zoneId: zone.id, freezeLevel: true, build })
       log(row(result, zone.name))
       return result
     })
@@ -134,20 +172,23 @@ describe('прогресс монотонный', () => {
 })
 
 describe('нет доминирующей зоны', () => {
-  const LEVELS = [1, 5, 10, 16, PACING_MAX_LEVEL]
+  // В выборке остаются КРАЯ: на первом уровне открыта одна зона, на последнем
+  // все. Между этими двумя строками смена лучшей зоны и обязана случиться.
+  const FULL_LEVELS = [1, 5, 10, 16, PACING_MAX_LEVEL]
+  const LEVELS = SAMPLE ? [FULL_LEVELS[0], FULL_LEVELS[FULL_LEVELS.length - 1]] : FULL_LEVELS
 
   it('ни одна зона не лучше всех остальных на всех уровнях персонажа', () => {
     header(
       'Золота в час по зонам и уровням (уровень заморожен, 1 час на клетку).',
-      `уровень   ${ZONES.map((z) => z.name.padStart(18)).join(' ')}   лучшая`,
+      `уровень   ${ZONE_SET.map((z) => z.name.padStart(18)).join(' ')}   лучшая`,
     )
     // Кто выигрывает на каждом уровне. Зона-доминант — та, что выиграла везде.
     // Считаем ТОЛЬКО по открытым зонам: закрытая зона игроку недоступна, и
     // «лучшая» среди недоступных — не выбор, а арифметика.
     const winners: string[] = []
     for (const level of LEVELS) {
-      const open = ZONES.filter((z) => z.unlockRequirement <= level)
-      const gold = ZONES.map((zone) =>
+      const open = ZONE_SET.filter((z) => z.unlockRequirement <= level)
+      const gold = ZONE_SET.map((zone) =>
         zone.unlockRequirement > level
           ? new Decimal(0)
           : simulate({
@@ -159,12 +200,12 @@ describe('нет доминирующей зоны', () => {
       )
       let best = 0
       gold.forEach((g, i) => {
-        if (ZONES[i].unlockRequirement <= level && g.gt(gold[best])) best = i
+        if (ZONE_SET[i].unlockRequirement <= level && g.gt(gold[best])) best = i
       })
       expect(open.length, `на ${level} уровне не открыто ни одной зоны`).toBeGreaterThan(0)
-      winners.push(ZONES[best].id)
+      winners.push(ZONE_SET[best].id)
       log(
-        `${String(level).padStart(7)}   ${gold.map((g) => num(g, 18)).join(' ')}   ${ZONES[best].name}`,
+        `${String(level).padStart(7)}   ${gold.map((g) => num(g, 18)).join(' ')}   ${ZONE_SET[best].name}`,
       )
     }
     const unique = new Set(winners)
@@ -214,13 +255,17 @@ describe('смертность в подходящей зоне', () => {
   // до уровня, на котором открывается следующая зона. Уровень моба уровню
   // героя не равен (это ярлык сложности), поэтому сравнивать их напрямую
   // нельзя — берём именно правление.
-  const reignEnd = (index: number) =>
-    index + 1 < ZONES.length ? ZONES[index + 1].unlockRequirement - 1 : PACING_MAX_LEVEL
+  // Правление берётся по НАСТОЯЩЕЙ лестнице зон, а не по месту в выборке:
+  // в выборке соседи не соседи, и «следующая зона» там значила бы не то.
+  const reignEnd = (zone: Zone) => {
+    const index = ZONES.indexOf(zone)
+    return index + 1 < ZONES.length ? ZONES[index + 1].unlockRequirement - 1 : PACING_MAX_LEVEL
+  }
 
   it('смертей в час близко к нулю', () => {
     header('Герой на последнем уровне правления зоны, 1 час на зону.', 'зона                 мобы     уровень героя   смертей/ч')
-    for (const [index, zone] of ZONES.entries()) {
-      const level = reignEnd(index)
+    for (const zone of ZONE_SET) {
+      const level = reignEnd(zone)
       const result = simulate({
         hours: 1,
         zoneId: zone.id,
@@ -482,9 +527,9 @@ describe('ветки талантов', () => {
   // прогнать ветку изувера на страже значило бы прогнать её впустую —
   // конвейер статов чужие ранги игнорирует.
   function runBranch(branch: BranchDef, zoneId: string): SimResult[] {
-    return weaponSeeds.map((seed) =>
+    return sampleSeeds(weaponSeeds).map((seed) =>
       simulate({
-        hours: branchHours,
+        hours: sampleHours(branchHours),
         zoneId,
         seed,
         freezeLevel: true,
@@ -506,14 +551,14 @@ describe('ветки талантов', () => {
    *  просиживания. Вход по уровню обязателен: «какую зону тянет билд» в живой
    *  игре упирается в travelToZone, и мерить закрытые значит мерить не игру. */
   function bestZone(branch: BranchDef): { zoneId: string; runs: SimResult[] } {
-    for (let i = ZONES.length - 1; i >= 0; i -= 1) {
-      if (ZONES[i].unlockRequirement > branchLevel) continue
-      const runs = runBranch(branch, ZONES[i].id)
+    for (let i = ZONE_SET.length - 1; i >= 0; i -= 1) {
+      if (ZONE_SET[i].unlockRequirement > branchLevel) continue
+      const runs = runBranch(branch, ZONE_SET[i].id)
       const deaths = avg(runs, (r) => r.deathsPerHour)
       const rest = avg(runs, (r) => r.restShare)
-      if (deaths === 0 && rest <= branchRestShareMax) return { zoneId: ZONES[i].id, runs }
+      if (deaths === 0 && rest <= branchRestShareMax) return { zoneId: ZONE_SET[i].id, runs }
     }
-    return { zoneId: ZONES[0].id, runs: runBranch(branch, ZONES[0].id) }
+    return { zoneId: ZONE_SET[0].id, runs: runBranch(branch, ZONE_SET[0].id) }
   }
 
   it(`три чистых билда на ${points} очках сходятся в пределах ${pct(branchSpreadLimit)}`, () => {
@@ -522,7 +567,8 @@ describe('ветки талантов', () => {
         `${branchHours} ч на сид. Каждая ветка играет самую глубокую зону, которую тянет.`,
       'ветка            стиль          зона                 золота/ч   отклонение   простой',
     )
-    const rows = BRANCHES.map((branch) => ({ branch, ...bestZone(branch) }))
+    const branches = BRANCHES.filter((b) => CLASS_SET.some((c) => c.id === b.classId))
+    const rows = branches.map((branch) => ({ branch, ...bestZone(branch) }))
     const gold = rows.map((r) => mean(r.runs).toNumber())
     const average = gold.reduce((a, b) => a + b, 0) / gold.length
     rows.forEach((row, i) => {
@@ -538,7 +584,7 @@ describe('ветки талантов', () => {
     // Разброс считается ВНУТРИ КЛАССА: ветки одного класса — это выбор игрока
     // между собой, а страж против изувера — другой вопрос, и меряется он
     // таблицей темпа, а не здесь.
-    for (const cls of CLASSES) {
+    for (const cls of CLASS_SET) {
       const own = rows.filter((r) => r.branch.classId === cls.id)
       const spread = spreadOf(own.map((r) => mean(r.runs)))
       log(`${cls.name}: разброс ${pct(spread)} при потолке ${pct(branchSpreadLimit)}.`)
@@ -556,7 +602,7 @@ describe('ветки талантов', () => {
     const zone = intendedZone(branchLevel).id
     const damage = (runs: SimResult[]) =>
       avg(runs, (r) => r.autoDamage.plus(r.abilityDamage).div(r.hours).toNumber())
-    for (const cls of CLASSES) {
+    for (const cls of CLASS_SET) {
       const byStyle = new Map<BranchStyle, SimResult[]>()
       for (const branch of BRANCHES.filter((b) => b.classId === cls.id)) {
         byStyle.set(branch.style, runBranch(branch, zone))
@@ -663,13 +709,25 @@ describe('интервал решений', () => {
 // Числа коридора живут в data/balance.ts; здесь только проверки. Таблица
 // печатается целиком — контракт нужен глазами не меньше, чем зелёной галкой.
 describe('контракт темпа боя', () => {
-  const rows = pacingTable()
+  // ОДИН вызов на класс. `pacingTable` — это шестьдесят игровых часов
+  // настоящего тика, и до кеша их прогонялось три штуки: общая таблица плюс
+  // по таблице на класс, — при том что у общей класс ДЕФОЛТНЫЙ, то есть один
+  // из тех же двух. Считалось одно и то же дважды.
+  const pacingCache = new Map<string, PacingRow[]>()
+  const pacing = (classId: string = DEFAULT_CLASS.id): PacingRow[] => {
+    const cached = pacingCache.get(classId)
+    if (cached) return cached
+    const built = pacingTable({ classId })
+    pacingCache.set(classId, built)
+    return built
+  }
+  const rows = pacing()
 
   // Контракт держится для КАЖДОГО класса, а не только для дефолтного: класс
   // меняет ресурс, умения и стартовые статы, то есть ровно те числа, из
   // которых складывается длина боя.
-  describe.each(CLASSES.map((c) => [c.name, c.id] as const))('%s', (_name, classId) => {
-    const classRows = pacingTable({ classId })
+  describe.each(CLASS_SET.map((c) => [c.name, c.id] as const))('%s', (_name, classId) => {
+    const classRows = pacing(classId)
 
     it(`моб актуальной зоны живёт ${TTK_TARGET_MIN}-${TTK_TARGET_MAX} секунд`, () => {
       const ttks = classRows.map((r) => currentCell(r).ttk.avg)
