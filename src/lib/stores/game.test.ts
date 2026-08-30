@@ -9,11 +9,15 @@ import {
   exportSaveString,
   gameStarted,
   gameState,
+  handleTabHidden,
+  handleTabVisible,
   importSaveString,
   initGame,
+  offlineReport,
   persistNow,
   previewSaveString,
   saveNotice,
+  setClockForTests,
   startNewGame,
 } from './game'
 import { createInitialState } from '../game/state'
@@ -228,5 +232,63 @@ describe('импорт сейва', () => {
     // И копия — это именно прежний герой, а не тот, кого только что загрузили.
     expect(previewSaveString(saved!)).not.toBeNull()
     expect(data.has(SAVE_BACKUP_KEY)).toBe(true)
+  })
+})
+
+// ОФФЛАЙН В ФОНОВОЙ ВКЛАДКЕ (находка 1.2). Проверяется через стор, потому что
+// именно он сводит часы, отметку ухода в фон и модалку возврата.
+describe('вкладка уходит в фон и возвращается', () => {
+  let now = 0
+  beforeEach(() => {
+    now = 1_000_000
+    setClockForTests(() => now)
+  })
+
+  it('восемь часов в фоне начисляют прогресс и показывают отчёт', () => {
+    startNewGame('warden')
+    const before = get(gameState).gold
+    handleTabHidden()
+    now += 8 * 60 * 60 * 1000
+    handleTabVisible()
+    // Раньше здесь был ровный ноль: цикл при скрытой вкладке стоит, а
+    // накопленное время сбрасывалось.
+    expect(get(gameState).gold.gt(before)).toBe(true)
+    expect(get(offlineReport)).not.toBeNull()
+  })
+
+  it('короткое переключение не показывает модалку и не двигает игру', () => {
+    startNewGame('warden')
+    const before = get(gameState).gold
+    handleTabHidden()
+    now += 5_000
+    handleTabVisible()
+    expect(get(offlineReport)).toBeNull()
+    expect(get(gameState).gold.eq(before)).toBe(true)
+  })
+
+  it('возврат без ухода в фон ничего не делает', () => {
+    startNewGame('warden')
+    const before = get(gameState).gold
+    now += 8 * 60 * 60 * 1000
+    handleTabVisible()
+    expect(get(gameState).gold.eq(before)).toBe(true)
+    expect(get(offlineReport)).toBeNull()
+  })
+
+  it('до выбора класса фон не начисляет ничего', () => {
+    expect(get(gameStarted)).toBe(false)
+    handleTabHidden()
+    now += 8 * 60 * 60 * 1000
+    handleTabVisible()
+    expect(get(gameStarted)).toBe(false)
+  })
+
+  it('начисленное за фон сразу уходит в сейв', () => {
+    startNewGame('warden')
+    data.delete(SAVE_KEY)
+    handleTabHidden()
+    now += 8 * 60 * 60 * 1000
+    handleTabVisible()
+    expect(data.has(SAVE_KEY)).toBe(true)
   })
 })

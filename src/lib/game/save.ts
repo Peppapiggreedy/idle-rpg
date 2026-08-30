@@ -1636,16 +1636,79 @@ export function loadGame(deps: SaveDeps = {}): LoadResult {
 
   // Читаем ДО загрузки: она расформирует забег, и по состоянию его уже не видно.
   const interrupted = interruptedRunOf(payload)
-  let state = stateFromPayload(payload)
   // Отрицательная разница (часы перевели назад) — ничего не начисляем;
   // lastTimestamp обновится ближайшим сохранением.
-  const elapsedMs = now() - payload.lastTimestamp
-  let offline: OfflineReport | null = null
-  if (elapsedMs > 0) ({ state, report: offline } = applyOfflineProgress(state, elapsedMs))
+  const { state, offline } = accrueAway(
+    stateFromPayload(payload),
+    now() - payload.lastTimestamp,
+    interrupted,
+  )
+  return { kind: 'loaded', state, offline }
+}
+
+/**
+ * НАЧИСЛЕНИЕ ЗА ОТСУТСТВИЕ — одной точкой на всю игру.
+ *
+ * Сюда приходят оба пути: загрузка страницы (сейв прочитан) и возврат во
+ * вкладку, которая висела в фоне. Второй модели начисления быть не должно —
+ * иначе потолок восьми часов, коэффициент, лут, штраф опыта и расформирование
+ * забега разъехались бы между «закрыл вкладку» и «свернул вкладку», а
+ * заметить это было бы нечем.
+ */
+function accrueAway(
+  state: GameState,
+  elapsedMs: number,
+  interrupted: InterruptedRun | null,
+): { state: GameState; offline: OfflineReport | null } {
+  if (elapsedMs <= 0) return { state, offline: null }
+  const { state: next, report } = applyOfflineProgress(state, elapsedMs)
   // Про оборванный забег модалка обязана сказать вслух: молча пропавшая
   // цепочка боссов читается как потеря прогресса, а не как правило.
-  if (offline) offline = { ...offline, interrupted }
-  return { kind: 'loaded', state, offline }
+  return { state: next, offline: report ? { ...report, interrupted } : null }
+}
+
+/**
+ * ВОЗВРАТ ВО ВКЛАДКУ, которая висела в фоне.
+ *
+ * Раньше этого пути не было вовсе, и получалось три режима игры вместо двух:
+ * играть — сто процентов, закрыть вкладку — двадцать (OFFLINE_EFFICIENCY),
+ * оставить вкладку открытой в фоне — НОЛЬ. Браузер не зовёт
+ * requestAnimationFrame у скрытой вкладки, цикл стоит, а накопленный долг
+ * при возврате сбрасывается (см. loop.ts). Выгодной стратегией в idle-игре
+ * оказывалось выйти из игры.
+ *
+ * Отличий от загрузки сейва здесь нет ни одного: тот же `resumeOutside`
+ * расформировывает забег, тот же `accrueAway` начисляет.
+ */
+export function resumeAfterAway(
+  state: GameState,
+  elapsedMs: number,
+  rng: Rng = createRng(state.rngSeed),
+): { state: GameState; offline: OfflineReport | null } {
+  // КОРОТКОЕ ПЕРЕКЛЮЧЕНИЕ — НЕ ОТСУТСТВИЕ. Ниже одного шага агрегата считать
+  // нечего по построению: он меряет время шагами по OFFLINE_CHUNK_MIN, и
+  // тридцать секунд в нём округляются в ноль убийств.
+  //
+  // Важнее другое: за такой отскок нельзя расформировывать забег. Игрок,
+  // глянувший в соседнюю вкладку посреди данжа, не должен возвращаться к
+  // сорванной цепочке — это было бы наказание за переключение окна.
+  //
+  // ОТРИЦАТЕЛЬНАЯ РАЗНИЦА СЮДА НЕ ПОПАДАЕТ, и это не придирка: часы, ушедшие
+  // назад (ноутбук проснулся и пересинхронизировал время), означают, что
+  // длительность отсутствия НЕИЗВЕСТНА, а не что её не было. Пропусти мы её
+  // здесь — и перевод часов стал бы способом поставить забег на паузу.
+  // Дальше по общему пути забег расформируется, а начислений не будет:
+  // accrueAway ничего не платит за неположительное время.
+  if (elapsedMs >= 0 && elapsedMs < OFFLINE_CHUNK_MS) return { state, offline: null }
+  // Что оборвалось — читаем ДО расформирования, как и при загрузке.
+  const interrupted: InterruptedRun | null = state.dungeonRun
+    ? 'dungeon'
+    : state.templeRun
+      ? 'temple'
+      : null
+  // Забег снимаем ВСЕГДА, даже когда начислять нечего (часы перевели назад):
+  // иначе герой остался бы заперт внутри цепочки, которая уже не идёт.
+  return accrueAway(resumeOutside(state, rng), elapsedMs, interrupted)
 }
 
 // base64 для экспорта/импорта: btoa в браузере, Buffer в node (для тестов).

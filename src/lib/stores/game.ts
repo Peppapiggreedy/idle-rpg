@@ -37,6 +37,7 @@ import {
   encodeSaveString,
   loadGame,
   readBackupSave,
+  resumeAfterAway,
   saveGame,
   stateFromPayload,
   type LoadErrorReason,
@@ -134,12 +135,10 @@ let screenshotMode = false
  * Проверка стоит именно ЗДЕСЬ, в одной точке, а не у каждого вызывающего:
  * сохраняются автосейв в цикле, уход вкладки в фон и отладочные экшены — и
  * достаточно забыть один из них, чтобы вернуть ту же поломку.
- */
-/**
- * Про отказ записи говорим ОДИН РАЗ за сессию. Автосейв идёт раз в несколько
- * секунд: без этого флага сломанное хранилище завалило бы экран одинаковыми
- * сообщениями, и игрок закрыл бы их не читая — то есть остался бы ровно так
- * же не предупреждён, как раньше.
+ *
+ * Про отказ записи говорит ОДИН РАЗ за сессию (флаг ниже). Автосейв идёт раз
+ * в несколько секунд: без этого одинаковые сообщения завалили бы экран, и
+ * игрок закрыл бы их не читая — то есть остался бы так же не предупреждён.
  */
 let writeFailureReported = false
 
@@ -153,6 +152,50 @@ export function persistNow(): void {
   if (writeFailureReported) return
   writeFailureReported = true
   notice.set(WRITE_NOTICE[result.reason])
+}
+
+/**
+ * ЧАСЫ СТОРА. Инжектируются, потому что иначе оффлайн в фоне нечем проверить:
+ * тест не может подождать восемь часов. Тот же приём уже применён в loadGame.
+ */
+let clock: () => number = () => Date.now()
+export function setClockForTests(fn: () => number): void {
+  clock = fn
+}
+
+/** Когда вкладка ушла в фон; null — она на виду. */
+let hiddenAtMs: number | null = null
+
+/**
+ * Вкладка ушла в фон. Запоминаем отметку времени и сохраняемся: на мобильных
+ * это надёжнее beforeunload, а отметка нужна, чтобы досчитать пропущенное.
+ */
+export function handleTabHidden(): void {
+  hiddenAtMs = clock()
+  persistNow()
+}
+
+/**
+ * Вкладка вернулась. Пропущенное время досчитывается ТЕМ ЖЕ путём, что и при
+ * загрузке страницы: `resumeAfterAway` внутри зовёт `resumeOutside` и
+ * `applyOfflineProgress`, и второй модели начисления не существует.
+ *
+ * Раньше этого не было вовсе: цикл при скрытой вкладке стоит, накопленный
+ * долг сбрасывается, и восемь часов в соседней вкладке давали РОВНО НОЛЬ —
+ * при том, что те же восемь часов с закрытой вкладкой давали пятую часть
+ * живой игры. Выйти из игры было выгоднее, чем оставить её открытой.
+ */
+export function handleTabVisible(): void {
+  const since = hiddenAtMs
+  hiddenAtMs = null
+  if (since === null || !get(started) || screenshotMode) return
+  const elapsedMs = clock() - since
+  const { state: next, offline: report } = resumeAfterAway(get(state), elapsedMs, rng())
+  state.set(next)
+  // Порог модалки тот же, что и при загрузке: короткий отскок во вкладку не
+  // должен выбрасывать окно возврата на пол-экрана.
+  if (report && report.elapsedMs >= OFFLINE_MODAL_MIN_MS) offline.set(report)
+  if (report) persistNow()
 }
 
 /** Начать новую игру выбранным классом. Работает только до первого сейва. */
@@ -587,6 +630,7 @@ export function debugResetSave(): void {
   // «Заново» — значит и предупреждение об отказе записи заново: иначе
   // следующая сессия узнала бы о сломанном хранилище молча.
   writeFailureReported = false
+  hiddenAtMs = null
   started.set(false)
   state.set(createInitialState())
   offline.set(null)
