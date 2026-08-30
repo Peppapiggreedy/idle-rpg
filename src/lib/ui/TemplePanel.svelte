@@ -8,40 +8,49 @@
   import { RECIPE_BY_ID } from '../data/recipes'
   import { ZONE_BY_ID } from '../data/zones'
   import { enterTempleRun, gameState } from '../stores/game'
+  import { formatNumber } from '../game'
   import { Button, Panel, Tag } from './kit'
   import { Icon } from './icons'
   import { CLOSED_RUN_WARNING } from './runText'
 
-  // Счётчик до следующей попытки живой сам собой: стор обновляется каждым
-  // тиком, и $derived пересчитывается вместе с ним. Своего setInterval здесь
-  // быть не должно — таймеров в компонентах игра не заводит.
   const status = $derived(templeStatus($gameState))
 
+  // Кулдауна больше нет, и кода 'cooldown' среди причин тоже: ходить в храм
+  // можно сколько угодно. Фарм закрыт не запретом, а тем, что платят только
+  // этажи выше рекорда.
   const REASON_TEXT: Record<TempleBlockReason, () => string> = {
     level: () => `Откроется с ${TEMPLE.unlockRequirement} уровня`,
     'wrong-zone': () => 'Сначала перейди в эту зону',
     dead: () => 'Сначала воскресни',
     'already-inside': () => 'Ты уже внутри',
-    cooldown: () => `Следующая попытка через ${hhmm(status.msToNextAttempt)}`,
-  }
-
-  function hhmm(ms: number): string {
-    const total = Math.max(0, Math.ceil(ms / 60000))
-    const h = Math.floor(total / 60)
-    const m = total % 60
-    return h > 0 ? `${h} ч ${m} мин` : `${m} мин`
   }
 </script>
 
 <Panel title={TEMPLE.name}>
   {#snippet header()}
-    <Tag tone="xp" size="md" label="рекорд: {status.bestWave} волн" />
+    <Tag tone="xp" size="md" label="рекорд: {status.bestWave} из {status.floors}" />
   {/snippet}
 
   <p class="facts">
-    Волны идут, пока ты жив. Одна попытка в сутки · вход из зоны «{ZONE_BY_ID[TEMPLE.zoneId]
-      ?.name ?? TEMPLE.zoneId}»
+    Этажи идут, пока ты жив. Заходить можно сколько угодно · вход из зоны
+    «{ZONE_BY_ID[TEMPLE.zoneId]?.name ?? TEMPLE.zoneId}»
   </p>
+  <!-- НАГРАДА ЗА СЛЕДУЮЩИЙ ЭТАЖ — до входа, а не после: игрок должен знать,
+       ради чего идёт. Когда рекорд на потолке, вход остаётся открытым, но
+       честно помечен: заходить вслепую не за чем. -->
+  {#if status.nextReward}
+    <p class="next">
+      За следующий этаж ({status.nextReward.floor}):
+      <b class="dust">+{status.nextReward.dust} пыли</b> и
+      <b class="gold">+{formatNumber(status.nextReward.gold)} золота</b>.
+      Платят только этажи выше рекорда — пройденное второй раз не платит.
+    </p>
+  {:else}
+    <p class="next exhausted">
+      Все {status.floors} этажей взяты — награды исчерпаны. Заходить можно,
+      но платить больше нечем.
+    </p>
+  {/if}
   <p class="closed-run">{CLOSED_RUN_WARNING}</p>
 
   {#if status.canEnter}
@@ -84,6 +93,20 @@
     margin: 0;
     font-size: var(--text-xs);
     color: var(--c-text-faint);
+  }
+  .next {
+    margin: 0;
+    font-size: var(--text-sm);
+    color: var(--c-text-muted);
+  }
+  .next.exhausted {
+    color: var(--c-text-faint);
+  }
+  .dust {
+    color: var(--c-xp);
+  }
+  .gold {
+    color: var(--c-gold);
   }
   .reason {
     margin: 0;

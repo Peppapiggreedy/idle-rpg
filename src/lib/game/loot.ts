@@ -272,12 +272,37 @@ export function sellPrice(item: Item): Decimal {
  * сноса. Две разные меры разошлись бы, и игрок увидел бы, как игра выкинула
  * то, что сама же пометила апгрейдом.
  */
-function lootValue(state: GameState, item: Item): number {
+export function lootValue(state: GameState, item: Item, cache?: LootValueCache): number {
+  const hit = cache?.get(item.id)
+  if (hit !== undefined) return hit
   const share = upgradeShare(state, item)
   const sell = sellPrice(item).toNumber()
-  if (share === null) return sell * 1e-6
-  if (!Number.isFinite(share)) return Number.POSITIVE_INFINITY
-  return 1 + share
+  const value =
+    share === null
+      ? sell * 1e-6
+      : Number.isFinite(share)
+        ? 1 + share
+        : Number.POSITIVE_INFINITY
+  cache?.set(item.id, value)
+  return value
+}
+
+/**
+ * Кеш ценности на ОДИН шаг оффлайн-агрегата. Восемь часов — это тысячи
+ * бросков, а каждая оценка ценности гоняет конвейер статов и estimateCombatRate
+ * дважды; без кеша полная сумка означала бы двадцать четыре таких оценки на
+ * КАЖДУЮ находку, и загрузка вставала бы на минуты.
+ *
+ * Кешировать законно ровно потому, что внутри шага статы героя и его
+ * экипировка неизменны: автонадевания в оффлайне нет, а уровень меняется
+ * только между шагами. Новый шаг — новый кеш; правила сумки при этом те же
+ * самые, кеш на них не влияет вовсе.
+ */
+export type LootValueCache = Map<string, number>
+
+/** Апгрейд ли предмет по той же мере, что решает судьбу находки. */
+export function isUpgradeValue(value: number): boolean {
+  return value >= 1
 }
 
 /**
@@ -293,7 +318,7 @@ function lootValue(state: GameState, item: Item): number {
  * находить вещи, пока игрок не продаст, и это было видно в golden —
  * статы упирались в потолок. Теперь бросок идёт всегда.
  */
-export function stashLoot(state: GameState, item: Item): GameState {
+export function stashLoot(state: GameState, item: Item, cache?: LootValueCache): GameState {
   const withSeq = { ...state, itemSeq: Math.max(state.itemSeq, Number(item.id.split('-')[1]) + 1) }
   if (state.inventory.length < INVENTORY_SIZE) {
     return {
@@ -302,12 +327,12 @@ export function stashLoot(state: GameState, item: Item): GameState {
       combatLog: pushEvent(state.combatLog, { type: 'loot', item }),
     }
   }
-  const value = lootValue(state, item)
+  const value = lootValue(state, item, cache)
   // Кого вытеснять: самый дешёвый предмет сумки по той же мере.
   let worstIndex = 0
   let worstValue = Number.POSITIVE_INFINITY
   state.inventory.forEach((candidate, index) => {
-    const v = lootValue(state, candidate)
+    const v = lootValue(state, candidate, cache)
     if (v < worstValue) {
       worstValue = v
       worstIndex = index

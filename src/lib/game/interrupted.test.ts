@@ -176,8 +176,21 @@ describe('храм: закрытая вкладка', () => {
       }),
       statsDirty: true,
     })
-    return enterTemple(at, TEMPLE, () => 0)
+    return enterTemple(at, TEMPLE)
   }
+
+  it('выход ведёт в полосу входа храма, а не в чужую', () => {
+    // Инвариант входа: храм открывается с 70 уровня и стоит в полосе 71-75.
+    // Возврат из прерванного забега обязан вести туда же — раньше вход стоял
+    // в полосе 91-95, и герой семидесятого уровня выходил в зону, где не
+    // выживает.
+    const zone = ZONE_BY_ID[TEMPLE.zoneId]
+    expect(zone.monsterLevelRange.min - 1).toBeLessThanOrEqual(TEMPLE.unlockRequirement)
+    expect(TEMPLE.unlockRequirement).toBeLessThanOrEqual(zone.monsterLevelRange.max)
+    const { state } = reloadAfter(inTemple(), HOUR)
+    const out = ZONE_BY_ID[state.currentZoneId]
+    expect(out.monsterLevelRange.min).toBeLessThanOrEqual(TEMPLE.unlockRequirement + 1)
+  })
 
   it('забег расформирован, оффлайн начислен, рекорд не тронут', () => {
     const inside = inTemple()
@@ -192,12 +205,16 @@ describe('храм: закрытая вкладка', () => {
     expect(state.templeBestWave).toBe(inside.templeBestWave)
   })
 
-  it('попытка потрачена: она списывается на входе, а не на выходе', () => {
-    // Пересчитывать попытку обратно нельзя — иначе перезагрузка стала бы
-    // способом получить вторую попытку за сутки.
+  it('брошенный забег НЕ засчитывается: рекорд и награды не меняются', () => {
+    // Это и есть вторая половина пары «смерть засчитывается, прерывание —
+    // нет». Смерть проверяется в temple-record.test.ts.
     const inside = inTemple()
+    const before = { record: inside.templeBestWave, dust: inside.enchantDust, gold: inside.gold }
     const { state } = reloadAfter(inside, HOUR)
-    expect(state.templeLastRunAtMs).toBe(inside.templeLastRunAtMs)
+    expect(state.templeBestWave).toBe(before.record)
+    expect(state.enchantDust.eq(before.dust)).toBe(true)
+    // Золото могло вырасти за оффлайн, но не за этажи: рекорд не сдвинулся.
+    expect(state.templeCleared).toBe(false)
   })
 })
 

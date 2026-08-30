@@ -455,6 +455,27 @@ const CRAFT_RECIPES: RecipeDef[] = [
       adjective: 'Храмовый',
     },
   },
+  // Награда за ПОЛНУЮ зачистку храма. Открывается не рубежом волн, а флагом
+  // зачистки (см. recipeUnlocked), и просит тот самый токен, который за
+  // зачистку и выдан: рецепт нельзя собрать, не пройдя храм целиком.
+  {
+    id: 'trial-crown',
+    name: 'Венец испытаний',
+    icon: 'slot-head',
+    profession: 'smithing',
+    inputs: [
+      { materialId: 'trial-token', count: 1 },
+      { materialId: 'rime-salt', count: 12 },
+    ],
+    output: {
+      kind: 'item',
+      slot: 'head',
+      rarity: 'legendary',
+      level: 100,
+      attribute: 'vitality',
+      adjective: 'Венечный',
+    },
+  },
 ]
 
 /**

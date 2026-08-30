@@ -6,6 +6,7 @@
     debugAddLevel,
     debugKillMonster,
     debugResetSave,
+    debugResetTempleRecord,
     debugSimulateOffline,
     gameState,
     sessionStartPlaytimeMs,
@@ -87,6 +88,9 @@
       <Button size="sm" onclick={debugAddLevel}>+1 уровень</Button>
       <Button size="sm" onclick={() => debugAddGold(1000)}>+1000 золота</Button>
       <Button size="sm" onclick={debugKillMonster}>убить моба</Button>
+      <!-- Кулдауна у храма больше нет, сбрасывать нечего. Сброс РЕКОРДА
+           нужен, чтобы пройти храм заново и увидеть награды за этажи. -->
+      <Button size="sm" onclick={debugResetTempleRecord}>сброс рекорда храма</Button>
       <Button size="sm" variant="danger" onclick={onReset}>сброс сейва</Button>
     </div>
 

@@ -328,7 +328,9 @@ export const DUNGEON_SPECS: readonly DungeonSpec[] = [
     id: 'rime-catacombs',
     name: 'Стылые катакомбы',
     icon: 'dungeon-rime-catacombs',
-    zoneId: 'frozen-crookwood',
+    // Полоса 81-85: вход открывается ровно на её пороге, как у всех
+    // остальных данжей лестницы (см. инвариант в content:check).
+    zoneId: 'rimeback-ridge',
     unlockRequirement: 80,
     lootTier: 2,
     reagentId: 'reagent-rime-vein',
@@ -344,7 +346,8 @@ export const DUNGEON_SPECS: readonly DungeonSpec[] = [
     id: 'bluff-hollow',
     name: 'Полость под кручей',
     icon: 'dungeon-bluff-hollow',
-    zoneId: 'mute-bluff',
+    // Полоса 91-95, а не 96-100: вход на пороге своей зоны.
+    zoneId: 'hollow-dell',
     unlockRequirement: 90,
     lootTier: 2,
     reagentId: 'reagent-mute-shard',

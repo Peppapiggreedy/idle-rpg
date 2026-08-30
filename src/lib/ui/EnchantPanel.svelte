@@ -13,10 +13,11 @@
     type EnchantDef,
   } from '../game'
   import { ENCHANT_UNLOCK_LEVEL } from '../data/balance'
+  import type { Decimal } from '../game/numbers'
   import { SLOT_NAMES } from '../data/slots'
   import { enchantInventoryItem, gameState } from '../stores/game'
   import ItemMods from './ItemMods.svelte'
-  import { Button, IconSlot, Panel, Tag } from './kit'
+  import { Button, IconSlot, Panel, Tag, Tooltip } from './kit'
   import { Icon } from './icons'
 
   const unlocked = $derived($gameState.level.gte(ENCHANT_UNLOCK_LEVEL))
@@ -32,6 +33,11 @@
   let selectedId = $state<string | null>(null)
   const selected = $derived(targets.find((i) => i.id === selectedId) ?? null)
   const options = $derived(selected ? enchantsForSlot(selected.slot) : [])
+
+  // Сколько пыли НЕ ХВАТАЕТ — считается из цены рецепта и запаса героя,
+  // а не пишется текстом: «не хватает пыли» не говорит, сколько ещё копить.
+  const shortBy = (cost: Decimal) =>
+    `Не хватает ${formatNumber(cost.minus(dust))} пыли: есть ${formatNumber(dust)} из ${formatNumber(cost)}`
 
   const REASON: Record<EnchantBlockReason, string> = {
     locked: `Зачарование откроется на ${ENCHANT_UNLOCK_LEVEL} уровне`,
@@ -97,14 +103,27 @@
                 mods={enchant.mods.map((m) => ({ ...m, source: `enchant:${selected.slot}` }))}
               />
             </span>
+            <!-- ЦЕНА ВИДНА ВСЕГДА, а не только на доступной кнопке. Раньше
+                 она пряталась внутрь надписи «Наложить · 120», и при нехватке
+                 пыли исчезала вместе с кнопкой — ровно тогда, когда игроку и
+                 надо знать, сколько копить. Число берётся из данных рецепта
+                 (status.dustCost), здесь оно не считается. -->
+            <span class="cost" class:short={status.reason === 'dust'}>
+              <Icon name="material-dust" />
+              {formatNumber(status.dustCost)}
+            </span>
             {#if status.canEnchant}
               <Button
                 size="sm"
                 variant="primary"
                 onclick={() => enchantInventoryItem(selected.id, enchant.id)}
               >
-                {status.replaces ? 'Заменить' : 'Наложить'} · {formatNumber(status.dustCost)}
+                {status.replaces ? 'Заменить' : 'Наложить'}
               </Button>
+            {:else if status.reason === 'dust'}
+              <Tooltip text={shortBy(status.dustCost)}>
+                <Button size="sm" variant="primary" disabled>Наложить</Button>
+              </Tooltip>
             {:else}
               <span class="reason">{REASON[status.reason ?? 'dust']}</span>
             {/if}
@@ -160,6 +179,19 @@
   .desc {
     font-size: var(--text-xs);
     color: var(--c-text-muted);
+  }
+  /* Цена рецепта. Не хватает пыли — она подсвечена, а не спрятана. */
+  .cost {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    font-size: var(--text-sm);
+    color: var(--c-text-muted);
+    white-space: nowrap;
+  }
+  .cost.short {
+    color: var(--c-warning);
+    font-weight: 600;
   }
   .reason {
     font-size: var(--text-xs);

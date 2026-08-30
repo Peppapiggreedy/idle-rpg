@@ -83,6 +83,7 @@ describe('фикстуры сейвов', () => {
     ['save-v17.json'],
     ['save-v18.json'],
     ['save-v19.json'],
+    ['save-v20.json'],
   ])('%s мигрирует до текущей версии', (name) => {
     const payload = migrateSave(JSON.parse(fixture(name)))
     expect(payload).not.toBeNull()
@@ -112,6 +113,33 @@ describe('фикстуры сейвов', () => {
       expect(payload.materials).toBeDefined()
     },
   )
+
+  it('save-v20 -> v21: кулдаун храма снесён, рекорд сохранён', () => {
+    // ПРАВИЛО ИЗМЕНИЛОСЬ ОСОЗНАННО: попытки в сутки больше нет, награду
+    // выдают этажи выше рекорда. Отметка последнего забега поэтому просто
+    // выбрасывается.
+    //
+    // А вот РЕКОРД сохраняется, хотя постановка говорила «рекорд 0». В 20-й
+    // версии templeBestWave значил ровно то же самое — «максимальный
+    // полностью пройденный этаж», — и им же открыты рецепты рубежей.
+    // Обнулить его значило бы отобрать у ветерана храма уже открытые
+    // рецепты, то есть потерять прогресс.
+    const raw = JSON.parse(fixture('save-v20.json'))
+    expect(raw.templeLastRunAtMs).toBeGreaterThan(0)
+    const payload = migrateSave(raw)!
+    expect(payload.version).toBe(SAVE_VERSION)
+    expect('templeLastRunAtMs' in payload).toBe(false)
+    expect(payload.templeBestWave).toBe(7)
+    expect(payload.templeCleared).toBe(false)
+
+    const state = loadFixture('save-v20.json')
+    expect(state.templeBestWave).toBe(7)
+    expect(state.templeCleared).toBe(false)
+    // Забег из сейва расформирован общим правилом, и НЕ засчитан: рекорд
+    // остался прежним, хотя в забеге стоял третий этаж.
+    expect(state.templeRun).toBeNull()
+    expect(state.gold.toNumber()).toBeGreaterThan(0)
+  })
 
   it('save-v19 -> v20: незаконная связка рук расформирована', () => {
     // В 19-й версии хвата не было: оружие несло hands, а щит не был отмечен

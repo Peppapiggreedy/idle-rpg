@@ -6,18 +6,20 @@ import {
   TEMPLE,
   TEMPLES,
   TEMPLE_BY_ID,
-  TEMPLE_DAY_MS,
   buildTempleMonster,
+  floorReward,
   milestoneAt,
   type TempleDef,
 } from '../data/temple'
+import { Decimal } from './numbers'
+import { addMaterial } from './crafting'
 import { ZONE_BY_ID } from '../data/zones'
 import { createRng, type Rng } from './rng'
 import { monsterFromTemplate, pushEvent, spawnMonster, type GameState } from './state'
 import { currentZone, retreatZone } from './zones'
 import type { TempleRun } from '../types'
 
-export { TEMPLE, TEMPLES, TEMPLE_BY_ID, TEMPLE_DAY_MS, recipeUnlocked, recipeUnlockWave } from '../data/temple'
+export { TEMPLE, TEMPLES, TEMPLE_BY_ID, floorReward, recipeUnlocked, recipeUnlockWave } from '../data/temple'
 export type { TempleDef, TempleMilestone } from '../data/temple'
 
 export function templeById(id: string): TempleDef | null {
@@ -29,28 +31,15 @@ export function activeTemple(state: GameState): TempleDef | null {
 }
 
 /**
- * Отметка реального времени, которой МОЖНО доверять.
+ * Сид забега: из идентификатора сейва и ТЕКУЩЕГО РЕКОРДА.
  *
- * Часы на машине игрока источником правды не являются: их переводят назад и
- * получают вторую попытку в те же сутки. Поэтому наружу ходит не now(), а
- * максимум из него и отметки последнего забега — время для храма идёт только
- * вперёд. Перевод часов ВПЕРЁД правилом не ловится и не должен: приблизить
- * себе завтра игрок волен и без нас, а вот отменить уже потраченный сегодня
- * забег нельзя.
- */
-export function templeClock(state: GameState, now: number): number {
-  return Math.max(now, state.templeLastRunAtMs)
-}
-
-/** Номер суток по отметке времени. */
-export function templeDay(ms: number): number {
-  return Math.floor(ms / TEMPLE_DAY_MS)
-}
-
-/**
- * Сид забега: из идентификатора сейва и номера суток. Отсюда и берётся
- * воспроизводимость — за один день герой встречает тот же поток, сколько бы
- * раз ни перезагрузил страницу. Тот же целочисленный хеш, что в randomSeed.
+ * Раньше вторым слагаемым был номер суток — так работал кулдаун «одна
+ * попытка в день». Кулдауна больше нет, и привязка к часам вместе с ним:
+ * часы на машине игрока источником правды не были никогда.
+ *
+ * Рекорд как слагаемое даёт ровно то, что нужно: пока герой топчется на
+ * одном рубеже, лестница повторяется и её можно выучить; побил рекорд —
+ * дальше идёт новая. Тот же целочисленный хеш, что в randomSeed.
  */
 export function templeSeed(saveId: number, day: number): number {
   let h = ((saveId >>> 0) ^ Math.imul(day | 0, 0x9e3779b1)) >>> 0
@@ -71,15 +60,12 @@ function waveRng(run: TempleRun): Rng {
   return createRng(templeSeed(run.seed, run.wave))
 }
 
-/** Сколько реальных мс осталось до следующей попытки; 0 — попытка есть. */
-export function msToNextAttempt(state: GameState, now: number): number {
-  if (state.templeLastRunAtMs <= 0) return 0
-  const passed = templeClock(state, now) - state.templeLastRunAtMs
-  return Math.max(0, TEMPLE_DAY_MS - passed)
-}
-
 // Почему в храм не войти. Каждый случай — свой код, текст рендерит UI.
-export type TempleBlockReason = 'level' | 'wrong-zone' | 'dead' | 'already-inside' | 'cooldown'
+//
+// Кода 'cooldown' здесь БОЛЬШЕ НЕТ: попытки в сутки не существует. Ходить
+// в храм можно сколько угодно, и фарм закрыт не запретом, а построением —
+// награда даётся только за этажи ВЫШЕ рекорда, а рекорд нельзя побить дважды.
+export type TempleBlockReason = 'level' | 'wrong-zone' | 'dead' | 'already-inside'
 
 export interface TempleStatus {
   templeId: string
@@ -87,35 +73,38 @@ export interface TempleStatus {
   reason: TempleBlockReason | null
   unlockRequirement: number
   zoneId: string
-  /** Личный рекорд по волнам: он же ключ к открытым рецептам. */
+  /** Личный рекорд: максимальный ПОЛНОСТЬЮ пройденный этаж. */
   bestWave: number
-  msToNextAttempt: number
+  /** Сколько всего этажей в храме. */
+  floors: number
+  /** Награда за следующий этаж; null — рекорд уже на потолке. */
+  nextReward: { floor: number; dust: number; gold: Decimal } | null
+  /** Все этажи взяты: ходить можно, но платить больше нечем. */
+  exhausted: boolean
 }
 
 /**
  * Порядок проверок тот же, что у данжа: сперва то, что не лечится переходом
- * в зону. Кулдаун — ПОСЛЕДНИМ: «приходи завтра» полезно слышать только тому,
- * кто уже дорос и стоит у двери.
+ * в зону. Кулдауна среди них больше нет — его не существует.
  */
-export function templeStatus(
-  state: GameState,
-  temple: TempleDef = TEMPLE,
-  now: () => number = Date.now,
-): TempleStatus {
-  const left = msToNextAttempt(state, now())
+export function templeStatus(state: GameState, temple: TempleDef = TEMPLE): TempleStatus {
+  const best = state.templeBestWave
+  const next = best + 1
+  const exhausted = best >= temple.floors
   const base = {
     templeId: temple.id,
     unlockRequirement: temple.unlockRequirement,
     zoneId: temple.zoneId,
-    bestWave: state.templeBestWave,
-    msToNextAttempt: left,
+    bestWave: best,
+    floors: temple.floors,
+    nextReward: exhausted ? null : { floor: next, ...floorReward(temple, next) },
+    exhausted,
   }
   const blocked = (reason: TempleBlockReason) => ({ ...base, canEnter: false, reason })
   if (state.templeRun || state.dungeonRun) return blocked('already-inside')
   if (state.heroState === 'dead') return blocked('dead')
   if (state.level.lt(temple.unlockRequirement)) return blocked('level')
   if (currentZone(state).id !== temple.zoneId) return blocked('wrong-zone')
-  if (left > 0) return blocked('cooldown')
   return { ...base, canEnter: true, reason: null }
 }
 
@@ -139,57 +128,135 @@ function faceWave(state: GameState, temple: TempleDef, run: TempleRun): GameStat
 }
 
 /** Вход в храм. Недоступный храм состояние не меняет вовсе. */
-export function enterTemple(
-  state: GameState,
-  temple: TempleDef = TEMPLE,
-  now: () => number = Date.now,
-): GameState {
-  if (!templeStatus(state, temple, now).canEnter) return state
-  const stamp = templeClock(state, now())
-  const day = templeDay(stamp)
+export function enterTemple(state: GameState, temple: TempleDef = TEMPLE): GameState {
+  if (!templeStatus(state, temple).canEnter) return state
   const run: TempleRun = {
     templeId: temple.id,
     wave: 1,
-    day,
-    seed: templeSeed(state.saveId, day),
+    // Пройденных этажей в этом забеге пока нет: первый ещё впереди.
+    cleared: 0,
+    seed: templeSeed(state.saveId, state.templeBestWave),
     // Уровень ЗАМОРОЖЕН на входе: взятый посреди забега уровень менял бы
     // числа потока на ходу, и «тот же забег» перестал бы быть тем же.
     level: state.level.toNumber(),
   }
   const started: GameState = {
     ...state,
-    // Попытка тратится В МОМЕНТ ВХОДА, а не на выходе: иначе выход до первого
-    // удара возвращал бы её, и «одна в сутки» ничего не значило бы.
-    templeLastRunAtMs: stamp,
     combatLog: pushEvent(state.combatLog, { type: 'temple-start', templeName: temple.name }),
   }
   return faceWave(started, temple, run)
 }
 
 /**
- * Волна пройдена: рекорд и рубеж.
+ * Этаж пройден: отмечается В ЗАБЕГЕ, а не в рекорде.
  *
- * Зовётся в момент СМЕРТИ бойца, а не при переходе к следующей волне: между
- * ними герой волен выйти сам, и пройденная волна обязана остаться засчитанной.
+ * Разница между «отметить» и «засчитать» — это ровно разница между смертью и
+ * закрытой вкладкой. Рекорд и награды выдаёт finishTempleRun на ВЫХОДЕ; пока
+ * герой внутри, пройденные этажи живут только в самом забеге, и брошенный
+ * забег уносит их с собой (см. resumeOutside в game/save.ts).
+ *
+ * Зовётся в момент СМЕРТИ бойца, а не при переходе к следующему этажу: между
+ * ними герой волен выйти сам, и пройденный этаж обязан остаться пройденным.
  */
 export function clearTempleWave(state: GameState): GameState {
   const run = state.templeRun
   const temple = activeTemple(state)
   if (!run || !temple) return state
   const cleared = run.wave
-  const record = cleared > state.templeBestWave
-  // Рубеж выдаётся РОВНО ОДИН РАЗ, и отдельного счётчика для этого не нужно:
-  // награду открывает рекорд, а рекорд по определению берётся однажды.
-  const milestone = record ? milestoneAt(temple, cleared) : null
-  let combatLog = pushEvent(state.combatLog, { type: 'temple-wave', wave: cleared, record })
-  if (milestone) {
-    combatLog = pushEvent(combatLog, {
-      type: 'temple-reward',
-      recipeId: milestone.recipeId,
+  return {
+    ...state,
+    templeRun: { ...run, cleared: Math.max(run.cleared, cleared) },
+    combatLog: pushEvent(state.combatLog, {
+      type: 'temple-wave',
       wave: cleared,
-    })
+      record: cleared > state.templeBestWave,
+    }),
   }
-  return { ...state, templeBestWave: Math.max(state.templeBestWave, cleared), combatLog }
+}
+
+/** Что начислил забег. Числа для итогового экрана; текст рендерит UI. */
+export interface TempleOutcome {
+  /** До какого этажа дошёл забег (последний ПОЛНОСТЬЮ пройденный). */
+  reached: number
+  /** Какие этажи оплачены: они же новый рекорд. Пусто — рекорд не побит. */
+  paidFrom: number
+  paidTo: number
+  dust: number
+  gold: Decimal
+  /** Рецепты, открытые взятыми рубежами. */
+  recipeIds: string[]
+  /** Храм пройден целиком ВПЕРВЫЕ: токен и уникальный рецепт. */
+  fullClear: boolean
+}
+
+/**
+ * ЗАБЕГ ЗАВЕРШЁН С РЕЗУЛЬТАТОМ. Сюда приходит и смерть, и добровольный выход —
+ * оба это КОНЕЦ ПОПЫТКИ, и оба засчитываются.
+ *
+ * Этаж, на котором герой умер, пройденным не считается: clearTempleWave
+ * отмечает этаж в момент смерти БОЙЦА, а не героя. Засчитываются этажи под ним.
+ *
+ * ФАРМ ЗАКРЫТ ПО ПОСТРОЕНИЮ: платят только этажи ВЫШЕ рекорда, а рекорд по
+ * определению нельзя побить дважды. Кулдаун для этого не нужен и его нет.
+ */
+export function finishTempleRun(state: GameState): { state: GameState; outcome: TempleOutcome } {
+  const run = state.templeRun
+  const temple = activeTemple(state)
+  const empty: TempleOutcome = {
+    reached: 0,
+    paidFrom: 0,
+    paidTo: 0,
+    dust: 0,
+    gold: new Decimal(0),
+    recipeIds: [],
+    fullClear: false,
+  }
+  if (!run || !temple) return { state, outcome: empty }
+
+  const reached = Math.min(run.cleared, temple.floors)
+  const from = state.templeBestWave + 1
+  const outcome: TempleOutcome = { ...empty, reached, paidFrom: from, paidTo: reached }
+  if (reached < from) return { state, outcome: { ...outcome, paidFrom: 0, paidTo: 0 } }
+
+  let dust = 0
+  let gold = new Decimal(0)
+  const recipeIds: string[] = []
+  for (let floor = from; floor <= reached; floor += 1) {
+    const reward = floorReward(temple, floor)
+    dust += reward.dust
+    gold = gold.plus(reward.gold)
+    const milestone = milestoneAt(temple, floor)
+    if (milestone) recipeIds.push(milestone.recipeId)
+  }
+  // Полная зачистка платит СВЕРХУ и ровно один раз: флаг в состоянии, а не
+  // «рекорд равен потолку» — иначе повторный заход выдавал бы токен снова.
+  const fullClear = reached >= temple.floors && !state.templeCleared
+
+  let next: GameState = {
+    ...state,
+    templeBestWave: reached,
+    templeCleared: state.templeCleared || reached >= temple.floors,
+    enchantDust: state.enchantDust.plus(dust),
+    gold: state.gold.plus(gold),
+  }
+  if (fullClear) next = addMaterial(next, temple.clearReward.materialId)
+  next = {
+    ...next,
+    combatLog: pushEvent(next.combatLog, {
+      type: 'temple-result',
+      reached,
+      dust,
+      gold,
+      fullClear,
+    }),
+  }
+  for (const recipeId of recipeIds) {
+    next = {
+      ...next,
+      combatLog: pushEvent(next.combatLog, { type: 'temple-reward', recipeId, wave: reached }),
+    }
+  }
+  return { state: next, outcome: { ...outcome, dust, gold, recipeIds, fullClear } }
 }
 
 /** Следующая волна. Потока симуляции не касается — бросок идёт своим. */
@@ -201,13 +268,27 @@ export function advanceTemple(state: GameState): GameState {
 }
 
 /**
- * Выход наружу: в зону храма при добровольном выходе, в зону отката — если
- * героя вынесли. Забег в любом случае не хранится: он живёт, только пока
- * герой внутри. Рекорд и открытые им рецепты остаются — они уже заработаны.
+ * Выход наружу. `credit` разводит ДВА РАЗНЫХ пути, и путать их нельзя:
+ *
+ *   true  — забег ЗАВЕРШЁН: смерть или добровольный выход. Этажи выше
+ *           рекорда оплачены, рекорд поднят, итог ушёл в лог.
+ *   false — забег БРОШЕН: закрытая вкладка (resumeOutside при загрузке
+ *           сейва). Рекорд не меняется, награды не выдаются, попытку
+ *           придётся начинать заново.
+ *
+ * Если бы смерть шла по второму пути, риск смерти обнулился бы: погибнуть
+ * стало бы не дороже, чем закрыть вкладку, и привал между боями потерял бы
+ * смысл. Оба пути покрыты тестами.
  */
-export function leaveTemple(state: GameState, rng: Rng, defeated: boolean): GameState {
+export function leaveTemple(
+  state: GameState,
+  rng: Rng,
+  defeated: boolean,
+  credit = true,
+): GameState {
   const run = state.templeRun
   if (!run) return state
+  if (credit) state = finishTempleRun(state).state
   const zone = defeated ? retreatZone(state) : ZONE_BY_ID[state.currentZoneId] ?? retreatZone(state)
   return {
     ...state,

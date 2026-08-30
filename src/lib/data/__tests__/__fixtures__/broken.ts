@@ -27,6 +27,18 @@ function first<T>(list: readonly T[]): T {
   return list[0]
 }
 
+/** Первый ДОБЫВАЕМЫЙ материал: у материала-награды свои правила. */
+function minedMaterial(real: Content) {
+  return real.materials.find((m) => m.award === undefined) ?? first(real.materials)
+}
+
+/** Зона с самой высокой полосой мобов: в неё удобно «ошибочно» ставить вход. */
+function highBandZone(real: Content) {
+  return [...real.zones].sort(
+    (a, b) => b.monsterLevelRange.min - a.monsterLevelRange.min,
+  )[0]
+}
+
 export interface BrokenCase {
   /** Что именно сломано — попадает в название теста. */
   title: string
@@ -250,9 +262,11 @@ export function brokenCases(): BrokenCase[] {
       title: 'материал не падает ни в одной зоне — рецепты с ним недостижимы',
       content: {
         ...real,
-        materials: patch(real.materials, first(real.materials).id, { zoneIds: [] }),
+        // Берём ДОБЫВАЕМЫЙ материал: у материала-награды пустой список зон
+        // законен, и поломка на нём не показала бы ничего.
+        materials: patch(real.materials, minedMaterial(real).id, { zoneIds: [] }),
       },
-      expect: [first(real.materials).id, 'не падает ни в одной зоне'],
+      expect: [minedMaterial(real).id, 'не падает ни в одной зоне'],
     },
     {
       title: 'материал падает в зоне, которой нет',
@@ -733,6 +747,30 @@ export function brokenCases(): BrokenCase[] {
         balance: { ...real.balance, ttkTargetMin: 30 },
       },
       expect: ['TTK_TARGET_MIN', 'TTK_TARGET_MAX', 'data/balance.ts'],
+    },
+    {
+      title: 'храм открывается с 70, а вход стоит в зоне 91-95',
+      content: {
+        ...real,
+        temples: real.temples.map((t) => ({
+          ...t,
+          unlockRequirement: 70,
+          zoneId: highBandZone(real).id,
+        })),
+      },
+      expect: ['храм', 'раньше, чем начнёт там выживать', 'data/temple.ts'],
+    },
+    {
+      title: 'данж открывается на 90, а вход стоит в стартовой полосе',
+      content: {
+        ...real,
+        dungeons: real.dungeons.map((d) =>
+          d.difficulty === 'normal' && d.id === first(real.dungeons).id
+            ? { ...d, unlockRequirement: 90 }
+            : d,
+        ),
+      },
+      expect: [first(real.dungeons).id, 'зона отстала от открытия', 'data/dungeons.ts'],
     },
     {
       title: 'вероятность дропа больше единицы',

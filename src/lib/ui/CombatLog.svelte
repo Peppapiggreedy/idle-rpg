@@ -63,13 +63,23 @@
       case 'temple-start':
         return `${e.templeName}: волны пошли`
       case 'temple-wave':
-        return e.record ? `Волна ${e.wave} — новый рекорд!` : `Волна ${e.wave} пройдена`
+        return e.record ? `Этаж ${e.wave} — новый рекорд!` : `Этаж ${e.wave} пройден`
+      case 'temple-result': {
+        // Итог забега: что именно начислено. Пустая награда тоже называется —
+        // «рекорд не побит» игрок должен прочитать, а не догадаться.
+        if (e.reached <= 0) return 'Забег в храме окончен: ни одного этажа не взято'
+        if (e.dust <= 0 && e.gold.lte(0)) {
+          return `Забег окончен на ${e.reached} этаже — рекорд не побит, наград нет`
+        }
+        const full = e.fullClear ? ', храм пройден целиком!' : ''
+        return `Забег окончен на ${e.reached} этаже: +${e.dust} пыли, +${formatNumber(e.gold)} золота${full}`
+      }
       case 'temple-reward':
-        return `Рубеж ${e.wave} волны: открыт рецепт «${RECIPE_BY_ID[e.recipeId]?.name ?? e.recipeId}»`
+        return `Рубеж ${e.wave} этажа: открыт рецепт «${RECIPE_BY_ID[e.recipeId]?.name ?? e.recipeId}»`
       case 'temple-end':
         return e.defeated
-          ? `Храм пройден до ${e.wave} волны — тебя вынесли`
-          : `Ты вышел из храма на ${e.wave} волне`
+          ? `Тебя вынесли из храма на ${e.wave} этаже`
+          : `Ты вышел из храма на ${e.wave} этаже`
       case 'boss-ability': {
         const name = BOSS_ABILITY_BY_ID[e.abilityId]?.name ?? 'Уловка босса'
         return e.damage ? `${name}: −${formatNumber(e.damage)} здоровья` : `${name} сработал`
@@ -155,6 +165,7 @@
     craft: 'profession-smithing',
     'quest-complete': 'raid-gate',
     'temple-start': 'temple',
+    'temple-result': 'temple-wave',
     'temple-wave': 'temple-wave',
     'temple-reward': 'temple',
     'temple-end': 'temple',

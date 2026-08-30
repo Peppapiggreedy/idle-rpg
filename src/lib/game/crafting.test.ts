@@ -48,7 +48,12 @@ const HELM = RECIPE_BY_ID['forged-helm']
  * Кузнечное дело — подстраховка от невезения, и мерить его надо без наград:
  * реликты стоят реагентов героики, а храмовые открываются рубежом волн.
  */
-const rewardIds = new Set(TEMPLE.milestones.map((m) => m.recipeId))
+// Награды храма — и рубежи волн, и рецепт за полную зачистку: и то, и другое
+// открывается достижением, а не материалами, и в «рядовые» не годится.
+const rewardIds = new Set([
+  ...TEMPLE.milestones.map((m) => m.recipeId),
+  TEMPLE.clearReward.recipeId,
+])
 const everydaySmithing = () =>
   recipesOf('smithing').filter((r) => recipeUnlockLevel(r) < LEVEL_CAP && !rewardIds.has(r.id))
 /** Легендарные реликты: открываются на потолке и стоят реагентов героики. */
@@ -91,6 +96,12 @@ describe('данные профессий', () => {
   it('каждый материал падает хотя бы в одной существующей зоне', () => {
     const ids = ZONES.map((z) => z.id)
     for (const material of MATERIALS) {
+      // Исключение ровно одно и названо в самих данных: материал-НАГРАДА
+      // не падает нигде и падать не должен — его выдают за достижение.
+      if (material.award !== undefined) {
+        expect(material.zoneIds, material.id).toEqual([])
+        continue
+      }
       expect(material.zoneIds.length, material.id).toBeGreaterThan(0)
       for (const id of material.zoneIds) expect(ids, material.id).toContain(id)
     }

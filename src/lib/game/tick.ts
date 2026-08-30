@@ -71,9 +71,13 @@ function heroDies(state: GameState, rng: Rng): GameState {
     activeEffects: [],
     combatLog: pushEvent(state.combatLog, { type: 'death' }),
   }
-  // Смерть в храме выкидывает наружу: рекорд и открытые им рецепты уже
-  // записаны, а забег не сохраняется — попытка потрачена.
-  if (dead.templeRun) return leaveTemple(dead, rng, true)
+  // СМЕРТЬ В ХРАМЕ ЗАСЧИТЫВАЕТСЯ. Это завершение забега С РЕЗУЛЬТАТОМ, а не
+  // потеря: этаж, на котором героя добили, пройденным не считается (его
+  // отмечает смерть БОЙЦА, а не героя), а все этажи под ним оплачиваются и
+  // поднимают рекорд. Отличается это от брошенного забега ровно последним
+  // аргументом — и разница между ними принципиальна: если бы смерть шла по
+  // ветке прерывания, погибнуть стало бы не дороже, чем закрыть вкладку.
+  if (dead.templeRun) return leaveTemple(dead, rng, true, true)
   // Смерть в данже выкидывает наружу: лут за убитых боссов уже в сумке,
   // а прогресс цепочки не сохраняется — заходить придётся заново.
   return dead.dungeonRun ? leaveDungeon(dead, rng, true) : dead
@@ -529,6 +533,10 @@ const applyProcs: TickStep = (s, ctx) => {
 
 const applyLootDrop: TickStep = (s, ctx) => {
   if (!ctx.killedMonster) return s
+  // ВНУТРИ ХРАМА ЛУТ НЕ ПАДАЕТ. Награда за храм — этажи, а не мобы: заходить
+  // туда можно бесконечно (кулдауна нет), и падающий с бойцов лут сделал бы
+  // храм лучшей фермой в игре. Замер до правки — в data/temple.ts.
+  if (s.templeRun) return s
   // Босс роняет свой пул целиком, а не по общему шансу дропа.
   const boss = currentBoss(s)
   if (boss) return dropBossLoot(s, boss, ctx)

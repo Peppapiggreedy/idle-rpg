@@ -1062,7 +1062,7 @@ export const MATERIAL_SCHEMA: EntitySchema<MaterialDef> = {
   numbers: [
     {
       field: 'weight',
-      get: (m) => m.weight,
+      get: (m) => (m.award === undefined ? m.weight : 1),
       min: 0,
       exclusiveMin: true,
       why: 'нулевой вес рулетки означал бы, что материал не падает никогда',
@@ -1070,12 +1070,24 @@ export const MATERIAL_SCHEMA: EntitySchema<MaterialDef> = {
   ],
   extra: (material, content, report) => {
     const where = `материал ${material.id}`
-    // Материал без зоны — недостижимый контент: рецепт с ним не собрать никогда.
+    // Материал без зоны — недостижимый контент: рецепт с ним не собрать
+    // никогда. Исключение ровно одно и названо в самих данных: материал,
+    // который ВЫДАЁТСЯ за достижение, а не падает. Проверка при этом не
+    // отключается — она спрашивает про второй источник.
+    const awarded = material.award !== undefined
     report.need(
-      Array.isArray(material.zoneIds) && material.zoneIds.length > 0,
+      awarded || (Array.isArray(material.zoneIds) && material.zoneIds.length > 0),
       where,
-      'не падает ни в одной зоне — рецепты с ним недостижимы (data/materials.ts)',
+      'не падает ни в одной зоне и не выдаётся за достижение — рецепты с ним ' +
+        'недостижимы (data/materials.ts)',
     )
+    if (awarded && material.award === 'temple-clear') {
+      report.need(
+        content.temples.some((t) => t.clearReward.materialId === material.id),
+        where,
+        'помечен наградой за зачистку храма, но ни один храм его не выдаёт (data/temple.ts)',
+      )
+    }
     for (const id of material.zoneIds ?? []) {
       report.need(
         content.zones.some((z) => z.id === id),
@@ -1130,7 +1142,9 @@ export const RECIPE_SCHEMA: EntitySchema<RecipeDef> = {
     // прогрессом. Достаточно, чтобы каждый падал хотя бы в одной зоне.
     for (const input of recipe.inputs ?? []) {
       const material = content.materials.find((m) => m.id === input.materialId)
-      if (material && material.zoneIds.length === 0) {
+      // Материал-НАГРАДА добывается не в зоне, а достижением, и его
+      // достижимость проверена своей схемой: там же сказано, кто его выдаёт.
+      if (material && material.award === undefined && material.zoneIds.length === 0) {
         report.add(
           where,
           `материал «${input.materialId}» не падает ни в одной зоне — рецепт ` +
@@ -1554,6 +1568,35 @@ export const TEMPLE_SCHEMA: EntitySchema<TempleDef> = {
   ],
   extra: (temple, content, report) => {
     const where = `храм ${temple.id}`
+    // Награда за полную зачистку — две ссылки, и обе обязаны существовать:
+    // токен ниоткуда и рецепт-призрак заперли бы конец храма навсегда.
+    report.need(
+      content.materials.some((m) => m.id === temple.clearReward.materialId),
+      where,
+      `за полную зачистку выдаёт «${temple.clearReward.materialId}», которого нет ` +
+        'в data/materials.ts',
+    )
+    report.need(
+      content.recipes.some((r) => r.id === temple.clearReward.recipeId),
+      where,
+      `за полную зачистку открывает рецепт «${temple.clearReward.recipeId}», которого нет ` +
+        'в data/recipes.ts',
+    )
+    report.need(
+      Number.isInteger(temple.floors) && temple.floors > 0,
+      where,
+      `этажей ${temple.floors}: храм обязан быть конечным, иначе полная зачистка ` +
+        'недостижима (data/temple.ts)',
+    )
+    // Рубеж выше потолка не возьмёт никто.
+    for (const milestone of temple.milestones) {
+      report.need(
+        milestone.wave <= temple.floors,
+        where,
+        `рубеж на ${milestone.wave} этаже выше потолка в ${temple.floors} — его не взять ` +
+          'никогда (data/temple.ts)',
+      )
+    }
     report.need(
       content.zones.some((z) => z.id === temple.zoneId),
       where,
@@ -1973,6 +2016,77 @@ export const SCHEMAS = [
  * Недостижимый контент — самая тихая из поломок: игра работает, тесты зелёные,
  * а до половины предметов игрок не доберётся никогда.
  */
+/**
+ * ВХОД ИНСТАНСА СТОИТ В СВОЕЙ ПОЛОСЕ. Уровень открытия инстанса и зона его
+ * входа — две независимые системы, и без связи между ними они разъезжаются
+ * молча: храм открывался с семидесятого, а вход стоял в полосе 91-95, куда
+ * герой семидесятого уровня не дойдёт живым. Числа при этом у обеих систем
+ * правильные — неверна связь, и увидеть её можно только проверкой.
+ *
+ *     zone.min - 1 <= unlock <= zone.max
+ *
+ * Нижняя граница — «герой приходит к входу не раньше, чем начинает выживать
+ * у двери»: открытие ровно на пороге зоны законно, герой шагнёт в неё сразу.
+ * Верхняя — «зона входа не отстала от открытия»: иначе новый контент выдают
+ * там, где всё давно пройдено.
+ *
+ * ГЕРОИКА ПРОВЕРЯЕТСЯ ТОЛЬКО НИЖНЕЙ ГРАНИЦЕЙ, и это не поблажка. Героика —
+ * повторный заход в УЖЕ ПРОЙДЕННЫЙ данж (см. «вторая строка того же данжа»),
+ * поэтому её вход по построению стоит в зоне обычной версии, а порог у неё
+ * общий эндгеймовый. Верхняя граница запрещала бы саму эту конструкцию, а не
+ * ловила ошибку. Опасность, ради которой проверка написана, — вход ВПЕРЕДИ
+ * открытия, и её ловит нижняя граница, которая для героики действует.
+ */
+function checkInstanceEntrances(content: Content, report: Report): void {
+  const zoneById = new Map(content.zones.map((z) => [z.id, z]))
+  interface Entrance {
+    where: string
+    file: string
+    zoneId: string
+    unlock: number
+    /** Повторный заход в пройденное: верхняя граница к нему не применяется. */
+    rerun: boolean
+  }
+  const entrances: Entrance[] = [
+    ...content.dungeons.map((d) => ({
+      where: `данж ${clearKey(d.id, d.difficulty)}`,
+      file: 'data/dungeons.ts',
+      zoneId: d.zoneId,
+      unlock: d.unlockRequirement,
+      rerun: d.difficulty !== 'normal',
+    })),
+    ...content.temples.map((t) => ({
+      where: `храм ${t.id}`,
+      file: 'data/temple.ts',
+      zoneId: t.zoneId,
+      unlock: t.unlockRequirement,
+      rerun: false,
+    })),
+  ]
+  for (const e of entrances) {
+    const zone = zoneById.get(e.zoneId)
+    // Ссылку на несуществующую зону ловит своя проверка — здесь молчим,
+    // иначе на одну поломку пришлось бы два замечания.
+    if (!zone) continue
+    const { min, max } = zone.monsterLevelRange
+    const band = `${min}-${max}`
+    if (e.unlock < min - 1) {
+      report.add(
+        e.where,
+        `открывается с ${e.unlock} уровня, а вход стоит в зоне «${e.zoneId}» (мобы ${band}): ` +
+          `герой придёт к двери раньше, чем начнёт там выживать (${e.file})`,
+      )
+    }
+    if (!e.rerun && e.unlock > max) {
+      report.add(
+        e.where,
+        `открывается с ${e.unlock} уровня, а вход стоит в зоне «${e.zoneId}» (мобы ${band}): ` +
+          `зона отстала от открытия, новый контент выдаётся в давно пройденном месте (${e.file})`,
+      )
+    }
+  }
+}
+
 function checkReachable(content: Content, report: Report): void {
   // --- Цепочка преквестов: она отпирает ступень лестницы ---
   report.need(
@@ -2341,6 +2455,7 @@ export function checkContent(content: Content): ContentIssue[] {
   const report = new Report()
   for (const schema of SCHEMAS) runSchema(schema, content, report)
   checkReachable(content, report)
+  checkInstanceEntrances(content, report)
   checkBalance(content, report)
   return report.issues
 }
