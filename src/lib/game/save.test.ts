@@ -6,7 +6,9 @@ import { emptyEquipment, createInitialState, type GameState } from './tick'
 import { zoneRate } from './zones'
 import { SAFE_ZONE, zoneMonsterVariants } from '../data/zones'
 import {
+  MIGRATIONS,
   OFFLINE_CAP_MS,
+  SAVE_BACKUP_KEY,
   SAVE_KEY,
   SAVE_VERSION,
   applyOfflineProgress,
@@ -15,8 +17,11 @@ import {
   encodeSaveString,
   loadGame,
   payloadFromState,
+  readBackupSave,
+  readSave,
   saveGame,
   stateFromPayload,
+  type LoadErrorReason,
   type SaveStorage,
 } from './save'
 import { ensureStats } from './stats'
@@ -243,7 +248,7 @@ describe('save/load', () => {
     const result = loadGame({ storage })
     expect(result.kind).toBe('error')
     if (result.kind !== 'error') return
-    expect(result.reason).toBe('corrupted')
+    expect(result.reason).toBe('corrupt')
   })
 
   it('сейв из будущей версии не загружается, но и не роняет игру', () => {
@@ -337,5 +342,144 @@ describe('экспорт/импорт', () => {
   it('мусорная строка импорта даёт null, а не исключение', () => {
     expect(decodeSaveString('абракадабра')).toBeNull()
     expect(decodeSaveString('')).toBeNull()
+  })
+})
+
+// ПРОГРЕСС НЕЛЬЗЯ ПОТЕРЯТЬ МОЛЧА (находки 2.2, 2.3, 2.4 в AUDIT.md).
+//
+// Три способа потерять всё разом опирались на одно и то же: отказ хранилища
+// глушился пустым catch, причины отказа загрузки были схлопнуты в одну, а
+// копии прежнего сейва не делал никто.
+describe('отказ хранилища виден, а не проглатывается', () => {
+  it('setItem бросает — saveGame отдаёт код, а не исключение', () => {
+    const storage: SaveStorage = {
+      getItem: () => null,
+      setItem: () => {
+        throw new Error('write failed')
+      },
+      removeItem: () => {},
+    }
+    const result = saveGame(richState(), { storage, now: () => 0 })
+    expect(result).toEqual({ kind: 'error', reason: 'write-failed' })
+  })
+
+  it('переполнение квоты отличается от прочих отказов', () => {
+    // Браузеры сообщают о нём по-разному, поэтому смотрим на имя, а не на класс.
+    const quota = Object.assign(new Error('quota'), { name: 'QuotaExceededError' })
+    const storage: SaveStorage = {
+      getItem: () => null,
+      setItem: () => {
+        throw quota
+      },
+      removeItem: () => {},
+    }
+    const result = saveGame(richState(), { storage, now: () => 0 })
+    expect(result).toEqual({ kind: 'error', reason: 'quota-exceeded' })
+  })
+
+  it('хранилище бросает на самом ДОСТУПЕ — игра не падает, а отказывает кодом', () => {
+    // Safari с запретом cookie и данных сайтов: бросает обращение к свойству,
+    // ещё до всякой записи. Раньше это исключение улетало из saveGame наружу.
+    const hostile: SaveStorage = {
+      get getItem(): never {
+        throw new Error('SecurityError')
+      },
+      setItem: () => {
+        throw new Error('SecurityError')
+      },
+      removeItem: () => {},
+    } as unknown as SaveStorage
+    expect(() => saveGame(richState(), { storage: hostile, now: () => 0 })).not.toThrow()
+    expect(saveGame(richState(), { storage: hostile, now: () => 0 }).kind).toBe('error')
+  })
+
+  it('удачная запись отвечает ok', () => {
+    const storage = makeStorage()
+    expect(saveGame(richState(), { storage, now: () => 0 })).toEqual({ kind: 'ok' })
+  })
+})
+
+describe('причина отказа загрузки называется своим кодом', () => {
+  // Раньше всё, кроме нечитаемой строки, объявлялось сейвом «из более новой
+  // версии»: игрок с испорченным сохранением ждал деплоя, которого не будет.
+  const cases: Array<[string, unknown, LoadErrorReason]> = [
+    ['версия из будущего', { version: 99, gold: '1' }, 'newer-version'],
+    ['версия дробная', { version: 7.5, gold: '1' }, 'corrupt'],
+    ['версия отрицательная', { version: -1, gold: '1' }, 'corrupt'],
+    ['версия строкой', { version: '12', gold: '1' }, 'corrupt'],
+    ['массив', [], 'corrupt'],
+    ['число', 42, 'corrupt'],
+    ['null', null, 'corrupt'],
+    ['пустой объект', {}, 'corrupt'],
+    ['посторонний объект без версии', { hello: 'world' }, 'corrupt'],
+  ]
+  it.each(cases)('%s -> %s', (_label, raw, reason) => {
+    const result = readSave(raw)
+    expect(result.kind).toBe('error')
+    if (result.kind !== 'error') return
+    expect(result.reason).toBe(reason)
+  })
+
+  it('версия внутри диапазона, но без шага миграции — свой код', () => {
+    // Формат из ветки, которая до релиза не дожила. Это не «игра обновилась»
+    // и не мусор: игроку об этом надо сказать иначе.
+    const gap = Number(Object.keys(MIGRATIONS).at(-1)) + 0 // существующий шаг
+    expect(MIGRATIONS[gap]).toBeDefined()
+    const saved = MIGRATIONS[gap]
+    delete (MIGRATIONS as Record<number, unknown>)[gap]
+    try {
+      const result = readSave({ version: gap, gold: '1' })
+      expect(result.kind).toBe('error')
+      if (result.kind !== 'error') return
+      expect(result.reason).toBe('unsupported-version')
+    } finally {
+      ;(MIGRATIONS as Record<number, unknown>)[gap] = saved
+    }
+  })
+
+  it('ДОВЕРСИОННЫЙ сейв по-прежнему читается: версии нет, но форма его', () => {
+    // Обратная сторона проверки выше. Самая первая сборка писала сейв без
+    // поля version, и такие сохранения настоящие — объявить их мусором
+    // значило бы отнять прогресс у самых старых игроков.
+    const result = readSave({ gold: '150', level: '4', xp: '11', damagePerSecond: '13' })
+    expect(result.kind).toBe('ok')
+    if (result.kind !== 'ok') return
+    expect(result.payload.version).toBe(SAVE_VERSION)
+  })
+})
+
+describe('запасная копия прежнего сохранения', () => {
+  it('отказ загрузки кладёт исходную строку под запасной ключ', () => {
+    const storage = makeStorage()
+    storage.setItem(SAVE_KEY, 'это не json {{{')
+    expect(storage.data.get(SAVE_BACKUP_KEY)).toBeUndefined()
+    const result = loadGame({ storage })
+    expect(result.kind).toBe('error')
+    // Копия сделана ДО того, как игрок увидит выбор класса и затрёт сейв.
+    expect(storage.data.get(SAVE_BACKUP_KEY)).toBe('это не json {{{')
+    expect(readBackupSave({ storage })).toBe('это не json {{{')
+  })
+
+  it('сейв из будущей версии тоже сохраняется, а не пропадает', () => {
+    const storage = makeStorage()
+    const raw = JSON.stringify({ version: 99, gold: '1' })
+    storage.setItem(SAVE_KEY, raw)
+    loadGame({ storage })
+    expect(readBackupSave({ storage })).toBe(raw)
+  })
+
+  it('удачная загрузка копию не делает: терять нечего', () => {
+    const storage = makeStorage()
+    saveGame(richState(), { storage, now: () => 0 })
+    loadGame({ storage, now: () => 0 })
+    expect(readBackupSave({ storage })).toBeNull()
+  })
+
+  it('копия переживает перезапись сейва', () => {
+    const storage = makeStorage()
+    storage.setItem(SAVE_KEY, 'мусор')
+    loadGame({ storage })
+    saveGame(richState(), { storage, now: () => 0 })
+    expect(readBackupSave({ storage })).toBe('мусор')
   })
 })

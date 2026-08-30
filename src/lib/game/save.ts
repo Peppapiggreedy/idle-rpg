@@ -64,6 +64,18 @@ import { leaveTemple } from './temple'
 import type { Rng } from './rng'
 
 export const SAVE_KEY = 'idle-rpg-save'
+
+/**
+ * Запасной ключ: сюда кладётся ПРЕЖНЕЕ содержимое сейва перед любой
+ * перезаписью, способной уничтожить прогресс, — то есть перед импортом и
+ * перед тем, как игрок начнёт заново поверх нечитаемого сейва.
+ *
+ * Зачем. Раньше исходные байты жили ровно до первого нажатия: на экране
+ * «сохранение повреждено» единственным действием был выбор класса, и он же
+ * затирал единственную копию. У владельца нет ни консоли, ни локальной среды —
+ * узнать, что чинить уже нечего, он мог только постфактум.
+ */
+export const SAVE_BACKUP_KEY = 'idle-rpg-save-backup'
 /**
  * Сдвиг сида для потока лута в оффлайне. Нужен, чтобы этот поток не совпадал
  * с потоком спавна моба при загрузке: оба заводятся от одного сида состояния,
@@ -218,8 +230,20 @@ export interface SaveDeps {
   now?: () => number
 }
 
-function defaultStorage(): SaveStorage {
-  return globalThis.localStorage
+/**
+ * Хранилище браузера — или `null`, если его нет.
+ *
+ * Здесь стояло голое `globalThis.localStorage`. В Safari с запретом хранилища
+ * (и во встроенном браузере приложения) бросает САМ ДОСТУП к свойству, ещё до
+ * всякой записи, — и исключение улетало наружу из saveGame, где его глушил
+ * пустой catch в сторе. Игрок при этом не узнавал ничего.
+ */
+function defaultStorage(): SaveStorage | null {
+  try {
+    return globalThis.localStorage ?? null
+  } catch {
+    return null
+  }
 }
 
 // new Decimal('мусор') даёт NaN, а не исключение — проверяем поля руками.
@@ -1218,19 +1242,77 @@ export const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
   }),
 }
 
-// null = сейв непригоден (не объект или из более новой версии игры).
-export function migrateSave(raw: unknown): SavePayloadV21 | null {
-  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null
+/**
+ * Поля, которые писала САМАЯ ПЕРВАЯ сборка игры — до того, как у сейва
+ * появилась версия. По ним и опознаётся доверсионный сейв.
+ *
+ * Зачем это нужно. Раньше отсутствие версии молча считалось нулём, и через
+ * все двадцать с лишним миграций прогонялось ЛЮБОЕ постороннее содержимое,
+ * оказавшееся под ключом сейва. Но и обратное — «нет версии, значит мусор» —
+ * неверно: доверсионные сейвы настоящие, и у них поля version нет по праву
+ * (fixtures: save-v0.json). Различает их форма, а не наличие числа.
+ */
+const V0_MARKERS = [
+  'gold',
+  'level',
+  'xp',
+  'currentXp',
+  'damagePerSecond',
+  'baseDamage',
+  'upgrades',
+  'totalTicks',
+  'playtimeMs',
+] as const
+
+/** Результат чтения сейва: либо payload, либо ПРИЧИНА отказа. */
+export type MigrateResult =
+  | { kind: 'ok'; payload: SavePayloadV21 }
+  | { kind: 'error'; reason: LoadErrorReason }
+
+/**
+ * Приводит сейв любой версии к текущей.
+ *
+ * Причина отказа возвращается КОДОМ, как и везде в проекте. Раньше здесь был
+ * общий `null` на шесть разных случаев, и UI показывал на все шесть один
+ * текст — «игра обновилась». Игрок с испорченным сейвом читал сообщение про
+ * обновление и ждал следующего деплоя, которого для него не будет.
+ */
+export function readSave(raw: unknown): MigrateResult {
+  const fail = (reason: LoadErrorReason): MigrateResult => ({ kind: 'error', reason })
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return fail('corrupt')
   let data = raw as RawSave
-  let version = typeof data.version === 'number' ? data.version : 0
-  if (version > SAVE_VERSION) return null
+
+  let version: number
+  if (data.version === undefined) {
+    // Версии нет: либо доверсионный сейв, либо посторонний объект.
+    const looksLikeV0 = V0_MARKERS.some((key) => data[key] !== undefined)
+    if (!looksLikeV0) return fail('corrupt')
+    version = 0
+  } else if (typeof data.version !== 'number' || !Number.isInteger(data.version) || data.version < 0) {
+    return fail('corrupt')
+  } else {
+    version = data.version
+  }
+
+  if (version > SAVE_VERSION) return fail('newer-version')
   while (version < SAVE_VERSION) {
     const step = MIGRATIONS[version]
-    if (!step) return null
+    // Версия внутри диапазона, а шага миграции нет: формат из ветки, которая
+    // до релиза не дожила. Это не «игра обновилась» и не мусор — свой случай.
+    if (!step) return fail('unsupported-version')
     data = step(data)
     version = typeof data.version === 'number' ? data.version : version + 1
   }
-  return data as unknown as SavePayloadV21
+  return { kind: 'ok', payload: data as unknown as SavePayloadV21 }
+}
+
+/**
+ * Тот же разбор, но одним значением: payload или `null`.
+ * Тонкая обёртка для мест, которым причина отказа не нужна.
+ */
+export function migrateSave(raw: unknown): SavePayloadV21 | null {
+  const result = readSave(raw)
+  return result.kind === 'ok' ? result.payload : null
 }
 
 export interface OfflineReport {
@@ -1425,10 +1507,63 @@ export function applyOfflineProgress(
   }
 }
 
-export function saveGame(state: GameState, deps: SaveDeps = {}): void {
+/** Почему сохранить не удалось. Текст по коду рендерит UI, как и везде. */
+export type SaveWriteError = 'storage-unavailable' | 'quota-exceeded' | 'write-failed'
+
+export type SaveResult = { kind: 'ok' } | { kind: 'error'; reason: SaveWriteError }
+
+/**
+ * Сохраняет игру и ГОВОРИТ, получилось ли.
+ *
+ * Раньше возвращала void: отличить «сохранил» от «не смог» вызывающему было
+ * нечем, и отказ хранилища превращался в тишину. Игрок узнавал о нём через
+ * часы — закрыв вкладку и открыв игру заново с первого уровня.
+ */
+export function saveGame(state: GameState, deps: SaveDeps = {}): SaveResult {
   const storage = deps.storage ?? defaultStorage()
+  if (!storage) return { kind: 'error', reason: 'storage-unavailable' }
   const now = deps.now ?? Date.now
-  storage.setItem(SAVE_KEY, JSON.stringify(payloadFromState(state, now())))
+  try {
+    storage.setItem(SAVE_KEY, JSON.stringify(payloadFromState(state, now())))
+    return { kind: 'ok' }
+  } catch (error) {
+    return { kind: 'error', reason: writeErrorOf(error) }
+  }
+}
+
+/** Переполнение квоты браузеры сообщают по-разному — по имени, не по классу. */
+function writeErrorOf(error: unknown): SaveWriteError {
+  const name = (error as { name?: string } | null)?.name ?? ''
+  const quota =
+    name === 'QuotaExceededError' ||
+    name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
+    (error as { code?: number } | null)?.code === 22
+  return quota ? 'quota-exceeded' : 'write-failed'
+}
+
+/**
+ * Кладёт строку под запасной ключ. Молча: это спасательная копия, и её
+ * собственный отказ не должен подменять собой то, ради чего её делают.
+ */
+export function backupRawSave(raw: string, deps: SaveDeps = {}): void {
+  const storage = deps.storage ?? defaultStorage()
+  if (!storage) return
+  try {
+    storage.setItem(SAVE_BACKUP_KEY, raw)
+  } catch {
+    /* места нет — копию не сделали, но исходную задачу не сорвали */
+  }
+}
+
+/** Прежнее сохранение из запасного ключа; null — копии нет. */
+export function readBackupSave(deps: SaveDeps = {}): string | null {
+  const storage = deps.storage ?? defaultStorage()
+  if (!storage) return null
+  try {
+    return storage.getItem(SAVE_BACKUP_KEY)
+  } catch {
+    return null
+  }
 }
 
 /**
@@ -1439,11 +1574,30 @@ export function saveGame(state: GameState, deps: SaveDeps = {}): void {
  */
 export function clearSave(deps: SaveDeps = {}): void {
   const storage = deps.storage ?? defaultStorage()
-  storage.removeItem(SAVE_KEY)
+  if (!storage) return
+  try {
+    storage.removeItem(SAVE_KEY)
+  } catch {
+    /* хранилище запрещено — стирать нечего */
+  }
 }
 
-// Причины отказа загрузки; текст для игрока по коду рендерит UI.
-export type LoadErrorReason = 'corrupted' | 'newer-version'
+/**
+ * Причины отказа загрузки; текст для игрока по коду рендерит UI.
+ *
+ * Раньше их было две на шесть разных случаев, и всё, что не пережило разбор,
+ * объявлялось сейвом «из более новой версии». Игрок с испорченным сейвом
+ * читал про обновление игры и ждал следующего деплоя.
+ */
+export type LoadErrorReason =
+  /** Не объект, не тот объект, или версия не похожа на версию. */
+  | 'corrupt'
+  /** Записан игрой новее этой: понижать формат мы не умеем и не должны. */
+  | 'newer-version'
+  /** Версия из диапазона, но шага миграции для неё нет (формат из чужой ветки). */
+  | 'unsupported-version'
+  /** Хранилище недоступно целиком: читать нечего и писать некуда. */
+  | 'storage-unavailable'
 
 export type LoadResult =
   | { kind: 'fresh' }
@@ -1452,18 +1606,33 @@ export type LoadResult =
 
 export function loadGame(deps: SaveDeps = {}): LoadResult {
   const storage = deps.storage ?? defaultStorage()
+  if (!storage) return { kind: 'error', reason: 'storage-unavailable' }
   const now = deps.now ?? Date.now
-  const raw = storage.getItem(SAVE_KEY)
+  let raw: string | null
+  try {
+    raw = storage.getItem(SAVE_KEY)
+  } catch {
+    return { kind: 'error', reason: 'storage-unavailable' }
+  }
   if (raw === null) return { kind: 'fresh' }
+
+  // КОПИЯ ДЕЛАЕТСЯ ДО ТОГО, как игрок сможет что-нибудь затереть. Дальше по
+  // любой ветке отказа он попадёт на выбор класса, и первое же нажатие
+  // перезапишет сейв — а это единственные оставшиеся байты его прогресса.
+  const keep = (reason: LoadErrorReason): LoadResult => {
+    backupRawSave(raw as string, { storage })
+    return { kind: 'error', reason }
+  }
 
   let parsed: unknown
   try {
     parsed = JSON.parse(raw)
   } catch {
-    return { kind: 'error', reason: 'corrupted' }
+    return keep('corrupt')
   }
-  const payload = migrateSave(parsed)
-  if (payload === null) return { kind: 'error', reason: 'newer-version' }
+  const read = readSave(parsed)
+  if (read.kind === 'error') return keep(read.reason)
+  const payload = read.payload
 
   // Читаем ДО загрузки: она расформирует забег, и по состоянию его уже не видно.
   const interrupted = interruptedRunOf(payload)

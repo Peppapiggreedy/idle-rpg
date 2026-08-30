@@ -2,7 +2,13 @@
   // Настройки: сейв, режим отображения, кадры и ссылки наружу.
   // Настройки экрана НЕ лежат в сейве — это свойства машины, а не прогресс
   // (подробнее в stores/ui.ts).
-  import { exportSaveString, importSaveString } from '../stores/game'
+  import {
+    currentSavePreview,
+    exportSaveString,
+    importSaveString,
+    previewSaveString,
+    type SavePreview,
+  } from '../stores/game'
   import {
     FPS_LIMITS,
     hasWebgl,
@@ -42,9 +48,35 @@
     }
   }
 
+  /**
+   * ИМПОРТ ПЕРЕСПРАШИВАЕТ, и вопрос НАЗЫВАЕТ ОБОИХ ГЕРОЕВ.
+   *
+   * Раньше здесь были window.prompt и сразу замена: самое разрушительное
+   * действие в игре не задавало ни одного вопроса. Игрок, решивший проверить,
+   * что экспортированная строка рабочая, вставлял её — и молча менял героя
+   * семидесятого уровня на героя недельной давности, без пути назад.
+   *
+   * Строка разбирается ДО замены: нечитаемая отвергается, пока текущий герой
+   * ещё на месте.
+   */
+  let pending = $state<{ input: string; from: SavePreview | null; to: SavePreview } | null>(null)
+
   function onImport() {
     const input = window.prompt('Вставь строку сейва:')
-    if (input) importSaveString(input)
+    if (!input) return
+    const to = previewSaveString(input)
+    if (!to) {
+      // Отказ ДО замены, а не после: герой на месте, терять нечего.
+      importSaveString(input)
+      return
+    }
+    pending = { input, from: currentSavePreview(), to }
+  }
+
+  function confirmImport() {
+    if (!pending) return
+    importSaveString(pending.input)
+    pending = null
   }
 
   // ?scene=off перекрывает настройку: панель должна показывать то, что
@@ -84,6 +116,29 @@
       </Button>
       <Button onclick={onImport}>Импорт сейва</Button>
     </div>
+
+    {#if pending}
+      <!-- Вопрос называет ОБОИХ вслух. «Заменить сейв?» без имён — это тот же
+           молчаливый импорт, только с лишним нажатием. -->
+      <div class="confirm" role="alertdialog" aria-label="Подтверждение импорта">
+        <p class="what">
+          {#if pending.from}
+            Заменить <b>{pending.from.className}, {pending.from.level} ур.</b> на
+            <b>{pending.to.className}, {pending.to.level} ур.</b>?
+          {:else}
+            Загрузить <b>{pending.to.className}, {pending.to.level} ур.</b>?
+          {/if}
+        </p>
+        <p class="hint">
+          Прежний герой уйдёт в запасную копию — вернуть его можно будет строкой
+          из уведомления сразу после импорта.
+        </p>
+        <div class="row">
+          <Button variant="primary" onclick={confirmImport}>Заменить</Button>
+          <Button onclick={() => (pending = null)}>Отмена</Button>
+        </div>
+      </div>
+    {/if}
   </section>
 
   <section class="group">
@@ -194,6 +249,19 @@
     margin: 0;
     font-size: var(--text-xs);
     color: var(--c-text-muted);
+  }
+  .confirm {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-2);
+    border: 1px solid color-mix(in srgb, var(--c-warning) 45%, transparent);
+    border-radius: var(--radius-md);
+    background: color-mix(in srgb, var(--c-warning) var(--tint-weak), var(--c-surface));
+  }
+  .what {
+    margin: 0;
+    font-size: var(--text-sm);
   }
   /* Технический латинский кусок — тот самый случай, под который заведён
      --font-mono (см. tokens.css). */
