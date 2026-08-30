@@ -1,7 +1,6 @@
 <script lang="ts">
   import {
     Decimal,
-    compareItem,
     disenchantStatus,
     equipStatus,
     enchantModifiers,
@@ -11,7 +10,6 @@
     upgradeShare,
     INVENTORY_SIZE,
     type DisenchantBlockReason,
-    type EquipComparison,
   } from '../game'
   import { EQUIP_BLOCK_TEXT, GRIP_TEXT } from './itemText'
   import { SLOT_NAMES } from '../data/slots'
@@ -22,8 +20,10 @@
     sellInventoryItem,
   } from '../stores/game'
   import ItemMods from './ItemMods.svelte'
+  import EnchantLine from './EnchantLine.svelte'
+  import ItemCompare from './ItemCompare.svelte'
   import { RARITY_BY_ID } from '../data/rarity'
-  import { Button, IconSlot, NumberText, Panel, Tag } from './kit'
+  import { Button, IconSlot, Panel, Tag } from './kit'
 
   const emptySlots = $derived(Math.max(0, INVENTORY_SIZE - $gameState.inventory.length))
 
@@ -46,14 +46,6 @@
     return `+${Math.round(share * 100)}%`
   }
 
-  // Сравнение считаем только для предмета под курсором: заглядывать в будущее
-  // для всего инвентаря каждый кадр незачем.
-  let hovered = $state<string | null>(null)
-  const comparison = $derived.by((): EquipComparison | null => {
-    const item = $gameState.inventory.find((i) => i.id === hovered)
-    return item ? compareItem($gameState, item) : null
-  })
-
   // Распыление живёт ЗДЕСЬ, рядом с продажей: это две половины одного
   // решения — «что делать с находкой», — и разносить их по экранам нельзя.
   const DISENCHANT_REASON: Record<DisenchantBlockReason, string> = {
@@ -65,11 +57,55 @@
   // каждую находку убил бы разбор сумки.
   let confirming = $state<string | null>(null)
 
-  const seconds = (v: number) => `${v.toFixed(2)}с`
-  // Урон в секунду растёт неограниченно: пока читается — десятые доли,
-  // дальше короткая запись formatNumber.
-  const dps = (value: Decimal) => (value.lt(1000) ? value.toFixed(1) : formatNumber(value))
+  /**
+   * ОКНО СРАВНЕНИЯ. Живёт отдельно от карточки и позиционируется по курсору.
+   *
+   * Раньше сравнение раскрывалось внутри карточки: она росла, и кнопки
+   * «Продать» и «Распылить» уезжали из-под курсора ровно тогда, когда игрок
+   * к ним тянулся. Теперь карточка при наведении не меняет ни высоту, ни
+   * содержимое — двигается только это окно.
+   *
+   * `pinned` — тач: наведения там нет вовсе, поэтому окно открывается
+   * нажатием по иконке и закрывается нажатием вне или по Esc.
+   */
+  let compare = $state<{ id: string; x: number; y: number } | null>(null)
+  let pinned = $state(false)
+  const compareItemOf = $derived(
+    compare ? ($gameState.inventory.find((i) => i.id === compare!.id) ?? null) : null,
+  )
+
+  function track(event: MouseEvent, id: string) {
+    if (pinned) return
+    compare = { id, x: event.clientX, y: event.clientY }
+  }
+  function unhover(id: string) {
+    if (pinned) return
+    if (compare?.id === id) compare = null
+  }
+  /** Нажатие по иконке: на тач-экране это единственный способ открыть окно. */
+  function toggle(event: MouseEvent, id: string) {
+    if (pinned && compare?.id === id) {
+      pinned = false
+      compare = null
+      return
+    }
+    pinned = true
+    compare = { id, x: event.clientX, y: event.clientY }
+  }
+  function dismiss() {
+    pinned = false
+    compare = null
+  }
 </script>
+
+<svelte:window
+  onkeydown={(e) => e.key === 'Escape' && dismiss()}
+  onpointerdown={(e) => {
+    // Клик ВНЕ карточки закрывает прикреплённое окно. Кнопки внутри
+    // карточки остаются своими целями нажатия — окно мышь не ловит.
+    if (pinned && !(e.target as HTMLElement)?.closest?.('[data-item-card]')) dismiss()
+  }}
+/>
 
 <Panel
   title="Инвентарь"
@@ -77,17 +113,18 @@
     ? ` · ${formatNumber($gameState.enchantDust)} пыли`
     : ''}"
 >
-  <div class="grid">
+  <div class="grid" data-item-card>
     {#each sorted as item (item.id)}
       {@const share = shares.get(item.id)}
       <IconSlot
         slotLabel={SLOT_NAMES[item.slot]}
         rarity={item.rarity}
-        active={hovered === item.id}
+        active={compare?.id === item.id}
         interactive
-        onmouseenter={() => (hovered = item.id)}
-        onmouseleave={() => (hovered = hovered === item.id ? null : hovered)}
-        onfocusin={() => (hovered = item.id)}
+        onmouseenter={(e: MouseEvent) => track(e, item.id)}
+        onmousemove={(e: MouseEvent) => track(e, item.id)}
+        onmouseleave={() => unhover(item.id)}
+        onclick={(e: MouseEvent) => toggle(e, item.id)}
       >
         <span class="name">{item.name}</span>
         <!-- Уровень вещи — её главная сила: без него «Редкий» 3-го уровня
@@ -100,34 +137,7 @@
           <span class="grip">{GRIP_TEXT[item.grip]}</span>
         {/if}
         <ItemMods mods={item.mods} />
-        {#if enchantOf(item)}
-          <span class="enchant">Зачаровано: {enchantOf(item)?.name}</span>
-          <ItemMods mods={enchantModifiers(item)} />
-        {/if}
-
-        {#if hovered === item.id && comparison}
-          {@const c = comparison}
-          <div class="compare">
-            <div class="line">
-              Урон {formatNumber(c.withItem.damageMin)}–{formatNumber(c.withItem.damageMax)},
-              скорость {seconds(c.withItem.swingTime)} — {dps(c.withItem.damagePerSecond)} урона в секунду
-            </div>
-            <div class="line now">
-              Сейчас: {formatNumber(c.current.damageMin)}–{formatNumber(c.current.damageMax)},
-              {seconds(c.current.swingTime)} — {dps(c.current.damagePerSecond)}
-              {#if c.currentItem}<span class="now-item">({c.currentItem.name})</span>{/if}
-            </div>
-            <div class="delta">
-              <NumberText
-                value={c.damagePerSecondDelta}
-                tone={c.isUpgrade ? 'hp' : 'damage'}
-                sign="auto"
-                bold
-                suffix=" урона в секунду"
-              />
-            </div>
-          </div>
-        {/if}
+        <EnchantLine {item} />
 
         {#snippet footer()}
           {@const dis = disenchantStatus($gameState, item.id)}
@@ -186,6 +196,10 @@
     {/each}
   </div>
 
+  {#if compareItemOf && compare}
+    <ItemCompare item={compareItemOf} x={compare.x} y={compare.y} />
+  {/if}
+
   {#snippet footer()}
     <p class="hint">Надетый предмет продать нельзя — сперва сними его в «Экипировке».</p>
   {/snippet}
@@ -196,10 +210,6 @@
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
     gap: var(--space-2);
-  }
-  .enchant {
-    font-size: var(--text-xs);
-    color: var(--c-accent);
   }
   .grip {
     font-size: var(--text-2xs);
@@ -228,21 +238,6 @@
     border: 1px solid var(--c-heal);
     border-radius: var(--radius-sm);
     padding: 0 var(--space-1);
-  }
-  .compare {
-    margin-top: var(--space-1);
-    padding-top: var(--space-1);
-    border-top: 1px solid var(--c-border);
-    font-size: var(--text-xs);
-  }
-  .compare .now {
-    color: var(--c-text-faint);
-  }
-  .compare .now-item {
-    font-style: italic;
-  }
-  .delta {
-    margin-top: var(--space-1);
   }
   .hint {
     margin: 0;

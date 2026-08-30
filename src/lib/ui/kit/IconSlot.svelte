@@ -18,9 +18,13 @@
     interactive?: boolean
     children?: Snippet
     footer?: Snippet
-    onmouseenter?: () => void
-    onmouseleave?: () => void
-    onfocusin?: () => void
+    // Событие приходит целиком: сравнение предметов позиционируется по
+    // курсору, и без координат окно пришлось бы ставить наугад.
+    onmouseenter?: (event: MouseEvent) => void
+    onmousemove?: (event: MouseEvent) => void
+    onmouseleave?: (event: MouseEvent) => void
+    onfocusin?: (event: FocusEvent) => void
+    onclick?: (event: MouseEvent) => void
   }
   let {
     slotLabel,
@@ -32,8 +36,10 @@
     children,
     footer,
     onmouseenter,
+    onmousemove,
     onmouseleave,
     onfocusin,
+    onclick,
   }: Props = $props()
 </script>
 
@@ -46,8 +52,10 @@
   tabindex={interactive ? 0 : undefined}
   role={interactive ? 'group' : undefined}
   {onmouseenter}
+  {onmousemove}
   {onmouseleave}
   {onfocusin}
+  {onclick}
 >
   {#if slotLabel || badge}
     <span class="slot-head">

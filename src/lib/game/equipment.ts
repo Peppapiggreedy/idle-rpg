@@ -1,7 +1,7 @@
 // Надеть / снять / оценить экипировку. Чистые операции над состоянием.
 import { estimateCombatRate, swingDamageRange } from './combat'
 import { INVENTORY_SIZE } from '../data/balance'
-import { ensureStats } from './stats'
+import { ensureStats, type StatBlock } from './stats'
 import type { Decimal } from './numbers'
 import type { Equipment, GameState } from './state'
 import type { SlotId } from '../data/slots'
@@ -167,12 +167,37 @@ export interface EquipComparison {
   currentItem: Item | null
   damagePerSecondDelta: Decimal // withItem - current; отрицательная = хуже
   isUpgrade: boolean
+  /**
+   * ПОЛНЫЕ блоки статов до и после. Оба посчитаны ОДНОЙ И ТОЙ ЖЕ функцией
+   * конвейера (`ensureStats` внутри `withEquipped`) — отдельной ветки расчёта
+   * «для сравнения» нет и быть не должно, иначе подсказка начала бы обещать
+   * не то, что даст надевание.
+   *
+   * Наружу отдаются блоки ЦЕЛИКОМ, а не заранее выбранные строки: какие
+   * характеристики показать, решает UI, обходя общий реестр STAT_IDS. Так
+   * новая характеристика попадает в сравнение сама, без правок здесь.
+   */
+  before: StatBlock
+  after: StatBlock
+  /**
+   * Изменение боевой эффективности ДОЛЕЙ (0.074 — «+7,4 %»); null — считать
+   * не от чего (сейчас герой не убивает вовсе).
+   *
+   * Мера — та же, что решает «апгрейд ли это»: убийств в секунду из
+   * estimateCombatRate. Не голый урон в секунду: в нём нет ни аптайма, ни
+   * проков, и броня по нему никогда не апгрейд (см. farmRate ниже). Двух мер
+   * «лучше» в игре нет — иначе значок «Апгрейд» и процент в подсказке
+   * спорили бы друг с другом на одной и той же карточке.
+   */
+  combatDelta: number | null
 }
 
 /** Сравнение «а если надеть?» по производным числам, а не по сумме статов. */
 export function compareItem(state: GameState, item: Item): EquipComparison {
-  const withItem = previewOf(withEquipped(state, item))
+  const equipped = withEquipped(state, item)
+  const withItem = previewOf(equipped)
   const current = previewOf(state)
+  const base = current.killsPerSecond
   return {
     slot: item.slot,
     withItem,
@@ -180,6 +205,11 @@ export function compareItem(state: GameState, item: Item): EquipComparison {
     currentItem: state.equipment[item.slot],
     damagePerSecondDelta: withItem.damagePerSecond.minus(current.damagePerSecond),
     isUpgrade: withItem.killsPerSecond.gt(current.killsPerSecond),
+    before: state.stats,
+    after: equipped.stats,
+    combatDelta: base.lte(0)
+      ? null
+      : withItem.killsPerSecond.minus(base).div(base).toNumber(),
   }
 }
 

@@ -5,6 +5,7 @@
   import { SLOT_ICONS, SLOT_IDS, SLOT_NAMES } from '../data/slots'
   import { gameState, unequipSlot } from '../stores/game'
   import ItemMods from './ItemMods.svelte'
+  import EnchantLine from './EnchantLine.svelte'
   import { GRIP_TEXT } from './itemText'
   import { RARITY_BY_ID } from '../data/rarity'
   import { Button, IconSlot, Panel, Tag } from './kit'
@@ -34,6 +35,10 @@
           <span class="name">{item.name}</span>
           <Tag rarity={item.rarity} label="{RARITY_BY_ID[item.rarity].name} · {item.level} ур." />
           {#if item.grip}<span class="grip">{GRIP_TEXT[item.grip]}</span>{/if}
+          <!-- Зачарование НАДЕТОЙ вещи. Раньше здесь рисовались только
+               item.mods, и наложенное зачарование работало (оно приходит в
+               конвейер вместе с предметом), но нигде не было видно. -->
+          <EnchantLine {item} />
           <ItemMods mods={item.mods} />
         {/if}
         {#snippet footer()}

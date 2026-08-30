@@ -18,6 +18,7 @@
   import { Panel } from './kit'
   import { STAT_ICONS } from '../data/stats'
   import { resourceWords } from './resource'
+  import { PERCENT_STATS, SECONDS_STATS, statNames } from './statFormat'
   import { flatText } from './statText'
   import { Icon } from './icons'
 
@@ -25,46 +26,10 @@
   // и «Восст. маны» в его статах было бы просто неправдой.
   const resource = $derived(resourceWords($gameState.classId))
 
-  // Весь текст панели статов живёт здесь; логика отдаёт только раскладку.
-  const STAT_NAMES: Record<StatId, string> = $derived({
-    strength: 'Сила',
-    agility: 'Ловкость',
-    intellect: 'Интеллект',
-    vitality: 'Живучесть',
-    attackPower: 'Сила атаки',
-    weaponDamageMin: 'Урон оружия (мин)',
-    weaponDamageMax: 'Урон оружия (макс)',
-    maxHp: 'Здоровье',
-    maxMana: resource.name,
-    weaponSpeed: 'Скорость оружия',
-    offhandSpeed: 'Скорость левой руки',
-    offhandDamageMin: 'Урон левой руки (мин)',
-    offhandDamageMax: 'Урон левой руки (макс)',
-    blockChance: 'Шанс блока',
-    blockValue: 'Сила блока',
-    offhandPenalty: 'Сила левой руки',
-    regenDelay: `Пауза восст. ${resource.genitive}`,
-    restDuration: 'Длина привала',
-    restThreshold: 'Порог привала',
-    haste: 'Ускорение',
-    critChance: 'Шанс крита',
-    critMultiplier: 'Множитель крита',
-    hpRegen: 'Восст. здоровья (бой)',
-    hpRegenOutOfCombat: 'Восст. здоровья (отдых)',
-    manaRegen: `Восст. ${resource.genitive}`,
-    damageReduction: 'Снижение урона',
-  })
-
-  // Проценты и секунды читаются иначе, чем растущие величины.
-  const PERCENT_STATS: StatId[] = [
-    'critChance',
-    'damageReduction',
-    'haste',
-    'blockChance',
-    'offhandPenalty',
-    'restThreshold',
-  ]
-  const SECONDS_STATS: StatId[] = ['weaponSpeed', 'offhandSpeed', 'regenDelay', 'restDuration']
+  // Названия и способ прочтения — из ОБЩЕГО реестра ui/statFormat.ts.
+  // Сравнение предметов берёт их оттуда же, поэтому «Живучесть» в двух
+  // местах игры называется одинаково и по одной причине, а не по двум.
+  const STAT_NAMES = $derived(statNames($gameState.classId))
 
   // 'swingTime' — производная строка, не модифицируемый стат.
   type RowId = StatId | 'swingTime' | 'swingDamage' | 'dps'
