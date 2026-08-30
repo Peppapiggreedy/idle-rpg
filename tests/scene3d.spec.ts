@@ -163,20 +163,18 @@ test('двадцать смен зоны не растят память виде
   await expect(page.locator(SCENE_READY)).toBeAttached({ timeout: 30_000 })
   await sectionTab(page, 'Мир').click()
 
-  // Зоны сложены по десяткам, и раскрыт только десяток героя: берём соседей
-  // по нему — именно между ними и переключаемся туда-обратно. Строки из
-  // свёрнутых десятков в разметке есть, но нажать на них нельзя, поэтому
-  // отбираем ВИДИМЫЕ: без этого выбор упирался в кнопку под закрытой
-  // складкой и тест ждал её тридцать секунд.
-  const rows = page.locator('li:has(button:has-text("Отправиться"))').filter({ visible: true })
-  const names = await rows.locator('.name').allInnerTexts()
-  expect(names.length, 'нужно хотя бы две доступные зоны').toBeGreaterThan(1)
+  // Зоны теперь КАРТА: узлы подряд, и переход идёт в два шага — выбрать узел,
+  // потом «Отправиться» в карточке. Берём два ОТКРЫТЫХ узла (у закрытого
+  // кнопки нет вовсе) и ходим между ними туда-обратно.
+  const nodes = page.locator('.map .node:not(.locked)')
+  const count = await nodes.count()
+  expect(count, 'нужно хотя бы две доступные зоны').toBeGreaterThan(1)
+  const names = await nodes.locator('.name').allInnerTexts()
   const [first, second] = names
 
   async function goTo(zone: string): Promise<void> {
-    const button = rows
-      .filter({ hasText: zone })
-      .locator('button:has-text("Отправиться")')
+    await nodes.filter({ hasText: zone }).first().click()
+    const button = page.locator('.detail button:has-text("Отправиться")')
     if ((await button.count()) > 0) await button.first().click()
   }
 

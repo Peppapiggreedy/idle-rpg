@@ -92,6 +92,7 @@
   bind:this={box}
   style="left: {left}px; top: {top}px; {rarityStyle(item.rarity)}"
   role="tooltip"
+  data-item-compare
 >
   <div class="head">
     <span class="name">{item.name}</span>
