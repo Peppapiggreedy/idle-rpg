@@ -11,14 +11,7 @@ import {
   unequipItem,
 } from './equipment'
 import { estimateCombatRate } from './combat'
-import {
-  createInitialState,
-  emptyEquipment,
-  manualOnlySettings,
-  monsterFromTemplate,
-  type GameState,
-} from './state'
-import { COMMON, buildMonster } from '../data/monsters'
+import { createInitialState, emptyEquipment, manualOnlySettings, type GameState } from './state'
 import { ensureStats } from './stats'
 import { INVENTORY_SIZE, UNARMED } from '../data/balance'
 import { OFFHAND_PENALTY } from '../data/balance'
@@ -93,38 +86,8 @@ function armor(id: string, slot: 'head' | 'chest', attackPower: number): Item {
   }
 }
 
-/**
- * ЧУЧЕЛО: моб с обычным запасом HP, который не бьёт в ответ.
- *
- * Эти тесты — про СРАВНЕНИЕ ПРЕДМЕТОВ, то есть про урон. Смертность в них
- * только мешает, и не «немного»: у модели привала (farmCycle) квантизация по
- * целым боям, а `estimateCombatRate` в режиме 'auto' сверху ещё и прижат к
- * ручной игре (`bounded`). На голом герое первого уровня против моба стартовой
- * зоны — пятьдесят восемь ударов на убийство и постоянные смерти — эти два
- * округления перебивают разницу между предметами: замер по силе атаки шагом
- * в 10 показывает ДВА обрыва, где +10 к силе атаки роняет темп убийств втрое.
- * Обрывы есть и до правки про крит, и после неё — сдвинуты ровно на один шаг.
- *
- * Против чучела `netLossPerSec <= 0`, uptime равен единице, и темп убийств
- * равен идеальному. Тест меряет ровно то, о чём говорит его название.
- */
-function harmlessDummy() {
-  const template = buildMonster({ id: 'test-dummy', name: 'Чучело', role: COMMON }, 1, new Decimal(1))
-  return monsterFromTemplate({
-    ...template,
-    damageMin: new Decimal(0),
-    damageMax: new Decimal(0),
-  })
-}
-
 function withItems(items: Item[], patch: Partial<GameState> = {}): GameState {
-  return ensureStats({
-    ...bareHero(1),
-    monster: harmlessDummy(),
-    inventory: items,
-    statsDirty: true,
-    ...patch,
-  })
+  return ensureStats({ ...bareHero(1), inventory: items, statsDirty: true, ...patch })
 }
 
 describe('оружие задаёт базу боя', () => {
