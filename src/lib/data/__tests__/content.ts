@@ -17,6 +17,7 @@ import {
   TTK_AHEAD_MIN,
   TTK_BEHIND_MAX,
   TTK_DRIFT_MAX,
+  XP_GAP_PENALTY,
   TTK_HARD_CEILING,
   TTK_HARD_FLOOR,
   TTK_TARGET_MAX,
@@ -141,6 +142,7 @@ export function realContent(): Content {
       ttkBehindMax: TTK_BEHIND_MAX,
       ttkAheadMin: TTK_AHEAD_MIN,
       ttkDriftMax: TTK_DRIFT_MAX,
+      xpGapPenalty: XP_GAP_PENALTY,
     },
   }
 }

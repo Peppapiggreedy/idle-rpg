@@ -119,6 +119,8 @@ export interface BalanceNumbers {
   ttkBehindMax: number
   ttkAheadMin: number
   ttkDriftMax: number
+  /** Ступени штрафа опыта за отставание: gap <= maxGap -> share. */
+  xpGapPenalty: ReadonlyArray<{ maxGap: number; share: number }>
 }
 
 // ---------------------------------------------------------------------------
@@ -2285,6 +2287,47 @@ function checkBalance(content: Content, report: Report): void {
       where,
       `TTK_AHEAD_MIN = ${b.ttkAheadMin} не больше TTK_TARGET_MAX = ${b.ttkTargetMax}: ` +
         'опережающая зона обязана проходиться дольше актуальной',
+    )
+  }
+
+  // Ступени штрафа опыта. Проверка не про «красиво», а про то, что таблицу
+  // читает ЛИНЕЙНЫЙ поиск первой подходящей ступени: перепутанный порядок
+  // молча выключил бы половину таблицы, а доля вне 0..1 выдавала бы за моба
+  // больше опыта, чем он стоит.
+  const steps = b.xpGapPenalty
+  if (steps.length === 0) {
+    report.add(where, 'XP_GAP_PENALTY пуст: доля опыта не определена ни для какого разрыва (data/balance.ts)')
+  }
+  steps.forEach((step, i) => {
+    if (!(step.share >= 0 && step.share <= 1)) {
+      report.add(
+        where,
+        `XP_GAP_PENALTY[${i}].share = ${step.share} вне 0..1: это доля награды (data/balance.ts)`,
+      )
+    }
+    if (i === 0) return
+    const prev = steps[i - 1]
+    if (!(step.maxGap > prev.maxGap)) {
+      report.add(
+        where,
+        `XP_GAP_PENALTY[${i}].maxGap = ${step.maxGap} не больше предыдущего ${prev.maxGap}: ` +
+          'таблица читается первой подходящей ступенью, и эта уже недостижима (data/balance.ts)',
+      )
+    }
+    if (!(step.share <= prev.share)) {
+      report.add(
+        where,
+        `XP_GAP_PENALTY[${i}].share = ${step.share} больше предыдущего ${prev.share}: ` +
+          'штраф за больший разрыв обязан быть не мягче (data/balance.ts)',
+      )
+    }
+  })
+  const last = steps[steps.length - 1]
+  if (last && Number.isFinite(last.maxGap)) {
+    report.add(
+      where,
+      `последняя ступень XP_GAP_PENALTY кончается на ${last.maxGap}: разрыв больше неё ` +
+        'останется без доли (data/balance.ts)',
     )
   }
 }

@@ -6,7 +6,12 @@ import { restDurationMs, zoneSafety } from './rest'
 import { estimateCombatRate, estimateTtk, expectedMonsterDamage, uptimeFromHpLoss } from './combat'
 import type { PlayMode } from './rotation'
 import { monsterFromTemplate, pushEvent, spawnMonster, type GameState } from './state'
-import { TTK_AHEAD_MIN, TTK_BEHIND_MAX, ZONE_VERDICT_UPTIME } from '../data/balance'
+import {
+  TTK_AHEAD_MIN,
+  TTK_BEHIND_MAX,
+  ZONE_VERDICT_UPTIME,
+  xpGapShare,
+} from '../data/balance'
 import {
   SAFE_ZONE,
   ZONES,
@@ -116,7 +121,15 @@ export function zoneRate(state: GameState, zone: Zone, mode: PlayMode = 'auto'):
     const rate = estimateCombatRate(facing(state, template), mode)
     kills = kills.plus(rate.idealKillsPerSecond)
     gold = gold.plus(rate.idealKillsPerSecond.times(template.goldReward))
-    xp = xp.plus(rate.idealKillsPerSecond.times(template.xpReward))
+    // Штраф за отставание — ПО КАЖДОМУ мобу отдельно, а не по зоне целиком:
+    // внутри одной зоны пять уровней мобов, и на границе штрафа половина пула
+    // может считаться полным опытом, а половина — половинным. Золото рядом
+    // идёт без штрафа: он бьёт только по опыту.
+    xp = xp.plus(
+      rate.idealKillsPerSecond
+        .times(template.xpReward)
+        .times(xpGapShare(state.level.toNumber(), template.level)),
+    )
     hpLoss = hpLoss.plus(rate.hpLossPerSecond)
     cycleSec += rate.idealKillsPerSecond.gt(0)
       ? new Decimal(1).div(rate.idealKillsPerSecond).toNumber()
@@ -156,6 +169,16 @@ export interface ZoneForecast {
   killsPerHour: Decimal
   goldPerHour: Decimal
   xpPerHour: Decimal
+  /**
+   * Доля опыта за отставание — 1, 0.5 или 0 (см. XP_GAP_PENALTY). Считается
+   * по СРЕДНЕМУ уровню мобов зоны, то есть по тому же разрыву, что и levelGap
+   * рядом: два числа в одной строке обязаны быть об одном и том же.
+   *
+   * Реальное начисление идёт ПО КАЖДОМУ мобу, поэтому зона, лежащая на
+   * границе ступени, платит между двумя долями. Точное число видно в
+   * xpPerHour здесь же — это поле для ярлыка, а не для расчёта.
+   */
+  xpShare: number
   verdict: ZoneVerdict
 }
 
@@ -182,6 +205,7 @@ export function forecastZone(state: GameState, zone: Zone): ZoneForecast {
     killsPerHour,
     goldPerHour: rate.goldPerSecond.times(3600),
     xpPerHour: rate.xpPerSecond.times(3600),
+    xpShare: xpGapShare(state.level.toNumber(), averageMonsterLevel(zone)),
     verdict: verdictFor(rate.uptime, killsPerHour, zoneSafety(state, zone).safe),
   }
 }

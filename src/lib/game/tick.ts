@@ -39,6 +39,7 @@ import {
   REGEN_TICK_S,
   RESPAWN_DELAY_MS,
   REVIVE_DELAY_MS,
+  xpGapShare,
 } from '../data/balance'
 import { ABILITY_BY_ID } from '../data/abilities'
 import { currentZone, reviveInZone } from './zones'
@@ -370,6 +371,20 @@ const applyEffects: TickStep = (s, ctx) => {
 }
 
 /**
+ * Опыт за убийство: награда моба × постоянный бонус за пройденные данжи ×
+ * доля за разрыв уровней. ОДНА функция на все начисления — и в лог, и в
+ * прокачку идёт одно и то же число, а не два похожих.
+ *
+ * Разрыв берётся по уровню УБИТОГО, поэтому босс данжа и волна храма считаются
+ * тем же правилом, что и обычный моб: своей ветки у них нет.
+ */
+function killXp(s: GameState, killed: Monster): Decimal {
+  return killed.xpReward
+    .times(clearedXpBonus(s.dungeonsCleared))
+    .times(xpGapShare(s.level.toNumber(), killed.level))
+}
+
+/**
  * Награды за убийство. Здесь же читается флаг «убийство возвращает откаты»:
  * доля из данных таланта множит и кулдауны, и GCD. Единица — таланта нет,
  * и тогда не пересобирается ничего.
@@ -401,7 +416,7 @@ const applyKillRewards: TickStep = (s, ctx) => {
       monsterName: killed.name,
       zoneId: s.currentZoneId,
       gold: killed.goldReward,
-      xp: killed.xpReward.times(clearedXpBonus(s.dungeonsCleared)),
+      xp: killXp(s, killed),
     }),
   }
 }
@@ -409,8 +424,7 @@ const applyKillRewards: TickStep = (s, ctx) => {
 const applyLevelUps: TickStep = (s, ctx) => {
   const killed = ctx.killedMonster
   if (!killed) return s
-  // Достижение за пройденный данж даёт постоянный бонус к опыту.
-  const xp = killed.xpReward.times(clearedXpBonus(s.dungeonsCleared))
+  const xp = killXp(s, killed)
   const leveled = applyXp(s.level, s.currentXp, xp)
   let combatLog = s.combatLog
   if (leveled.level.gt(s.level)) {

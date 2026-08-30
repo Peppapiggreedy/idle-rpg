@@ -24,6 +24,7 @@ import {
   buildBoss,
 } from '../data/dungeons'
 import { RARITIES } from '../data/rarity'
+import { XP_GAP_PENALTY } from '../data/balance'
 import { zoneForMonsterLevel } from '../data/zones'
 import { averageGear } from './simulate'
 import { ZONE_BY_ID, representativeMonster } from '../data/zones'
@@ -349,7 +350,15 @@ describe('достижение за первое прохождение', () => 
   })
 
   it('бонус реально ускоряет набор опыта', () => {
-    const base = { ...adventurer(), currentZoneId: 'shepherds-meadow' }
+    // Герой ниже уровнем, чем требует данж, и это НАМЕРЕННО: тест про
+    // множитель опыта, а не про вход. Уровень выбран так, чтобы стартовая
+    // зона ещё платила — верхний край её полосы ровно на границе штрафа за
+    // отставание. Прежний герой двадцатого уровня получал на лугу ноль
+    // опыта за моба, и тест сравнивал 0 с 0, то есть зеленел бы на любом
+    // бонусе, включая отсутствующий.
+    const zone = zoneForMonsterLevel(1)
+    const level = new Decimal(zone.monsterLevelRange.max + XP_GAP_PENALTY[0].maxGap)
+    const base = adventurer({ level, currentZoneId: zone.id })
     const withBonus = { ...base, dungeonsCleared: { [DUNGEON.id]: true } }
     const xpAfter = (s: GameState) => {
       const after = run(s, 60_000)
@@ -360,12 +369,21 @@ describe('достижение за первое прохождение', () => 
 })
 
 describe('оффлайн и данж', () => {
-  it('внутри данжа оффлайн ничего не начисляет', () => {
+  // ДВА РАЗНЫХ СВОЙСТВА, и путать их нельзя.
+  //
+  // Первое: сам агрегат оффлайна цепочку боссов не проходит — своей модели
+  // боя с боссом у него нет, и выдумывать её значило бы проходить данжи за
+  // игрока. Поэтому прямой вызов с живым забегом отказывает.
+  //
+  // Второе: закрытая вкладка при этом НЕ наказывает. Забег снимается при
+  // загрузке сейва (resumeOutside), и оффлайн считается по обычной зоне —
+  // это проверяется в save.test.ts, где есть загрузка целиком.
+  it('сам агрегат забег не проходит и ничего не начисляет', () => {
     const inside = enterDungeon(adventurer(), DUNGEON.id)
     const { state, report } = applyOfflineProgress(inside, 8 * 3_600_000)
     expect(report).toBeNull()
     expect(state.gold.eq(inside.gold)).toBe(true)
-    expect(state.dungeonRun).not.toBeNull() // забег ждёт героя на месте
+    expect(state.dungeonRun).not.toBeNull()
   })
 })
 
