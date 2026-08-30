@@ -25,7 +25,7 @@ function weapon(): Item {
   const template = WEAPONS.find((w) => w.grip === 'one') ?? WEAPONS[0]
   return {
     id: 'test-weapon',
-    name: template.name,
+    name: template.noun,
     rarity: 'common',
     slot: 'mainHand',
     level: 10,

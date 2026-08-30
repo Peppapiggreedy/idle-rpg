@@ -2,7 +2,8 @@
   import { dismissOfflineReport, offlineReport } from '../stores/game'
   import { OFFLINE_CAP_HOURS, OFFLINE_EFFICIENCY } from '../data/balance'
   import { ZONE_BY_ID } from '../data/zones'
-  import { Button, NumberText, Panel } from './kit'
+  import { RARITIES } from '../data/rarity'
+  import { Button, NumberText, Panel, rarityName, rarityStyle } from './kit'
   import { Icon } from './icons'
 
   // Правило названо ЧИСЛОМ и прямо здесь. Молчаливое урезание впятеро игрок
@@ -16,6 +17,16 @@
     dungeon: 'данжа',
     temple: 'храма',
   } as const
+
+  // Порядок редкостей — из данных: добавили тир, и он появился сам.
+  const lootTiers = $derived(
+    $offlineReport
+      ? RARITIES.map((r) => ({ id: r.id, count: $offlineReport!.loot.byRarity[r.id] ?? 0 })).filter(
+          (t) => t.count > 0,
+        )
+      : [],
+  )
+  const gain = (share: number) => `+${(share * 100).toFixed(1).replace('.', ',')} %`
 
   function formatElapsed(ms: number): string {
     const totalMinutes = Math.floor(ms / 60_000)
@@ -50,10 +61,42 @@
               <NumberText value={$offlineReport.xp} tone="xp" sign="plus" bold />
             </li>
           </ul>
-          <!-- Про лут и смерти здесь молчим НАМЕРЕННО: оффлайн считается
-               одним агрегатом и не разыгрывает ни находок, ни гибели.
-               Придумать эти числа было бы враньём (см. долг №5
-               в ARCHITECTURE.md). -->
+          {#if $offlineReport.loot.found > 0}
+            <!-- ДОБЫЧА. Раньше её здесь не было, потому что оффлайн находок
+                 не разыгрывал вовсе; теперь разыгрывает той же рулеткой, что
+                 и бой. Списком предметы не вываливаем — за восемь часов их
+                 сотни, и сумка покажет всё сама. -->
+            <div class="loot">
+              <div class="loot-head">
+                <Icon name="slot-trinket" size="lg" />
+                <span class="label">Найдено вещей</span>
+                <strong>{$offlineReport.loot.found}</strong>
+              </div>
+              <ul class="tiers">
+                {#each lootTiers as tier (tier.id)}
+                  <li style={rarityStyle(tier.id)}>
+                    <span class="dot"></span>{rarityName(tier.id)} — {tier.count}
+                  </li>
+                {/each}
+              </ul>
+              <p class="loot-line">
+                {#if $offlineReport.loot.upgrades > 0}
+                  Лучше надетого: <strong class="up">{$offlineReport.loot.upgrades}</strong>
+                  {#if $offlineReport.loot.bestGain > 0}
+                    (лучшая — {gain($offlineReport.loot.bestGain)} к темпу){/if}. Всё лежит
+                  в сумке — надеть надо самому.
+                {:else}
+                  Ничего лучше надетого не попалось.
+                {/if}
+              </p>
+              {#if $offlineReport.loot.sold > 0}
+                <p class="loot-line">
+                  Не влезло в сумку и ушло в золото: {$offlineReport.loot.sold} шт. за
+                  <NumberText value={$offlineReport.loot.soldGold} tone="gold" sign="plus" />.
+                </p>
+              {/if}
+            </div>
+          {/if}
           <p class="note">
             Оффлайн начисляет {share}% от онлайн-темпа: этот
             {formatElapsed($offlineReport.elapsedMs)} стоит примерно
@@ -76,9 +119,6 @@
               Начислено по зоне «{ZONE_BY_ID[$offlineReport.zoneId]?.name ?? 'неизвестной'}».
             </p>
           {/if}
-          <p class="note">
-            Добыча в оффлайне не собирается — только золото и опыт.
-          </p>
           <div class="actions">
             <Button variant="primary" onclick={dismissOfflineReport}>Продолжить</Button>
           </div>
@@ -117,6 +157,48 @@
   }
   .note.interrupted {
     color: var(--c-warning);
+  }
+  .loot {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    padding: var(--space-2);
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius-md);
+    text-align: left;
+  }
+  .loot-head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+  .tiers {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1) var(--space-3);
+    font-size: var(--text-xs);
+    color: var(--c-text-muted);
+  }
+  .tiers li {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    color: var(--rarity-color);
+  }
+  .dot {
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    background: var(--rarity-color);
+  }
+  .loot-line {
+    margin: 0;
+    font-size: var(--text-xs);
+    color: var(--c-text-faint);
+  }
+  .up {
+    color: var(--c-heal);
   }
   .backdrop {
     position: fixed;

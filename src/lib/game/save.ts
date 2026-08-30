@@ -58,10 +58,19 @@ import { rankOf } from './talents'
 import { FALLBACK_ITEM_NAME, ITEM_BASE_SELL_PRICE } from '../data/loot'
 import { SAFE_ZONE, ZONE_BY_ID } from '../data/zones'
 import { currentZone, offlineZone, zoneRate } from './zones'
+import { isUpgradeValue, lootValue, rollLoot, stashLoot, type LootValueCache } from './loot'
+import { averageMonsterLevel } from '../data/zones'
 import { leaveTemple } from './temple'
 import type { Rng } from './rng'
 
 export const SAVE_KEY = 'idle-rpg-save'
+/**
+ * Сдвиг сида для потока лута в оффлайне. Нужен, чтобы этот поток не совпадал
+ * с потоком спавна моба при загрузке: оба заводятся от одного сида состояния,
+ * и без сдвига «какой моб стоит перед героем» и «что выпало за ночь» были бы
+ * связаны одним и тем же первым броском.
+ */
+const OFFLINE_LOOT_SALT = 0x9e37_79b9
 /** Все хваты одним списком: сейв принимает только их. */
 const GRIPS: Grip[] = ['one', 'two', 'shield']
 
@@ -1165,7 +1174,40 @@ export interface OfflineReport {
   zoneId: string
   /** Забег оборвался закрытой вкладкой и расформирован; null — забега не было. */
   interrupted: InterruptedRun | null
+  /** Добыча: что выпало, что осталось, что ушло в золото. */
+  loot: OfflineLoot
 }
+
+/**
+ * Итог добычи за оффлайн. Числа, а не список предметов: за восемь часов
+ * находок бывают сотни, и вываливать их модалкой некуда — сумка и так
+ * покажет всё, что в ней осталось.
+ */
+export interface OfflineLoot {
+  /** Сколько предметов выпало всего. */
+  found: number
+  /** Сколько из них легло в сумку (остальное ушло в золото). */
+  kept: number
+  /** Сколько найденного лучше надетого. */
+  upgrades: number
+  /** Прирост лучшей находки долей (0.074 — «+7.4%»); 0 — апгрейдов нет. */
+  bestGain: number
+  /** Сколько находок ушло в золото и на сколько. */
+  sold: number
+  soldGold: Decimal
+  /** Сколько чего выпало по редкости — модалка красит иконки этим. */
+  byRarity: Record<Rarity, number>
+}
+
+const emptyLoot = (): OfflineLoot => ({
+  found: 0,
+  kept: 0,
+  upgrades: 0,
+  bestGain: 0,
+  sold: 0,
+  soldGold: new Decimal(0),
+  byRarity: { common: 0, uncommon: 0, rare: 0, epic: 0, legendary: 0 },
+})
 
 // Оффлайн-прогресс одним агрегатом, без проигрывания тиков. Темп боя берётся
 // из zoneRate, а тот зовёт estimateCombatRate — ту же функцию, что и онлайн,
@@ -1173,6 +1215,10 @@ export interface OfflineReport {
 export function applyOfflineProgress(
   state: GameState,
   elapsedMs: number,
+  // Поток случайности лута. Свой, а не общий с симуляцией: оффлайн считается
+  // при загрузке, и вычерпывать из него ход игры нельзя. Сид — из состояния,
+  // поэтому загрузка остаётся детерминированной.
+  rng: Rng = createRng(state.rngSeed ^ OFFLINE_LOOT_SALT),
 ): { state: GameState; report: OfflineReport | null } {
   let cappedMs = Math.min(elapsedMs, OFFLINE_CAP_MS)
   if (cappedMs <= 0) return { state, report: null }
@@ -1213,6 +1259,27 @@ export function applyOfflineProgress(
   let kills = new Decimal(0)
   let gold = new Decimal(0)
   let xp = new Decimal(0)
+  // ЛУТ. Своей модели дропа у оффлайна нет: внутри шага по числу убийств
+  // крутится ТА ЖЕ rollLoot и ТА ЖЕ stashLoot, что и в тике. Отдельного
+  // коэффициента у лута тоже нет — число убийств уже урезано на
+  // OFFLINE_EFFICIENCY, и лут наследует это сам.
+  //
+  // Уровень находки берётся по СРЕДНЕМУ мобу зоны: весь агрегат усреднён по
+  // пулу, и брать сюда уровень одного случайного моба значило бы смешать две
+  // разные модели.
+  const loot = emptyLoot()
+  const itemLevel = Math.round(averageMonsterLevel(zone))
+  // Дробные убийства копятся между шагами: бросков ровно столько, сколько
+  // целых убийств, и итог сходится с числом в отчёте.
+  let killDebt = 0
+  // Кеш ценности живёт РОВНО СТОЛЬКО, сколько неизменны статы, а не один шаг.
+  // Шагов за восемь часов четыреста восемьдесят, и кеш на шаг означал бы
+  // переоценку всей сумки в каждом — двадцать четыре прогона конвейера и
+  // estimateCombatRate на первую же находку. Замер: 947 мс против 176 мс.
+  let cache: LootValueCache = new Map()
+  // Лог оффлайн не пишет — ни здесь, ни в склянках. Сотня находок вытеснила
+  // бы из лога весь бой, к которому игрок возвращается.
+  const logBefore = s.combatLog
   for (let left = cappedMs; left > 0; left -= OFFLINE_CHUNK_MS) {
     const seconds = new Decimal(Math.min(OFFLINE_CHUNK_MS, left)).div(1000)
     if (!rateLevel.eq(s.level)) {
@@ -1220,7 +1287,8 @@ export function applyOfflineProgress(
       rateLevel = s.level
     }
     const chunkXp = rate.xpPerSecond.times(seconds).times(OFFLINE_EFFICIENCY)
-    kills = kills.plus(rate.killsPerSecond.times(seconds).times(OFFLINE_EFFICIENCY))
+    const chunkKills = rate.killsPerSecond.times(seconds).times(OFFLINE_EFFICIENCY)
+    kills = kills.plus(chunkKills)
     gold = gold.plus(rate.goldPerSecond.times(seconds).times(OFFLINE_EFFICIENCY))
     xp = xp.plus(chunkXp)
     const leveled = applyXp(s.level, s.currentXp, chunkXp)
@@ -1232,8 +1300,45 @@ export function applyOfflineProgress(
       // Уровень — источник статов: следующий шаг должен считаться по новым.
       statsDirty: s.statsDirty || leveled.level.gt(s.level),
     }
-    if (s.statsDirty) s = ensureStats(s)
+    if (s.statsDirty) {
+      s = ensureStats(s)
+      // Статы поехали — прежние оценки больше не про этого героя.
+      cache = new Map()
+    }
+    killDebt += chunkKills.toNumber()
+    const rolls = Math.floor(killDebt)
+    killDebt -= rolls
+    for (let i = 0; i < rolls; i += 1) {
+      const item = rollLoot(rng, s.itemSeq, itemLevel)
+      if (!item) continue
+      loot.found += 1
+      loot.byRarity[item.rarity] += 1
+      const value = lootValue(s, item, cache)
+      if (isUpgradeValue(value)) {
+        loot.upgrades += 1
+        // Бесконечность бывает, когда без предмета герой не убивает вовсе;
+        // как «прирост в процентах» её показывать нечем.
+        if (Number.isFinite(value)) loot.bestGain = Math.max(loot.bestGain, value - 1)
+      }
+      s = stashLoot({ ...s, itemSeq: s.itemSeq + 1 }, item, cache)
+      // Что именно сделала политика сумки — видно по событию, которое она
+      // положила в лог. Своей копии правил здесь нет.
+      const event = s.combatLog[0]
+      if (event?.type === 'autosell') {
+        loot.sold += 1
+        loot.soldGold = loot.soldGold.plus(event.gold)
+      } else if (event?.type === 'loot-swap') {
+        loot.kept += 1
+        loot.sold += 1
+        loot.soldGold = loot.soldGold.plus(event.gold)
+        // Вытесненный предмет исчез из сумки — его оценка больше не нужна.
+        cache.delete(event.dropped.id)
+      } else {
+        loot.kept += 1
+      }
+    }
   }
+  s = { ...s, combatLog: logBefore }
   // Травы набегают ВРЕМЕНЕМ, поэтому оффлайн срезает их одним вызовом, тем
   // же куском игрового времени и с тем же урезанием. Отдельной модели у сбора
   // нет — иначе оффлайн и онлайн разошлись бы молча.
@@ -1245,8 +1350,10 @@ export function applyOfflineProgress(
   kills = kills.floor()
   if (kills.lte(0)) return { state: s, report: null }
   return {
+    // Золото автопродажи уже лежит в s.gold: его туда положила stashLoot.
+    // Здесь прибавляется только заработок за убийства.
     state: { ...s, gold: s.gold.plus(gold) },
-    report: { elapsedMs: cappedMs, kills, gold, xp, zoneId: zone.id, interrupted: null },
+    report: { elapsedMs: cappedMs, kills, gold, xp, zoneId: zone.id, interrupted: null, loot },
   }
 }
 
