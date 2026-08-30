@@ -17,7 +17,7 @@ import {
   type ActivePotion,
 } from './state'
 import { createRng, randomSeed } from './rng'
-import { TEMPLE_BY_ID } from '../data/temple'
+import { TEMPLE, TEMPLE_BY_ID } from '../data/temple'
 import { advancePotions, gatherHerbs } from './potions'
 import { ENCHANT_BY_ID } from '../data/enchants'
 import { PROC_BY_ID } from '../data/procs'
@@ -134,7 +134,16 @@ export interface SavedDungeonRun {
 }
 
 export interface SavePayloadV21 {
-  version: 20
+  /**
+   * ВЕРСИЯ БЕРЁТСЯ ИЗ КОНСТАНТЫ, а не переписывается числом.
+   *
+   * Здесь стояло `20` при `SAVE_VERSION = 21`, и игра штамповала свои сейвы
+   * чужим номером. Каждая загрузка считала свежий сейв устаревшим и прогоняла
+   * миграцию 20→21, а та сбрасывала `templeCleared` — награда за полную
+   * зачистку Храма пропадала после первого же F5. Числу здесь не место:
+   * поднимут `SAVE_VERSION` — тип поедет следом сам.
+   */
+  version: typeof SAVE_VERSION
   /** Мешок: материалы, травы, еда и склянки — id -> количество строкой. */
   materials: Record<string, string>
   /** Пыль зачарования: величина растущая, поэтому строкой. */
@@ -279,7 +288,7 @@ export function payloadFromState(state: GameState, lastTimestamp: number): SaveP
     if (state.dungeonsCleared[key] === true) dungeonsCleared[key] = true
   }
   return {
-    version: 20,
+    version: SAVE_VERSION,
     classId: state.classId,
     materials: Object.fromEntries(
       Object.entries(state.materials)
@@ -1151,13 +1160,40 @@ export const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
     // значил ровно то же самое — «максимальный полностью пройденный этаж», —
     // и им же открыты рецепты рубежей. Обнулить его значило бы отобрать у
     // ветерана храма уже открытые рецепты, то есть потерять прогресс.
-    next.templeBestWave =
+    const bestWave =
       typeof raw.templeBestWave === 'number' && raw.templeBestWave > 0
         ? Math.floor(raw.templeBestWave)
         : 0
-    // Полной зачистки в старом формате не существовало: флаг начинается с
-    // нуля, и первая же зачистка выдаст токен и уникальный рецепт.
-    next.templeCleared = false
+    next.templeBestWave = bestWave
+    // ФЛАГ ПОЛНОЙ ЗАЧИСТКИ. Здесь стояло безусловное `false`, и это было верно
+    // ровно до тех пор, пока сюда приходили только настоящие сейвы 20-й
+    // версии: полной зачистки в том формате не существовало.
+    //
+    // Но игра штамповала СВОИ сейвы номером 20 (см. SavePayloadV21.version),
+    // поэтому в миграцию приезжали и свежие сейвы 21-й версии — с уже взятой
+    // зачисткой, — и безусловное `false` её стирало. Значение, если оно
+    // осмысленное, теперь сохраняется.
+    next.templeCleared = raw.templeCleared === true
+
+    // РАЗОВАЯ ПОЧИНКА УЖЕ ИСПОРЧЕННЫХ СЕЙВОВ (находка 2.1 в AUDIT.md).
+    //
+    // Пункта выше мало: у тех, кто уже загружался со сломанной сборкой, флаг
+    // в сейве стёрт, а вернуть его игра не может — платят только этажи ВЫШЕ
+    // рекорда (game/temple.ts), а рекорд уже равен потолку. Без этой строки
+    // фикс не даёт видимого результата: рецепт «Венец испытаний» так и
+    // остаётся запертым навсегда.
+    //
+    // Рекорд на потолке — ДОКАЗАТЕЛЬСТВО того, что зачистка была: и в 20-й
+    // версии, и в 21-й `templeBestWave` значит «максимальный ПОЛНОСТЬЮ
+    // пройденный этаж», а взять его целиком иначе, чем пройдя храм, нельзя.
+    //
+    // Это починка конкретной ошибки, а не правило игры. Материалы она НЕ
+    // выдаёт намеренно: мешок переживает поломку сам (она стирала только
+    // флаг), а выдача уникального токена из миграции удвоила бы его тому,
+    // кто уже успел на него сковать «Венец».
+    // Рекорд в сейве один на игру, поэтому и потолок берётся у того храма,
+    // которому он принадлежит: появится второй — поедет и формат сейва.
+    if (next.templeCleared !== true && bestWave >= TEMPLE.floors) next.templeCleared = true
     // У прерванного забега появилось поле пройденных этажей. Старый забег
     // всё равно расформируется при загрузке (resumeOutside), но формат
     // обязан быть согласован сам по себе.

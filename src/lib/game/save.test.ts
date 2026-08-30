@@ -8,14 +8,19 @@ import { SAFE_ZONE, zoneMonsterVariants } from '../data/zones'
 import {
   OFFLINE_CAP_MS,
   SAVE_KEY,
+  SAVE_VERSION,
   applyOfflineProgress,
   clearSave,
   decodeSaveString,
   encodeSaveString,
   loadGame,
+  payloadFromState,
   saveGame,
+  stateFromPayload,
   type SaveStorage,
 } from './save'
+import { ensureStats } from './stats'
+import { TEMPLE } from '../data/temple'
 
 function makeStorage(): SaveStorage & { data: Map<string, string> } {
   const data = new Map<string, string>()
@@ -92,6 +97,45 @@ describe('стирание сейва', () => {
   it('стирать нечего — не падает', () => {
     const storage = makeStorage()
     expect(() => clearSave({ storage })).not.toThrow()
+  })
+})
+
+// ЭТОТ БЛОК ПОЯВИЛСЯ ИЗ ПОЛОМКИ (находка 2.1 в AUDIT.md). Игра штамповала
+// свои сейвы номером 20 при SAVE_VERSION = 21, поэтому миграция 20→21
+// прокручивалась на КАЖДОЙ загрузке и стирала флаг полной зачистки храма.
+// Ни один тест этого не замечал: проверялась версия только у РЕЗУЛЬТАТА
+// миграции, где она уже 21 по определению.
+describe('версия сейва', () => {
+  it('игра пишет сейв ТЕКУЩЕЙ версии', () => {
+    // Одна строка, которой не было. Она и есть весь тест на эту поломку.
+    expect(payloadFromState(richState(), 0).version).toBe(SAVE_VERSION)
+  })
+
+  it('сериализация — неподвижная точка: запись, чтение, запись дают то же', () => {
+    // Загрузка не имеет права ничего менять в сейве. Если меняет — значит,
+    // на нём срабатывает миграция, а срабатывать ей уже не на чем.
+    const once = payloadFromState(richState(), 0)
+    const twice = payloadFromState(ensureStats(stateFromPayload(once)), 0)
+    expect(twice).toEqual(once)
+  })
+
+  it('свежий сейв не прогоняется через миграцию: флаг зачистки храма цел', () => {
+    const storage = makeStorage()
+    const cleared: GameState = ensureStats({
+      ...richState(),
+      templeBestWave: TEMPLE.floors,
+      templeCleared: true,
+      statsDirty: true,
+    })
+    saveGame(cleared, { storage, now: () => 0 })
+    const result = loadGame({ storage, now: () => 0 })
+    expect(result.kind).toBe('loaded')
+    if (result.kind !== 'loaded') return
+    // Раньше здесь было false: миграция 20→21 сбрасывала флаг на каждой
+    // загрузке, и уникальный рецепт «Венец испытаний» пропадал навсегда —
+    // повторная зачистка не помогала, потому что рекорд уже на потолке.
+    expect(result.state.templeCleared).toBe(true)
+    expect(result.state.templeBestWave).toBe(TEMPLE.floors)
   })
 })
 

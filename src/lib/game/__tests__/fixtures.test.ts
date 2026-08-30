@@ -31,6 +31,8 @@ import {
   type SaveStorage,
 } from '../save'
 import { CLASS_BY_ID, DEFAULT_CLASS, classById } from '../../data/classes'
+import { TEMPLE, recipeUnlocked } from '../../data/temple'
+import { materialCount } from '../crafting'
 
 function fixture(name: string): string {
   return readFileSync(new URL(`../__fixtures__/${name}`, import.meta.url), 'utf8')
@@ -139,6 +141,48 @@ describe('фикстуры сейвов', () => {
     // остался прежним, хотя в забеге стоял третий этаж.
     expect(state.templeRun).toBeNull()
     expect(state.gold.toNumber()).toBeGreaterThan(0)
+  })
+
+  it('save-v20 -> v21: уже испорченный сейв чинится, зачистка возвращается', () => {
+    // РАЗОВАЯ ПОЧИНКА (находка 2.1). У всех, кто успел загрузиться со
+    // сломанной сборкой, в сейве лежит рекорд на потолке и стёртый флаг
+    // зачистки. Сама игра вернуть флаг не может: платят только этажи ВЫШЕ
+    // рекорда, а рекорд уже максимальный, — поэтому рецепт «Венец испытаний»
+    // остался бы запертым навсегда даже после исправления версии.
+    const raw = JSON.parse(fixture('save-v20-temple-cleared.json'))
+    expect(raw.templeBestWave).toBe(TEMPLE.floors)
+    expect(raw.templeCleared).toBe(false)
+
+    const payload = migrateSave(raw)!
+    expect(payload.version).toBe(SAVE_VERSION)
+    // Достигнутый потолок рекорда — доказательство того, что зачистка была.
+    expect(payload.templeCleared).toBe(true)
+    expect(payload.templeBestWave).toBe(TEMPLE.floors)
+
+    const state = loadFixture('save-v20-temple-cleared.json')
+    expect(state.templeCleared).toBe(true)
+    // И рецепт снова доступен — ради этого всё и делалось.
+    expect(recipeUnlocked(TEMPLE.clearReward.recipeId, state.templeBestWave, state.templeCleared))
+      .toBe(true)
+    // Токен на месте: поломка стирала только флаг, мешок она не трогала.
+    expect(materialCount(state, TEMPLE.clearReward.materialId).toNumber()).toBe(1)
+  })
+
+  it('save-v20 -> v21: неполный рекорд зачистку НЕ выдаёт', () => {
+    // Обратная сторона той же починки: она обязана срабатывать ровно на
+    // потолке и ни этажом ниже, иначе превратится в раздачу уникального
+    // рецепта всем подряд.
+    const raw = JSON.parse(fixture('save-v20-temple-cleared.json'))
+    raw.templeBestWave = TEMPLE.floors - 1
+    expect(migrateSave(raw)!.templeCleared).toBe(false)
+  })
+
+  it('save-v20 -> v21: уже поднятый флаг зачистки переживает миграцию', () => {
+    // Сейв, записанный сломанной сборкой ДО первой перезагрузки: номер 20,
+    // но флаг уже true. Безусловное `false` в миграции стирало именно его.
+    const raw = JSON.parse(fixture('save-v20.json'))
+    raw.templeCleared = true
+    expect(migrateSave(raw)!.templeCleared).toBe(true)
   })
 
   it('save-v19 -> v20: незаконная связка рук расформирована', () => {
