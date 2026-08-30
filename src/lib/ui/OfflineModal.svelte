@@ -1,6 +1,7 @@
 <script lang="ts">
   import { dismissOfflineReport, offlineReport } from '../stores/game'
   import { OFFLINE_CAP_HOURS, OFFLINE_EFFICIENCY } from '../data/balance'
+  import { ZONE_BY_ID } from '../data/zones'
   import { Button, NumberText, Panel } from './kit'
   import { Icon } from './icons'
 
@@ -8,6 +9,13 @@
   // прочитает как баг, а не как правило: он помнит, сколько приносит час
   // за экраном, и увидит вместо него пятую часть без объяснений.
   const share = Math.round(OFFLINE_EFFICIENCY * 100)
+
+  // Название закрытой активности по коду из отчёта. Логика отдаёт код,
+  // текст живёт здесь — как у отказов умений и правил рук.
+  const INTERRUPTED_TEXT = {
+    dungeon: 'данжа',
+    temple: 'храма',
+  } as const
 
   function formatElapsed(ms: number): string {
     const totalMinutes = Math.floor(ms / 60_000)
@@ -52,6 +60,22 @@
             {formatElapsed($offlineReport.elapsedMs * OFFLINE_EFFICIENCY)} живой игры.
             Дольше {OFFLINE_CAP_HOURS} ч отсутствие не оплачивается.
           </p>
+          {#if $offlineReport.interrupted}
+            <!-- Оборванный забег обязан быть назван вслух. Молча пропавшая
+                 цепочка боссов читается как потеря прогресса, а не как
+                 правило, — а правило тут ровно одно и оно в пользу игрока:
+                 закрытая вкладка больше не оставляет ни с чем. -->
+            <p class="note interrupted">
+              Ты вышел из {INTERRUPTED_TEXT[$offlineReport.interrupted]}: закрытая вкладка
+              обрывает забег. Оффлайн начислен по зоне «{ZONE_BY_ID[$offlineReport.zoneId]
+                ?.name ?? 'неизвестной'}». Попытку придётся начать заново — пройденное
+              за неё не засчитано.
+            </p>
+          {:else}
+            <p class="note">
+              Начислено по зоне «{ZONE_BY_ID[$offlineReport.zoneId]?.name ?? 'неизвестной'}».
+            </p>
+          {/if}
           <p class="note">
             Добыча в оффлайне не собирается — только золото и опыт.
           </p>
@@ -90,6 +114,9 @@
     margin: 0;
     font-size: var(--text-xs);
     color: var(--c-text-faint);
+  }
+  .note.interrupted {
+    color: var(--c-warning);
   }
   .backdrop {
     position: fixed;

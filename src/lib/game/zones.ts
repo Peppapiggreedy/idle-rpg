@@ -6,7 +6,12 @@ import { restDurationMs, zoneSafety } from './rest'
 import { estimateCombatRate, estimateTtk, expectedMonsterDamage, uptimeFromHpLoss } from './combat'
 import type { PlayMode } from './rotation'
 import { monsterFromTemplate, pushEvent, spawnMonster, type GameState } from './state'
-import { TTK_AHEAD_MIN, TTK_BEHIND_MAX, ZONE_VERDICT_UPTIME } from '../data/balance'
+import {
+  TTK_AHEAD_MIN,
+  TTK_BEHIND_MAX,
+  ZONE_VERDICT_UPTIME,
+  xpGapShare,
+} from '../data/balance'
 import {
   SAFE_ZONE,
   ZONES,
@@ -116,7 +121,15 @@ export function zoneRate(state: GameState, zone: Zone, mode: PlayMode = 'auto'):
     const rate = estimateCombatRate(facing(state, template), mode)
     kills = kills.plus(rate.idealKillsPerSecond)
     gold = gold.plus(rate.idealKillsPerSecond.times(template.goldReward))
-    xp = xp.plus(rate.idealKillsPerSecond.times(template.xpReward))
+    // Штраф за отставание — ПО КАЖДОМУ мобу отдельно, а не по зоне целиком:
+    // внутри одной зоны пять уровней мобов, и на границе штрафа половина пула
+    // может считаться полным опытом, а половина — половинным. Золото рядом
+    // идёт без штрафа: он бьёт только по опыту.
+    xp = xp.plus(
+      rate.idealKillsPerSecond
+        .times(template.xpReward)
+        .times(xpGapShare(state.level.toNumber(), template.level)),
+    )
     hpLoss = hpLoss.plus(rate.hpLossPerSecond)
     cycleSec += rate.idealKillsPerSecond.gt(0)
       ? new Decimal(1).div(rate.idealKillsPerSecond).toNumber()
@@ -156,6 +169,16 @@ export interface ZoneForecast {
   killsPerHour: Decimal
   goldPerHour: Decimal
   xpPerHour: Decimal
+  /**
+   * Доля опыта за отставание — 1, 0.5 или 0 (см. XP_GAP_PENALTY). Считается
+   * по СРЕДНЕМУ уровню мобов зоны, то есть по тому же разрыву, что и levelGap
+   * рядом: два числа в одной строке обязаны быть об одном и том же.
+   *
+   * Реальное начисление идёт ПО КАЖДОМУ мобу, поэтому зона, лежащая на
+   * границе ступени, платит между двумя долями. Точное число видно в
+   * xpPerHour здесь же — это поле для ярлыка, а не для расчёта.
+   */
+  xpShare: number
   verdict: ZoneVerdict
 }
 
@@ -182,6 +205,7 @@ export function forecastZone(state: GameState, zone: Zone): ZoneForecast {
     killsPerHour,
     goldPerHour: rate.goldPerSecond.times(3600),
     xpPerHour: rate.xpPerSecond.times(3600),
+    xpShare: xpGapShare(state.level.toNumber(), averageMonsterLevel(zone)),
     verdict: verdictFor(rate.uptime, killsPerHour, zoneSafety(state, zone).safe),
   }
 }
@@ -242,6 +266,44 @@ export function travelToZone(state: GameState, zoneId: string, rng: Rng): GameSt
   if (!isZoneUnlocked(state, zone)) return state
   if (zone.id === state.currentZoneId) return state
   return enterZone(state, zone, rng, 'travel')
+}
+
+/**
+ * КУДА ВЫХОДИТ ГЕРОЙ ИЗ ПРЕРВАННОГО ЗАБЕГА — данжа, храма и всего закрытого,
+ * что появится позже. Одно правило на всех и полностью детерминированное:
+ * оффлайн начисляется по выбранной зоне, и «зависит от порядка вызовов» здесь
+ * означало бы, что за одно и то же отсутствие платят по-разному.
+ *
+ * Порядок:
+ *   1) последняя зона, где герой выживал, если её мобы не отстали (gap <= 5);
+ *   2) иначе самая высокая ОТКРЫТАЯ зона, где герой не гибнет и мобы не
+ *      отстали;
+ *   3) иначе безопасная.
+ *
+ * «Мобы не отстали» проверяется по НИЖНЕМУ краю полосы: в зоне пять уровней
+ * мобов, и если разрыв велик хотя бы у самого мелкого, часть пула уже платит
+ * половину. Выкидывать героя в такую зону — значит начислить ему оффлайн со
+ * скрытым штрафом.
+ *
+ * «Не гибнет» — вердикт safe или risky. Требование звучало как «не deadly»,
+ * но hopeless ХУЖЕ deadly: там герой не добивает даже одного моба, и оффлайн
+ * вышел бы нулевым. Пропустить вердикт хуже названного значило бы исполнить
+ * требование буквально и с обратным смыслом.
+ */
+export function offlineZone(state: GameState): Zone {
+  const level = state.level.toNumber()
+  // Отставание зоны — по самому мелкому её мобу: он ломается первым.
+  const notBehind = (zone: Zone) => xpGapShare(level, zone.monsterLevelRange.min) >= 1
+  const last = state.lastSurvivedZoneId ? ZONE_BY_ID[state.lastSurvivedZoneId] : null
+  if (last && notBehind(last)) return last
+  // Сверху вниз: первая подходящая и есть самая высокая.
+  for (let i = ZONES.length - 1; i >= 0; i -= 1) {
+    const zone = ZONES[i]
+    if (!isZoneUnlocked(state, zone) || !notBehind(zone)) continue
+    const verdict = forecastZone(state, zone).verdict
+    if (verdict === 'safe' || verdict === 'risky') return zone
+  }
+  return SAFE_ZONE
 }
 
 /** Куда отбрасывает смерть: последняя зона, где герой выживал, иначе безопасная. */

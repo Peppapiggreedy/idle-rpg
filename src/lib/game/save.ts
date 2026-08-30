@@ -10,7 +10,6 @@ import {
   abilitiesOf,
   defaultAbilitySettings,
   emptyEquipment,
-  monsterFromTemplate,
   spawnMonster,
   type AbilitySettings,
   type Equipment,
@@ -48,18 +47,19 @@ import { BRANCHES, talentsInBranch, talentsOfClass } from '../data/talents'
 import {
   ALL_DUNGEONS,
   DUNGEON_BY_ID,
-  buildBoss,
   clearKey,
   dungeonView,
   type DungeonDifficulty,
 } from '../data/dungeons'
-import { currentBoss } from './dungeons'
+import { leaveDungeon } from './dungeons'
 import { QUEST_CHAIN } from '../data/quests'
 import type { DungeonRun, QuestProgress, TempleRun } from '../types'
 import { rankOf } from './talents'
 import { FALLBACK_ITEM_NAME, ITEM_BASE_SELL_PRICE } from '../data/loot'
 import { SAFE_ZONE, ZONE_BY_ID } from '../data/zones'
-import { currentZone, zoneRate } from './zones'
+import { currentZone, offlineZone, zoneRate } from './zones'
+import { leaveTemple } from './temple'
+import type { Rng } from './rng'
 
 export const SAVE_KEY = 'idle-rpg-save'
 /** Все хваты одним списком: сейв принимает только их. */
@@ -722,15 +722,9 @@ export function stateFromPayload(p: SavePayloadV20): GameState {
     autocastReadyMs: {},
     itemSeq: typeof p.itemSeq === 'number' ? p.itemSeq : 0,
   }
-  // Моб не сохраняется: спавним свежего из восстановленной зоны. Поток
-  // случайности берём от сида состояния — загрузка остаётся детерминированной.
-  // Внутри данжа перед героем стоит босс цепочки, а не моб зоны. HP боссу
-  // возвращаем полное: бой начинается заново, зато и ярость сброшена.
-  const boss = currentBoss(restored)
-  restored.monster = boss
-    ? monsterFromTemplate(buildBoss(boss))
-    : spawnMonster(currentZone(restored), createRng(restored.rngSeed))
   // Статы — производные: после загрузки источников пересчитываем конвейером.
+  // Считаем их ДО расформирования забега: выбор зоны для выхода смотрит на
+  // прогноз, а прогноз без пересчитанных статов был бы прогнозом чужого героя.
   const withStats = ensureStats({ ...restored, statsDirty: true })
   // Ресурсы героя: сохранённые значения с капом по пересчитанным статам;
   // отсутствие/мусор в поле (сейв старой версии) означает полный запас.
@@ -743,7 +737,7 @@ export function stateFromPayload(p: SavePayloadV20): GameState {
     typeof value === 'number' && Number.isFinite(value)
       ? Math.min(1, Math.max(0, value))
       : fallback
-  return {
+  const loaded: GameState = {
     ...withStats,
     currentHp: dead ? new Decimal(0) : currentHp,
     currentMana,
@@ -756,6 +750,47 @@ export function stateFromPayload(p: SavePayloadV20): GameState {
     restResourceThreshold: share(p.restResourceThreshold, REST_RESOURCE_THRESHOLD_DEFAULT),
     restSpeedupSource: null,
   }
+  // Поток случайности берём от сида состояния — загрузка детерминированна.
+  return resumeOutside(loaded, createRng(loaded.rngSeed))
+}
+
+/** Что за забег оборвался: код для UI, текст рендерит он же. */
+export type InterruptedRun = 'dungeon' | 'temple'
+
+/** Был ли в сейве незакрытый забег. Читается ДО загрузки — она его снимет. */
+export function interruptedRunOf(p: SavePayloadV20): InterruptedRun | null {
+  if (dungeonRunFromSaved(p.dungeonRun)) return 'dungeon'
+  if (templeRunFromSaved(p.templeRun)) return 'temple'
+  return null
+}
+
+/**
+ * ЗАБЕГ НЕ ПЕРЕЖИВАЕТ ЗАГРУЗКУ СЕЙВА. Общее правило для всего закрытого
+ * контента — данжа, храма и будущего рейда, — и держится оно здесь, в одной
+ * точке, а не по ветке на каждую активность.
+ *
+ * Прерванный забег расформировывается: прогресс цепочки сброшен, лут за уже
+ * убитых боссов остаётся, герой выходит наружу в подходящую по уровню зону
+ * (offlineZone), и оффлайн начисляется ПО НЕЙ. Раньше закрытая внутри данжа
+ * вкладка не приносила вообще ничего — наказание за невнимательность, а не
+ * правило игры.
+ *
+ * Два свойства РАЗНЫЕ, и путать их нельзя: оффлайн начисляется, но сама
+ * попытка НЕ продолжается и НЕ засчитывается — цепочку придётся начинать
+ * заново. Иначе закрытая вкладка проходила бы данжи за игрока.
+ *
+ * Забега не было — просто спавним свежего моба зоны: моб в сейве не хранится.
+ */
+export function resumeOutside(state: GameState, rng: Rng): GameState {
+  // Зона выхода считается ДО выхода: leave* берёт её из currentZoneId, и так
+  // на весь выход приходится ровно один бросок спавна, а не два.
+  if (state.dungeonRun) {
+    return leaveDungeon({ ...state, currentZoneId: offlineZone(state).id }, rng, false)
+  }
+  if (state.templeRun) {
+    return leaveTemple({ ...state, currentZoneId: offlineZone(state).id }, rng, false)
+  }
+  return { ...state, monster: spawnMonster(currentZone(state), rng) }
 }
 
 // Цепочка миграций: MIGRATIONS[v] переводит формат v в v+1.
@@ -1126,6 +1161,10 @@ export interface OfflineReport {
   kills: Decimal
   gold: Decimal
   xp: Decimal
+  /** Зона, по которой считался оффлайн. Название подставляет UI. */
+  zoneId: string
+  /** Забег оборвался закрытой вкладкой и расформирован; null — забега не было. */
+  interrupted: InterruptedRun | null
 }
 
 // Оффлайн-прогресс одним агрегатом, без проигрывания тиков. Темп боя берётся
@@ -1137,9 +1176,10 @@ export function applyOfflineProgress(
 ): { state: GameState; report: OfflineReport | null } {
   let cappedMs = Math.min(elapsedMs, OFFLINE_CAP_MS)
   if (cappedMs <= 0) return { state, report: null }
-  // В данже оффлайна нет: цепочка боссов — активный контент, сама она себя
-  // не проходит. Забег ждёт героя ровно там, где он его оставил.
-  if (state.dungeonRun) return { state, report: null }
+  // Активного забега здесь уже быть не может: его снимает resumeOutside при
+  // загрузке сейва. Проверка оставлена сторожем для прямых вызовов — считать
+  // оффлайн по боссу нельзя, цепочка сама себя не проходит.
+  if (state.dungeonRun || state.templeRun) return { state, report: null }
   // Герой ушёл в оффлайн мёртвым: сперва тратим время на воскрешение.
   if (state.heroState === 'dead') {
     const reviveMs = Math.min(state.reviveMsLeft, cappedMs)
@@ -1206,7 +1246,7 @@ export function applyOfflineProgress(
   if (kills.lte(0)) return { state: s, report: null }
   return {
     state: { ...s, gold: s.gold.plus(gold) },
-    report: { elapsedMs: cappedMs, kills, gold, xp },
+    report: { elapsedMs: cappedMs, kills, gold, xp, zoneId: zone.id, interrupted: null },
   }
 }
 
@@ -1250,12 +1290,17 @@ export function loadGame(deps: SaveDeps = {}): LoadResult {
   const payload = migrateSave(parsed)
   if (payload === null) return { kind: 'error', reason: 'newer-version' }
 
+  // Читаем ДО загрузки: она расформирует забег, и по состоянию его уже не видно.
+  const interrupted = interruptedRunOf(payload)
   let state = stateFromPayload(payload)
   // Отрицательная разница (часы перевели назад) — ничего не начисляем;
   // lastTimestamp обновится ближайшим сохранением.
   const elapsedMs = now() - payload.lastTimestamp
   let offline: OfflineReport | null = null
   if (elapsedMs > 0) ({ state, report: offline } = applyOfflineProgress(state, elapsedMs))
+  // Про оборванный забег модалка обязана сказать вслух: молча пропавшая
+  // цепочка боссов читается как потеря прогресса, а не как правило.
+  if (offline) offline = { ...offline, interrupted }
   return { kind: 'loaded', state, offline }
 }
 

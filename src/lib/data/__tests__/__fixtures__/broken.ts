@@ -743,6 +743,61 @@ export function brokenCases(): BrokenCase[] {
       expect: ['DROP_CHANCE', 'вероятность'],
     },
     {
+      title: 'ступени штрафа опыта идут не по возрастанию разрыва',
+      content: {
+        ...real,
+        balance: {
+          ...real.balance,
+          xpGapPenalty: [
+            { maxGap: 10, share: 1 },
+            { maxGap: 5, share: 0.5 },
+            { maxGap: Number.POSITIVE_INFINITY, share: 0 },
+          ],
+        },
+      },
+      expect: ['XP_GAP_PENALTY', 'недостижима', 'data/balance.ts'],
+    },
+    {
+      title: 'штраф опыта за больший разрыв мягче, чем за меньший',
+      content: {
+        ...real,
+        balance: {
+          ...real.balance,
+          xpGapPenalty: [
+            { maxGap: 5, share: 0.5 },
+            { maxGap: 10, share: 1 },
+            { maxGap: Number.POSITIVE_INFINITY, share: 0 },
+          ],
+        },
+      },
+      expect: ['XP_GAP_PENALTY', 'не мягче', 'data/balance.ts'],
+    },
+    {
+      title: 'доля опыта больше единицы',
+      content: {
+        ...real,
+        balance: {
+          ...real.balance,
+          xpGapPenalty: [{ maxGap: Number.POSITIVE_INFINITY, share: 1.5 }],
+        },
+      },
+      expect: ['XP_GAP_PENALTY', 'доля награды', 'data/balance.ts'],
+    },
+    {
+      title: 'последняя ступень штрафа опыта не накрывает больший разрыв',
+      content: {
+        ...real,
+        balance: {
+          ...real.balance,
+          xpGapPenalty: [
+            { maxGap: 5, share: 1 },
+            { maxGap: 10, share: 0.5 },
+          ],
+        },
+      },
+      expect: ['XP_GAP_PENALTY', 'без доли', 'data/balance.ts'],
+    },
+    {
       title: 'у оружия хват щита',
       content: {
         ...real,

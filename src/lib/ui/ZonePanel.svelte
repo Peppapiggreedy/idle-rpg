@@ -50,6 +50,16 @@
   const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
   const percent = (v: number) => `${Math.round(v * 100)}%`
 
+  // Штраф опыта за отставание. Долю считает логика (forecast.xpShare),
+  // здесь только слова — и слова про то, что золото при этом ЦЕЛОЕ: без
+  // этого игрок решит, что зона сломалась вся.
+  function xpGapText(f: ZoneForecast): string {
+    const gap = Math.round(f.levelGap)
+    const behind = gap < 0 ? `Ты обогнал эту полосу на ${-gap} ${levels(-gap)}` : 'Ты перерос эту полосу'
+    if (f.xpShare <= 0) return `${behind}: опыта здесь больше нет. Золото и материалы — полные.`
+    return `${behind}: опыта здесь ${percent(f.xpShare)} от полного. Золото и материалы — полные.`
+  }
+
   // Сколько ударов держит герой — бесконечность у мирных мобов не показываем.
   function toughness(f: ZoneForecast): string {
     if (!Number.isFinite(f.hitsSurvived)) return 'урона не получаешь'
@@ -106,6 +116,14 @@
             )} · <NumberText value={f.goldPerHour} tone="gold" /> золота/ч ·
             <NumberText value={f.xpPerHour} tone="xp" /> опыта/ч
           </div>
+          {#if f.xpShare < 1}
+            <!-- Штраф за отставание. Цифра золота выше остаётся полной
+                 намеренно: штраф бьёт только по опыту, и строка обязана
+                 сказать это вслух — иначе просевший опыт прочтётся как баг. -->
+            <div class="xp-gap" class:none={f.xpShare <= 0}>
+              {xpGapText(f)}
+            </div>
+          {/if}
           <div class="warning">{warning(f)}, {toughness(f)}.</div>
           <!-- Основание метки поменялось вместе с привалом: он теперь между
                боями, поэтому пережить надо ВСЮ схватку, а не один удар. -->
@@ -276,6 +294,13 @@
   }
   .name {
     font-weight: var(--weight-bold);
+  }
+  .xp-gap {
+    font-size: var(--text-xs);
+    color: var(--c-xp);
+  }
+  .xp-gap.none {
+    color: var(--c-warning);
   }
   .verdict {
     color: var(--verdict-color);

@@ -13,6 +13,7 @@
   import { enterDungeonRun, gameState } from '../stores/game'
   import { Button, Panel, Tag } from './kit'
   import { Icon } from './icons'
+  import { CLOSED_RUN_WARNING } from './runText'
 
   // Ключ статуса — пара (данж, сложность): у одного данжа их две, и вторая
   // затирала бы первую, будь ключом голый id.
@@ -34,6 +35,7 @@
 </script>
 
 <Panel title="Данжи">
+  <p class="closed-run">{CLOSED_RUN_WARNING}</p>
   <ul>
     {#each DUNGEONS as d (d.id)}
       {@const status = statuses.get(d.id)}
@@ -143,6 +145,13 @@
     font-weight: var(--weight-bold);
   }
   .facts,
+  /* Предупреждение про закрытую вкладку: приглушённое, но читаемое —
+     оно снимает страх, а не пугает. */
+  .closed-run {
+    margin: 0;
+    font-size: var(--text-xs);
+    color: var(--c-text-faint);
+  }
   .reason {
     font-size: var(--text-xs);
     color: var(--c-text-muted);

@@ -18,9 +18,9 @@
     "inventorySellTotal": "70"
   },
   "step-12000": {
-    "gold": "3693.7400000000002",
+    "gold": "3774.668",
     "level": "9",
-    "currentXp": "147.4",
+    "currentXp": "127.60000000000001",
     "attackPower": "132.5",
     "avgSwingDamage": "46.3964285714286",
     "weaponSpeed": "2.2000",
@@ -28,29 +28,29 @@
     "equipped": "mainHand,offHand,head,chest,hands,legs,trinket",
     "zone": "shepherds-meadow",
     "lastSurvivedZone": "shepherds-meadow",
-    "monster": "straw-lumberer:1",
-    "mana": "0.8",
+    "monster": "meadow-squelcher:3",
+    "mana": "6.8",
     "abilityCasts": 3,
     "totalTicks": "12000",
     "inventoryCount": 24,
-    "inventorySellTotal": "370"
+    "inventorySellTotal": "380"
   },
   "step-36000": {
-    "gold": "12021.771999999999",
-    "level": "14",
-    "currentXp": "575.52",
-    "attackPower": "142.5",
-    "avgSwingDamage": "47.9678571428572",
+    "gold": "12236.62",
+    "level": "12",
+    "currentXp": "835.4799999999999",
+    "attackPower": "138.5",
+    "avgSwingDamage": "47.3392857142857",
     "weaponSpeed": "2.2000",
-    "swingTime": "2.1586",
+    "swingTime": "2.1628",
     "equipped": "mainHand,offHand,head,chest,hands,legs,trinket",
     "zone": "shepherds-meadow",
     "lastSurvivedZone": "shepherds-meadow",
-    "monster": "pasture-tick:4",
-    "mana": "32.0",
-    "abilityCasts": 1,
+    "monster": "pasture-tick:2",
+    "mana": "6.2",
+    "abilityCasts": 2,
     "totalTicks": "36000",
     "inventoryCount": 24,
-    "inventorySellTotal": "430"
+    "inventorySellTotal": "410"
   }
 }
