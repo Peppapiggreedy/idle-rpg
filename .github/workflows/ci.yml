@@ -12,7 +12,11 @@
 name: CI
 
 on:
+  # labeled/unlabeled обязательны: без них метка `full-checks` не делала бы
+  # ничего до следующего пуша, а перезапуск джоба повторяет СТАРОЕ событие,
+  # в котором метки ещё не было.
   pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
   workflow_dispatch:
 
 jobs:
