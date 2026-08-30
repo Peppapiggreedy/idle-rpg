@@ -268,6 +268,44 @@ export function travelToZone(state: GameState, zoneId: string, rng: Rng): GameSt
   return enterZone(state, zone, rng, 'travel')
 }
 
+/**
+ * КУДА ВЫХОДИТ ГЕРОЙ ИЗ ПРЕРВАННОГО ЗАБЕГА — данжа, храма и всего закрытого,
+ * что появится позже. Одно правило на всех и полностью детерминированное:
+ * оффлайн начисляется по выбранной зоне, и «зависит от порядка вызовов» здесь
+ * означало бы, что за одно и то же отсутствие платят по-разному.
+ *
+ * Порядок:
+ *   1) последняя зона, где герой выживал, если её мобы не отстали (gap <= 5);
+ *   2) иначе самая высокая ОТКРЫТАЯ зона, где герой не гибнет и мобы не
+ *      отстали;
+ *   3) иначе безопасная.
+ *
+ * «Мобы не отстали» проверяется по НИЖНЕМУ краю полосы: в зоне пять уровней
+ * мобов, и если разрыв велик хотя бы у самого мелкого, часть пула уже платит
+ * половину. Выкидывать героя в такую зону — значит начислить ему оффлайн со
+ * скрытым штрафом.
+ *
+ * «Не гибнет» — вердикт safe или risky. Требование звучало как «не deadly»,
+ * но hopeless ХУЖЕ deadly: там герой не добивает даже одного моба, и оффлайн
+ * вышел бы нулевым. Пропустить вердикт хуже названного значило бы исполнить
+ * требование буквально и с обратным смыслом.
+ */
+export function offlineZone(state: GameState): Zone {
+  const level = state.level.toNumber()
+  // Отставание зоны — по самому мелкому её мобу: он ломается первым.
+  const notBehind = (zone: Zone) => xpGapShare(level, zone.monsterLevelRange.min) >= 1
+  const last = state.lastSurvivedZoneId ? ZONE_BY_ID[state.lastSurvivedZoneId] : null
+  if (last && notBehind(last)) return last
+  // Сверху вниз: первая подходящая и есть самая высокая.
+  for (let i = ZONES.length - 1; i >= 0; i -= 1) {
+    const zone = ZONES[i]
+    if (!isZoneUnlocked(state, zone) || !notBehind(zone)) continue
+    const verdict = forecastZone(state, zone).verdict
+    if (verdict === 'safe' || verdict === 'risky') return zone
+  }
+  return SAFE_ZONE
+}
+
 /** Куда отбрасывает смерть: последняя зона, где герой выживал, иначе безопасная. */
 export function retreatZone(state: GameState): Zone {
   const last = state.lastSurvivedZoneId ? ZONE_BY_ID[state.lastSurvivedZoneId] : null

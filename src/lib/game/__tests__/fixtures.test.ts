@@ -537,14 +537,21 @@ describe('фикстуры сейвов', () => {
     expect(s.gold.toNumber()).toBe(320000) // прогресс не потерян
   })
 
-  it('save-v12: забег и достижение переживают загрузку', () => {
+  it('save-v12: достижение переживает загрузку, а забег расформировывается', () => {
+    // ПРАВИЛО ИЗМЕНИЛОСЬ ОСОЗНАННО. Раньше сейв возвращал героя внутрь данжа,
+    // к тому же боссу: закрытая вкладка не приносила вообще ничего, и это
+    // было наказанием за невнимательность. Теперь забег при загрузке
+    // расформировывается, герой выходит наружу, и оффлайн идёт по зоне.
+    //
+    // Заработанное остаётся заработанным: флаг пройденного данжа и его
+    // постоянный бонус к опыту на месте.
     const s = loadFixture('save-v12.json')
-    expect(s.dungeonRun).toMatchObject({ dungeonId: 'sunken-barrow', bossIndex: 1 })
+    expect(s.dungeonRun).toBeNull()
     expect(s.dungeonsCleared['sunken-barrow']).toBe(true)
-    // Перед героем стоит босс цепочки, а не моб зоны, и с полным здоровьем.
-    expect(s.monster.id).toBe(DUNGEONS[0].bosses[1].id)
-    expect(s.monster.currentHp.eq(s.monster.maxHp)).toBe(true)
     expect(clearedXpBonus(s.dungeonsCleared).gt(1)).toBe(true)
+    // Снаружи перед героем обычный моб зоны, а не босс цепочки.
+    expect(DUNGEONS[0].bosses.map((b) => b.id)).not.toContain(s.monster.id)
+    expect(s.monster.currentHp.eq(s.monster.maxHp)).toBe(true)
   })
 
   it('битый забег из сейва выкидывает наружу, а не запирает перед пустотой', () => {
