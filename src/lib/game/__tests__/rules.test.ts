@@ -265,4 +265,25 @@ describe('проверки ловят заведомо битый код', () =>
       expect(why.length, key).toBeGreaterThan(20)
     }
   })
+
+  it('в списках исключений нет мёртвых записей', () => {
+    // Исключение, которое перестало быть нужным, — это тихо расширенное
+    // правило: следующий такой же случай проскочит под старую запись.
+    const ids = contentIds()
+    const usedIds = new Set<string>()
+    const usedConsts = new Set<string>()
+    for (const [file, src] of sources()) {
+      const code = stripComments(src)
+      for (const m of code.matchAll(/[!=]==\s*['"]([^'"]+)['"]|['"]([^'"]+)['"]\s*[!=]==/g)) {
+        const value = m[1] ?? m[2]
+        if (ids.has(value)) usedIds.add(`${file}:${value}`)
+      }
+      for (const line of code.split('\n')) {
+        const c = line.trim().match(/^const\s+([A-Z][A-Z0-9_]*)\s*(?::\s*[\w<>]+\s*)?=\s*-?[\d_.]+\s*$/)
+        if (c) usedConsts.add(`${file}:${c[1]}`)
+      }
+    }
+    expect(Object.keys(ID_BRANCH_ALLOWED).filter((k) => !usedIds.has(k))).toEqual([])
+    expect(Object.keys(TECHNICAL_CONSTANTS).filter((k) => !usedConsts.has(k))).toEqual([])
+  })
 })
