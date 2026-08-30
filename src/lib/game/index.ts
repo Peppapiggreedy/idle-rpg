@@ -113,11 +113,9 @@ export {
   activeTemple,
   enterTemple,
   leaveTemple,
-  msToNextAttempt,
   templeById,
   templeStatus,
   TEMPLE,
-  TEMPLE_DAY_MS,
   recipeUnlocked,
   recipeUnlockWave,
 } from './temple'
@@ -215,7 +213,7 @@ export {
   OFFLINE_MODAL_MIN_MS,
 } from './save'
 export type {
-  SavePayloadV20,
+  SavePayloadV21,
   SavedDungeonRun,
   SavedItem,
   SavedModifier,

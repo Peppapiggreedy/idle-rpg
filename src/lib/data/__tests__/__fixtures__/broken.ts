@@ -27,6 +27,11 @@ function first<T>(list: readonly T[]): T {
   return list[0]
 }
 
+/** Первый ДОБЫВАЕМЫЙ материал: у материала-награды свои правила. */
+function minedMaterial(real: Content) {
+  return real.materials.find((m) => m.award === undefined) ?? first(real.materials)
+}
+
 /** Зона с самой высокой полосой мобов: в неё удобно «ошибочно» ставить вход. */
 function highBandZone(real: Content) {
   return [...real.zones].sort(
@@ -257,9 +262,11 @@ export function brokenCases(): BrokenCase[] {
       title: 'материал не падает ни в одной зоне — рецепты с ним недостижимы',
       content: {
         ...real,
-        materials: patch(real.materials, first(real.materials).id, { zoneIds: [] }),
+        // Берём ДОБЫВАЕМЫЙ материал: у материала-награды пустой список зон
+        // законен, и поломка на нём не показала бы ничего.
+        materials: patch(real.materials, minedMaterial(real).id, { zoneIds: [] }),
       },
-      expect: [first(real.materials).id, 'не падает ни в одной зоне'],
+      expect: [minedMaterial(real).id, 'не падает ни в одной зоне'],
     },
     {
       title: 'материал падает в зоне, которой нет',

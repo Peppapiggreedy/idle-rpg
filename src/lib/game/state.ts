@@ -83,11 +83,11 @@ export interface GameState {
   saveId: number
   /** Активный забег по храму; null — герой снаружи. */
   templeRun: TempleRun | null
-  /** Личный рекорд по волнам. Он же ключ: рубежи открывают рецепты. */
+  /** Храм пройден целиком хотя бы раз: награда за это выдаётся однажды. */
+  templeCleared: boolean
+  /** Личный рекорд: максимальный ПОЛНОСТЬЮ пройденный этаж храма.
+   *  Он же ключ: рубежи открывают рецепты, и он же решает, за что платить. */
   templeBestWave: number
-  /** Отметка РЕАЛЬНОГО времени последнего забега, мс. Часы для храма идут
-   *  только вперёд (см. templeClock), поэтому перевод назад ничего не даёт. */
-  templeLastRunAtMs: number
   /** Цепочка преквестов: сданные задания и счётчик текущего (game/quests.ts). */
   questProgress: QuestProgress
   // Умение типа onNextSwing, поставленное в очередь: заменит следующую
@@ -317,8 +317,8 @@ export function createInitialState(
     procCooldownsMs: {},
     saveId,
     templeRun: null,
+    templeCleared: false,
     templeBestWave: 0,
-    templeLastRunAtMs: 0,
     // Литералом, а не вызовом из quests.ts: state.ts не должен зависеть от
     // модуля, который зависит от него.
     questProgress: { done: {}, counter: 0 },

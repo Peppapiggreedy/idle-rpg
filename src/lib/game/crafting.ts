@@ -80,7 +80,7 @@ export function recipeStatus(state: GameState, recipe: RecipeDef): RecipeStatus 
   // Рецепт-награда храма заперт, пока рекорд по волнам не дорос до рубежа.
   // Правило живёт в данных (recipeUnlocked): списка «выданных наград» в
   // состоянии нет, открывает их сам рекорд.
-  if (!recipeUnlocked(recipe.id, state.templeBestWave)) {
+  if (!recipeUnlocked(recipe.id, state.templeBestWave, state.templeCleared)) {
     return { recipe, canCraft: false, reason: 'locked', missing: [] }
   }
   if (missing.length > 0) return { recipe, canCraft: false, reason: 'materials', missing }

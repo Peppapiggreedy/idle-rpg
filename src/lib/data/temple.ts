@@ -32,16 +32,29 @@ export interface TempleDef {
   /** Ключ интерьера — держится рядом с конфигом ради проверки данных. */
   scenery: DungeonSceneKey
   scene: SceneConfig
+  /**
+   * СКОЛЬКО ЭТАЖЕЙ В ХРАМЕ. Храм конечен, и это условие всей системы наград:
+   * без потолка «полная зачистка» недостижима, а значит недостижимы и
+   * награда за неё, и честное «награды исчерпаны» на входе.
+   */
+  floors: number
   /** Пул бойцов потока. ОДИН на все уровни героя: разницу делает множитель. */
   ladder: readonly MonsterArchetype[]
   /** Множитель наград — то же, что rewardMultiplier у зоны. */
   rewardMultiplier: Decimal
   /** Рубежи наград, строго по возрастанию волн. */
   milestones: readonly TempleMilestone[]
+  /**
+   * Награда за ЭТАЖ: пыль и золото на первом, дальше по ставке роста.
+   * Числа в данных, формула — floorReward ниже.
+   */
+  floorReward: { dust: number; gold: Decimal; growth: number }
+  /**
+   * Награда за ПОЛНУЮ зачистку — ровно один раз за игру. Токен уходит в
+   * мешок и ждёт преквеста рейда, рецепт открывается насовсем.
+   */
+  clearReward: { materialId: string; recipeId: string }
 }
-
-/** Сутки реального времени: ровно одна попытка на них. */
-export const TEMPLE_DAY_MS = 24 * 60 * 60 * 1000
 
 /** Пауза между волнами, игровых мс. Волна должна читаться как волна. */
 export const TEMPLE_WAVE_DELAY_MS = 1200
@@ -97,6 +110,9 @@ export const TEMPLES: TempleDef[] = [
     unlockRequirement: 70,
     scenery: 'vault',
     scene: DUNGEON_SCENES.vault,
+    // Двадцать этажей: столько же, сколько зон в мире. Число видно игроку
+    // с первого захода, и «дошёл до 12 из 20» читается сразу.
+    floors: 20,
     ladder: TRIAL_LADDER,
     // Наравне с самыми глубокими зонами: волна и без того множит награду.
     rewardMultiplier: new Decimal(2.9),
@@ -105,6 +121,10 @@ export const TEMPLES: TempleDef[] = [
       { wave: 10, recipeId: 'trial-helm' },
       { wave: 15, recipeId: 'trial-charm' },
     ],
+    // Пыль и золото растут по этажам той же ставкой, что и награда волны:
+    // глубина стоит дороже, но не настолько, чтобы обесценить всё остальное.
+    floorReward: { dust: 12, gold: new Decimal(2500), growth: 1.18 },
+    clearReward: { materialId: 'trial-token', recipeId: 'trial-crown' },
   },
 ]
 
@@ -133,7 +153,6 @@ export function buildTempleMonster(
   const base = buildMonster(archetype, templeMonsterLevel(heroLevel), temple.rewardMultiplier)
   const hp = waveScale(TEMPLE_WAVE_GROWTH.hp, wave)
   const damage = waveScale(TEMPLE_WAVE_GROWTH.damage, wave)
-  const reward = waveScale(TEMPLE_WAVE_GROWTH.reward, wave)
   return {
     ...base,
     // id уникален по волне: ни сцена, ни лог не должны принимать двух подряд
@@ -142,8 +161,32 @@ export function buildTempleMonster(
     maxHp: base.maxHp.times(hp),
     damageMin: base.damageMin.times(damage),
     damageMax: base.damageMax.times(damage),
-    goldReward: base.goldReward.times(reward),
-    xpReward: base.xpReward.times(reward),
+    // НАГРАДА ЗА ХРАМ — ЭТО ЭТАЖИ, А НЕ МОБЫ. Бойцы храма не дают ни золота,
+    // ни опыта, и это не забывчивость, а замер.
+    //
+    // Пока они платили как обычные мобы, храм на семидесятом уровне давал
+    // 386 578 опыта в час против 249 266 в подходящей зоне — в полтора раза
+    // больше, — и убийств в час тоже больше (383 против 334), то есть и
+    // бросков лута. Кулдауна больше нет, значит заходить можно бесконечно, и
+    // храм мгновенно стал бы лучшей фермой в игре. Лут внутри отключён по той
+    // же причине (см. applyLootDrop в game/tick.ts).
+    //
+    // Множитель волны при этом остаётся в hp и уроне: этажи обязаны тяжелеть.
+    goldReward: new Decimal(0),
+    xpReward: new Decimal(0),
+  }
+}
+
+/**
+ * НАГРАДА ЗА ЭТАЖ: пыль и золото. Растёт степенью от номера этажа — той же
+ * формой, что и числа самого этажа (waveScale), поэтому награда не отстаёт
+ * от того, насколько тяжелее стал бой.
+ */
+export function floorReward(temple: TempleDef, floor: number): { dust: number; gold: Decimal } {
+  const scale = waveScale(temple.floorReward.growth, floor)
+  return {
+    dust: Math.max(1, Math.round(temple.floorReward.dust * scale)),
+    gold: temple.floorReward.gold.times(scale).floor(),
   }
 }
 
@@ -169,7 +212,10 @@ export function recipeUnlockWave(recipeId: string): number | null {
  * ремёсел. Отдельного списка «выданных наград» в состоянии нет — награда
  * открывается рекордом, а рекорд по определению берётся один раз.
  */
-export function recipeUnlocked(recipeId: string, bestWave: number): boolean {
+export function recipeUnlocked(recipeId: string, bestWave: number, cleared = false): boolean {
+  // Рецепт полной зачистки открывает ФЛАГ, а не рекорд: рекорд можно
+  // повторить, зачистку — нет, и награда за неё выдаётся однажды.
+  if (TEMPLES.some((t) => t.clearReward.recipeId === recipeId)) return cleared
   const wave = recipeUnlockWave(recipeId)
   return wave === null || bestWave >= wave
 }

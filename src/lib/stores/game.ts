@@ -243,18 +243,19 @@ export function enterDungeonRun(
   state.update((s) => enterDungeonAction(s, dungeonId, difficulty))
 }
 
-/**
- * Вход в храм испытаний. Часы берутся дефолтом инжектируемого параметра
- * enterTemple: самой логике реальное время не принадлежит.
- */
+/** Вход в храм испытаний. Кулдауна больше нет — часы храму не нужны. */
 export function enterTempleRun(): void {
   recordDecision('temple')
   state.update((s) => enterTempleAction(s))
 }
 
-/** Добровольный выход из храма: попытка уже потрачена, рекорд остаётся. */
+/**
+ * Добровольный выход из храма. Это ЗАВЕРШЕНИЕ забега с результатом, как и
+ * смерть: этажи выше рекорда оплачиваются, рекорд поднимается. Не
+ * засчитывается только БРОШЕННЫЙ забег — закрытая вкладка.
+ */
 export function leaveTempleRun(): void {
-  state.update((s) => leaveTempleAction(s, rng(), false))
+  state.update((s) => leaveTempleAction(s, rng(), false, true))
 }
 
 /** Добровольный выход из данжа: цепочка сбрасывается. */
@@ -485,6 +486,17 @@ export function debugKillMonster(): void {
  *
  * Флаг начатой игры снимается тоже: заново — значит с выбора класса.
  */
+/**
+ * ОТЛАДКА: сброс рекорда храма. Кулдауна больше нет, сбрасывать нечего —
+ * а вот пройти храм заново, чтобы посмотреть награды за этажи, надо уметь.
+ * Кнопка рисуется только при ?debug=1, в simulate.ts и golden-тесте не
+ * участвует вовсе.
+ */
+export function debugResetTempleRecord(): void {
+  state.update((s) => ({ ...s, templeBestWave: 0, templeCleared: false }))
+  persistNow()
+}
+
 export function debugResetSave(): void {
   try {
     clearSave()

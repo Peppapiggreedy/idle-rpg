@@ -7,7 +7,7 @@
   "saveId": 202,
   "templeRun": null,
   "templeBestWave": 0,
-  "templeLastRunAtMs": 0,
+  "templeCleared": false,
   "procCooldownsMs": {},
   "restSpeedupSource": null,
   "lastTimestamp": 1700000000000,

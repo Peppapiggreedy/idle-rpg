@@ -134,6 +134,14 @@ export type CombatEvent =
   // открытый рубежом рецепт и конец забега.
   | { type: 'temple-start'; templeName: string }
   | { type: 'temple-wave'; wave: number; record: boolean }
+  // Итог завершённого забега храма: докуда дошёл и что за это начислено.
+  | {
+      type: 'temple-result'
+      reached: number
+      dust: number
+      gold: Decimal
+      fullClear: boolean
+    }
   | { type: 'temple-reward'; recipeId: string; wave: number }
   | { type: 'temple-end'; wave: number; defeated: boolean }
   // Задание цепочки сдано. chainComplete поднимается один раз — на последнем.
@@ -166,10 +174,14 @@ export interface QuestProgress {
 /** Забег по храму: волна, сутки попытки, сид и уровень героя на входе. */
 export interface TempleRun {
   templeId: string
-  /** Номер волны, с первой. Он же рекорд, если забег кончится здесь. */
+  /** Номер этажа, с первого. Тот, на котором герой стоит СЕЙЧАС. */
   wave: number
-  /** Номер суток попытки: по нему и по saveId считается сид потока волн. */
-  day: number
+  /**
+   * Последний ПОЛНОСТЬЮ пройденный этаж этого забега. Живёт в забеге, а не в
+   * рекорде: рекорд поднимает только завершение забега, и брошенный забег
+   * уносит пройденное с собой.
+   */
+  cleared: number
   seed: number
   /** Уровень героя НА ВХОДЕ: подстройка бойцов не едет вслед за левелапом. */
   level: number

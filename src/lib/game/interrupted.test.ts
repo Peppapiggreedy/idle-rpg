@@ -176,7 +176,7 @@ describe('храм: закрытая вкладка', () => {
       }),
       statsDirty: true,
     })
-    return enterTemple(at, TEMPLE, () => 0)
+    return enterTemple(at, TEMPLE)
   }
 
   it('выход ведёт в полосу входа храма, а не в чужую', () => {
@@ -205,12 +205,16 @@ describe('храм: закрытая вкладка', () => {
     expect(state.templeBestWave).toBe(inside.templeBestWave)
   })
 
-  it('попытка потрачена: она списывается на входе, а не на выходе', () => {
-    // Пересчитывать попытку обратно нельзя — иначе перезагрузка стала бы
-    // способом получить вторую попытку за сутки.
+  it('брошенный забег НЕ засчитывается: рекорд и награды не меняются', () => {
+    // Это и есть вторая половина пары «смерть засчитывается, прерывание —
+    // нет». Смерть проверяется в temple-record.test.ts.
     const inside = inTemple()
+    const before = { record: inside.templeBestWave, dust: inside.enchantDust, gold: inside.gold }
     const { state } = reloadAfter(inside, HOUR)
-    expect(state.templeLastRunAtMs).toBe(inside.templeLastRunAtMs)
+    expect(state.templeBestWave).toBe(before.record)
+    expect(state.enchantDust.eq(before.dust)).toBe(true)
+    // Золото могло вырасти за оффлайн, но не за этажи: рекорд не сдвинулся.
+    expect(state.templeCleared).toBe(false)
   })
 })
 

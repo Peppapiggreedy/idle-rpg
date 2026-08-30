@@ -1062,7 +1062,7 @@ export const MATERIAL_SCHEMA: EntitySchema<MaterialDef> = {
   numbers: [
     {
       field: 'weight',
-      get: (m) => m.weight,
+      get: (m) => (m.award === undefined ? m.weight : 1),
       min: 0,
       exclusiveMin: true,
       why: 'нулевой вес рулетки означал бы, что материал не падает никогда',
@@ -1070,12 +1070,24 @@ export const MATERIAL_SCHEMA: EntitySchema<MaterialDef> = {
   ],
   extra: (material, content, report) => {
     const where = `материал ${material.id}`
-    // Материал без зоны — недостижимый контент: рецепт с ним не собрать никогда.
+    // Материал без зоны — недостижимый контент: рецепт с ним не собрать
+    // никогда. Исключение ровно одно и названо в самих данных: материал,
+    // который ВЫДАЁТСЯ за достижение, а не падает. Проверка при этом не
+    // отключается — она спрашивает про второй источник.
+    const awarded = material.award !== undefined
     report.need(
-      Array.isArray(material.zoneIds) && material.zoneIds.length > 0,
+      awarded || (Array.isArray(material.zoneIds) && material.zoneIds.length > 0),
       where,
-      'не падает ни в одной зоне — рецепты с ним недостижимы (data/materials.ts)',
+      'не падает ни в одной зоне и не выдаётся за достижение — рецепты с ним ' +
+        'недостижимы (data/materials.ts)',
     )
+    if (awarded && material.award === 'temple-clear') {
+      report.need(
+        content.temples.some((t) => t.clearReward.materialId === material.id),
+        where,
+        'помечен наградой за зачистку храма, но ни один храм его не выдаёт (data/temple.ts)',
+      )
+    }
     for (const id of material.zoneIds ?? []) {
       report.need(
         content.zones.some((z) => z.id === id),
@@ -1130,7 +1142,9 @@ export const RECIPE_SCHEMA: EntitySchema<RecipeDef> = {
     // прогрессом. Достаточно, чтобы каждый падал хотя бы в одной зоне.
     for (const input of recipe.inputs ?? []) {
       const material = content.materials.find((m) => m.id === input.materialId)
-      if (material && material.zoneIds.length === 0) {
+      // Материал-НАГРАДА добывается не в зоне, а достижением, и его
+      // достижимость проверена своей схемой: там же сказано, кто его выдаёт.
+      if (material && material.award === undefined && material.zoneIds.length === 0) {
         report.add(
           where,
           `материал «${input.materialId}» не падает ни в одной зоне — рецепт ` +
@@ -1554,6 +1568,35 @@ export const TEMPLE_SCHEMA: EntitySchema<TempleDef> = {
   ],
   extra: (temple, content, report) => {
     const where = `храм ${temple.id}`
+    // Награда за полную зачистку — две ссылки, и обе обязаны существовать:
+    // токен ниоткуда и рецепт-призрак заперли бы конец храма навсегда.
+    report.need(
+      content.materials.some((m) => m.id === temple.clearReward.materialId),
+      where,
+      `за полную зачистку выдаёт «${temple.clearReward.materialId}», которого нет ` +
+        'в data/materials.ts',
+    )
+    report.need(
+      content.recipes.some((r) => r.id === temple.clearReward.recipeId),
+      where,
+      `за полную зачистку открывает рецепт «${temple.clearReward.recipeId}», которого нет ` +
+        'в data/recipes.ts',
+    )
+    report.need(
+      Number.isInteger(temple.floors) && temple.floors > 0,
+      where,
+      `этажей ${temple.floors}: храм обязан быть конечным, иначе полная зачистка ` +
+        'недостижима (data/temple.ts)',
+    )
+    // Рубеж выше потолка не возьмёт никто.
+    for (const milestone of temple.milestones) {
+      report.need(
+        milestone.wave <= temple.floors,
+        where,
+        `рубеж на ${milestone.wave} этаже выше потолка в ${temple.floors} — его не взять ` +
+          'никогда (data/temple.ts)',
+      )
+    }
     report.need(
       content.zones.some((z) => z.id === temple.zoneId),
       where,
