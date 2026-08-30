@@ -10,6 +10,7 @@ import { SAFE_ZONE, ZONE_BY_ID } from '../../data/zones'
 import { ABILITY_BY_ID } from '../../data/abilities'
 import {
   GCD_MS,
+  INVENTORY_SIZE,
   REST_HP_THRESHOLD_DEFAULT,
   VIT_BLOCK_VALUE,
   itemLevelScale,
@@ -81,6 +82,7 @@ describe('фикстуры сейвов', () => {
     ['save-v16.json'],
     ['save-v17.json'],
     ['save-v18.json'],
+    ['save-v19.json'],
   ])('%s мигрирует до текущей версии', (name) => {
     const payload = migrateSave(JSON.parse(fixture(name)))
     expect(payload).not.toBeNull()
@@ -110,6 +112,61 @@ describe('фикстуры сейвов', () => {
       expect(payload.materials).toBeDefined()
     },
   )
+
+  it('save-v19 -> v20: незаконная связка рук расформирована', () => {
+    // В 19-й версии хвата не было: оружие несло hands, а щит не был отмечен
+    // никак. Формат просто не умел сказать «так нельзя» — и сейв мог нести
+    // двуручное вместе с занятой второй рукой. Здесь оно и расходится.
+    const state = loadFixture('save-v19.json')
+    expect(state.equipment.mainHand?.grip).toBe('two')
+    // Вторая рука освобождена, а снятое НЕ ПОТЕРЯНО — оно в сумке.
+    expect(state.equipment.offHand).toBeNull()
+    expect(state.inventory.map((i) => i.id)).toContain('item-2')
+    // Хват проставлен всем, кто идёт в руки, и щит опознан щитом — по своим
+    // модификаторам, а не по слоту, в котором он лежал.
+    const shield = state.inventory.find((i) => i.id === 'item-4')
+    expect(shield?.grip).toBe('shield')
+    const oneHanded = state.inventory.find((i) => i.id === 'item-3')
+    expect(oneHanded?.grip).toBe('one')
+    // Брони правила рук не касаются: хвата у неё нет вовсе.
+    expect(state.inventory.find((i) => i.slot === 'chest')?.grip).toBeUndefined()
+    // Прогресс не тронут: расформирование — про руки, а не про героя.
+    expect(state.level.toNumber()).toBe(28)
+    expect(state.gold.toString()).toBe('760000')
+  })
+
+  it('save-v19 -> v20: щит из главной руки уходит в сумку', () => {
+    // Второй вид незаконной связки. Фикстура несёт первый (одна пара рук —
+    // одна связка), поэтому этот случай собираем поверх неё точечно.
+    const raw = JSON.parse(fixture('save-v19.json'))
+    raw.equipment.mainHand = raw.inventory.find((i: { id: string }) => i.id === 'item-4')
+    raw.equipment.mainHand.slot = 'mainHand'
+    raw.equipment.offHand = null
+    raw.inventory = raw.inventory.filter((i: { id: string }) => i.id !== 'item-4')
+    const payload = migrateSave(raw)!
+    expect(payload.version).toBe(SAVE_VERSION)
+    expect(payload.equipment.mainHand).toBeNull()
+    expect(payload.inventory.map((i) => i.id)).toContain('item-4')
+    expect(payload.inventory.find((i) => i.id === 'item-4')?.grip).toBe('shield')
+  })
+
+  it('save-v19 -> v20: снятому некуда лечь — оно уходит в золото по цене', () => {
+    // Действующее правило вытеснения: если сумка полна, в золото уходит
+    // самый дешёвый из претендентов. Полной мерой ценности здесь
+    // воспользоваться нельзя — состояния игры до миграции ещё нет.
+    const raw = JSON.parse(fixture('save-v19.json'))
+    const cheap = { ...raw.inventory[0], rarity: 'common' }
+    raw.inventory = Array.from({ length: INVENTORY_SIZE }, (_, i) => ({
+      ...cheap,
+      id: `filler-${i}`,
+    }))
+    const before = Number(raw.gold)
+    const payload = migrateSave(raw)!
+    expect(payload.inventory).toHaveLength(INVENTORY_SIZE)
+    // Снятая вторая рука ценнее наполнителя, поэтому в сумку попала она.
+    expect(payload.inventory.map((i) => i.id)).toContain('item-2')
+    expect(Number(payload.gold)).toBeGreaterThan(before)
+  })
 
   it('save-v17 -> v18: заточка снесена, вещи получили уровень своей зоны', () => {
     // Сила ветерана переезжает в вещи: каждый предмет получает уровень мобов
@@ -340,7 +397,7 @@ describe('фикстуры сейвов', () => {
     expect(s.equipment.mainHand?.slot).toBe('mainHand')
     // Одноручное по нынешним меркам: всё сохранённое оружие строилось с одним
     // отношением урона к скорости. Вторая рука у старого героя свободна.
-    expect(s.equipment.mainHand?.hands).toBe(1)
+    expect(s.equipment.mainHand?.grip).toBe('one')
     expect(s.equipment.offHand).toBeNull()
     expect(s.stats.weaponSpeed).toBeCloseTo(3.4, 9)
     // Урон домножен миграцией v18 на масштаб уровня вещи: герой жил в

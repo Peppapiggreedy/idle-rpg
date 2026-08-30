@@ -57,7 +57,7 @@
 | `rotation.ts` | раскладка ротации по приоритетам под ограничение маны: `rotationRate(stats, settings, plan)`, где `plan` — две оси, «через задержку реакции или сразу» и «только отмеченное галкой или всё». Отсюда берутся обе цифры урона в секунду; своей формулы урона нет | numbers, combat, state, data/{abilities,balance} |
 | `abilities.ts` | активные умения: `abilityStatus` (коды отказа `dead`/`cooldown`/`gcd`/`no-mana`), `useAbility` (мгновенное бьёт сразу, `onNextSwing` встаёт в очередь / снимается с неё), `consumeQueuedAbility` (замах заменяется умением, мана списывается здесь), `advanceCooldowns`, `autocastStep` (таймер реакции по каждому умению + применение первого доступного по приоритету) и `autocastCandidates`. Своей формулы урона нет — зовёт `rollSwing` с долей `weaponDamagePercent` | numbers, combat, state, data/{balance,abilities} |
 | `zones.ts` | доступ к зонам (`isZoneUnlocked`), переходы (`travelToZone`, `activateAbility`, `setAbilityAutocast`, `moveAbilityPriority`, `investTalentPoint`, `resetTalentTree`, `enterDungeonRun`, `leaveDungeonRun`, `reviveInZone`, `retreatZone`) и **честный прогноз опасности**: `zoneRate` (темп зоны — среднее по пулу × уровням, смертность один раз на зону по средней потере HP) и `forecastZone` → `ZoneForecast` с кодом вердикта `safe/risky/deadly/hopeless`. Своей формулы боя нет — зовёт `estimateCombatRate` | numbers, combat, state, data/{balance,zones} |
-| `equipment.ts` | надеть/снять/сравнить: `equipItem` (снятое возвращается в инвентарь), `unequipItem` (нужен свободный слот сумки), `isEquipped`, `isUpgrade` и `upgradeShare` (**строго по `estimateCombatRate().damagePerSecond`**, не по сумме статов; автонадевания больше нет — решение принимает игрок), `compareItem` → `EquipComparison` с производными числами для UI | combat, stats, state, data/{balance,slots}, types |
+| `equipment.ts` | надеть/снять/сравнить: **`equipStatus` — правила ХВАТА с кодом отказа** (`two-handed-needs-both`, `shield-offhand-only`, `occupied-by-two-handed`; текст рендерит UI), `equipItem` (снятое возвращается в сумку; отказ — ничего не делать), `unequipItem` (нужен свободный слот сумки), `isEquipped`, `isUpgrade` и `upgradeShare` (**строго по `estimateCombatRate().killsPerSecond`**, не по сумме статов; автонадевания больше нет — решение принимает игрок), `compareItem` → `EquipComparison` с производными числами для UI | combat, stats, state, data/{balance,slots,items}, types |
 | `combat.ts` | **ЕДИНСТВЕННЫЙ дом боевых формул**: `rollSwing` (бросок урона оружия + вклад силы атаки + крит), `rollMonsterDamage`, `swingDamageRange`/`expectedSwingDamage`/`critFactor`, `estimateCombatRate` (урон/с, убийств/с, uptime, время до смерти; цикл «фарм → смерть → воскрешение»). tick вызывает эти функции, оффлайн-агрегат — только `estimateCombatRate`; своей формулы нет ни у кого | numbers, rng, state, stats, data/balance, types |
 | `formulas.ts` | `xpToNextLevel` — цена уровня из ТАБЛИЦЫ УБИЙСТВ (`killsToNextLevel`) через опыт настоящего моба своей полосы (`zoneForMonsterLevel`), а не из подобранной степени; `applyXp` (перенос остатка, мультиуровень, остановка на `LEVEL_CAP`) | numbers, data/{balance,zones,monsters}, types |
 | `loop.ts` | планировщик: rAF + аккумулятор, фикс. шаг `STEP_MS=100`, максимум 10 шагов/кадр, сброс «долга»; метрики fps/tps; `setSpeed(m)` — дебаг-ускорение игрового времени (лимит шагов за кадр сохраняется); `setFpsLimit(fps)` — потолок частоты кадров: пропущенный кадр НЕ двигает точку отсчёта, поэтому игровое время не теряется (закреплено тестом). Технические константы живут здесь — это не баланс | — |
@@ -239,7 +239,7 @@ localStorage выставил бы один кадр в секунду) и `acti
 Только используемое: `Monster` (с `level`), `MonsterTemplate`, `UpgradeDef`, `Rarity`, `Item`
 (`{id, name, rarity, slot, mods}` — прямых полей бонуса нет), `CombatEvent` (включая `ability` и `effect` — с id умения, а не именем),
 `AttackEvent` (у умения `abilityId` заполнен). `Decimal` импортируется из `game/numbers`, не из break_infinity.
-Реальный формат сейва — `SavePayloadV12`, экспортируется из `save.ts`.
+Реальный формат сейва — `SavePayloadV20`, экспортируется из `save.ts`.
 
 ## 2. Состояние
 
@@ -334,9 +334,9 @@ haste сократился бы сам с собой и не повышал ур
 
 ## 4. Сохранение
 
-- Версия формата: **19** (`SAVE_VERSION`), ключ `idle-rpg-save`. Автосейв 15 с
+- Версия формата: **20** (`SAVE_VERSION`), ключ `idle-rpg-save`. Автосейв 15 с
   (значение в `data/balance.ts`) + `visibilitychange`.
-- Формат — `SavePayloadV19` (Decimal строками). Кроме прежних полей он несёт:
+- Формат — `SavePayloadV20` (Decimal строками). Кроме прежних полей он несёт:
   мешок (`materials` — материалы, травы, еда, склянки, реагенты), `enchantDust`,
   действующие зелья, внутренние кулдауны проков, заряды умений, `saveId`,
   забег по храму с рекордом и отметкой попытки, прогресс цепочки заданий,
@@ -354,7 +354,15 @@ haste сократился бы сам с собой и не повышал ур
 - Прямых полей урона в формате нет — статы пересчитываются из источников.
   Не сохраняются: monster/respawn, combatLog, xpToNext, msSinceAutosave,
   `herbProgress` (недорезанная доля пучка прогрессом не считается).
-- Миграций девятнадцать, и каждая описана в `MIGRATIONS` рядом со своим
+- Миграция 19 → 20 ввела ХВАТ. В 19-й версии двуручность жила отдельным полем
+  `hands`, а щит не был отмечен никак — его опознавали по слоту, в котором он
+  лежал, и формат просто не умел сказать «так нельзя». Хват проставляется по
+  МОДИФИКАТОРАМ (базовая скорость оружия против базы блока), а не по слоту:
+  правленый сейв мог положить щит куда угодно. Незаконные связки при этом
+  расформировываются — двуручное с занятой второй рукой, щит в главной,
+  двуручное во второй; снятое уходит в сумку, не влезло — по действующему
+  правилу вытеснения в золото уходит самый дешёвый из претендентов.
+- Миграций двадцать, и каждая описана в `MIGRATIONS` рядом со своим
   номером. Последняя, 18→19, самая содержательная: снесено автонадевание,
   уровень подрезан потолком, опыт пересчитан с прежней кривой на новую
   с сохранением ДОЛИ полоски, а ранги старого общего дерева перенесены

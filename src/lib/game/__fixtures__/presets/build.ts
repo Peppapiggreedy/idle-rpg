@@ -16,7 +16,7 @@ import { equipItem } from '../../equipment'
 import { rollBossLoot, rollLoot } from '../../loot'
 import { investTalent } from '../../talents'
 import { travelToZone } from '../../zones'
-import { payloadFromState, type SavePayloadV19 } from '../../save'
+import { payloadFromState, type SavePayloadV20 } from '../../save'
 import { DUNGEONS } from '../../../data/dungeons'
 import { TALENTS } from '../../../data/talents'
 import { SLOT_IDS } from '../../../data/slots'
@@ -110,7 +110,7 @@ function rich(): GameState {
   // выбивает двуручное обратно в сумку, и слепой обход слотов оставил бы
   // героя с пустой правой рукой — то есть с голыми кулаками на 22 уровне.
   for (const slot of SLOT_IDS) {
-    if (slot === 'offHand' && state.equipment.mainHand?.hands === 2) continue
+    if (slot === 'offHand' && state.equipment.mainHand?.grip === 'two') continue
     const item = state.inventory.find((i) => i.slot === slot)
     if (item) state = equipItem(state, item.id)
   }
@@ -135,6 +135,6 @@ export function buildPreset(name: PresetName): GameState {
   return BUILDERS[name]()
 }
 
-export function presetPayload(name: PresetName): SavePayloadV19 {
+export function presetPayload(name: PresetName): SavePayloadV20 {
   return payloadFromState(buildPreset(name), FROZEN_TIMESTAMP)
 }

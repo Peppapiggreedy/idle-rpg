@@ -4,6 +4,7 @@ import { INVENTORY_SIZE, rollLoot, rollRarity, rollSlot, sellItem, sellPrice } f
 import { equipItem } from './equipment'
 import { SLOT_IDS } from '../data/slots'
 import { createInitialState, emptyEquipment, tick, type GameState } from './tick'
+import { createRng } from './rng'
 import { ensureStats } from './stats'
 import { STEP_MS } from './loop'
 import { DROP_CHANCE } from '../data/loot'
@@ -108,8 +109,8 @@ describe('левая рука: щит или второй клинок', () => {
     const item = rollLoot(seqRng([0, 0, 0.2, 0, 0.1, 0]), 3)
     expect(item!.slot).toBe('offHand')
     expect(item!.name).toBe('Щербатый Заслон')
-    // Щит — не оружие: поля hands у него нет вовсе.
-    expect(item!.hands).toBeUndefined()
+    // Щит падает ТОЛЬКО щитом: хват приходит из шаблона, а не броском.
+    expect(item!.grip).toBe('shield')
     const base = item!.mods.filter((m) => m.kind === 'base')
     expect(base.map((m) => m.stat).sort()).toEqual(['blockChance', 'blockValue'])
     expect(base.every((m) => m.source === 'equipment:offHand')).toBe(true)
@@ -120,7 +121,7 @@ describe('левая рука: щит или второй клинок', () => {
   it('бросок выше доли щитов даёт ОДНОРУЧНОЕ оружие со своей базой', () => {
     const item = rollLoot(seqRng([0, 0, 0.2, 0, 0.9, 0]), 4)
     expect(item!.slot).toBe('offHand')
-    expect(item!.hands).toBe(1)
+    expect(item!.grip).toBe('one')
     const base = item!.mods.filter((m) => m.kind === 'base')
     // База у левой руки СВОЯ: иначе второе оружие подменяло бы базу первого.
     expect(base.map((m) => m.stat).sort()).toEqual([
@@ -131,12 +132,42 @@ describe('левая рука: щит или второй клинок', () => {
     expect(base.every((m) => m.source === 'equipment:offHand')).toBe(true)
   })
 
+  it('у каждой находки в руку есть хват, и он из шаблона', () => {
+    // Требование к генерации: хват не выдумывается на месте и не бросается
+    // отдельным броском — он приходит из шаблона. Проверяем всю рулетку:
+    // предмет в руку без хвата правил рук не знает вовсе.
+    const gripsInHands = new Set<string>()
+    const rng = createRng(2026)
+    for (let i = 0; i < 4000; i += 1) {
+      const item = rollLoot(rng, i)
+      if (!item) continue
+      if (item.slot !== 'mainHand' && item.slot !== 'offHand') {
+        // Броня в руки не идёт — хвата у неё нет и быть не должно.
+        expect(item.grip, item.name).toBeUndefined()
+        continue
+      }
+      expect(item.grip, item.name).toBeDefined()
+      gripsInHands.add(`${item.slot}:${item.grip}`)
+      // Щит — только во вторую руку: в главную он не падает никогда.
+      if (item.grip === 'shield') expect(item.slot).toBe('offHand')
+      // Двуручное — только в главную.
+      if (item.grip === 'two') expect(item.slot).toBe('mainHand')
+    }
+    // Рулетка и правда выдала все три хвата, а не один и тот же.
+    expect([...gripsInHands].sort()).toEqual([
+      'mainHand:one',
+      'mainHand:two',
+      'offHand:one',
+      'offHand:shield',
+    ])
+  })
+
   it('двуручное в левую руку не падает никогда', () => {
     // Прогоняем всю рулетку образцов: двуручное туда попасть не должно.
     for (let i = 0; i < 20; i += 1) {
       const item = rollLoot(seqRng([0, 0, 0.2, 0, 0.9, i / 20]), i)
       expect(item!.slot).toBe('offHand')
-      expect(item!.hands).toBe(1)
+      expect(item!.grip).toBe('one')
     }
   })
 })

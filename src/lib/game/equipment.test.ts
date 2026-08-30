@@ -5,6 +5,7 @@ import {
   equipmentWith,
   compareItem,
   equipItem,
+  equipStatus,
   isEquipped,
   isUpgrade,
   unequipItem,
@@ -41,7 +42,7 @@ function bareWeapon(t: WeaponTemplate, slot: 'mainHand' | 'offHand' = 'mainHand'
     rarity: 'common' as Rarity,
     slot,
     level: 1,
-    hands: t.hands,
+    grip: t.grip,
     mods: [
       { stat: off ? 'offhandSpeed' : 'weaponSpeed', kind: 'base', value: t.weaponSpeed, source },
       { stat: off ? 'offhandDamageMin' : 'weaponDamageMin', kind: 'base', value: t.damageMin, source },
@@ -59,6 +60,7 @@ function bareShield(t: ShieldTemplate): Item {
     rarity: 'common' as Rarity,
     slot: 'offHand',
     level: 1,
+    grip: t.grip,
     mods: [
       { stat: 'blockChance', kind: 'base', value: t.blockChance, source },
       { stat: 'blockValue', kind: 'base', value: t.blockValue, source },
@@ -141,7 +143,7 @@ describe('инвариант: равный урон оружия в секунд
       name: `два ${t.noun}`,
       items: [bareWeapon(t, 'mainHand'), bareWeapon(t, 'offHand')],
     })),
-    ...WEAPONS.filter((t) => t.hands === 2).map((t) => ({
+    ...WEAPONS.filter((t) => t.grip === 'two').map((t) => ({
       name: t.noun,
       items: [bareWeapon(t, 'mainHand')],
     })),
@@ -274,7 +276,7 @@ describe('две руки: правила связки', () => {
   it('двуручное занимает обе руки и освобождает левую', () => {
     const main = bareWeapon(ONE_HANDED[0], 'mainHand')
     const off = bareWeapon(ONE_HANDED[0], 'offHand')
-    const two = bareWeapon(WEAPONS.find((w) => w.hands === 2)!, 'mainHand')
+    const two = bareWeapon(WEAPONS.find((w) => w.grip === 'two')!, 'mainHand')
     let s = equipAll([main, off])
     expect(s.equipment.offHand?.id).toBe(off.id)
     s = equipItem({ ...s, inventory: [two] }, two.id)
@@ -284,14 +286,61 @@ describe('две руки: правила связки', () => {
     expect(s.inventory.map((i) => i.id).sort()).toEqual([main.id, off.id].sort())
   })
 
-  it('предмет в левую руку снимает надетое двуручное', () => {
-    const two = bareWeapon(WEAPONS.find((w) => w.hands === 2)!, 'mainHand')
+  // ПРАВИЛО ИЗМЕНИЛОСЬ ОСОЗНАННО. Раньше предмет в левую руку молча срывал
+  // надетое двуручное — то есть одно нажатие меняло связку целиком, и игрок
+  // узнавал об этом уже по упавшему урону. Теперь это ОТКАЗ с причиной:
+  // двуручное снимают сами, и решение остаётся за игроком.
+  it('во вторую руку при двуручном — отказ, а не молчаливый срыв связки', () => {
+    const two = bareWeapon(WEAPONS.find((w) => w.grip === 'two')!, 'mainHand')
     const off = bareWeapon(ONE_HANDED[0], 'offHand')
     let s = equipAll([two])
-    s = equipItem({ ...s, inventory: [off] }, off.id)
-    expect(s.equipment.offHand?.id).toBe(off.id)
-    expect(s.equipment.mainHand).toBeNull()
-    expect(s.inventory.map((i) => i.id)).toEqual([two.id])
+    s = { ...s, inventory: [off] }
+    expect(equipStatus(s, off).reason).toBe('occupied-by-two-handed')
+    const after = equipItem(s, off.id)
+    // Ничего не изменилось: ни руки, ни сумка.
+    expect(after.equipment.mainHand?.id).toBe(two.id)
+    expect(after.equipment.offHand).toBeNull()
+    expect(after.inventory.map((i) => i.id)).toEqual([off.id])
+  })
+
+  it('щит в главную руку не надевается ни при каких условиях', () => {
+    const shield = { ...bareShield(SHIELDS[0]), slot: 'mainHand' as const }
+    const s = { ...equipAll([]), inventory: [shield] }
+    expect(equipStatus(s, shield).reason).toBe('shield-offhand-only')
+    expect(equipItem(s, shield.id).equipment.mainHand).toBeNull()
+  })
+
+  it('двуручное не надеть, когда снятому некуда лечь', () => {
+    // Сумка полна, обе руки заняты: двуручное сняло бы ДВА предмета, а
+    // освободило бы одно место. Отказ — и ни один предмет не потерян.
+    const two = bareWeapon(WEAPONS.find((w) => w.grip === 'two')!, 'mainHand')
+    const main = bareWeapon(ONE_HANDED[0], 'mainHand')
+    const off = bareWeapon(ONE_HANDED[0], 'offHand')
+    const filler = Array.from({ length: INVENTORY_SIZE - 1 }, (_, i) => ({
+      ...bareWeapon(ONE_HANDED[0], 'mainHand'),
+      id: `filler-${i}`,
+    }))
+    let s = equipAll([main, off])
+    s = { ...s, inventory: [two, ...filler] }
+    expect(s.inventory).toHaveLength(INVENTORY_SIZE)
+    expect(equipStatus(s, two).reason).toBe('two-handed-needs-both')
+    const after = equipItem(s, two.id)
+    expect(after.equipment.mainHand?.id).toBe(main.id)
+    expect(after.inventory).toHaveLength(INVENTORY_SIZE)
+  })
+
+  it('двуручное само снимает вторую руку в сумку, когда место есть', () => {
+    const two = bareWeapon(WEAPONS.find((w) => w.grip === 'two')!, 'mainHand')
+    const main = bareWeapon(ONE_HANDED[0], 'mainHand')
+    const off = bareWeapon(ONE_HANDED[0], 'offHand')
+    let s = equipAll([main, off])
+    s = { ...s, inventory: [two] }
+    expect(equipStatus(s, two).canEquip).toBe(true)
+    const after = equipItem(s, two.id)
+    expect(after.equipment.mainHand?.id).toBe(two.id)
+    expect(after.equipment.offHand).toBeNull()
+    // Обе снятые вещи в сумке, а не в небытии.
+    expect(after.inventory.map((i) => i.id).sort()).toEqual([main.id, off.id].sort())
   })
 
   it('щит и оружие в левой руке одновременно невозможны', () => {
@@ -309,7 +358,7 @@ describe('две руки: правила связки', () => {
   it('правило связки — чистая функция, её же зовёт и оценка «а если надеть»', () => {
     const main = bareWeapon(ONE_HANDED[0], 'mainHand')
     const off = bareWeapon(ONE_HANDED[0], 'offHand')
-    const two = bareWeapon(WEAPONS.find((w) => w.hands === 2)!, 'mainHand')
+    const two = bareWeapon(WEAPONS.find((w) => w.grip === 'two')!, 'mainHand')
     const worn = equipAll([main, off]).equipment
     const { equipment, removed } = equipmentWith(worn, two)
     expect(equipment.offHand).toBeNull()
@@ -322,7 +371,7 @@ describe('две руки: правила связки', () => {
     // громадный апгрейд и молча отобрало бы вторую руку.
     const main = bareWeapon(ONE_HANDED[0], 'mainHand')
     const off = bareWeapon(ONE_HANDED[0], 'offHand')
-    const two = bareWeapon(WEAPONS.find((w) => w.hands === 2)!, 'mainHand')
+    const two = bareWeapon(WEAPONS.find((w) => w.grip === 'two')!, 'mainHand')
     const dual = { ...equipAll([main, off]), abilitySettings: manualOnlySettings() }
     const single = { ...equipAll([main]), abilitySettings: manualOnlySettings() }
     const share = (state: GameState) =>

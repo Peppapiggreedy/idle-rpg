@@ -2,7 +2,7 @@
 // строкой через toString(). localStorage и часы инжектируются, чтобы логика
 // тестировалась в node без браузера.
 import { Decimal } from './numbers'
-import { RARITY_BY_ID } from '../data/rarity'
+import { RARITY_BY_ID, type RarityDef } from '../data/rarity'
 import type { Item, Rarity } from '../types'
 import { applyXp, xpToNextLevel } from './formulas'
 import {
@@ -24,7 +24,9 @@ import { ENCHANT_BY_ID } from '../data/enchants'
 import { PROC_BY_ID } from '../data/procs'
 import { ensureStats, STAT_IDS, type ModifierKind, type StatId, type StatModifier } from './stats'
 import { SLOT_IDS, type SlotId } from '../data/slots'
+import type { Grip } from '../data/items'
 import {
+  INVENTORY_SIZE,
   AUTOSAVE_INTERVAL_S,
   GCD_MS,
   REGEN_DELAY_S,
@@ -55,12 +57,15 @@ import { currentBoss } from './dungeons'
 import { QUEST_CHAIN } from '../data/quests'
 import type { DungeonRun, QuestProgress, TempleRun } from '../types'
 import { rankOf } from './talents'
-import { FALLBACK_ITEM_NAME } from '../data/loot'
+import { FALLBACK_ITEM_NAME, ITEM_BASE_SELL_PRICE } from '../data/loot'
 import { SAFE_ZONE, ZONE_BY_ID } from '../data/zones'
 import { currentZone, zoneRate } from './zones'
 
 export const SAVE_KEY = 'idle-rpg-save'
-export const SAVE_VERSION = 19
+/** Все хваты одним списком: сейв принимает только их. */
+const GRIPS: Grip[] = ['one', 'two', 'shield']
+
+export const SAVE_VERSION = 20
 export const AUTOSAVE_INTERVAL_MS = AUTOSAVE_INTERVAL_S * 1000
 // Потолок оффлайн-прогресса: дольше отсутствовать можно, но не оплачивается.
 export const OFFLINE_CAP_MS = OFFLINE_CAP_HOURS * 60 * 60 * 1000
@@ -86,8 +91,8 @@ export interface SavedItem {
   slot: string
   /** Уровень предмета: с какого моба упал, от него растёт сила. */
   level: number
-  /** Сколько рук занимает оружие. Нет поля — предмет не оружие. */
-  hands?: number
+  /** ХВАТ: 'one' | 'two' | 'shield'. Нет поля — предмет не идёт в руки. */
+  grip?: string
   /** Наложенное зачарование. Нет поля — предмет не зачарован. */
   enchantId?: string
   /** Прок вещи. Нет поля — прока нет. */
@@ -118,8 +123,8 @@ export interface SavedDungeonRun {
   fightMs: number
 }
 
-export interface SavePayloadV19 {
-  version: 19
+export interface SavePayloadV20 {
+  version: 20
   /** Мешок: материалы, травы, еда и склянки — id -> количество строкой. */
   materials: Record<string, string>
   /** Пыль зачарования: величина растущая, поэтому строкой. */
@@ -215,7 +220,7 @@ function savedFromItem(item: Item): SavedItem {
     rarity: item.rarity,
     slot: item.slot,
     level: item.level,
-    ...(item.hands ? { hands: item.hands } : {}),
+    ...(item.grip ? { grip: item.grip } : {}),
     ...(item.enchantId ? { enchantId: item.enchantId } : {}),
     ...(item.procId ? { procId: item.procId } : {}),
     mods: item.mods.map((m) => ({
@@ -227,7 +232,7 @@ function savedFromItem(item: Item): SavedItem {
   }
 }
 
-export function payloadFromState(state: GameState, lastTimestamp: number): SavePayloadV19 {
+export function payloadFromState(state: GameState, lastTimestamp: number): SavePayloadV20 {
   const equipment: Record<string, SavedItem | null> = {}
   for (const slot of SLOT_IDS) {
     const item = state.equipment[slot]
@@ -263,7 +268,7 @@ export function payloadFromState(state: GameState, lastTimestamp: number): SaveP
     if (state.dungeonsCleared[key] === true) dungeonsCleared[key] = true
   }
   return {
-    version: 19,
+    version: 20,
     classId: state.classId,
     materials: Object.fromEntries(
       Object.entries(state.materials)
@@ -359,9 +364,10 @@ function itemFromSaved(raw: SavedItem, index: number): Item {
   const mods = Array.isArray(raw.mods)
     ? raw.mods.map(modifierFromSaved).filter((m): m is StatModifier => m !== null)
     : []
-  // Двуручность — свойство предмета, а не слота: без неё связка рук
-  // рассыпалась бы, и двуручное молча уживалось бы со щитом.
-  const hands = raw.hands === 2 ? 2 : raw.hands === 1 ? 1 : undefined
+  // Хват — свойство предмета, а не слота: без него связка рук рассыпалась бы,
+  // и двуручное молча уживалось бы со щитом. Чужое значение отбрасываем —
+  // предмет останется носимым, а правила хвата просто не про него.
+  const grip = GRIPS.includes(raw.grip as Grip) ? (raw.grip as Grip) : undefined
   // Уровень предмета из сейва принимаем только конечным числом не меньше 1:
   // мусор деградирует до первого уровня, а не до NaN в силе вещи.
   const level = Number.isFinite(raw.level) && raw.level >= 1 ? Math.floor(raw.level) : 1
@@ -379,7 +385,7 @@ function itemFromSaved(raw: SavedItem, index: number): Item {
     rarity,
     slot,
     level,
-    ...(hands ? { hands } : {}),
+    ...(grip ? { grip } : {}),
     ...(enchantId ? { enchantId } : {}),
     ...(procId ? { procId } : {}),
     mods,
@@ -399,7 +405,7 @@ function equipmentFromSaved(raw: Record<string, SavedItem | null> | undefined): 
   })
   // Правило связки рук держится и на загрузке: правленый руками сейв не должен
   // давать двуручное вместе со щитом. Побеждает правая рука — она задаёт бой.
-  if (equipment.mainHand?.hands === 2) equipment.offHand = null
+  if (equipment.mainHand?.grip === 'two') equipment.offHand = null
   return equipment
 }
 
@@ -646,7 +652,7 @@ function clearedFromSaved(raw: unknown): Record<string, boolean> {
   return cleared
 }
 
-export function stateFromPayload(p: SavePayloadV19): GameState {
+export function stateFromPayload(p: SavePayloadV20): GameState {
   const level = Decimal.max(parseDec(p.level, '1'), new Decimal(1))
 
   // Класс восстанавливается ПЕРВЫМ: от него зависят стартовые статы, набор
@@ -806,7 +812,100 @@ function legacyXpToNext(level: number): number {
   return Math.floor(LEGACY_V18_XP_BASE * Math.pow(level, LEGACY_V18_XP_EXPONENT) * (1 + 1e-9))
 }
 
+/**
+ * ХВАТ ПРЕДМЕТА ИЗ СЕЙВА 19-й ВЕРСИИ. Поля `grip` там нет: оружие несло
+ * `hands: 1 | 2`, а щит не нёс ничего вовсе — и от брони отличался только
+ * тем, что лежал во второй руке.
+ *
+ * Различаем по МОДИФИКАТОРАМ, а не по слоту: слот в правленом руками сейве
+ * может быть любым, а базовая скорость оружия и базовый шанс блока — это то,
+ * чем предмет ЯВЛЯЕТСЯ. Ровно поэтому щит, лежавший в главной руке, будет
+ * опознан как щит и расформирован, а не тихо станет «одноручным».
+ */
+function gripV19toV20(raw: unknown): Grip | undefined {
+  if (typeof raw !== 'object' || raw === null) return undefined
+  const item = raw as RawSave
+  const mods = Array.isArray(item.mods) ? (item.mods as RawSave[]) : []
+  const hasBase = (stat: string) =>
+    mods.some((m) => m?.stat === stat && m?.kind === 'base')
+  if (hasBase('weaponSpeed')) return item.hands === 2 ? 'two' : 'one'
+  if (hasBase('blockChance') || hasBase('blockValue')) return 'shield'
+  return undefined
+}
+
+/** Цена продажи по сохранённым полям: до состояния игры ещё далеко. */
+function savedSellPrice(raw: unknown): number {
+  const item = (raw ?? {}) as RawSave
+  const rarity = RARITY_BY_ID[item.rarity as Rarity] as RarityDef | undefined
+  return ITEM_BASE_SELL_PRICE.times(rarity ? rarity.sellMult : 1).toNumber()
+}
+
 export const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
+  // 19 -> 20: у предмета появился ХВАТ, и правила рук стали обязательными.
+  //
+  // Раньше «двуручность» жила отдельным полем hands, а щит не был отмечен
+  // никак: он опознавался по слоту, в котором лежал. Незаконные связки такой
+  // формат просто не описывал — и сейв мог их содержать. Здесь они и
+  // расформировываются: двуручное вместе с занятой второй рукой, щит в
+  // главной руке, двуручное во второй.
+  //
+  // Снятое уходит В СУМКУ. Не влезло — по действующему правилу вытеснения
+  // уходит в золото самый дешёвый из претендентов. Полной мерой ценности
+  // (`lootValue`) здесь воспользоваться нельзя: она считает темп боя, а
+  // состояния игры до миграции ещё не существует, — поэтому берётся её же
+  // тай-брейк, цена продажи.
+  19: (raw) => {
+    const withGrip = (item: unknown): unknown => {
+      if (typeof item !== 'object' || item === null) return item
+      const grip = gripV19toV20(item)
+      const next = { ...(item as RawSave) }
+      delete next.hands
+      return grip ? { ...next, grip } : next
+    }
+    const inventory = (Array.isArray(raw.inventory) ? raw.inventory : []).map(withGrip)
+    const equipment: Record<string, unknown> = {}
+    const rawEquipment = (raw.equipment ?? {}) as Record<string, unknown>
+    for (const slot of SLOT_IDS) equipment[slot] = withGrip(rawEquipment[slot] ?? null)
+
+    // Расформирование. Каждое правило снимает РОВНО ОДИН предмет, и правила
+    // не пересекаются: щит не бывает двуручным.
+    const removed: unknown[] = []
+    const gripOf = (item: unknown) =>
+      item && typeof item === 'object' ? (item as RawSave).grip : undefined
+    const drop = (slot: string) => {
+      if (!equipment[slot]) return
+      removed.push(equipment[slot])
+      equipment[slot] = null
+    }
+    if (gripOf(equipment.mainHand) === 'shield') drop('mainHand')
+    if (gripOf(equipment.offHand) === 'two') drop('offHand')
+    if (gripOf(equipment.mainHand) === 'two') drop('offHand')
+
+    let gold = new Decimal(String(raw.gold ?? '0'))
+    for (const item of removed) {
+      if (inventory.length < INVENTORY_SIZE) {
+        inventory.push(item)
+        continue
+      }
+      // Сумка полна: самый дешёвый из сумки и снятого уходит в золото.
+      let worstIndex = -1
+      let worstPrice = savedSellPrice(item)
+      inventory.forEach((candidate, index) => {
+        const price = savedSellPrice(candidate)
+        if (price < worstPrice) {
+          worstPrice = price
+          worstIndex = index
+        }
+      })
+      if (worstIndex === -1) {
+        gold = gold.plus(savedSellPrice(item))
+        continue
+      }
+      gold = gold.plus(savedSellPrice(inventory[worstIndex]))
+      inventory[worstIndex] = item
+    }
+    return { ...raw, version: 20, gold: gold.toString(), inventory, equipment }
+  },
   // 18 -> 19: игра стала КОНЕЧНОЙ. Появился потолок сотого уровня, кривая
   // опыта переехала с формулы на таблицу убийств, а автонадевание снесено —
   // предметы надевает игрок.
@@ -1008,7 +1107,7 @@ export const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
 }
 
 // null = сейв непригоден (не объект или из более новой версии игры).
-export function migrateSave(raw: unknown): SavePayloadV19 | null {
+export function migrateSave(raw: unknown): SavePayloadV20 | null {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null
   let data = raw as RawSave
   let version = typeof data.version === 'number' ? data.version : 0
@@ -1019,7 +1118,7 @@ export function migrateSave(raw: unknown): SavePayloadV19 | null {
     data = step(data)
     version = typeof data.version === 'number' ? data.version : version + 1
   }
-  return data as unknown as SavePayloadV19
+  return data as unknown as SavePayloadV20
 }
 
 export interface OfflineReport {
@@ -1182,7 +1281,7 @@ export function encodeSaveString(state: GameState, now: () => number = Date.now)
 }
 
 // Понимает base64 от экспорта и, на всякий случай, голый JSON.
-export function decodeSaveString(input: string): SavePayloadV19 | null {
+export function decodeSaveString(input: string): SavePayloadV20 | null {
   const attempts = [
     () => JSON.parse(fromBase64(input.trim())),
     () => JSON.parse(input.trim()),

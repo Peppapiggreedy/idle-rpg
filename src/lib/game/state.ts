@@ -247,6 +247,7 @@ export function startingEquipment(hero: ClassDef): Equipment {
         rarity: rarity.id,
         slot: entry.slot,
         level: 1,
+        grip: template.grip,
         mods: shieldMods(template, rarity),
       }
       continue
@@ -259,7 +260,7 @@ export function startingEquipment(hero: ClassDef): Equipment {
       rarity: rarity.id,
       slot: entry.slot,
       level: 1,
-      hands: template.hands,
+      grip: template.grip,
       mods: weaponMods(template, rarity, entry.slot),
     }
   }

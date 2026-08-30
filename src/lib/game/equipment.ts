@@ -8,12 +8,37 @@ import type { SlotId } from '../data/slots'
 import type { Item } from '../types'
 
 /**
- * Правила связки рук. Живут ЗДЕСЬ, а не в данных слотов: слоты — это перечень
- * мест, а «двуручное занимает обе» — правило игры.
+ * ПРАВИЛА ХВАТА. Живут ЗДЕСЬ, а не в данных слотов: слот — это перечень мест,
+ * а «двуручное занимает обе» — правило игры.
  *
- * Возвращает снаряжение после надевания и список предметов, которые пришлось
- * снять: двуручное вытесняет обе руки, а любое одноручное или щит в правой
- * руке вытесняет надетое двуручное.
+ * Причина отказа — КОД, а не строка: текст рендерит UI, ровно как у умений,
+ * талантов и распыления. Три кода покрывают все запреты, потому что хватов
+ * ровно три и запретов ровно три.
+ */
+export type EquipBlockReason =
+  /** Двуручное надеть некуда: вторую руку нужно освободить, а сумка полна. */
+  | 'two-handed-needs-both'
+  /** Щит просят в главную руку. Щит не оружие и живёт только во второй. */
+  | 'shield-offhand-only'
+  /** Во вторую руку что-либо при надетом двуручном: она занята им целиком. */
+  | 'occupied-by-two-handed'
+
+export interface EquipStatus {
+  canEquip: boolean
+  reason: EquipBlockReason | null
+  /** Что уйдёт в сумку, если надеть. Пусто — руки и так свободны. */
+  removed: Item[]
+}
+
+/**
+ * КАК ЛЕГЛА БЫ СВЯЗКА, если предмет надеть. Это ПРЕДПОЛОЖЕНИЕ, а не разрешение:
+ * законность спрашивают у `equipStatus`, а здесь считают числа.
+ *
+ * Разница нужна для сумки. Щит при надетом двуручном надеть НЕЛЬЗЯ — но метку
+ * «апгрейд» он получить обязан, иначе игрок в двуручном не узнает, что щит
+ * ему выгоднее, и находка молча уйдёт в продажу. Поэтому предпросмотр
+ * отвечает «если освободить руку», а кнопка «Надеть» — «прямо сейчас нельзя,
+ * вот почему».
  */
 export function equipmentWith(
   equipment: Equipment,
@@ -26,19 +51,47 @@ export function equipmentWith(
   }
   push(equipment[item.slot])
   if (item.slot === 'mainHand') {
-    if (item.hands === 2) {
+    if (item.grip === 'two') {
       // Двуручное занимает обе руки: левая обязана освободиться.
       push(equipment.offHand)
       next.offHand = null
     }
   } else if (item.slot === 'offHand') {
     // Занять левую руку можно, только если правая не держит двуручное.
-    if (equipment.mainHand?.hands === 2) {
+    if (equipment.mainHand?.grip === 'two') {
       push(equipment.mainHand)
       next.mainHand = null
     }
   }
   return { equipment: next, removed }
+}
+
+/**
+ * Можно ли надеть предмет ПРЯМО СЕЙЧАС и что при этом уйдёт в сумку.
+ *
+ * Порядок проверок — от того, что игрок не исправит одним движением.
+ * Чистая функция: её зовёт и `equipItem`, и кнопка в сумке, чтобы причина
+ * отказа была одна и та же, а не считалась дважды по-разному.
+ */
+export function equipStatus(state: GameState, item: Item): EquipStatus {
+  const { removed } = equipmentWith(state.equipment, item)
+  const blocked = (reason: EquipBlockReason): EquipStatus => ({
+    canEquip: false,
+    reason,
+    removed: [],
+  })
+  // Щит — не оружие: в главной руке ему нечего делать ни при каких условиях.
+  if (item.grip === 'shield' && item.slot === 'mainHand') return blocked('shield-offhand-only')
+  // Двуручное занимает обе руки. Освободить вторую — не то же самое, что
+  // выбросить из неё предмет: некуда положить — значит нельзя надеть.
+  if (item.slot === 'offHand' && state.equipment.mainHand?.grip === 'two') {
+    return blocked('occupied-by-two-handed')
+  }
+  // Место под сам предмет есть всегда: он покидает сумку. А вот СНЯТОЕ может
+  // и не поместиться — тогда надевать нельзя, иначе предмет пропал бы молча.
+  const freed = state.inventory.filter((i) => i.id !== item.id).length
+  if (freed + removed.length > INVENTORY_SIZE) return blocked('two-handed-needs-both')
+  return { canEquip: true, reason: null, removed }
 }
 
 // Состояние с надетым предметом — без изменения инвентаря. Нужно для оценки
@@ -130,19 +183,23 @@ export function compareItem(state: GameState, item: Item): EquipComparison {
   }
 }
 
-/** Надевает предмет из инвентаря; снятое возвращается в освободившийся слот. */
+/**
+ * Надевает предмет из инвентаря. Снятое (в том числе вторая рука, которую
+ * освобождает двуручное) уходит В СУМКУ, а не пропадает.
+ *
+ * Отказ — это НИЧЕГО НЕ ДЕЛАТЬ: причину игроку показывает кнопка, спросив
+ * `equipStatus` тем же вызовом. Второй копии правил здесь нет.
+ */
 export function equipItem(state: GameState, itemId: string): GameState {
   const item = state.inventory.find((i) => i.id === itemId)
   if (!item) return state
-  const { equipment, removed } = equipmentWith(state.equipment, item)
-  // Место всегда есть под сам предмет: он покидает инвентарь. Снятая вторая
-  // рука может и не поместиться — тогда надеть не выйдет, иначе предмет
-  // пропал бы молча.
+  const status = equipStatus(state, item)
+  if (!status.canEquip) return state
+  const { equipment } = equipmentWith(state.equipment, item)
   const inventory = state.inventory.filter((i) => i.id !== itemId)
-  if (inventory.length + removed.length > INVENTORY_SIZE) return state
   return ensureStats({
     ...state,
-    inventory: [...inventory, ...removed],
+    inventory: [...inventory, ...status.removed],
     equipment,
     statsDirty: true,
   })

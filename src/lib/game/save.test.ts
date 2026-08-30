@@ -56,7 +56,7 @@ function richState(): GameState {
         rarity: 'rare',
         slot: 'mainHand',
         level: 12,
-        hands: 1,
+        grip: 'one',
         mods: [
           { stat: 'weaponSpeed', kind: 'base', value: new Decimal(2.2), source: 'equipment:mainHand' },
           { stat: 'weaponDamageMin', kind: 'base', value: new Decimal(44), source: 'equipment:mainHand' },

@@ -220,6 +220,10 @@ function handItem(
       rarity: rarity.id,
       slot,
       level,
+      // Хват берётся ИЗ ШАБЛОНА, а не подставляется здесь: бросок решает,
+      // из какого пула образец, а чем этот образец является — сказано
+      // в данных. Поэтому щит и падает только щитом.
+      grip: template.grip,
       mods: shieldMods(template, rarity, level),
     }
   }
@@ -230,7 +234,7 @@ function handItem(
     rarity: rarity.id,
     slot,
     level,
-    hands: template.hands,
+    grip: template.grip,
     mods: weaponMods(template, rarity, slot, level),
   }
 }

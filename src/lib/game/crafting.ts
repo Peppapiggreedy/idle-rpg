@@ -110,6 +110,7 @@ export function craftedItem(output: ItemOutput, seq: number): Item | null {
         rarity: rarity.id,
         slot: output.slot,
         level: output.level,
+        grip: template.grip,
         mods: shieldMods(template, rarity, output.level),
         ...proc,
       }
@@ -122,7 +123,7 @@ export function craftedItem(output: ItemOutput, seq: number): Item | null {
       rarity: rarity.id,
       slot: output.slot,
       level: output.level,
-      hands: template.hands,
+      grip: template.grip,
       mods: weaponMods(template, rarity, output.slot, output.level),
       ...proc,
     }

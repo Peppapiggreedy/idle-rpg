@@ -13,6 +13,7 @@ import type { IconName } from '../../../ui/icons/manifest'
 import type { StatId } from '../../../game/stats'
 import type { SlotId } from '../../slots'
 import { CLASS_BY_ID } from '../../classes'
+import type { ShieldTemplate, WeaponTemplate } from '../../items'
 import { realContent } from '../content'
 import type { Content } from '../schema'
 
@@ -45,6 +46,7 @@ export interface BrokenCase {
  */
 export function brokenCases(): BrokenCase[] {
   const real = realContent()
+  const SHIELD_IDS = new Set(real.shields.map((sh) => sh.id))
 
   return [
     {
@@ -739,6 +741,38 @@ export function brokenCases(): BrokenCase[] {
         balance: { ...real.balance, dropChance: 1.5 },
       },
       expect: ['DROP_CHANCE', 'вероятность'],
+    },
+    {
+      title: 'у оружия хват щита',
+      content: {
+        ...real,
+        weapons: patch(real.weapons, first(real.weapons).id, {
+          grip: 'shield' as WeaponTemplate['grip'],
+        }),
+      },
+      expect: [first(real.weapons).id, 'хват', 'data/items.ts'],
+    },
+    {
+      title: 'у щита хват оружия',
+      content: {
+        ...real,
+        shields: patch(real.shields, first(real.shields).id, {
+          grip: 'one' as ShieldTemplate['grip'],
+        }),
+      },
+      expect: [first(real.shields).id, 'вторую руку', 'data/items.ts'],
+    },
+    {
+      title: 'рецепт кует щит в главную руку',
+      content: {
+        ...real,
+        recipes: real.recipes.map((recipe) =>
+          recipe.output.kind === 'item' && SHIELD_IDS.has(String(recipe.output.templateId))
+            ? { ...recipe, output: { ...recipe.output, slot: 'mainHand' as SlotId } }
+            : recipe,
+        ),
+      },
+      expect: ['щит', 'вторую руку', 'data/recipes.ts'],
     },
   ]
 }

@@ -949,6 +949,16 @@ export const WEAPON_SCHEMA: EntitySchema<WeaponTemplate> = {
   ],
   extra: (weapon, content, report) => {
     const where = `оружие ${weapon.id}`
+    // ХВАТ обязателен и обязан быть оружейным. Щит оружием не бывает:
+    // предмет, который одновременно и щит, и оружие, выразить нечем — и
+    // проверка обязана сказать это раньше, чем такой предмет упадёт игроку.
+    if (weapon.grip !== 'one' && weapon.grip !== 'two') {
+      report.add(
+        where,
+        `хват «${String(weapon.grip)}» — у оружия он бывает только 'one' ` +
+          "(одноручное) или 'two' (двуручное) (data/items.ts)",
+      )
+    }
     if (weapon.damageMax?.lt(weapon.damageMin)) {
       report.add(
         where,
@@ -1002,6 +1012,16 @@ export const SHIELD_SCHEMA: EntitySchema<ShieldTemplate> = {
   ],
   extra: (shield, content, report) => {
     const where = `щит ${shield.id}`
+    // Хват щита — всегда 'shield', и он ЛЕЖИТ В ДАННЫХ, а не подставляется
+    // кодом: генерация лута берёт его из шаблона, и «щит с хватом оружия»
+    // попал бы в главную руку.
+    if (shield.grip !== 'shield') {
+      report.add(
+        where,
+        `хват «${String(shield.grip)}» — у щита он обязан быть 'shield': ` +
+          'щит надевается только во вторую руку и оружием не бывает (data/items.ts)',
+      )
+    }
     for (const mod of shield.extra ?? []) {
       if (!content.statIds.includes(mod.stat)) {
         report.add(
@@ -1137,13 +1157,27 @@ export const RECIPE_SCHEMA: EntitySchema<RecipeDef> = {
         `делает предмет редкости «${output.rarity}», которой нет в data/rarity.ts`,
       )
       if (output.slot === 'mainHand' || output.slot === 'offHand') {
-        const known =
-          content.weapons.some((w) => w.id === output.templateId) ||
-          content.shields.some((sh) => sh.id === output.templateId)
+        const shield = content.shields.find((sh) => sh.id === output.templateId)
+        const weapon = content.weapons.find((w) => w.id === output.templateId)
         report.need(
-          known,
+          Boolean(shield || weapon),
           where,
           `предмет в руку без шаблона: «${output.templateId ?? '—'}» не найден в data/items.ts`,
+        )
+        // Хват и слот обязаны сходиться: кованый щит в главной руке надеть
+        // нельзя, а рецепт, который его туда шлёт, — это рецепт вещи,
+        // которую игрок никогда не наденет.
+        report.need(
+          !shield || output.slot === 'offHand',
+          where,
+          `кует щит «${output.templateId ?? '—'}» в слот «${output.slot}»: хват 'shield' ` +
+            'надевается только во вторую руку (data/recipes.ts)',
+        )
+        report.need(
+          !weapon || weapon.grip !== 'two' || output.slot === 'mainHand',
+          where,
+          `кует двуручное «${output.templateId ?? '—'}» в слот «${output.slot}»: хват 'two' ` +
+            'занимает обе руки и надевается только в главную (data/recipes.ts)',
         )
       } else {
         // У дропа главный атрибут случайный, у крафта — обещанный данными:

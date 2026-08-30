@@ -5,6 +5,7 @@ import type { Decimal } from '../game/numbers'
 import type { StatModifier } from '../game/stats'
 import type { DungeonDifficulty } from '../data/dungeons'
 import type { SlotId } from '../data/slots'
+import type { Grip } from '../data/items'
 
 export interface Monster {
   id: string
@@ -27,8 +28,10 @@ export type MonsterTemplate = Omit<Monster, 'currentHp' | 'swingProgress'>
 export type Rarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary'
 
 export interface Item {
-  /** Сколько рук занимает оружие. Нет поля — предмет не оружие. */
-  hands?: 1 | 2
+  /** ХВАТ: 'one' — в любую руку, 'two' — обе руки, 'shield' — только вторая.
+   *  Нет поля — предмет вообще не идёт в руки (броня, талисман). Хват
+   *  приходит ИЗ ШАБЛОНА и отдельным броском не разыгрывается. */
+  grip?: Grip
   id: string
   name: string
   rarity: Rarity

@@ -3,6 +3,7 @@
     Decimal,
     compareItem,
     disenchantStatus,
+    equipStatus,
     enchantModifiers,
     enchantOf,
     formatNumber,
@@ -12,6 +13,7 @@
     type DisenchantBlockReason,
     type EquipComparison,
   } from '../game'
+  import { EQUIP_BLOCK_TEXT, GRIP_TEXT } from './itemText'
   import { SLOT_NAMES } from '../data/slots'
   import {
     disenchantInventoryItem,
@@ -94,6 +96,9 @@
         {#if upgradeLabel(share)}
           <span class="upgrade" data-upgrade>Апгрейд {upgradeLabel(share)}</span>
         {/if}
+        {#if item.grip}
+          <span class="grip">{GRIP_TEXT[item.grip]}</span>
+        {/if}
         <ItemMods mods={item.mods} />
         {#if enchantOf(item)}
           <span class="enchant">Зачаровано: {enchantOf(item)?.name}</span>
@@ -142,7 +147,14 @@
             </Button>
             <Button size="sm" onclick={() => (confirming = null)}>Отмена</Button>
           {:else}
-            <Button size="sm" variant="primary" onclick={() => equipInventoryItem(item.id)}>
+            {@const eq = equipStatus($gameState, item)}
+            <Button
+              size="sm"
+              variant="primary"
+              disabled={!eq.canEquip}
+              title={eq.reason ? EQUIP_BLOCK_TEXT[eq.reason] : ''}
+              onclick={() => equipInventoryItem(item.id)}
+            >
               Надеть
             </Button>
             <Button size="sm" onclick={() => sellInventoryItem(item.id)}>
@@ -158,6 +170,12 @@
               >
                 Распылить · {formatNumber(dis.dust)} пыли
               </Button>
+            {/if}
+            <!-- Причина СТРОКОЙ, а не только подсказкой кнопки: на телефоне
+                 наведения нет вовсе, и выключенная кнопка без объяснения
+                 читается как поломка. -->
+            {#if eq.reason}
+              <span class="deny">{EQUIP_BLOCK_TEXT[eq.reason]}</span>
             {/if}
           {/if}
         {/snippet}
@@ -182,6 +200,16 @@
   .enchant {
     font-size: var(--text-xs);
     color: var(--c-accent);
+  }
+  .grip {
+    font-size: var(--text-2xs);
+    color: var(--c-text-faint);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+  }
+  .deny {
+    font-size: var(--text-2xs);
+    color: var(--c-warning);
   }
   .warn {
     font-size: var(--text-xs);
