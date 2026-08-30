@@ -27,6 +27,13 @@ function first<T>(list: readonly T[]): T {
   return list[0]
 }
 
+/** Зона с самой высокой полосой мобов: в неё удобно «ошибочно» ставить вход. */
+function highBandZone(real: Content) {
+  return [...real.zones].sort(
+    (a, b) => b.monsterLevelRange.min - a.monsterLevelRange.min,
+  )[0]
+}
+
 export interface BrokenCase {
   /** Что именно сломано — попадает в название теста. */
   title: string
@@ -733,6 +740,30 @@ export function brokenCases(): BrokenCase[] {
         balance: { ...real.balance, ttkTargetMin: 30 },
       },
       expect: ['TTK_TARGET_MIN', 'TTK_TARGET_MAX', 'data/balance.ts'],
+    },
+    {
+      title: 'храм открывается с 70, а вход стоит в зоне 91-95',
+      content: {
+        ...real,
+        temples: real.temples.map((t) => ({
+          ...t,
+          unlockRequirement: 70,
+          zoneId: highBandZone(real).id,
+        })),
+      },
+      expect: ['храм', 'раньше, чем начнёт там выживать', 'data/temple.ts'],
+    },
+    {
+      title: 'данж открывается на 90, а вход стоит в стартовой полосе',
+      content: {
+        ...real,
+        dungeons: real.dungeons.map((d) =>
+          d.difficulty === 'normal' && d.id === first(real.dungeons).id
+            ? { ...d, unlockRequirement: 90 }
+            : d,
+        ),
+      },
+      expect: [first(real.dungeons).id, 'зона отстала от открытия', 'data/dungeons.ts'],
     },
     {
       title: 'вероятность дропа больше единицы',

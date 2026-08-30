@@ -1973,6 +1973,77 @@ export const SCHEMAS = [
  * Недостижимый контент — самая тихая из поломок: игра работает, тесты зелёные,
  * а до половины предметов игрок не доберётся никогда.
  */
+/**
+ * ВХОД ИНСТАНСА СТОИТ В СВОЕЙ ПОЛОСЕ. Уровень открытия инстанса и зона его
+ * входа — две независимые системы, и без связи между ними они разъезжаются
+ * молча: храм открывался с семидесятого, а вход стоял в полосе 91-95, куда
+ * герой семидесятого уровня не дойдёт живым. Числа при этом у обеих систем
+ * правильные — неверна связь, и увидеть её можно только проверкой.
+ *
+ *     zone.min - 1 <= unlock <= zone.max
+ *
+ * Нижняя граница — «герой приходит к входу не раньше, чем начинает выживать
+ * у двери»: открытие ровно на пороге зоны законно, герой шагнёт в неё сразу.
+ * Верхняя — «зона входа не отстала от открытия»: иначе новый контент выдают
+ * там, где всё давно пройдено.
+ *
+ * ГЕРОИКА ПРОВЕРЯЕТСЯ ТОЛЬКО НИЖНЕЙ ГРАНИЦЕЙ, и это не поблажка. Героика —
+ * повторный заход в УЖЕ ПРОЙДЕННЫЙ данж (см. «вторая строка того же данжа»),
+ * поэтому её вход по построению стоит в зоне обычной версии, а порог у неё
+ * общий эндгеймовый. Верхняя граница запрещала бы саму эту конструкцию, а не
+ * ловила ошибку. Опасность, ради которой проверка написана, — вход ВПЕРЕДИ
+ * открытия, и её ловит нижняя граница, которая для героики действует.
+ */
+function checkInstanceEntrances(content: Content, report: Report): void {
+  const zoneById = new Map(content.zones.map((z) => [z.id, z]))
+  interface Entrance {
+    where: string
+    file: string
+    zoneId: string
+    unlock: number
+    /** Повторный заход в пройденное: верхняя граница к нему не применяется. */
+    rerun: boolean
+  }
+  const entrances: Entrance[] = [
+    ...content.dungeons.map((d) => ({
+      where: `данж ${clearKey(d.id, d.difficulty)}`,
+      file: 'data/dungeons.ts',
+      zoneId: d.zoneId,
+      unlock: d.unlockRequirement,
+      rerun: d.difficulty !== 'normal',
+    })),
+    ...content.temples.map((t) => ({
+      where: `храм ${t.id}`,
+      file: 'data/temple.ts',
+      zoneId: t.zoneId,
+      unlock: t.unlockRequirement,
+      rerun: false,
+    })),
+  ]
+  for (const e of entrances) {
+    const zone = zoneById.get(e.zoneId)
+    // Ссылку на несуществующую зону ловит своя проверка — здесь молчим,
+    // иначе на одну поломку пришлось бы два замечания.
+    if (!zone) continue
+    const { min, max } = zone.monsterLevelRange
+    const band = `${min}-${max}`
+    if (e.unlock < min - 1) {
+      report.add(
+        e.where,
+        `открывается с ${e.unlock} уровня, а вход стоит в зоне «${e.zoneId}» (мобы ${band}): ` +
+          `герой придёт к двери раньше, чем начнёт там выживать (${e.file})`,
+      )
+    }
+    if (!e.rerun && e.unlock > max) {
+      report.add(
+        e.where,
+        `открывается с ${e.unlock} уровня, а вход стоит в зоне «${e.zoneId}» (мобы ${band}): ` +
+          `зона отстала от открытия, новый контент выдаётся в давно пройденном месте (${e.file})`,
+      )
+    }
+  }
+}
+
 function checkReachable(content: Content, report: Report): void {
   // --- Цепочка преквестов: она отпирает ступень лестницы ---
   report.need(
@@ -2341,6 +2412,7 @@ export function checkContent(content: Content): ContentIssue[] {
   const report = new Report()
   for (const schema of SCHEMAS) runSchema(schema, content, report)
   checkReachable(content, report)
+  checkInstanceEntrances(content, report)
   checkBalance(content, report)
   return report.issues
 }
