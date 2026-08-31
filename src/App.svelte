@@ -13,6 +13,7 @@
   // трогает сцену — ни размер, ни положение.
   import { INVENTORY_SIZE, availablePoints, upgradeShare } from './lib/game'
   import { gameStarted, gameState } from './lib/stores/game'
+  import { placeTitle } from './lib/ui/placeText'
   import { activeSection } from './lib/stores/ui'
   import { isTextMode, sceneUnavailable, toggleDrawer, uiSettings } from './lib/stores/ui'
   import { isSceneDisabled } from './lib/ui/route'
@@ -59,6 +60,7 @@
   const sceneOff = isSceneDisabled()
   const textMode = $derived(sceneOff || $sceneUnavailable || isTextMode($uiSettings))
   const points = $derived(availablePoints($gameState))
+  const place = $derived(placeTitle($gameState))
   const drawers = $derived($uiSettings.drawers)
   // Апгрейд в сумке видно из любого раздела: точка на вкладке.
   const hasUpgrade = $derived(
@@ -86,6 +88,17 @@
          ширине — сцена главный элемент экрана и делить её место не с чем. -->
     <div class="permanent" data-permanent>
       <div class="stage">
+        <!-- ГДЕ ГЕРОЙ СЕЙЧАС. Строку собирает placeTitle из ДАННЫХ места,
+             поэтому новая зона, данж или будущий рейд попадают в заголовок
+             сами, без правки этого файла. -->
+        <h2 class="place" aria-live="polite">
+          <span class="place-name">{place.name}</span>
+          {#if place.detail}
+            <span class="place-detail"
+              >{place.join === 'parens' ? `(${place.detail})` : `· ${place.detail}`}</span
+            >
+          {/if}
+        </h2>
         {#if textMode}
           <BattlePanel />
         {:else}
@@ -232,6 +245,32 @@
     flex-direction: column;
     gap: var(--space-2);
     min-width: 0;
+  }
+  /* Заголовок места. В ОДНУ строку на любой ширине: перенос сдвинул бы сцену
+     вниз и на телефоне съел бы её верх. Длинное название обрезается
+     многоточием, полоса уровней не обрезается никогда — она короткая и
+     отвечает на вопрос «по зубам ли мне тут». */
+  .place {
+    display: flex;
+    align-items: baseline;
+    justify-content: center;
+    gap: var(--space-2);
+    margin: 0;
+    min-width: 0;
+    font-size: var(--text-md);
+    font-weight: 600;
+    line-height: var(--leading-tight);
+  }
+  .place-name {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .place-detail {
+    flex: 0 0 auto;
+    color: var(--c-text-muted);
+    font-size: var(--text-sm);
+    font-weight: 400;
   }
   .handles {
     display: flex;

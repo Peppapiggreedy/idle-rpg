@@ -7,7 +7,6 @@
   // но не двигает саму полосу. Игрок видит ровно то, что произойдёт: удар
   // придёт раньше или позже, а замах не сбросится и не долетит мгновенно.
   import { abilitiesByPriority } from '../game'
-  import { GCD_MS } from '../data/balance'
   import { gameState } from '../stores/game'
 
   const stats = $derived($gameState.stats)
@@ -25,9 +24,13 @@
       : undefined,
   )
 
-  // Общая задержка идёт отдельной, БЫСТРОЙ полосой: она короче кулдаунов
-  // и живёт своей жизнью — смешать их в одну шкалу значило бы соврать.
-  const gcd = $derived(GCD_MS > 0 ? Math.max(0, $gameState.gcdMsLeft) / GCD_MS : 0)
+  // ОБЩЕЙ ЗАДЕРЖКИ ЗДЕСЬ БОЛЬШЕ НЕТ, и это не упрощение.
+  //
+  // Полоска замаха — про ОРУЖИЕ: когда прилетит следующая автоатака. Общая
+  // задержка — про УМЕНИЯ: когда снова можно нажать кнопку. Две разные вещи
+  // на одной шкале читались как одна, и игрок ждал удара, глядя на задержку.
+  // ГКД теперь виден там, где он и нужен, — заливкой на самих иконках умений
+  // (ui/ActionBar.svelte), тем же приёмом, что и обычный кулдаун.
 
   const dead = $derived($gameState.heroState === 'dead')
 </script>
@@ -36,9 +39,6 @@
   <div class="track" role="progressbar" aria-valuemin="0" aria-valuemax="100"
        aria-valuenow={Math.round(progress * 100)} aria-label="Замах">
     <div class="fill" style="width: {progress * 100}%"></div>
-    {#if gcd > 0}
-      <div class="gcd" style="width: {gcd * 100}%"></div>
-    {/if}
   </div>
   <div class="labels">
     {#if dead}
@@ -73,16 +73,6 @@
     background: var(--c-accent);
     border-radius: var(--radius-pill);
     /* За игровым тиком, как и остальные полоски игры. */
-    transition: width var(--dur-tick) linear;
-  }
-  /* Общая задержка — тонкая полоска поверх замаха, своим цветом. */
-  .gcd {
-    position: absolute;
-    left: 0;
-    bottom: 0;
-    height: var(--bar-sm);
-    background: color-mix(in srgb, var(--c-xp) 70%, transparent);
-    border-radius: var(--radius-pill);
     transition: width var(--dur-tick) linear;
   }
   .swing.queued .fill {

@@ -159,3 +159,41 @@ test('названий закрытых ступеней нет в размет�
   expect(html).toContain('Дерево талантов')
   expect(html).toContain('Первый данж')
 })
+
+// ЗАГОЛОВОК МЕСТА над сценой: игрок должен видеть, где он находится.
+test('над сценой видно название места и полосу уровней', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await page.goto('?debug=1&state=rich&scene=off')
+  await expect(page.locator('html')).toHaveAttribute('data-ready', 'preset')
+  const place = page.locator('.place')
+  await expect(place).toBeVisible()
+  // Название и полоса уровней вида «(26–30)».
+  await expect(place).toContainText(/\(\d+–\d+\)/)
+  expect((await place.innerText()).length).toBeGreaterThan(5)
+})
+
+test('на 320px заголовок места в одну строку и не перекрывает сцену', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 800 })
+  await page.goto('?debug=1&state=rich&scene=off')
+  await expect(page.locator('html')).toHaveAttribute('data-ready', 'preset')
+  const place = page.locator('.place')
+  const box = await place.boundingBox()
+  const line = await place.evaluate((el) => parseFloat(getComputedStyle(el).lineHeight))
+  // Высота в пределах одной строки: перенос удвоил бы её.
+  expect(box!.height).toBeLessThan(line * 1.8)
+  // И заголовок стоит НАД сценой, а не поверх неё.
+  const stage = await page.locator('.stage > :nth-child(2)').boundingBox()
+  expect(box!.y + box!.height).toBeLessThanOrEqual(stage!.y + 1)
+})
+
+// ГКД живёт на иконках умений, а не у полоски замаха: полоска про оружие,
+// задержка про умения, и на одной шкале они читались как одно.
+test('общей задержки нет рядом с полоской замаха', async ({ page }) => {
+  // Полоска замаха — про ОРУЖИЕ, общая задержка — про УМЕНИЯ. На одной шкале
+  // они читались как одно, и игрок ждал удара, глядя на задержку.
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await page.goto('?debug=1&state=rich&scene=off')
+  await expect(page.locator('html')).toHaveAttribute('data-ready', 'preset')
+  await expect(page.locator('.swing')).toBeVisible()
+  await expect(page.locator('.swing .gcd')).toHaveCount(0)
+})

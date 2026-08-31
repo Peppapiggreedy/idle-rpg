@@ -1,5 +1,8 @@
 import { expect, test, type Page } from '@playwright/test'
-import { sectionTab } from './screen.js'
+import { sectionTab, visibleFraction } from './screen.js'
+
+/** Селектор пузыря первой кнопки умений — для замера настоящей видимости. */
+const ABILITY_BUBBLE = '[aria-label="Действия"] .host [role="tooltip"]'
 
 // Подсказка — единственный способ объяснить число, не занимая им экран.
 // Здесь проверяется то, что ломается молча: на телефоне нет наведения,
@@ -9,6 +12,29 @@ async function open(page: Page, width: number): Promise<void> {
   await page.setViewportSize({ width, height: 900 })
   await page.goto('?debug=1&state=rich&scene=off')
   await expect(page.locator('html')).toHaveAttribute('data-ready', 'preset')
+}
+
+/**
+ * То же, но СО СЦЕНОЙ — то есть так, как игру видит игрок.
+ *
+ * Все проверки подсказки раньше шли с `scene=off`, и именно поэтому дважды
+ * «починенная» подсказка умения оставалась невидимой: её срезал ряд действий
+ * (`overflow-x: auto`), а поверх ещё и рисовался холст сцены.
+ */
+async function openWithScene(page: Page, width: number): Promise<void> {
+  await page.setViewportSize({ width, height: 900 })
+  await page.goto('?debug=1&state=rich')
+  await expect(page.locator('html')).toHaveAttribute('data-ready', 'preset')
+  await page.waitForTimeout(1200)
+}
+
+/** Наведение настоящей мышью: hover() отказывается работать с disabled. */
+async function hoverAbility(page: Page): Promise<void> {
+  const btn = page.locator('[aria-label="Действия"] button.slot').first()
+  const box = await btn.boundingBox()
+  if (!box) throw new Error('кнопка умения не на экране')
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.waitForTimeout(250)
 }
 
 /** Кнопка ряда действий: она обёрнута в подсказку и есть в любом разделе. */
@@ -140,4 +166,42 @@ test('после действия над предметом сравнение �
   // самого Esc, и ни одной подсказки, что нажимать именно его.
   await cards.nth(1).hover()
   await expect(compare).toBeVisible()
+})
+
+// ПОДСКАЗКА УМЕНИЯ ВИДНА НА САМОМ ДЕЛЕ.
+//
+// Эти проверки появились из поломки, дожившей до третьего захода. Подсказка
+// была написана правильно и «работала»: DOM на месте, `visibility: visible`,
+// прямоугольник ненулевой — а игрок не видел ничего. Пузырь висел `absolute`
+// внутри ряда действий, у которого `overflow-x: auto` ради прокрутки иконок
+// на узком экране, и срезался целиком; поверх него ещё и рисовался холст.
+//
+// `toBeVisible()` такой элемент считает видимым, поэтому шесть тестов на
+// подсказку были зелёными. Меряем не «есть ли в DOM», а сколько его точек
+// попадают в саму подсказку при hit-тесте браузера.
+test('подсказка умения ВИДНА при наведении, а не только есть в DOM', async ({ page }) => {
+  await openWithScene(page, 1280)
+  expect(await visibleFraction(page, ABILITY_BUBBLE), 'до наведения').toBeLessThan(0.05)
+  await hoverAbility(page)
+  expect(await visibleFraction(page, ABILITY_BUBBLE), 'после наведения').toBeGreaterThan(0.95)
+})
+
+test('подсказка умения не срезается рядом действий и не уходит под сцену', async ({ page }) => {
+  // Тот же замер на узком экране: там ряд действий прокручивается, и клип
+  // у него настоящий, а не теоретический.
+  await openWithScene(page, 390)
+  const btn = page.locator('[aria-label="Действия"] button.slot').first()
+  const box = await btn.boundingBox()
+  await page.mouse.click(box!.x + box!.width / 2, box!.y + box!.height / 2)
+  await page.waitForTimeout(250)
+  expect(await visibleFraction(page, ABILITY_BUBBLE)).toBeGreaterThan(0.95)
+})
+
+test('в подсказке умения есть посчитанный урон, а не формула', async ({ page }) => {
+  await openWithScene(page, 1280)
+  await hoverAbility(page)
+  const text = await page.locator(ABILITY_BUBBLE).first().innerText()
+  expect(text.length).toBeGreaterThan(20)
+  // Конкретное число, а не только проценты.
+  expect(text).toMatch(/Урон:.*≈\s*[\d.,KMB]+/)
 })
