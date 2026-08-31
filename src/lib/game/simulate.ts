@@ -105,7 +105,10 @@ export interface SimBuild {
   // Экипировка эталонного героя. 'average' — все слоты заняты СРЕДНИМ по
   // рулетке предметом (см. TYPICAL_RARITY): это не «повезло» и не «не
   // повезло», а то, во что игрок одет обычно. 'none' — голый герой.
-  gear?: 'none' | 'average'
+  // 'starting' — СТАРТОВЫЙ комплект класса, то есть одно белое оружие при
+  // шести пустых слотах: так игра встречает нового игрока, и первые полосы
+  // меряются именно этим героем.
+  gear?: 'none' | 'average' | 'starting'
   talents?: Record<string, number>
   // Какие умения жмёт автокаст: 'all' — все, 'none' — ни одного (только
   // автоатака), список id — только они, в порядке приоритета.
@@ -364,10 +367,27 @@ export function pacingTable(
   //
   // Автонадевание выключено: переодевание идёт РУКАМИ на смене зоны, чтобы
   // кривая оставалась кривой эталона, а не удачи конкретного прогона.
+  //
+  // НО НЕ С ПЕРВОЙ СЕКУНДЫ. Раньше эталон был одет в полный средний комплект
+  // уже на первом уровне, и это было почти правдой: игра сама дарила полный
+  // комплект. Теперь она даёт одно белое оружие, и такой эталон описывал бы
+  // героя, которого не существует, — против мобов стартовой зоны он быстрее
+  // настоящего почти вдвое (28 секунд на моба против 15). Поэтому первую
+  // зону герой проходит в СТАРТОВОМ комплекте и одевается на первом переезде.
+  //
+  // Сколько находок у игрока к этому моменту, считается из чисел самой игры:
+  // убийства на уровень (KILLS_PER_LEVEL) × шанс дропа (DROP_CHANCE) ÷ число
+  // слотов. По одной находке на слот набирается к седьмому уровню, а вторая
+  // зона открывается на четвёртом — то есть эталон всё ещё чуть оптимистичен
+  // на уровнях 4-6. Это вход в правку кривой и лестницы зон, а не то, что
+  // чинится подбором числа здесь.
   const gearFor = (level: number): number =>
     Math.round(averageMonsterLevel(intendedZone(level)))
-  let gearLevel = gearFor(1)
-  let state = buildSimState({ gear: 'average', gearLevel, classId }, ZONES[0].id, seed)
+  // Первая полоса — В СТАРТОВОМ КОМПЛЕКТЕ, то есть в одном белом оружии.
+  // Полный средний комплект приходит на FIRST_GEARED_LEVEL, когда игра
+  // действительно выдала по находке на слот (см. константу).
+  let gearLevel = 1
+  let state = buildSimState({ gear: 'starting', classId }, ZONES[0].id, seed)
   const rows: PacingRow[] = []
   let deaths = 0
 
@@ -397,7 +417,9 @@ export function pacingTable(
       const zone = intendedZone(level)
       if (zone.id !== state.currentZoneId) state = travelToZone(state, zone.id, rng)
       // Переодевание на новую ступень: средние вещи уровня СВОЕЙ зоны.
-      const nextGear = gearFor(level)
+      // Пока герой в ПЕРВОЙ зоне — он в стартовом комплекте: игра выдала ему
+      // одно белое оружие, и надеть он ещё ничего не успел.
+      const nextGear = zone.id === ZONES[0].id ? 1 : gearFor(level)
       if (nextGear !== gearLevel) {
         gearLevel = nextGear
         state = ensureStats({
@@ -797,14 +819,32 @@ export function equipUpgrades(state: GameState): GameState {
   // По одному предмету за проход: надевание меняет статы, и следующая вещь
   // сравнивается уже с новым набором.
   for (let guard = 0; guard < SLOT_IDS.length + 1; guard += 1) {
-    const best = next.inventory
+    const candidates = next.inventory
       .map((item) => ({ item, share: upgradeShare(next, item) }))
       .filter((c): c is { item: Item; share: number } => c.share !== null)
-      .sort((a, b) => b.share - a.share)[0]
-    if (!best) return next
-    const after = equipItem(next, best.item.id)
-    if (after === next) return next
-    next = after
+      .sort((a, b) => b.share - a.share)
+    // ОТКАЗ ПО ОДНОЙ ВЕЩИ — НЕ КОНЕЦ РАЗБОРА. Раньше проход брал ровно
+    // лучшего кандидата и, получив отказ, возвращался ни с чем — навсегда,
+    // потому что на следующей находке повторялось то же самое.
+    //
+    // Ловится это только длинным путём, и прогон его поймал: с ПОЛНОЙ сумкой
+    // двуручное надеть нельзя (снимаются две руки, а место освобождается
+    // одно — код `two-handed-needs-both`), и как только лучшим апгрейдом
+    // становилось двуручное, герой замирал в тех вещах, что на нём были.
+    // В прогоне он так и шёл с 30 по 80 уровень в вещах 24 уровня: время
+    // убийства выросло с 11 секунд до 25, а путь — с 11 часов до тридцати.
+    //
+    // Живой игрок в этом месте просто надевает второе по списку (или продаёт
+    // лишнее), поэтому модель игрока и обязана перебирать список дальше.
+    let moved = false
+    for (const candidate of candidates) {
+      const after = equipItem(next, candidate.item.id)
+      if (after === next) continue
+      next = after
+      moved = true
+      break
+    }
+    if (!moved) return next
   }
   return next
 }

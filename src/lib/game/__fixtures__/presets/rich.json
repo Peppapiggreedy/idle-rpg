@@ -190,7 +190,7 @@
     {
       "id": "start-mainHand-bastard",
       "name": "Полуторник",
-      "rarity": "rare",
+      "rarity": "common",
       "slot": "mainHand",
       "level": 1,
       "grip": "one",
@@ -204,147 +204,20 @@
         {
           "stat": "weaponDamageMin",
           "kind": "base",
-          "value": "17.050000000000004",
+          "value": "11",
           "source": "equipment:mainHand"
         },
         {
           "stat": "weaponDamageMax",
           "kind": "base",
-          "value": "34.10000000000001",
+          "value": "22",
           "source": "equipment:mainHand"
         },
         {
           "stat": "strength",
           "kind": "flat",
-          "value": "10.85",
+          "value": "7",
           "source": "equipment:mainHand"
-        }
-      ]
-    },
-    {
-      "id": "start-offHand-bulwark",
-      "name": "Заслон",
-      "rarity": "rare",
-      "slot": "offHand",
-      "level": 1,
-      "grip": "shield",
-      "mods": [
-        {
-          "stat": "blockChance",
-          "kind": "base",
-          "value": "0.25",
-          "source": "equipment:offHand"
-        },
-        {
-          "stat": "blockValue",
-          "kind": "base",
-          "value": "18.599999999999998",
-          "source": "equipment:offHand"
-        },
-        {
-          "stat": "vitality",
-          "kind": "flat",
-          "value": "6.2",
-          "source": "equipment:offHand"
-        }
-      ]
-    },
-    {
-      "id": "start-head",
-      "name": "Шлем",
-      "rarity": "rare",
-      "slot": "head",
-      "level": 1,
-      "mods": [
-        {
-          "stat": "intellect",
-          "kind": "flat",
-          "value": "6.2",
-          "source": "equipment:head"
-        },
-        {
-          "stat": "vitality",
-          "kind": "flat",
-          "value": "3.1",
-          "source": "equipment:head"
-        }
-      ]
-    },
-    {
-      "id": "start-chest",
-      "name": "Панцирь",
-      "rarity": "rare",
-      "slot": "chest",
-      "level": 1,
-      "mods": [
-        {
-          "stat": "vitality",
-          "kind": "flat",
-          "value": "9.3",
-          "source": "equipment:chest"
-        }
-      ]
-    },
-    {
-      "id": "start-hands",
-      "name": "Наруч",
-      "rarity": "rare",
-      "slot": "hands",
-      "level": 1,
-      "mods": [
-        {
-          "stat": "agility",
-          "kind": "flat",
-          "value": "6.2",
-          "source": "equipment:hands"
-        },
-        {
-          "stat": "vitality",
-          "kind": "flat",
-          "value": "3.1",
-          "source": "equipment:hands"
-        }
-      ]
-    },
-    {
-      "id": "start-legs",
-      "name": "Наголенник",
-      "rarity": "rare",
-      "slot": "legs",
-      "level": 1,
-      "mods": [
-        {
-          "stat": "strength",
-          "kind": "flat",
-          "value": "6.2",
-          "source": "equipment:legs"
-        },
-        {
-          "stat": "vitality",
-          "kind": "flat",
-          "value": "3.1",
-          "source": "equipment:legs"
-        }
-      ]
-    },
-    {
-      "id": "start-trinket",
-      "name": "Амулет",
-      "rarity": "rare",
-      "slot": "trinket",
-      "level": 1,
-      "mods": [
-        {
-          "stat": "strength",
-          "kind": "flat",
-          "value": "6.2",
-          "source": "equipment:trinket"
-        },
-        {
-          "stat": "vitality",
-          "kind": "flat",
-          "value": "3.1",
-          "source": "equipment:trinket"
         }
       ]
     }

@@ -12,6 +12,7 @@ import { Decimal } from '../game/numbers'
 import type { TalentModifier, BranchId } from './talents'
 import type { SlotId } from './slots'
 import type { AttributeId } from './items'
+import type { Rarity } from '../types'
 
 export type ResourceKind = 'mana' | 'rage'
 
@@ -53,26 +54,13 @@ export interface StartingItem {
   kind: 'weapon' | 'shield' | 'armor'
   /** Главный атрибут стартовой брони: у дропа он случайный, здесь — данные. */
   attribute?: AttributeId
+  /**
+   * Тир стартовой вещи. ДАННЫЕ, а не выбор кода: раньше редкость стартового
+   * комплекта была строкой в `game/state.ts`, и «во что одет герой на первой
+   * минуте» нельзя было прочитать в данных класса вообще.
+   */
+  rarity: Rarity
 }
-
-/**
- * Стартовый комплект брони — общий для всех классов и намеренно ровный:
- * по одному атрибуту в каждый слот. Это не подарок, а ТОЧКА ОТСЧЁТА
- * контракта темпа: эталонный герой первого уровня одет в среднюю вещь
- * своего уровня, и коридор 8–15 секунд меряется именно от него.
- *
- * Раньше пустые слоты прятало автонадевание — оно затыкало их первой же
- * находкой за несколько минут. Автонадевания больше нет, и голый старт
- * означал бы сорокасекундные бои в первые минуты игры, то есть провал
- * контракта темпа ровно там, где игрок game видит впервые.
- */
-export const STARTING_ARMOR: StartingItem[] = [
-  { slot: 'head', kind: 'armor', attribute: 'intellect' },
-  { slot: 'chest', kind: 'armor', attribute: 'vitality' },
-  { slot: 'hands', kind: 'armor', attribute: 'agility' },
-  { slot: 'legs', kind: 'armor', attribute: 'strength' },
-  { slot: 'trinket', kind: 'armor', attribute: 'strength' },
-]
 
 export interface ClassDef {
   id: string
@@ -107,16 +95,8 @@ export const CLASSES: ClassDef[] = [
     baseMods: [],
     abilityIds: ['quick-strike', 'rending-wound', 'shattering-blow'],
     branchIds: ['warden-wrath', 'warden-bulwark', 'warden-vigil'],
-    startingEquipment: [
-      // Одноручное и щит: стражу они и по смыслу, и по делу. Голыми руками
-      // бой первого моба длился бы сорок секунд вместо десяти — раньше это
-      // прятало автонадевание, которое надевало первую же находку. Его
-      // больше нет: предметы надевает игрок, и стартовать он обязан
-      // с оружием, а не с обещания найти его через пять минут.
-      { slot: 'mainHand', templateId: 'bastard', kind: 'weapon' },
-      { slot: 'offHand', templateId: 'bulwark', kind: 'shield' },
-      ...STARTING_ARMOR,
-    ],
+    // ОДНА БЕЛАЯ ВЕЩЬ И БОЛЬШЕ НИЧЕГО — см. комментарий у изувера ниже.
+    startingEquipment: [{ slot: 'mainHand', templateId: 'bastard', kind: 'weapon', rarity: 'common' }],
   },
   {
     id: 'reaver',
@@ -159,14 +139,20 @@ export const CLASSES: ClassDef[] = [
     ],
     abilityIds: ['gut-rip', 'blood-frenzy', 'skull-splitter'],
     branchIds: ['reaver-carnage', 'reaver-sinew', 'reaver-instinct'],
-    startingEquipment: [
-      // Изувер начинает с двумя клинками: ярость копится от ударов, а два
-      // клинка бьют чаще. У стража вместо второго клинка щит — тот же
-      // стартовый уровень силы, но другой стиль.
-      { slot: 'mainHand', templateId: 'fang', kind: 'weapon' },
-      { slot: 'offHand', templateId: 'fang', kind: 'weapon' },
-      ...STARTING_ARMOR,
-    ],
+    // ЧТО ЛЕЖИТ В СТАРТОВОМ КОМПЛЕКТЕ И ПОЧЕМУ ТАК МАЛО.
+    //
+    // Одно оружие ОБЫЧНОГО тира первого уровня. Все прочие слоты — включая
+    // вторую руку — пусты, и это не скупость, а место, куда игроку класть
+    // находки. Прежний комплект был полным и РЕДКИМ: семь слотов, тир выше
+    // среднего по рулетке. Первые часы игры уходили на то, чтобы догнать
+    // подарок, — почти любая находка была хуже надетого, значок «Апгрейд»
+    // не загорался, и главная петля игры («убил — нашёл — надел») не
+    // запускалась вовсе. Теперь она запускается с первой же находки.
+    //
+    // Класс при этом остаётся собой: страж начинает с полуторника, изувер —
+    // со Змеезуба. Второй клинок и щит герой находит сам, и решение «щит или
+    // второй клинок» становится решением ИГРОКА, а не подарком.
+    startingEquipment: [{ slot: 'mainHand', templateId: 'fang', kind: 'weapon', rarity: 'common' }],
   },
 ]
 

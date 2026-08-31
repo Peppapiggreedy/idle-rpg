@@ -6,7 +6,8 @@
 // сумки у оффлайна те же самые, что в тике, до последнего кода отказа.
 import { describe, expect, it } from 'vitest'
 import { Decimal } from './numbers'
-import { createInitialState, type GameState } from './state'
+import { createInitialState, monsterFromTemplate, type GameState } from './state'
+import { buildMonster } from '../data/monsters'
 import { ensureStats } from './stats'
 import { applyOfflineProgress } from './save'
 import { lootValue, stashLoot, type LootValueCache } from './loot'
@@ -25,6 +26,12 @@ function hero(level: number, patch: Partial<GameState> = {}): GameState {
     equipment: averageGear(level),
     currentZoneId: zone.id,
     lastSurvivedZoneId: zone.id,
+    // Перед героем моб ЕГО зоны, а не оставшийся от createInitialState моб
+    // стартового луга. Разница не косметическая: против моба, который
+    // умирает с одного замаха, оценка `estimateCombatRate` одинакова для
+    // любого оружия — она квантует бой замахами, — и «апгрейд» перестаёт
+    // быть апгрейдом. Это свойство самой оценки, а не правил сумки.
+    monster: monsterFromTemplate(buildMonster(zone.monsterPool[0], level, zone.rewardMultiplier)),
     statsDirty: true,
     ...patch,
   })

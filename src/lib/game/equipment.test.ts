@@ -11,7 +11,13 @@ import {
   unequipItem,
 } from './equipment'
 import { estimateCombatRate } from './combat'
-import { createInitialState, emptyEquipment, manualOnlySettings, type GameState } from './state'
+import {
+  createInitialState,
+  emptyEquipment,
+  manualOnlySettings,
+  monsterFromTemplate,
+  type GameState,
+} from './state'
 import { ensureStats } from './stats'
 import { INVENTORY_SIZE, UNARMED } from '../data/balance'
 import { OFFHAND_PENALTY } from '../data/balance'
@@ -372,8 +378,34 @@ describe('две руки: правила связки', () => {
     const main = bareWeapon(ONE_HANDED[0], 'mainHand')
     const off = bareWeapon(ONE_HANDED[0], 'offHand')
     const two = bareWeapon(WEAPONS.find((w) => w.grip === 'two')!, 'mainHand')
-    const dual = { ...equipAll([main, off]), abilitySettings: manualOnlySettings() }
-    const single = { ...equipAll([main]), abilitySettings: manualOnlySettings() }
+    // МОБ — МЕШОК: много HP и ноль урона. Обе половины нужны.
+    //
+    // Много HP — потому что инвариант «равный урон оружия в секунду — равный
+    // итог» держится там, где бой длится больше десятка замахов: на мобе,
+    // который умирает с двух ударов, крупный замах бьёт мимо остатка HP, и
+    // разница связок превращается в перебой. Мобы стартовой полосы теперь
+    // как раз такие, тонкие, — поэтому моб задан явно.
+    //
+    // Ноль урона — потому что мера «лучше» это убийств в секунду С УЧЁТОМ
+    // аптайма: на толстом и КУСАЧЕМ мобе голый герой первого уровня умирает,
+    // аптайм падает в ноль у обеих связок, и сравнивать становится нечего.
+    const target = monsterFromTemplate({
+      id: 'test-sack',
+      name: 'Мешок',
+      level: 1,
+      maxHp: new Decimal(5000),
+      goldReward: new Decimal(1),
+      xpReward: new Decimal(1),
+      damageMin: new Decimal(0),
+      damageMax: new Decimal(0),
+      swingTime: 2,
+    })
+    const dual = {
+      ...equipAll([main, off]),
+      monster: target,
+      abilitySettings: manualOnlySettings(),
+    }
+    const single = { ...equipAll([main]), monster: target, abilitySettings: manualOnlySettings() }
     const share = (state: GameState) =>
       compareItem(state, two)
         .damagePerSecondDelta.div(estimateCombatRate(state).damagePerSecond)

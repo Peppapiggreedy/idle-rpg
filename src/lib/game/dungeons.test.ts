@@ -220,13 +220,18 @@ describe('ярость как проверка на урон в секунду',
   // Герой, которому данжа хватает на несколько минут спокойного боя, но не
   // хватает урона: убить его должна именно ярость, а не обычные удары босса.
   function slowDps(level: number, gearLevel: number): GameState {
-    return ensureStats({
+    const ready = ensureStats({
       ...createInitialState(1),
       level: new Decimal(level),
       equipment: averageGear(gearLevel),
       currentZoneId: DUNGEON.zoneId,
       statsDirty: true,
     })
+    // HP ДОЛИВАЕТСЯ ДО КАПА новой экипировки. `createInitialState` оставляет
+    // запас стартового героя — теперь это один белый клинок и шесть пустых
+    // слотов, — и без долива герой входил бы в данж уже подраненным: умирал
+    // бы до ярости, а тест мерил бы не ярость, а этот недолив.
+    return { ...ready, currentHp: ready.stats.maxHp }
   }
 
   it('не успевающего по урону добивает именно ярость, а не обычный удар', () => {

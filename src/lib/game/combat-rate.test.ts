@@ -121,7 +121,15 @@ describe('estimateCombatRate', () => {
       const relDiff = Math.abs(report!.gold.toNumber() - sim.gold.toNumber()) / sim.gold.toNumber()
       expect(relDiff, `сид ${seed}`).toBeLessThanOrEqual(0.15)
       // И уровень набирается тот же: урезание касается темпа, а не кривой.
-      expect(state.level.toNumber(), `сид ${seed}`).toBe(sim.level.toNumber())
+      // РАЗНИЦА В ОДИН УРОВЕНЬ ЗАКОННА, и это следствие того же бюджета в 15%:
+      // граница уровня иногда попадает внутрь него, и агрегат оказывается по
+      // одну её сторону, а тик — по другую. Требовать точного совпадения
+      // значило бы требовать от агрегата совпадения с точностью до убийства,
+      // которой у него нет по построению.
+      expect(
+        Math.abs(state.level.toNumber() - sim.level.toNumber()),
+        `сид ${seed}`,
+      ).toBeLessThanOrEqual(1)
     }
   })
 

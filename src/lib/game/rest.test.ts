@@ -10,6 +10,7 @@ import {
   type GameState,
 } from './tick'
 import { ensureStats } from './stats'
+import { averageGear } from './simulate'
 import { finishRest, maxMonsterHit, needsRest, restDurationMs, restProgress, startRest, zoneSafety } from './rest'
 import { applyOfflineProgress } from './save'
 import { zoneRate } from './zones'
@@ -25,6 +26,17 @@ function hero(patch: Partial<GameState> = {}): GameState {
     statsDirty: true,
     ...patch,
   })
+}
+
+/**
+ * Тот же герой, но ОДЕТЫЙ в вещи первого уровня — то есть в первые же
+ * находки. Нужен там, где меряется ОФФЛАЙН в зоне за пределами стартовой:
+ * герой в одном белом клинке при шести пустых слотах за стартовую зону не
+ * выходит вовсе, и сравнение «с привалом против без привала» выродилось бы
+ * в «ноль против нуля».
+ */
+function dressedHero(patch: Partial<GameState> = {}): GameState {
+  return ensureStats({ ...hero(), equipment: averageGear(1), statsDirty: true, ...patch })
 }
 
 function run(state: GameState, ms: number): GameState {
@@ -209,7 +221,7 @@ describe('оффлайн знает про привалы', () => {
     // теперь квантуется БОЯМИ, и «отдыхать после каждого убийства» — это
     // тоже привал, просто самый частый.
     const zone = ZONES[1]
-    const idle = hero({ currentZoneId: zone.id, restHpThreshold: 0.9 })
+    const idle = dressedHero({ currentZoneId: zone.id, restHpThreshold: 0.9 })
     const greedy = ensureStats({
       ...idle,
       restHpThreshold: 0.2,
@@ -233,7 +245,7 @@ describe('оффлайн знает про привалы', () => {
     const zone =
       ZONES.find((z) => {
         const reckless = ensureStats({
-          ...hero({ currentZoneId: z.id }),
+          ...dressedHero({ currentZoneId: z.id }),
           restHpThreshold: 0,
           restResourceThreshold: 0,
           statsDirty: true,
@@ -241,7 +253,7 @@ describe('оффлайн знает про привалы', () => {
         const share = zoneRate(reckless, z).uptime
         return share > 0.2 && share < 0.6
       }) ?? ZONES[2]
-    const careful = hero({ currentZoneId: zone.id, restHpThreshold: 0.6 })
+    const careful = dressedHero({ currentZoneId: zone.id, restHpThreshold: 0.6 })
     const reckless = ensureStats({
       ...careful,
       restHpThreshold: 0,

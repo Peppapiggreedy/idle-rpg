@@ -76,9 +76,10 @@ describe('данные зон', () => {
 describe('масштаб мобов от уровня', () => {
   it('моб 1 уровня с обычной ролью равен базовым числам', () => {
     const m = buildMonster({ id: 'x', name: 'x', role: COMMON }, 1, new Decimal(1))
-    // HP — со скидкой ранней полосы: у героя пока одна кнопка из трёх.
+    // HP И УРОН — со скидкой ранней полосы: у героя пока одна кнопка из трёх
+    // и одно белое оружие при шести пустых слотах.
     expect(m.maxHp.eq(MONSTER_BASE.maxHp.times(EARLY_HP_DISCOUNT[0].mult))).toBe(true)
-    expect(m.damageMin.eq(MONSTER_BASE.damage)).toBe(true)
+    expect(m.damageMin.eq(MONSTER_BASE.damage.times(EARLY_HP_DISCOUNT[0].damageMult))).toBe(true)
     expect(m.goldReward.eq(MONSTER_BASE.goldReward)).toBe(true)
     expect(m.xpReward.eq(MONSTER_BASE.xpReward)).toBe(true)
   })
@@ -96,8 +97,11 @@ describe('масштаб мобов от уровня', () => {
   })
 
   it('с уровнем растут и hp, и урон, и награда', () => {
-    const low = buildMonster({ id: 'x', name: 'x', role: COMMON }, 1, new Decimal(1))
-    const high = buildMonster({ id: 'x', name: 'x', role: COMMON }, 10, new Decimal(1))
+    // Уровни взяты ВЫШЕ ранних полос: там на числа наложена скидка
+    // (EARLY_HP_DISCOUNT), и она не ставка роста, а отдельный механизм —
+    // пара «1 против 10» мерила бы её, а не отношение ставок.
+    const low = buildMonster({ id: 'x', name: 'x', role: COMMON }, 11, new Decimal(1))
+    const high = buildMonster({ id: 'x', name: 'x', role: COMMON }, 30, new Decimal(1))
     expect(high.maxHp.gt(low.maxHp)).toBe(true)
     expect(high.damageMin.gt(low.damageMin)).toBe(true)
     expect(high.goldReward.gt(low.goldReward)).toBe(true)

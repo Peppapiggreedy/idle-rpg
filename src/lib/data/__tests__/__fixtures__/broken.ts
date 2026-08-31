@@ -511,6 +511,32 @@ export function brokenCases(): BrokenCase[] {
       expect: ['warden', 'первого уровня', 'data/abilities.ts'],
     },
     {
+      title: 'стартовый комплект закрывает все слоты — находке некуда лечь',
+      content: {
+        ...real,
+        classes: patch(real.classes, 'warden', {
+          startingEquipment: [
+            ...CLASS_BY_ID.warden.startingEquipment,
+            { slot: 'chest' as SlotId, kind: 'armor', attribute: 'vitality', rarity: 'common' },
+          ],
+        }),
+      },
+      expect: ['warden', 'вместо одного', 'data/classes.ts'],
+    },
+    {
+      title: 'стартовое оружие редкое — первые находки будут хуже подарка',
+      content: {
+        ...real,
+        classes: patch(real.classes, 'warden', {
+          startingEquipment: CLASS_BY_ID.warden.startingEquipment.map((i) => ({
+            ...i,
+            rarity: 'rare' as const,
+          })),
+        }),
+      },
+      expect: ['warden', 'обязан быть белым', 'data/classes.ts'],
+    },
+    {
       title: 'ресурс копится боем, но не тает — это копилка, а не ярость',
       content: {
         ...real,

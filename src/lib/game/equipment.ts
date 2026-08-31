@@ -1,7 +1,7 @@
 // Надеть / снять / оценить экипировку. Чистые операции над состоянием.
 import { estimateCombatRate, swingDamageRange } from './combat'
 import { INVENTORY_SIZE } from '../data/balance'
-import { ensureStats, type StatBlock } from './stats'
+import { ensureStats, type StatBlock, type StatModifier } from './stats'
 import type { Decimal } from './numbers'
 import type { Equipment, GameState } from './state'
 import type { SlotId } from '../data/slots'
@@ -132,9 +132,42 @@ function farmRate(state: GameState): Decimal {
   return estimateCombatRate(state).killsPerSecond
 }
 
-/** Лучше ли предмет надетого — СТРОГО по оценочному темпу убийств. */
+/**
+ * ПУСТОЙ СЛОТ — ЭТО НОЛЬ, и порог для него другой.
+ *
+ * Мера «лучше» в игре одна — убийств в секунду из `estimateCombatRate`, — и
+ * живучесть входит в неё только через аптайм. В зоне, где герой не умирает,
+ * аптайм равен единице, и первый в жизни панцирь не двигает оценку ВООБЩЕ:
+ * строгое «больше» не выполняется, и игра сказала бы «не апгрейд» о вещи,
+ * которая надевается на голое место. Раньше это было незаметно: игра дарила
+ * полный комплект, и пустых слотов не существовало. Теперь слотов шесть, и
+ * прогон полного пути показал цену: герой останавливался на 82 уровне из ста,
+ * потому что так и ходил в одном белом клинке.
+ *
+ * Второй меры при этом не заведено — направление по-прежнему решает та же
+ * оценка. Добавлено ровно одно правило и только для пустого слота: вещь не
+ * обязана оценку ПОДНЯТЬ, ей достаточно её не уронить. Плюс требование хоть
+ * что-то менять, иначе «апгрейдом» стал бы и предмет без модификаторов.
+ */
+function fillsEmptySlot(state: GameState, item: Item): boolean {
+  return state.equipment[item.slot] === null && item.mods.some(changesAnything)
+}
+
+/**
+ * Меняет ли модификатор хоть что-нибудь. Сравнение идёт с НЕЙТРАЛЬНЫМ
+ * элементом своего вида в конвейере: у прибавок это ноль, у множителя —
+ * единица. Это не «сумма статов», а проверка на пустышку: без неё вещь
+ * с модификатором в ноль считалась бы апгрейдом на голое место.
+ */
+function changesAnything(mod: { kind: StatModifier['kind']; value: Decimal }): boolean {
+  return mod.kind === 'multiplier' ? !mod.value.eq(1) : !mod.value.eq(0)
+}
+
+/** Лучше ли предмет надетого — по оценочному темпу убийств. */
 export function isUpgrade(state: GameState, item: Item): boolean {
-  return farmRateWith(state, item).gt(farmRate(state))
+  const after = farmRateWith(state, item)
+  const before = farmRate(state)
+  return fillsEmptySlot(state, item) ? after.gte(before) : after.gt(before)
 }
 
 // Производные числа для сравнения предметов в UI: не «+4 к силе атаки»,
@@ -204,7 +237,10 @@ export function compareItem(state: GameState, item: Item): EquipComparison {
     current,
     currentItem: state.equipment[item.slot],
     damagePerSecondDelta: withItem.damagePerSecond.minus(current.damagePerSecond),
-    isUpgrade: withItem.killsPerSecond.gt(current.killsPerSecond),
+    // Порог для пустого слота ниже — см. fillsEmptySlot.
+    isUpgrade: fillsEmptySlot(state, item)
+      ? withItem.killsPerSecond.gte(current.killsPerSecond)
+      : withItem.killsPerSecond.gt(current.killsPerSecond),
     before: state.stats,
     after: equipped.stats,
     combatDelta: base.lte(0)
