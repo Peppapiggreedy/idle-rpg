@@ -511,6 +511,26 @@ export function brokenCases(): BrokenCase[] {
       expect: ['warden', 'первого уровня', 'data/abilities.ts'],
     },
     {
+      title: 'у оружия побочный стат процентом — он не растёт ни от уровня, ни от тира',
+      content: {
+        ...real,
+        weapons: patch(real.weapons, first(real.weapons).id, {
+          extra: [{ stat: 'strength' as StatId, kind: 'percent', value: new Decimal(0.1) }],
+        }),
+      },
+      expect: [first(real.weapons).id, "kind: 'percent'", 'data/items.ts'],
+    },
+    {
+      title: 'у щита побочный стат множителем — та же беда, что и с процентом',
+      content: {
+        ...real,
+        shields: patch(real.shields, first(real.shields).id, {
+          extra: [{ stat: 'vitality' as StatId, kind: 'multiplier', value: new Decimal(1.2) }],
+        }),
+      },
+      expect: [first(real.shields).id, "kind: 'multiplier'", 'data/items.ts'],
+    },
+    {
       title: 'стартовый комплект закрывает все слоты — находке некуда лечь',
       content: {
         ...real,

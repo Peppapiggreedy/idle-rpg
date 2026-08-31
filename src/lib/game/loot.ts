@@ -89,11 +89,10 @@ export function weaponMods(
       value: template.damageMax.times(power),
       source,
     },
-    ...template.extra.map((mod) => ({
-      ...mod,
-      value: mod.kind === 'flat' ? mod.value.times(power) : mod.value,
-      source,
-    })),
+    // Побочные статы у оружия ТОЛЬКО ПЛОСКИЕ (держит проверка контента),
+    // поэтому множатся все без разбора: процент множить было бы нечем — он
+    // считается от суммы конвейера и от уровня вещи не зависит вовсе.
+    ...template.extra.map((mod) => ({ ...mod, value: mod.value.times(power), source })),
   ]
 }
 
@@ -106,11 +105,8 @@ export function shieldMods(template: ShieldTemplate, rarity: RarityDef, level = 
   return [
     { stat: 'blockChance', kind: 'base', value: template.blockChance, source },
     { stat: 'blockValue', kind: 'base', value: template.blockValue.times(power), source },
-    ...template.extra.map((mod) => ({
-      ...mod,
-      value: mod.kind === 'flat' ? mod.value.times(power) : mod.value,
-      source,
-    })),
+    // Тот же разговор, что и у оружия: побочные статы щита только плоские.
+    ...template.extra.map((mod) => ({ ...mod, value: mod.value.times(power), source })),
   ]
 }
 

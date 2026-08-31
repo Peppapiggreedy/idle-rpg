@@ -251,8 +251,8 @@
         },
         {
           "stat": "strength",
-          "kind": "percent",
-          "value": "0.1",
+          "kind": "flat",
+          "value": "74.47999999999999",
           "source": "equipment:mainHand"
         }
       ]

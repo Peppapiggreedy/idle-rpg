@@ -935,6 +935,38 @@ export const PROGRESSION_SCHEMA: EntitySchema<ProgressionStep> = {
   },
 }
 
+/**
+ * ТОЛЬКО ФЛЭТ НА ВЕЩАХ, КОТОРЫЕ ПАДАЮТ И КУЮТСЯ.
+ *
+ * Процент считается от СУММЫ конвейера, то есть от остальной экипировки, и
+ * из этого следуют сразу две беды. Предмет с процентом нельзя оценить сам по
+ * себе — его ценность зависит от того, что надето в других слотах, а
+ * сравнение находок в игре именно поштучное. И он не растёт ни от уровня
+ * вещи, ни от тира: множитель силы в `loot.ts` умножает плоские прибавки,
+ * а проценту умножать нечего. Крушитель с «+10% силы» это показывал в упор:
+ * на первом уровне, когда силы нет вовсе, прибавка была РОВНО НУЛЁМ.
+ *
+ * Проценты остались там, где они и осмысленны: в зачарованиях, талантах и
+ * зельях. Там они множат растущий флэт — поэтому позднее зачарование само
+ * по себе сильнее раннего, и это правильно.
+ */
+function flatOnly(
+  mods: ReadonlyArray<{ stat: string; kind: string }> | undefined,
+  where: string,
+  file: string,
+  report: Report,
+): void {
+  for (const mod of mods ?? []) {
+    if (mod.kind === 'flat' || mod.kind === 'base') continue
+    report.add(
+      where,
+      `стат «${mod.stat}» помечен kind: '${mod.kind}' — на выпадающих и кованых ` +
+        `вещах бывает только 'flat': процент считается от остальной экипировки ` +
+        `и не растёт ни от уровня вещи, ни от тира (${file})`,
+    )
+  }
+}
+
 export const WEAPON_SCHEMA: EntitySchema<WeaponTemplate> = {
   kind: 'оружие',
   file: 'data/items.ts',
@@ -989,6 +1021,7 @@ export const WEAPON_SCHEMA: EntitySchema<WeaponTemplate> = {
         )
       }
     }
+    flatOnly(weapon.extra, where, 'data/items.ts', report)
   },
 }
 
@@ -1052,6 +1085,7 @@ export const SHIELD_SCHEMA: EntitySchema<ShieldTemplate> = {
         )
       }
     }
+    flatOnly(shield.extra, where, 'data/items.ts', report)
   },
 }
 
