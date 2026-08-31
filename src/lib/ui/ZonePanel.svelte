@@ -6,7 +6,7 @@
   import { zoneSafety } from '../game/rest'
   import { enterDungeonRun, gameState, setRestHpThreshold, travelToZone } from '../stores/game'
   import { allDungeonStatuses, type DungeonBlockReason, type DungeonDef } from '../game'
-  import { DUNGEONS, HEROIC, HEROIC_DUNGEONS, clearKey } from '../data/dungeons'
+  import { DUNGEONS, HEROIC, HEROIC_DUNGEONS, clearKey, dungeonOpening } from '../data/dungeons'
   import { Button, NumberText, Panel, Tag } from './kit'
   import { Icon } from './icons'
   import ZoneMap from './ZoneMap.svelte'
@@ -139,7 +139,12 @@
       {:else if f.unlocked}
         <Button size="sm" onclick={() => travelToZone(zone.id)}>Отправиться</Button>
       {:else}
-        <span class="lock">Откроется с {zone.unlockRequirement} уровня</span>
+        <!-- ЧЕМ ОТКРЫВАЕТСЯ. Не уровнем, а конкретным данжем: игроку нужно
+             знать, куда идти, а не сколько ждать. -->
+        {@const opener = dungeonOpening(zone.id)}
+        <span class="lock">
+          {opener ? `Откроется, когда пройдёшь «${opener.name}»` : 'Закрыта'}
+        </span>
       {/if}
 
       <!-- ВХОДЫ ЭТОЙ ЗОНЫ. Данж живёт рядом со своим местом на карте, а не

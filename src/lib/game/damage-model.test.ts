@@ -164,7 +164,7 @@ describe('урон мобов диапазоном', () => {
     const s = withUpgrades(0)
     const monster = { ...s.monster, damageMin: new Decimal(4), damageMax: new Decimal(4) }
     // Бросок урона моба с равными границами не должен трогать поток.
-    expect(rollMonsterDamage(monster, s.stats, rngB).toNumber()).toBe(4)
+    expect(rollMonsterDamage(monster, s.stats, s.level.toNumber(), rngB).toNumber()).toBe(4)
     expect(rngB()).toBe(first)
   })
 })

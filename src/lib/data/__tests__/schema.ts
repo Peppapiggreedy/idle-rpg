@@ -603,7 +603,6 @@ export const ZONE_SCHEMA: EntitySchema<Zone> = {
     { field: 'monsterLevelRange.min', get: (z) => z.monsterLevelRange?.min, min: 1, integer: true },
     { field: 'monsterLevelRange.max', get: (z) => z.monsterLevelRange?.max, min: 1, integer: true },
     { field: 'rewardMultiplier', get: (z) => z.rewardMultiplier, min: 0, exclusiveMin: true },
-    { field: 'unlockRequirement', get: (z) => z.unlockRequirement, min: 1, integer: true },
   ],
   extra: (zone, _content, report) => {
     const where = `зона ${zone.id}`
@@ -2196,12 +2195,49 @@ function checkReachable(content: Content, report: Report): void {
   }
 
   // --- Зоны: в каждую есть путь ---
-  const openAtStart = content.zones.filter((z) => z.unlockRequirement <= 1)
+  //
+  // ЛЕСТНИЦА ЗОН ДЕРЖИТСЯ НА ДАНЖАХ, и проверок здесь три. Зону не должны
+  // открывать двое (иначе «пройди тот или этот» — уже не лестница), стартовых
+  // зон должно быть ровно столько, чтобы герой дошёл до первого данжа, и
+  // раскладка обязана сойтись без остатка: двадцать зон это четыре стартовых
+  // плюс восемь данжей по две.
+  const openedBy = new Map<string, string[]>()
+  for (const dungeon of content.dungeons) {
+    if (dungeon.difficulty === 'heroic') continue // героика второй раз не открывает
+    for (const zoneId of dungeon.opensZoneIds ?? []) {
+      openedBy.set(zoneId, [...(openedBy.get(zoneId) ?? []), dungeon.id])
+      report.need(
+        content.zones.some((z) => z.id === zoneId),
+        `данж ${dungeon.id}`,
+        `открывает зону «${zoneId}», которой нет в data/zones.ts`,
+      )
+    }
+  }
+  for (const [zoneId, openers] of openedBy) {
+    report.need(
+      openers.length === 1,
+      `зона ${zoneId}`,
+      `её открывают сразу ${openers.length} данжа (${openers.join(', ')}) — ` +
+        'лестница должна быть лестницей, а не развилкой (data/dungeons.ts)',
+    )
+  }
+  const openAtStart = content.zones.filter((z) => !openedBy.has(z.id))
   report.need(
     openAtStart.length > 0,
     'зоны',
-    'ни одна зона не открыта на первом уровне — игроку негде начать (data/zones.ts)',
+    'каждую зону открывает какой-нибудь данж — игроку негде начать и нечем ' +
+      'открыть первый данж (data/dungeons.ts)',
   )
+  for (const dungeon of content.dungeons) {
+    if (dungeon.difficulty === 'heroic') continue
+    report.need(
+      (dungeon.opensZoneIds ?? []).length === 2,
+      `данж ${dungeon.id}`,
+      `открывает ${(dungeon.opensZoneIds ?? []).length} зон вместо двух: двадцать зон ` +
+        'раскладываются как четыре стартовых плюс восемь данжей по две, и остатка ' +
+        'здесь быть не может (data/dungeons.ts)',
+    )
+  }
   const safe = content.zones.filter((z) => z.isSafe)
   report.need(
     safe.length === 1,
@@ -2211,10 +2247,10 @@ function checkReachable(content: Content, report: Report): void {
   )
   if (safe.length === 1) {
     report.need(
-      safe[0].unlockRequirement <= 1,
+      !openedBy.has(safe[0].id),
       `зона ${safe[0].id}`,
-      'безопасная зона открывается не с первого уровня — вернуться в неё будет некуда ' +
-        '(data/zones.ts)',
+      'безопасную зону открывает данж — вернуться в неё до его прохождения будет ' +
+        'некуда (data/dungeons.ts)',
     )
   }
 
@@ -2308,15 +2344,27 @@ function checkReachable(content: Content, report: Report): void {
     }
   })
 
-  // --- Данжи: вход из зоны, до которой игрок дорос раньше ---
+  // --- Данжи: вход из зоны, которая открыта РАНЬШЕ самого данжа ---
+  //
+  // Кольцо — самая тихая поломка лестницы: данж, вход в который лежит в зоне,
+  // открываемой им же, недостижим навсегда, и ни один тест боя этого не
+  // заметит. Порядок считается по тиру: данж тира T открывается тем, что
+  // прошли данж T-1.
+  const tierOfZone = new Map<string, number>()
   for (const dungeon of content.dungeons) {
+    if (dungeon.difficulty === 'heroic') continue
+    for (const zoneId of dungeon.opensZoneIds ?? []) tierOfZone.set(zoneId, dungeon.tier)
+  }
+  for (const dungeon of content.dungeons) {
+    if (dungeon.difficulty === 'heroic') continue
     const zone = content.zones.find((z) => z.id === dungeon.zoneId)
     if (!zone) continue // про отсутствие зоны уже сказала схема
-    if (dungeon.unlockRequirement < zone.unlockRequirement) {
+    const openedAt = tierOfZone.get(zone.id)
+    if (openedAt !== undefined && openedAt >= dungeon.tier) {
       report.add(
         `данж ${dungeon.id}`,
-        `открывается с ${dungeon.unlockRequirement} уровня, а зона ${zone.id}, из которой в ` +
-          `него входят, — только с ${zone.unlockRequirement}: до входа не добраться ` +
+        `вход в него лежит в зоне ${zone.id}, которую открывает данж тира ${openedAt} — ` +
+          `то есть он сам или тот, что за ним: до входа не добраться никогда ` +
           '(data/dungeons.ts)',
       )
     }
@@ -2541,10 +2589,6 @@ function checkUnlockLevels(content: Content, report: Report): void {
   const cap = content.balance.levelCap
   type Entry = { where: string; field: string; level: number; file: string }
   const entries: Entry[] = [
-    ...content.zones.map((z) => ({
-      where: `зона ${z.id}`, field: 'unlockRequirement', level: z.unlockRequirement,
-      file: 'data/zones.ts',
-    })),
     ...content.dungeons.map((d) => ({
       where: `данж ${clearKey(d.id, d.difficulty)}`, field: 'unlockRequirement',
       level: d.unlockRequirement, file: 'data/dungeons.ts',

@@ -696,12 +696,46 @@ export function brokenCases(): BrokenCase[] {
       expect: ['trinket', 'никогда', 'data/slots.ts'],
     },
     {
-      title: 'ни одной зоны на первом уровне',
+      title: 'каждую зону открывает данж — игроку негде начать',
       content: {
         ...real,
-        zones: real.zones.map((z) => ({ ...z, unlockRequirement: z.unlockRequirement + 5 })),
+        dungeons: real.dungeons.map((d, i) =>
+          i === 0 ? { ...d, opensZoneIds: real.zones.map((z) => z.id) } : d,
+        ),
       },
-      expect: ['негде начать', 'data/zones.ts'],
+      expect: ['негде начать', 'data/dungeons.ts'],
+    },
+    {
+      title: 'одну зону открывают сразу два данжа — это развилка, а не лестница',
+      content: {
+        ...real,
+        dungeons: real.dungeons.map((d) =>
+          d.difficulty === 'heroic'
+            ? d
+            : { ...d, opensZoneIds: [...d.opensZoneIds, 'glasswaste'] },
+        ),
+      },
+      expect: ['glasswaste', 'развилкой', 'data/dungeons.ts'],
+    },
+    {
+      title: 'данж открывает не две зоны — раскладка двадцати зон не сойдётся',
+      content: {
+        ...real,
+        dungeons: real.dungeons.map((d) =>
+          d.difficulty === 'heroic' || d.tier !== 1 ? d : { ...d, opensZoneIds: [d.opensZoneIds[0]] },
+        ),
+      },
+      expect: ['вместо двух', 'data/dungeons.ts'],
+    },
+    {
+      title: 'вход в данж лежит в зоне, которую он же и открывает — кольцо',
+      content: {
+        ...real,
+        dungeons: real.dungeons.map((d) =>
+          d.difficulty === 'heroic' || d.tier !== 1 ? d : { ...d, zoneId: d.opensZoneIds[0] },
+        ),
+      },
+      expect: ['до входа не добраться', 'data/dungeons.ts'],
     },
     {
       title: 'данж ссылается на реагент, которого нет в игре',
@@ -779,14 +813,6 @@ export function brokenCases(): BrokenCase[] {
       expect: [first(first(real.dungeons).bosses).id, 'не будучи последним', 'data/dungeons.ts'],
     },
     {
-      title: 'данж открывается раньше своей зоны',
-      content: {
-        ...real,
-        dungeons: patch(real.dungeons, first(real.dungeons).id, { unlockRequirement: 1 }),
-      },
-      expect: [first(real.dungeons).id, 'не добраться'],
-    },
-    {
       title: 'коридор темпа вывернут наизнанку',
       content: {
         ...real,
@@ -844,16 +870,6 @@ export function brokenCases(): BrokenCase[] {
     // данжей, храмов, умений, ступеней и цепочки заданий с потолком не
     // сверялись вовсе. Запас нулевой уже сегодня: ступень рейда стоит РОВНО
     // на сотом уровне, и опечатка в одну цифру закрыла бы её навсегда.
-    {
-      title: 'зона открывается выше потолка уровней',
-      content: {
-        ...real,
-        zones: real.zones.map((z, i) =>
-          i === 0 ? { ...z, unlockRequirement: real.balance.levelCap + 1 } : z,
-        ),
-      },
-      expect: ['unlockRequirement', 'LEVEL_CAP', 'никогда'],
-    },
     {
       title: 'данж открывается выше потолка уровней',
       content: {

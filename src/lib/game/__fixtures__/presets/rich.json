@@ -1,5 +1,5 @@
 {
-  "version": 21,
+  "version": 22,
   "classId": "warden",
   "materials": {},
   "activePotions": [],
@@ -340,12 +340,13 @@
       ]
     }
   },
-  "currentZoneId": "ashen-ridge",
+  "currentZoneId": "shepherds-meadow",
   "lastSurvivedZoneId": null,
   "dungeonRun": null,
   "dungeonsCleared": {
     "sunken-barrow": true
   },
+  "unlockedZoneIds": {},
   "questProgress": {
     "done": {},
     "counter": 0

@@ -29,14 +29,36 @@ function hero(patch: Partial<GameState> = {}): GameState {
 }
 
 /**
- * Тот же герой, но ОДЕТЫЙ в вещи первого уровня — то есть в первые же
- * находки. Нужен там, где меряется ОФФЛАЙН в зоне за пределами стартовой:
- * герой в одном белом клинке при шести пустых слотах за стартовую зону не
- * выходит вовсе, и сравнение «с привалом против без привала» выродилось бы
- * в «ноль против нуля».
+ * Герой СЕРЕДИНЫ ЛЕСТНИЦЫ, слегка недоодетый: сороковой уровень в вещах
+ * тридцатого. Нужен там, где меряется ОФФЛАЙН и цена привала.
+ *
+ * Почему не новобранец. Во-первых, в одном белом клинке при шести пустых
+ * слотах он за стартовую зону не выходит вовсе. Во-вторых, за подъём в зону
+ * выше своей теперь платят входящим уроном (LEVEL_GAP_DAMAGE_PER_LEVEL), и
+ * герой первого уровня в любой зоне, кроме стартовой, просто ложится —
+ * сравнение «с привалом против без привала» выродилось бы в «ноль против
+ * нуля». Недоодетый герой своей полосы теряет HP, но не гибнет: ровно то,
+ * на чём и меряется цена привала.
  */
 function dressedHero(patch: Partial<GameState> = {}): GameState {
-  return ensureStats({ ...hero(), equipment: averageGear(1), statsDirty: true, ...patch })
+  return ensureStats({
+    ...hero(),
+    level: new Decimal(40),
+    equipment: averageGear(30),
+    statsDirty: true,
+    ...patch,
+  })
+}
+
+/** Первая зона, где аптайм попадает в окно: зоны выбираются ПОИСКОМ, а не
+ *  номером — номер разъезжается с каждой правкой сил. */
+function zoneWithUptime(from: number, to: number): (typeof ZONES)[number] {
+  const found = ZONES.find((z) => {
+    const share = zoneRate(dressedHero({ currentZoneId: z.id }), z).uptime
+    return share > from && share <= to
+  })
+  if (!found) throw new Error(`нет зоны с аптаймом в (${from}, ${to}]`)
+  return found
 }
 
 function run(state: GameState, ms: number): GameState {
@@ -176,7 +198,7 @@ describe('индикатор безопасности зоны', () => {
     const s = hero({ restHpThreshold: 0.6 })
     for (const zone of ZONES) {
       const safety = zoneSafety(s, zone)
-      expect(safety.worstHit.eq(maxMonsterHit(zone, s.stats))).toBe(true)
+      expect(safety.worstHit.eq(maxMonsterHit(zone, s.stats, s.level.toNumber()))).toBe(true)
       // Метка — это ровно сравнение порога с потерей за неудачный бой, без
       // запаса и без округлений: обещание «умереть нельзя» обязано быть точным.
       expect(safety.safe).toBe(safety.thresholdHp.gt(safety.worstFight))
@@ -220,7 +242,9 @@ describe('оффлайн знает про привалы', () => {
     // Сравниваем два ненулевых порога, а не порог с его отсутствием: привал
     // теперь квантуется БОЯМИ, и «отдыхать после каждого убийства» — это
     // тоже привал, просто самый частый.
-    const zone = ZONES[1]
+    // Зона, где герой ещё не гибнет, но уже теряет здоровье: разница в золоте
+    // это ровно время на привалах, и ничего больше.
+    const zone = zoneWithUptime(0.9, 0.999)
     const idle = dressedHero({ currentZoneId: zone.id, restHpThreshold: 0.9 })
     const greedy = ensureStats({
       ...idle,
@@ -251,7 +275,7 @@ describe('оффлайн знает про привалы', () => {
           statsDirty: true,
         })
         const share = zoneRate(reckless, z).uptime
-        return share > 0.2 && share < 0.6
+        return share > 0.2 && share < 0.8
       }) ?? ZONES[2]
     const careful = dressedHero({ currentZoneId: zone.id, restHpThreshold: 0.6 })
     const reckless = ensureStats({

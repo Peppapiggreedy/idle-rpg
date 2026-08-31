@@ -1,5 +1,5 @@
 {
-  "version": 21,
+  "version": 22,
   "classId": "warden",
   "materials": {},
   "activePotions": [],
@@ -271,6 +271,7 @@
   "lastSurvivedZoneId": null,
   "dungeonRun": null,
   "dungeonsCleared": {},
+  "unlockedZoneIds": {},
   "questProgress": {
     "done": {},
     "counter": 0

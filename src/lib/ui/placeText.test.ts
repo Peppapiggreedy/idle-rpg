@@ -8,7 +8,7 @@ import { enterDungeon } from '../game/dungeons'
 import { enterTemple } from '../game/temple'
 import { travelToZone } from '../game/zones'
 import { createRng } from '../game/rng'
-import { averageGear } from '../game/simulate'
+import { averageGear, unlockedByLevel } from '../game/simulate'
 import { ZONES } from '../data/zones'
 import { DUNGEONS } from '../data/dungeons'
 import { TEMPLE } from '../data/temple'
@@ -17,7 +17,10 @@ import { placeTitle, placeTitleText } from './placeText'
 const RNG = createRng(1)
 
 function hero(patch: Partial<GameState> = {}): GameState {
-  return ensureStats({ ...createInitialState(1), statsDirty: true, ...patch })
+  const base = ensureStats({ ...createInitialState(1), statsDirty: true, ...patch })
+  // Зоны открывают ДАНЖИ: герой нужного уровня прошёл те, что по пути.
+  // Без этого `travelToZone` не пустил бы его никуда дальше стартовой полосы.
+  return { ...base, unlockedZoneIds: unlockedByLevel(base.level.toNumber()) }
 }
 
 describe('заголовок места', () => {

@@ -10,13 +10,13 @@ import { createInitialState, type GameState } from './tick'
 import { ensureStats } from './stats'
 import { enterDungeon } from './dungeons'
 import { enterTemple } from './temple'
-import { forecastZone, offlineZone } from './zones'
+import { forecastZone, isZoneUnlocked, offlineZone } from './zones'
 import { loadGame, saveGame, type SaveStorage } from './save'
 import { DUNGEONS } from '../data/dungeons'
 import { TEMPLE } from '../data/temple'
 import { SAFE_ZONE, ZONES, ZONE_BY_ID, zoneForMonsterLevel } from '../data/zones'
 import { XP_GAP_PENALTY } from '../data/balance'
-import { averageGear } from './simulate'
+import { averageGear, unlockedByLevel } from './simulate'
 
 const DUNGEON = DUNGEONS[0]
 const HOUR = 3_600_000
@@ -32,7 +32,7 @@ function makeStorage(): SaveStorage {
 }
 
 function hero(patch: Partial<GameState> = {}): GameState {
-  return ensureStats({
+  const base = ensureStats({
     ...createInitialState(1),
     level: new Decimal(DUNGEON.unlockRequirement),
     currentZoneId: DUNGEON.zoneId,
@@ -41,6 +41,10 @@ function hero(patch: Partial<GameState> = {}): GameState {
     statsDirty: true,
     ...patch,
   })
+  // ЗОНЫ ОТКРЫВАЮТ ДАНЖИ, поэтому герою нужного уровня они и проставляются:
+  // тот, кто дорос, данжи по пути прошёл — иначе он заперт в стартовой
+  // четвёрке, и «выбор зоны для выхода наружу» выбирать было бы не из чего.
+  return { ...base, unlockedZoneIds: unlockedByLevel(base.level.toNumber()) }
 }
 
 /** Сохранить состояние и загрузить его же спустя `awayMs`. */
@@ -64,7 +68,11 @@ describe('выбор зоны для выхода наружу', () => {
     // Герой давно вырос из стартового луга: возвращать его туда значит
     // отправить фармить зону, которая уже не платит опыта.
     const start = zoneForMonsterLevel(1)
-    const level = 40
+    // Уровень НЕ на самых воротах данжа: ровно на них открытых зон впереди
+    // ещё нет — герой стоит перед данжем, а не за ним, — и «самая высокая
+    // подходящая» была бы единственной. Сорок пятый: третий данж пройден,
+    // четвёртый (пятидесятый) впереди.
+    const level = 45
     const s = hero({
       level: new Decimal(level),
       equipment: averageGear(level),
@@ -73,7 +81,7 @@ describe('выбор зоны для выхода наружу', () => {
     const picked = offlineZone(s)
     expect(picked.id).not.toBe(start.id)
     // Выбранная зона открыта, не отстала и герой в ней не гибнет.
-    expect(picked.unlockRequirement).toBeLessThanOrEqual(level)
+    expect(isZoneUnlocked(s, picked)).toBe(true)
     expect(level - picked.monsterLevelRange.min).toBeLessThanOrEqual(FULL_GAP)
 
     // И ЭТО САМАЯ ВЫСОКАЯ ИЗ ПОДХОДЯЩИХ — утверждением, а не условием.
@@ -90,7 +98,7 @@ describe('выбор зоны для выхода наружу', () => {
     // иначе тест снова стал бы проверять пустое множество.
     const fits = ZONES.filter(
       (z) =>
-        z.unlockRequirement <= level &&
+        isZoneUnlocked(s, z) &&
         level - z.monsterLevelRange.min <= FULL_GAP &&
         ['safe', 'risky'].includes(forecastZone(s, z).verdict),
     )
@@ -110,7 +118,7 @@ describe('выбор зоны для выхода наружу', () => {
     // Ни одной открытой зоны выше стартовой быть не может, значит выбор
     // сводится к безопасной либо к самой стартовой — и обе законны.
     const picked = offlineZone(rookie)
-    expect(picked.unlockRequirement).toBeLessThanOrEqual(1)
+    expect(isZoneUnlocked(rookie, picked)).toBe(true)
   })
 
   it('выбор детерминирован: одно и то же состояние — одна и та же зона', () => {

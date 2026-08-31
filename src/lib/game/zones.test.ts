@@ -27,7 +27,8 @@ import {
   RUNT,
   BRUTE,
 } from '../data/monsters'
-import { PACING_MAX_LEVEL, averageGear } from './simulate'
+import { PACING_MAX_LEVEL, averageGear, unlockedByLevel } from './simulate'
+import { INITIAL_ZONE_IDS } from '../data/dungeons'
 
 const QUARRY = ZONE_BY_ID['hollow-quarry']
 const RIDGE = ZONE_BY_ID['ashen-ridge']
@@ -39,23 +40,26 @@ function heroAt(level: number, gearLevel: number): GameState {
     ...createInitialState(1),
     level: new Decimal(level),
     equipment: averageGear(gearLevel),
+    // Зоны открывают ДАНЖИ: герой этого уровня прошёл те, что были по пути.
+    unlockedZoneIds: unlockedByLevel(level),
     statsDirty: true,
   })
 }
 
 describe('данные зон', () => {
-  it('ровно одна безопасная зона, и она открыта с первого уровня', () => {
+  it('ровно одна безопасная зона, и она открыта с начала игры', () => {
     const safe = ZONES.filter((z) => z.isSafe)
     expect(safe).toHaveLength(1)
-    expect(safe[0].unlockRequirement).toBe(1)
+    // «Открыта с начала» = её не открывает ни один данж. Иначе вернуться
+    // после смерти было бы некуда, пока данж не пройден.
+    expect(INITIAL_ZONE_IDS).toContain(safe[0].id)
     expect(SAFE_ZONE.id).toBe(safe[0].id)
   })
 
-  it('зоны идут по возрастанию требования, уровня мобов и награды', () => {
+  it('зоны идут по возрастанию уровня мобов и награды', () => {
     for (let i = 1; i < ZONES.length; i++) {
       const prev = ZONES[i - 1]
       const zone = ZONES[i]
-      expect(zone.unlockRequirement).toBeGreaterThan(prev.unlockRequirement)
       // Растёт СРЕДНИЙ уровень пула, а полосы соседних зон могут и
       // перекрываться — так у каждого уровня героя есть и «полегче», и
       // «потяжелее», а не одна ступень на всю игру.

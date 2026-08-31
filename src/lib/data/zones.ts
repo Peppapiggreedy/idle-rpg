@@ -44,7 +44,6 @@ export interface Zone {
   monsterLevelRange: { min: number; max: number }
   monsterPool: MonsterArchetype[]
   rewardMultiplier: Decimal // множитель золота и опыта поверх уровня моба
-  unlockRequirement: number // уровень персонажа, с которого зона открыта
   isSafe: boolean // стартовая зона: сюда возвращают, когда возвращаться некуда
   /** Как выглядит место: туман, свет, площадка и расстановка пропсов.
    *  Поле ОБЯЗАТЕЛЬНОЕ — новая зона без вида не соберётся. */
@@ -56,20 +55,27 @@ export interface Zone {
 // есть ровно одна зона, и «дырок в мире» не бывает. Проверяется данными
 // (data/__tests__/integrity.test.ts), а не договорённостью.
 //
-// Уровни мобов и требования по уровню героя — ЧАСТЬ КОНТРАКТА ТЕМПА (PACING
-// в data/balance.ts), а не украшение:
+// ЗОНУ ОТКРЫВАЕТ ДАНЖ, А НЕ УРОВЕНЬ, и поля `unlockRequirement` у зоны больше
+// нет вовсе. Раньше оно было, и лестница разъезжалась молча: требования шли
+// ТРОЙКАМИ (1, 4, 7, ... 58), а полосы мобов — ПЯТЁРКАМИ (1-5, 6-10, ...
+// 96-100). Последняя зона открывалась на 58 уровне, хотя мобы в ней 96-100,
+// а сорок два уровня второй половины игры не приносили ни одной новой зоны.
+// Двумя числами одну лестницу не описать — поэтому число осталось одно.
 //
-//   * ширина полосы задана: пять уровней. Значит ступенька HP между соседними
-//     зонами тоже задана, и подгонять под неё можно только ОДНО — с какого
-//     уровня героя зона становится его;
-//   * unlockRequirement — это границы «правления» зоны, то есть отрезок
-//     уровней, на котором она актуальна. Сила героя приходит с ВЕЩАМИ уровня
-//     его зоны, поэтому отношение сил внутри правления почти постоянно, и
-//     правления — чистый темп игры: три уровня на зону, ровным шагом.
+// Кто какую зону открывает, лежит в `data/dungeons.ts` (`opensZoneIds`): там
+// же, где сам данж, а не в двух местах сразу. Зона, которую не открывает ни
+// один данж, открыта С НАЧАЛА ИГРЫ — таких ровно четыре, и это проверяется
+// (`content:check`), а не подразумевается.
+//
+// Ритм получается классический: десять уровней зоны — данж — десять уровней.
+// Четыре стартовых зоны (мобы 1-20) доводят героя до двадцатого, там его
+// ждёт первый данж, за ним две новые зоны (21-30) — и так восемь раз.
 //
 // Уровень моба намеренно не равен уровню героя: это ярлык сложности, а не
-// возраст противника. Менять эти числа врозь нельзя — контракт темпа
-// проверяет их вместе (game/__tests__/balance.test.ts).
+// возраст противника. Ширина полосы — пять уровней, и она часть КОНТРАКТА
+// ТЕМПА (PACING в data/balance.ts): ступенька HP между соседними зонами
+// задана ею. Менять эти числа врозь нельзя — контракт проверяет их вместе
+// (game/__tests__/balance.test.ts).
 //
 // rewardMultiplier растёт на 6% за ступень. Это единственная ЭКСПОНЕНТА в
 // наградах: уровень моба добавляет их линейно, а экспоненту держит зона —
@@ -87,7 +93,6 @@ export const ZONES: Zone[] = [
       { id: 'straw-lumberer', name: 'Соломенный шатун', role: BRUTE },
     ],
     rewardMultiplier: new Decimal(1.0),
-    unlockRequirement: 1,
     isSafe: true,
   },
   {
@@ -102,7 +107,6 @@ export const ZONES: Zone[] = [
       { id: 'rumbling-caver', name: 'Гулкий обвальщик', role: BRUTE },
     ],
     rewardMultiplier: new Decimal(1.06),
-    unlockRequirement: 4,
     isSafe: false,
   },
   {
@@ -117,7 +121,6 @@ export const ZONES: Zone[] = [
       { id: 'clay-heaver', name: 'Глиняный вздымщик', role: BRUTE },
     ],
     rewardMultiplier: new Decimal(1.124),
-    unlockRequirement: 7,
     isSafe: false,
   },
   {
@@ -132,7 +135,6 @@ export const ZONES: Zone[] = [
       { id: 'bog-drifter', name: 'Топляк', role: BRUTE },
     ],
     rewardMultiplier: new Decimal(1.191),
-    unlockRequirement: 10,
     isSafe: false,
   },
   {
@@ -147,7 +149,6 @@ export const ZONES: Zone[] = [
       { id: 'prism-lurker', name: 'Призменный залёгший', role: BRUTE },
     ],
     rewardMultiplier: new Decimal(1.262),
-    unlockRequirement: 13,
     isSafe: false,
   },
   {
@@ -162,7 +163,6 @@ export const ZONES: Zone[] = [
       { id: 'flint-colossus', name: 'Кремнёвый исполин', role: BRUTE },
     ],
     rewardMultiplier: new Decimal(1.338),
-    unlockRequirement: 16,
     isSafe: false,
   },
   {
@@ -177,7 +177,6 @@ export const ZONES: Zone[] = [
       { id: 'beam-breaker', name: 'Крепёжный ломщик', role: BRUTE },
     ],
     rewardMultiplier: new Decimal(1.419),
-    unlockRequirement: 19,
     isSafe: false,
   },
   {
@@ -192,7 +191,6 @@ export const ZONES: Zone[] = [
       { id: 'bole-oaf', name: 'Комлевый увалень', role: BRUTE },
     ],
     rewardMultiplier: new Decimal(1.504),
-    unlockRequirement: 22,
     isSafe: false,
   },
   {
@@ -207,7 +205,6 @@ export const ZONES: Zone[] = [
       { id: 'column-clinger', name: 'Колонный держун', role: BRUTE },
     ],
     rewardMultiplier: new Decimal(1.594),
-    unlockRequirement: 25,
     isSafe: false,
   },
   {
@@ -222,7 +219,6 @@ export const ZONES: Zone[] = [
       { id: 'rot-uproot', name: 'Гнилой выворотень', role: BRUTE },
     ],
     rewardMultiplier: new Decimal(1.689),
-    unlockRequirement: 28,
     isSafe: false,
   },
   {
@@ -237,7 +233,6 @@ export const ZONES: Zone[] = [
       { id: 'mud-bruiser', name: 'Грязевой бугай', role: BRUTE },
     ],
     rewardMultiplier: new Decimal(1.791),
-    unlockRequirement: 31,
     isSafe: false,
   },
   {
@@ -252,7 +247,6 @@ export const ZONES: Zone[] = [
       { id: 'slag-bearer', name: 'Шлаковый носитель', role: BRUTE },
     ],
     rewardMultiplier: new Decimal(1.898),
-    unlockRequirement: 34,
     isSafe: false,
   },
   {
@@ -267,7 +261,6 @@ export const ZONES: Zone[] = [
       { id: 'weathered-hunch', name: 'Обветренный горбач', role: BRUTE },
     ],
     rewardMultiplier: new Decimal(2.012),
-    unlockRequirement: 37,
     isSafe: false,
   },
   {
@@ -282,7 +275,6 @@ export const ZONES: Zone[] = [
       { id: 'drywind-crag', name: 'Суховейный кряжень', role: BRUTE },
     ],
     rewardMultiplier: new Decimal(2.133),
-    unlockRequirement: 40,
     isSafe: false,
   },
   {
@@ -297,7 +289,6 @@ export const ZONES: Zone[] = [
       { id: 'crust-hauler', name: 'Корковый тягач', role: BRUTE },
     ],
     rewardMultiplier: new Decimal(2.261),
-    unlockRequirement: 43,
     isSafe: false,
   },
   {
@@ -312,7 +303,6 @@ export const ZONES: Zone[] = [
       { id: 'weathered-boulderer', name: 'Заветренный глыбарь', role: BRUTE },
     ],
     rewardMultiplier: new Decimal(2.397),
-    unlockRequirement: 46,
     isSafe: false,
   },
   {
@@ -327,7 +317,6 @@ export const ZONES: Zone[] = [
       { id: 'glacier-brute', name: 'Ледниковый громила', role: BRUTE },
     ],
     rewardMultiplier: new Decimal(2.54),
-    unlockRequirement: 49,
     isSafe: false,
   },
   {
@@ -342,7 +331,6 @@ export const ZONES: Zone[] = [
       { id: 'frozen-snag', name: 'Мёрзлый коряжник', role: BRUTE },
     ],
     rewardMultiplier: new Decimal(2.693),
-    unlockRequirement: 52,
     isSafe: false,
   },
   {
@@ -357,7 +345,6 @@ export const ZONES: Zone[] = [
       { id: 'drift-slab', name: 'Наносный горбыль', role: BRUTE },
     ],
     rewardMultiplier: new Decimal(2.854),
-    unlockRequirement: 55,
     isSafe: false,
   },
   {
@@ -372,7 +359,6 @@ export const ZONES: Zone[] = [
       { id: 'craggy-idol', name: 'Кряжистый истукан', role: BRUTE },
     ],
     rewardMultiplier: new Decimal(3.026),
-    unlockRequirement: 58,
     isSafe: false,
   },
 ]
@@ -391,25 +377,11 @@ export function averageMonsterLevel(zone: Zone): number {
 }
 
 /**
- * Куда игра ведёт героя на этом уровне: САМАЯ ДАЛЬНЯЯ открытая зона.
- *
- * Живёт в ДАННЫХ, а не в game/zones.ts, чтобы ею могли пользоваться и
- * данные, и логика без кольца импортов. Логика зон переиспользует её под
- * именем `intendedZone`, второй копии правила нет.
- */
-export function zoneForLevel(level: number): Zone {
-  let intended = SAFE_ZONE
-  for (const zone of ZONES) if (level >= zone.unlockRequirement) intended = zone
-  return intended
-}
-
-/**
  * Зона ПО СВОЕМУ УРОВНЮ: та, чья полоса мобов накрывает этот уровень.
  *
- * Это НЕ то же самое, что самая дальняя открытая (`zoneForLevel`), и разница
- * принципиальная. Зоны открываются быстрее, чем герой успевает в них
- * выживать: на девятом уровне открыта уже полоса 11–15, но драться герою
- * по силам с мобами 6–10. По этой функции считается кривая опыта — стоимость
+ * Это НЕ то же самое, что самая дальняя ОТКРЫТАЯ зона, и разница
+ * принципиальная. Открытость зависит от пройденных данжей, то есть от
+ * прогресса игрока, а по этой функции считается кривая опыта — стоимость
  * уровня должна опираться на награду мобов, которых герой РЕАЛЬНО бьёт.
  * Возьми здесь самую дальнюю открытую — и кривая потребовала бы впятеро
  * больше убийств, чем игрок способен набрать.
