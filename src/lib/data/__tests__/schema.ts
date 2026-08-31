@@ -29,6 +29,7 @@ import { QUEST_CHAIN, type QuestDef } from '../quests'
 import { MECHANIC_IDS, type ProgressionStep } from '../progression'
 import type { ReagentDef } from '../reagents'
 import type { DungeonSceneKey } from '../scenery'
+import { craftToll, recipeLevel } from '../recipes'
 import type { ProfessionDef, RecipeDef } from '../recipes'
 import type { RarityDef } from '../rarity'
 import type { SoundCue } from '../sounds'
@@ -1196,6 +1197,29 @@ export const RECIPE_SCHEMA: EntitySchema<RecipeDef> = {
         )
       }
     }
+    // ПОШЛИНА: сколько золота стоит нажать «сделать». Считается долей часового
+    // дохода на уровне рецепта, поэтому проверяется не число, а то, что доля
+    // осмысленна: бесплатный крафт — это не слив золота, а его отсутствие,
+    // а крафт дороже полусуток игры не купит никто.
+    // Проверяется УРОВЕНЬ рецепта, а не сама пошлина: пошлина считается долей
+    // часового дохода на этом уровне, то есть от него и зависит целиком.
+    // Уровень за потолком лестницы даёт цену, которой не соответствует ни один
+    // час игры, — и «доля часа» перестаёт что-либо значить.
+    const level = recipeLevel(recipe as RecipeDef)
+    report.need(
+      level >= 1 && level <= content.balance.levelCap,
+      where,
+      `уровень рецепта ${level} вне лестницы 1..${content.balance.levelCap}: пошлина ` +
+        'считается долей часового дохода на этом уровне, а такого уровня в игре нет ' +
+        '(data/recipes.ts)',
+    )
+    report.need(
+      craftToll(recipe as RecipeDef).gt(0),
+      where,
+      'пошлина нулевая — крафт не тратит золота, и слив золота из игры пропадает ' +
+        '(data/recipes.ts, CRAFT_TOLL_HOURS)',
+    )
+
     const output = recipe.output
     if (output.kind === 'item') {
       report.need(

@@ -18,6 +18,7 @@ import { ZONES, zoneForMonsterLevel } from '../../data/zones'
 import { CLASSES } from '../../data/classes'
 import { LEVEL_CAP } from '../../data/balance'
 import { MONSTER_GROWTH } from '../../data/monsters'
+import { RECIPES, craftToll, goldPerHourAt, recipeLevel } from '../../data/recipes'
 
 const STEP = 10
 const LEVELS = Array.from({ length: 1 + (LEVEL_CAP - STEP) / STEP }, (_, i) => STEP + i * STEP)
@@ -189,4 +190,60 @@ describe('дыра отстающей зоны', () => {
     const share = goldPerHour(20, 'warden', ZONES[0].id) / goldPerHour(20, 'warden', own.id)
     expect(share).toBeLessThan(1.25)
   }, 900_000)
+})
+
+
+describe('пошлина крафта на настоящих ценах', () => {
+  // Пересчёт контракта шага 7 на ЦЕНАХ, А НЕ НА ПЛЕЙСХОЛДЕРАХ. Пошлина
+  // считается долей часового дохода по модели из данных, и «сорок процентов
+  // часа» значит ровно это лишь до тех пор, пока модель совпадает с игрой.
+  // Разъедется — и цены поедут молча, оставшись формально правильными.
+  it('модель дохода из данных совпадает с прогоном', () => {
+    const rows = [10, 20, 40, 60, 80, 100].map((level) => {
+      const real = goldPerHour(level, 'warden')
+      const model = goldPerHourAt(level).toNumber()
+      return { уровень: level, прогон: Math.round(real), модель: Math.round(model),
+        расхождение: `${(((model - real) / real) * 100).toFixed(0)}%` }
+    })
+    // eslint-disable-next-line no-console
+    console.table(rows)
+    for (const level of [10, 20, 40, 60, 80, 100]) {
+      const real = goldPerHour(level, 'warden')
+      const model = goldPerHourAt(level).toNumber()
+      expect(Math.abs(model - real) / real, `ур. ${level}`).toBeLessThan(0.3)
+    }
+  }, 900_000)
+
+  it('печатает лестницу пошлин', () => {
+    const rows = [...RECIPES]
+      .sort((a, b) => recipeLevel(a) - recipeLevel(b))
+      .map((r) => ({
+        рецепт: r.name,
+        'ур.': recipeLevel(r),
+        пошлина: craftToll(r).toNumber(),
+        'часов дохода': (
+          craftToll(r).div(goldPerHourAt(recipeLevel(r))).toNumber()
+        ).toFixed(2),
+      }))
+    // eslint-disable-next-line no-console
+    console.table(rows)
+    expect(rows.length).toBe(RECIPES.length)
+  })
+
+  it('пошлина в ЧАСАХ одна и та же на всей лестнице', () => {
+    // Это и есть «время до покупки не гуляет», только на настоящих ценах:
+    // расходник стоит те же сорок процентов часа и на пятом уровне, и на
+    // сотом. Растёт цена, а не срок.
+    const hours = (kind: 'food' | 'potion' | 'item' | 'unique') =>
+      RECIPES.filter((r) =>
+        r.output.kind === 'item'
+          ? (r.output.procId ? 'unique' : 'item') === kind
+          : r.output.kind === kind,
+      ).map((r) => craftToll(r).div(goldPerHourAt(recipeLevel(r))).toNumber())
+    for (const kind of ['food', 'potion', 'item', 'unique'] as const) {
+      const values = hours(kind)
+      if (values.length === 0) continue
+      expect(Math.max(...values) - Math.min(...values), kind).toBeLessThan(0.01)
+    }
+  })
 })

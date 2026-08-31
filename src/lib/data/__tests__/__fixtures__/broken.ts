@@ -738,6 +738,18 @@ export function brokenCases(): BrokenCase[] {
       expect: ['до входа не добраться', 'data/dungeons.ts'],
     },
     {
+      title: 'кованая вещь уровня выше потолка — пошлину считать не от чего',
+      content: {
+        ...real,
+        recipes: real.recipes.map((r) =>
+          r.output.kind === 'item'
+            ? { ...r, output: { ...r.output, level: real.balance.levelCap + 20 } }
+            : r,
+        ),
+      },
+      expect: ['вне лестницы', 'data/recipes.ts'],
+    },
+    {
       title: 'данж ссылается на реагент, которого нет в игре',
       content: {
         ...real,

@@ -4,7 +4,7 @@
 // нет. Отказ — отдельный КОД, текст причины рендерит UI (правило проекта).
 import { Decimal } from './numbers'
 import { MATERIAL_BY_ID, materialsInZone, type MaterialDef } from '../data/materials'
-import { recipeUnlockLevel } from '../data/recipes'
+import { craftToll, recipeUnlockLevel } from '../data/recipes'
 import { recipeUnlocked } from '../data/temple'
 import {
   FOOD_BY_ID,
@@ -55,7 +55,7 @@ export function addMaterial(state: GameState, id: string, count = 1): GameState 
 }
 
 /** Почему рецепт не собрать. null — собирается. */
-export type CraftBlockReason = 'level' | 'locked' | 'materials' | 'inventory-full'
+export type CraftBlockReason = 'level' | 'locked' | 'materials' | 'gold' | 'inventory-full'
 
 export interface RecipeStatus {
   recipe: RecipeDef
@@ -63,6 +63,10 @@ export interface RecipeStatus {
   reason: CraftBlockReason | null
   /** Чего и сколько не хватает. Пусто — материалов достаточно. */
   missing: Array<{ materialId: string; need: number; have: Decimal }>
+  /** Пошлина золотом: сколько стоит нажать «сделать». Считает data/recipes.ts. */
+  toll: Decimal
+  /** Сколько золота не хватает до пошлины. Ноль — хватает. */
+  tollShort: Decimal
 }
 
 export function recipeStatus(state: GameState, recipe: RecipeDef): RecipeStatus {
@@ -73,22 +77,35 @@ export function recipeStatus(state: GameState, recipe: RecipeDef): RecipeStatus 
       have: materialCount(state, input.materialId),
     }))
     .filter((row) => row.have.lt(row.need))
+  const toll = craftToll(recipe)
+  const tollShort = Decimal.max(toll.minus(state.gold), new Decimal(0))
+  const blocked = (reason: CraftBlockReason, rows = missing): RecipeStatus => ({
+    recipe,
+    canCraft: false,
+    reason,
+    missing: rows,
+    toll,
+    tollShort,
+  })
   // Уровень — первым: эта причина не лечится ни материалами, ни местом в сумке.
-  if (state.level.lt(recipeUnlockLevel(recipe))) {
-    return { recipe, canCraft: false, reason: 'level', missing }
-  }
+  if (state.level.lt(recipeUnlockLevel(recipe))) return blocked('level')
   // Рецепт-награда храма заперт, пока рекорд по волнам не дорос до рубежа.
   // Правило живёт в данных (recipeUnlocked): списка «выданных наград» в
   // состоянии нет, открывает их сам рекорд.
   if (!recipeUnlocked(recipe.id, state.templeBestWave, state.templeCleared)) {
-    return { recipe, canCraft: false, reason: 'locked', missing: [] }
+    return blocked('locked', [])
   }
-  if (missing.length > 0) return { recipe, canCraft: false, reason: 'materials', missing }
+  if (missing.length > 0) return blocked('materials')
+  // ЗОЛОТО ПОСЛЕ МАТЕРИАЛОВ и до места в сумке. Порядок не случаен: материалы
+  // копятся сами, пока герой в зоне, а золото игрок тратит и на другое —
+  // «не хватает золота» это решение, а не ожидание, и показывать его надо
+  // тогда, когда всё остальное уже есть.
+  if (tollShort.gt(0)) return blocked('gold')
   // Предмет должен куда-то лечь; еда места не занимает.
   if (recipe.output.kind === 'item' && state.inventory.length >= INVENTORY_SIZE) {
-    return { recipe, canCraft: false, reason: 'inventory-full', missing }
+    return blocked('inventory-full')
   }
-  return { recipe, canCraft: true, reason: null, missing }
+  return { recipe, canCraft: true, reason: null, missing, toll, tollShort }
 }
 
 /** Предмет из рецепта. Модификаторы строят ТЕ ЖЕ функции, что и для лута. */
@@ -173,6 +190,8 @@ export function craft(state: GameState, recipeId: string): GameState {
   for (const input of recipe.inputs) {
     materials[input.materialId] = materialCount(state, input.materialId).minus(input.count)
   }
+  // Пошлина списывается ОДИН раз и здесь: у обеих веток ниже она общая.
+  const gold = state.gold.minus(status.toll)
   const event: CombatEvent = { type: 'craft', recipeId: recipe.id }
   if (recipe.output.kind === 'food' || recipe.output.kind === 'potion') {
     // Еда и зелья — такие же счётчики, как материал: одна порция расходуется
@@ -182,6 +201,7 @@ export function craft(state: GameState, recipeId: string): GameState {
     return advanceQuests(
       {
         ...state,
+        gold,
         materials: { ...materials, [id]: (materials[id] ?? new Decimal(0)).plus(1) },
         combatLog: pushEvent(state.combatLog, event),
       },
@@ -196,6 +216,7 @@ export function craft(state: GameState, recipeId: string): GameState {
   return advanceQuests(
     {
       ...state,
+      gold,
       materials,
       inventory: [...state.inventory, item],
       itemSeq: state.itemSeq + 1,

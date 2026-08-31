@@ -197,3 +197,23 @@ test('общей задержки нет рядом с полоской зама
   await expect(page.locator('.swing')).toBeVisible()
   await expect(page.locator('.swing .gcd')).toHaveCount(0)
 })
+
+// ЦЕНА ВИДНА ДО НАЖАТИЯ. У крафта появилась пошлина золотом, и половина
+// смысла этой правки в том, что игрок видит цену ЗАРАНЕЕ: цена, о которой
+// узнаёшь после клика, — не цена, а сюрприз.
+test('пошлина крафта видна в карточке рецепта, а кнопка заперта нехваткой', async ({ page }) => {
+  await open(page, 1280)
+  await page.locator('nav[aria-label="Разделы"] button', { hasText: 'Сумка' }).click()
+  const recipe = page.locator('.recipe').first()
+  await expect(recipe).toBeVisible()
+  // Строка пошлины есть и в ней есть число.
+  const toll = recipe.locator('.toll')
+  await expect(toll).toBeVisible()
+  await expect(toll).toContainText('Пошлина')
+  await expect(toll).toContainText(/\d/)
+  // Кнопка либо зовёт собрать, либо НАЗЫВАЕТ причину — молчаливого «нельзя»
+  // не бывает. Какая именно причина, зависит от пресета, поэтому проверяется
+  // сам факт названной причины.
+  const button = recipe.getByRole('button')
+  await expect(button).toHaveText(/Собрать|Не хватает|Сумка полна|откроется|рубежа/i)
+})
