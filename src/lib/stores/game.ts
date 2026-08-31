@@ -31,14 +31,20 @@ import type { SlotId } from '../data/slots'
 import {
   AUTOSAVE_INTERVAL_MS,
   OFFLINE_MODAL_MIN_MS,
+  backupRawSave,
   clearSave,
   decodeSaveString,
   encodeSaveString,
   loadGame,
+  readBackupSave,
+  resumeAfterAway,
   saveGame,
   stateFromPayload,
+  type LoadErrorReason,
   type OfflineReport,
+  type SaveWriteError,
 } from '../game/save'
+import { classById } from '../data/classes'
 
 const state = writable<GameState>(createInitialState())
 export const gameState = readonly(state)
@@ -57,9 +63,30 @@ export function dismissOfflineReport(): void {
 export type NoticeCode =
   | 'save-corrupted'
   | 'save-newer-version'
+  | 'save-unsupported-version'
+  | 'save-storage-unavailable'
   | 'save-load-failed'
+  // Записать не удалось. Это САМОЕ важное уведомление в списке: игра идёт,
+  // выглядит здоровой и молча ничего не сохраняет.
+  | 'save-write-failed'
+  | 'save-quota-exceeded'
   | 'import-invalid'
   | 'import-success'
+
+/** Код отказа загрузки -> уведомление. Своего текста у стора нет. */
+const LOAD_NOTICE: Record<LoadErrorReason, NoticeCode> = {
+  corrupt: 'save-corrupted',
+  'newer-version': 'save-newer-version',
+  'unsupported-version': 'save-unsupported-version',
+  'storage-unavailable': 'save-storage-unavailable',
+}
+
+/** Код отказа записи -> уведомление. */
+const WRITE_NOTICE: Record<SaveWriteError, NoticeCode> = {
+  'storage-unavailable': 'save-storage-unavailable',
+  'quota-exceeded': 'save-quota-exceeded',
+  'write-failed': 'save-write-failed',
+}
 const notice = writable<NoticeCode | null>(null)
 export const saveNotice = readonly(notice)
 export function dismissNotice(): void {
@@ -108,14 +135,67 @@ let screenshotMode = false
  * Проверка стоит именно ЗДЕСЬ, в одной точке, а не у каждого вызывающего:
  * сохраняются автосейв в цикле, уход вкладки в фон и отладочные экшены — и
  * достаточно забыть один из них, чтобы вернуть ту же поломку.
+ *
+ * Про отказ записи говорит ОДИН РАЗ за сессию (флаг ниже). Автосейв идёт раз
+ * в несколько секунд: без этого одинаковые сообщения завалили бы экран, и
+ * игрок закрыл бы их не читая — то есть остался бы так же не предупреждён.
  */
+let writeFailureReported = false
+
 export function persistNow(): void {
   if (!get(started) || screenshotMode) return
-  try {
-    saveGame(get(state))
-  } catch {
-    /* нет localStorage (приватный режим и т.п.) — игра просто живёт без сейва */
-  }
+  const result = saveGame(get(state))
+  if (result.kind === 'ok') return
+  // РАНЬШЕ ЗДЕСЬ БЫЛ ПУСТОЙ catch. Игра три часа шла, ничего не сохраняя, и
+  // игрок узнавал об этом, закрыв вкладку: следующий заход начинался с
+  // первого уровня, без единого намёка на причину.
+  if (writeFailureReported) return
+  writeFailureReported = true
+  notice.set(WRITE_NOTICE[result.reason])
+}
+
+/**
+ * ЧАСЫ СТОРА. Инжектируются, потому что иначе оффлайн в фоне нечем проверить:
+ * тест не может подождать восемь часов. Тот же приём уже применён в loadGame.
+ */
+let clock: () => number = () => Date.now()
+export function setClockForTests(fn: () => number): void {
+  clock = fn
+}
+
+/** Когда вкладка ушла в фон; null — она на виду. */
+let hiddenAtMs: number | null = null
+
+/**
+ * Вкладка ушла в фон. Запоминаем отметку времени и сохраняемся: на мобильных
+ * это надёжнее beforeunload, а отметка нужна, чтобы досчитать пропущенное.
+ */
+export function handleTabHidden(): void {
+  hiddenAtMs = clock()
+  persistNow()
+}
+
+/**
+ * Вкладка вернулась. Пропущенное время досчитывается ТЕМ ЖЕ путём, что и при
+ * загрузке страницы: `resumeAfterAway` внутри зовёт `resumeOutside` и
+ * `applyOfflineProgress`, и второй модели начисления не существует.
+ *
+ * Раньше этого не было вовсе: цикл при скрытой вкладке стоит, накопленный
+ * долг сбрасывается, и восемь часов в соседней вкладке давали РОВНО НОЛЬ —
+ * при том, что те же восемь часов с закрытой вкладкой давали пятую часть
+ * живой игры. Выйти из игры было выгоднее, чем оставить её открытой.
+ */
+export function handleTabVisible(): void {
+  const since = hiddenAtMs
+  hiddenAtMs = null
+  if (since === null || !get(started) || screenshotMode) return
+  const elapsedMs = clock() - since
+  const { state: next, offline: report } = resumeAfterAway(get(state), elapsedMs, rng())
+  state.set(next)
+  // Порог модалки тот же, что и при загрузке: короткий отскок во вкладку не
+  // должен выбрасывать окно возврата на пол-экрана.
+  if (report && report.elapsedMs >= OFFLINE_MODAL_MIN_MS) offline.set(report)
+  if (report) persistNow()
 }
 
 /** Начать новую игру выбранным классом. Работает только до первого сейва. */
@@ -138,7 +218,10 @@ export function initGame(): void {
         offline.set(result.offline)
       }
     } else if (result.kind === 'error') {
-      notice.set(result.reason === 'corrupted' ? 'save-corrupted' : 'save-newer-version')
+      // КАЖДАЯ ПРИЧИНА СВОИМ ТЕКСТОМ. Раньше всё, кроме нечитаемой строки,
+      // объявлялось сейвом «из более новой версии», и игрок с испорченным
+      // сохранением ждал деплоя, которого для него не будет.
+      notice.set(LOAD_NOTICE[result.reason])
     }
   } catch {
     notice.set('save-load-failed')
@@ -398,6 +481,42 @@ export function exportSaveString(): string {
   return encodeSaveString(get(state))
 }
 
+/**
+ * Прежнее сохранение из запасного ключа — строкой, готовой к копированию.
+ * `null` — копии нет. Её показывает экран уведомления: пока игрок не начал
+ * заново, это единственный оставшийся след его прогресса.
+ */
+export function backupSaveString(): string | null {
+  return readBackupSave()
+}
+
+/** Кого показывает строка сейва: этим подписан вопрос перед заменой. */
+export interface SavePreview {
+  level: number
+  className: string
+}
+
+function previewOf(s: GameState): SavePreview {
+  return { level: Math.floor(s.level.toNumber()), className: classById(s.classId).name }
+}
+
+/** Кто сейчас — для левой половины вопроса «заменить ЭТОГО на ТОГО?». */
+export function currentSavePreview(): SavePreview | null {
+  return get(started) ? previewOf(get(state)) : null
+}
+
+/**
+ * Кого принесла строка. `null` — строка не читается.
+ *
+ * Разбор идёт ДО замены и отдельно от неё: раньше «Импорт сейва» открывал
+ * window.prompt и сразу заменял героя, ничего не спросив и не назвав. Самое
+ * разрушительное действие в игре не задавало ни одного вопроса.
+ */
+export function previewSaveString(input: string): SavePreview | null {
+  const payload = decodeSaveString(input)
+  return payload ? previewOf(stateFromPayload(payload)) : null
+}
+
 /** Импорт строки сейва; true — успех. Состояние заменяется и сохраняется. */
 export function importSaveString(input: string): boolean {
   const payload = decodeSaveString(input)
@@ -405,6 +524,10 @@ export function importSaveString(input: string): boolean {
     notice.set('import-invalid')
     return false
   }
+  // ПРЕЖНИЙ ГЕРОЙ УХОДИТ В ЗАПАСНОЙ КЛЮЧ, и только потом его затирают.
+  // Импорт — второй способ потерять всё без следа: строку из заметок
+  // недельной давности видно только после того, как своя уже пропала.
+  if (get(started)) backupRawSave(encodeSaveString(get(state)))
   state.set(stateFromPayload(payload))
   // Импортированный сейв — это НАЧАТАЯ игра: класс в нём уже выбран. Без
   // этой строки импорт до выбора класса оставил бы поверх чужого героя
@@ -504,6 +627,10 @@ export function debugResetSave(): void {
     /* нет localStorage — стирать нечего */
   }
   screenshotMode = false
+  // «Заново» — значит и предупреждение об отказе записи заново: иначе
+  // следующая сессия узнала бы о сломанном хранилище молча.
+  writeFailureReported = false
+  hiddenAtMs = null
   started.set(false)
   state.set(createInitialState())
   offline.set(null)

@@ -96,6 +96,26 @@
     pinned = false
     compare = null
   }
+
+  /**
+   * ДЕЙСТВИЕ НАД ПРЕДМЕТОМ СНИМАЕТ ПРИКРЕПЛЕНИЕ.
+   *
+   * Без этого получался тупик, из которого не было видимого выхода: игрок
+   * кликал по иконке (карточка выглядит нажимаемой), окно сравнения
+   * прикреплялось, он жал «Надеть» — предмет уходил в слот, окно исчезало
+   * вместе с ним, а флаг `pinned` оставался поднятым. Дальше наведение на
+   * ЛЮБОЙ другой предмет не показывало ничего, и на экране не было ни одной
+   * подсказки, что нужен Esc или щелчок мимо сетки.
+   */
+  function act(event: MouseEvent, run: () => void) {
+    // ОСТАНАВЛИВАЕМ ВСПЛЫТИЕ. Кнопки лежат ВНУТРИ карточки, у которой свой
+    // onclick (он и прикрепляет окно). Без этого нажатие на «Продать»
+    // доходило до карточки уже после dismiss() и прикрепляло окно заново —
+    // то есть починка не работала бы вовсе.
+    event.stopPropagation()
+    run()
+    dismiss()
+  }
 </script>
 
 <svelte:window
@@ -148,8 +168,8 @@
             <Button
               size="sm"
               variant="primary"
-              onclick={() => {
-                disenchantInventoryItem(item.id)
+              onclick={(e: MouseEvent) => {
+                act(e, () => disenchantInventoryItem(item.id))
                 confirming = null
               }}
             >
@@ -163,11 +183,11 @@
               variant="primary"
               disabled={!eq.canEquip}
               title={eq.reason ? EQUIP_BLOCK_TEXT[eq.reason] : ''}
-              onclick={() => equipInventoryItem(item.id)}
+              onclick={(e: MouseEvent) => act(e, () => equipInventoryItem(item.id))}
             >
               Надеть
             </Button>
-            <Button size="sm" onclick={() => sellInventoryItem(item.id)}>
+            <Button size="sm" onclick={(e: MouseEvent) => act(e, () => sellInventoryItem(item.id))}>
               Продать за {formatNumber(sellPrice(item))}
             </Button>
             {#if dis.reason !== 'locked'}
@@ -175,8 +195,10 @@
                 size="sm"
                 disabled={!dis.canDisenchant}
                 title={dis.reason ? DISENCHANT_REASON[dis.reason] : 'Предмет исчезнет навсегда'}
-                onclick={() =>
-                  item.enchantId ? (confirming = item.id) : disenchantInventoryItem(item.id)}
+                onclick={(e: MouseEvent) =>
+                  item.enchantId
+                    ? (confirming = item.id)
+                    : act(e, () => disenchantInventoryItem(item.id))}
               >
                 Распылить · {formatNumber(dis.dust)} пыли
               </Button>

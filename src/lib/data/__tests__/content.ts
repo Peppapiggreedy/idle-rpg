@@ -25,7 +25,7 @@ import {
 } from '../balance'
 import { ALL_DUNGEONS } from '../dungeons'
 import { ARMOR_NOUNS, SHIELDS, WEAPONS } from '../items'
-import { DROP_CHANCE } from '../loot'
+import { DROP_CHANCE, SHIELD_SHARE } from '../loot'
 import { RARITIES } from '../rarity'
 import { SOUNDS } from '../sounds'
 import { CLASSES } from '../classes'
@@ -35,7 +35,7 @@ import { DUST_BY_RARITY, ENCHANTS, ENCHANT_FLAT_STATS } from '../enchants'
 import { PROCS } from '../procs'
 import { BOSS_ABILITIES } from '../heroic'
 import { TEMPLES } from '../temple'
-import { QUESTS } from '../quests'
+import { QUESTS, QUEST_CHAIN } from '../quests'
 import { PROGRESSION } from '../progression'
 import { REAGENTS } from '../reagents'
 import { DUNGEON_SCENE_KEYS } from '../scenery'
@@ -125,8 +125,10 @@ export function realContent(): Content {
     props: PROP_ASSETS,
     propFiles: readdirSync(PROPS_DIR),
     audioFiles: audioFiles(),
+    questChainUnlockLevel: QUEST_CHAIN.unlockLevel,
     balance: {
       dropChance: DROP_CHANCE,
+      shieldShare: SHIELD_SHARE,
       baseCritChance: BASE_STATS.critChance.toNumber(),
       baseDamageReduction: BASE_STATS.damageReduction.toNumber(),
       offlineEfficiency: OFFLINE_EFFICIENCY,

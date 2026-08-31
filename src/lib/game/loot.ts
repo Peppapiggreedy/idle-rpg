@@ -5,12 +5,13 @@ import type { Rng } from './rng'
 import { pushEvent, type GameState } from './state'
 import type { Item } from '../types'
 import { RARITIES, RARITY_BY_ID, type RarityDef } from '../data/rarity'
-import { DROP_CHANCE, ITEM_BASE_SELL_PRICE, LOOT_ADJECTIVES } from '../data/loot'
+import { DROP_CHANCE, ITEM_BASE_SELL_PRICE, LOOT_ADJECTIVES, SHIELD_SHARE } from '../data/loot'
 import { SLOT_DROP_WEIGHTS, SLOT_IDS, type SlotId } from '../data/slots'
 import {
   ARMOR_ATTRIBUTES,
   ARMOR_BASE_PRIMARY,
   ARMOR_BASE_VITALITY,
+  ARMOR_BONUS_STAT,
   ARMOR_NOUNS,
   ONE_HANDED,
   SHIELDS,
@@ -124,22 +125,26 @@ export function armorMods(
 ): StatModifier[] {
   const source = `equipment:${slot}`
   const power = itemLevelScale(level).times(rarity.bonusMult)
-  // Выпавшая живучесть и общий довесок сливаются в одну строку, а не спорят
-  // двумя записями об одном стате.
-  if (primary === 'vitality') {
-    return [
-      {
-        stat: 'vitality',
-        kind: 'flat',
-        value: ARMOR_BASE_PRIMARY.plus(ARMOR_BASE_VITALITY).times(power),
-        source,
-      },
-    ]
-  }
-  return [
-    { stat: primary, kind: 'flat', value: ARMOR_BASE_PRIMARY.times(power), source },
-    { stat: 'vitality', kind: 'flat', value: ARMOR_BASE_VITALITY.times(power), source },
-  ]
+  // Главный атрибут и общий довесок СЛИВАЮТСЯ, когда это один и тот же стат:
+  // две записи об одном стате читались бы в карточке как «+12 живучести,
+  // +4 живучести». Слияние идёт по совпадению стата, а какой стат довеском —
+  // сказано в данных (ARMOR_BONUS_STAT). Раньше здесь стояло имя «vitality»
+  // прямо в условии, и пятый атрибут молча вернул бы двойную строку.
+  // БЮДЖЕТЫ СКЛАДЫВАЮТСЯ ДО умножения на power, а не после: иначе у
+  // совпавшего стата получилось бы `4*p + 2*p` вместо `(4+2)*p`, и значение
+  // разошлось бы с прежним в последних знаках — то есть поехали бы сейвы и
+  // эталоны, хотя игра не изменилась.
+  const budget = new Map<AttributeId, Decimal>()
+  const add = (stat: AttributeId, value: Decimal) =>
+    budget.set(stat, (budget.get(stat) ?? new Decimal(0)).plus(value))
+  add(primary, ARMOR_BASE_PRIMARY)
+  add(ARMOR_BONUS_STAT, ARMOR_BASE_VITALITY)
+  return [...budget].map(([stat, value]) => ({
+    stat,
+    kind: 'flat' as const,
+    value: value.times(power),
+    source,
+  }))
 }
 
 /**
@@ -151,10 +156,12 @@ export function averageArmorMods(slot: ArmorSlot, rarity: RarityDef, level = 1):
   const source = `equipment:${slot}`
   const power = itemLevelScale(level).times(rarity.bonusMult)
   const share = ARMOR_BASE_PRIMARY.div(ARMOR_ATTRIBUTES.length)
+  // Довесок прибавляется тому стату, который назван довеском В ДАННЫХ, —
+  // ровно как в armorMods выше, и по тому же признаку совпадения.
   return ARMOR_ATTRIBUTES.map((attr) => ({
     stat: attr,
     kind: 'flat' as const,
-    value: (attr === 'vitality' ? share.plus(ARMOR_BASE_VITALITY) : share).times(power),
+    value: (attr === ARMOR_BONUS_STAT ? share.plus(ARMOR_BASE_VITALITY) : share).times(power),
     source,
   }))
 }
@@ -238,9 +245,6 @@ function handItem(
     mods: weaponMods(template, rarity, slot, level),
   }
 }
-
-/** Какая доля находок в левую руку — щиты, а не вторые клинки. */
-const SHIELD_SHARE = 0.4
 
 // Лут босса: слоты заданы данными, а редкость — обычная рулетка, но не ниже
 // порога босса. Отсюда и растущее качество по цепочке: порог поднимается.

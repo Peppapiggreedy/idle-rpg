@@ -70,6 +70,25 @@ export function unlockAudioOnGesture(): () => void {
   return detach
 }
 
+/**
+ * ВОЗВРАЩАЕТ ЗВУК ПОСЛЕ ПЕРЕРЫВА.
+ *
+ * Слушатель жеста висит с `{ once: true }` и отписывается после первого
+ * касания — звать `resume()` больше некому. А контекст на iOS останавливают
+ * блокировка экрана, звонок и переключение приложений. Без этого обработчика
+ * звук пропадал до перезагрузки страницы.
+ *
+ * Жест игрока к этому моменту уже был, поэтому браузер `resume()` разрешает.
+ */
+export function resumeAudioOnVisible(): () => void {
+  if (typeof document === 'undefined') return () => {}
+  const onVisible = () => {
+    if (document.visibilityState === 'visible') void engine?.unlock()
+  }
+  document.addEventListener('visibilitychange', onVisible)
+  return () => document.removeEventListener('visibilitychange', onVisible)
+}
+
 /** Звук интерфейса. UI зовёт его сам: событий боя у кнопки нет. */
 export function playUiSound(id: 'ui-click' | 'ui-toggle' | 'ui-deny'): void {
   player?.ui(id)

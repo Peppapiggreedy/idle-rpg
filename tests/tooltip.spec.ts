@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { sectionTab } from './screen.js'
 
 // Подсказка — единственный способ объяснить число, не занимая им экран.
 // Здесь проверяется то, что ломается молча: на телефоне нет наведения,
@@ -100,4 +101,43 @@ test('подсказка умения показывает посчитанно�
   const text = await bubble.innerText()
   // В подсказке обязано быть конкретное число урона, а не только проценты.
   expect(text).toMatch(/Урон:.*≈\s*[\d.,KMB]+/)
+})
+
+// СРАВНЕНИЕ ПРЕДМЕТОВ НЕ ЗАСТРЕВАЕТ (находка 4.2 в AUDIT.md).
+//
+// Игрок кликал по иконке (карточка выглядит нажимаемой) — окно сравнения
+// прикреплялось. Жал «Надеть»: предмет уходил в слот, окно исчезало вместе
+// с ним, а флаг прикрепления оставался поднятым. Дальше наведение на ЛЮБОЙ
+// другой предмет не показывало ничего, и подсказки, что нужен Esc, не было
+// нигде на экране.
+test('после действия над предметом сравнение снова работает при наведении', async ({ page }) => {
+  await open(page, 1280)
+  await sectionTab(page, 'Сумка').click()
+
+  const cards = page
+    .locator('.slot')
+    .filter({ has: page.locator('button', { hasText: 'Продать' }) })
+  await expect(cards.first()).toBeVisible()
+  const compare = page.locator('[data-item-compare]')
+
+  // Наведение показывает окно.
+  await cards.first().hover()
+  await expect(compare).toBeVisible()
+
+  // Клик по иконке ПРИКРЕПЛЯЕТ его — именно с этого и начинался тупик.
+  await cards.first().click()
+  await expect(compare).toBeVisible()
+
+  // Действие над предметом снимает прикрепление.
+  await cards.first().locator('button', { hasText: 'Продать' }).click()
+
+  // ГЛАВНОЕ: наведение снова живое. Уводим курсор совсем в сторону — окно
+  // обязано пропасть, значит оно следует за мышью, а не приколото.
+  await page.mouse.move(2, 2)
+  await expect(compare).toHaveCount(0)
+
+  // И на другой карточке появляется снова. Раньше здесь была тишина до
+  // самого Esc, и ни одной подсказки, что нажимать именно его.
+  await cards.nth(1).hover()
+  await expect(compare).toBeVisible()
 })

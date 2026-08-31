@@ -5,8 +5,19 @@ import BalancePage from './lib/ui/BalancePage.svelte'
 import ShowcasePage from './lib/ui/ShowcasePage.svelte'
 import { debugRoute, presetName } from './lib/ui/route'
 import { loadPreset } from './lib/ui/preset'
-import { applyFpsLimit, initGame, persistNow, startGameLoop } from './lib/stores/game'
-import { attachUiSounds, startAudio, unlockAudioOnGesture } from './lib/audio'
+import {
+  applyFpsLimit,
+  handleTabHidden,
+  handleTabVisible,
+  initGame,
+  startGameLoop,
+} from './lib/stores/game'
+import {
+  attachUiSounds,
+  resumeAudioOnVisible,
+  startAudio,
+  unlockAudioOnGesture,
+} from './lib/audio'
 import { uiSettings } from './lib/stores/ui'
 
 const target = document.getElementById('app')!
@@ -27,11 +38,21 @@ function startGame(): void {
   // это игра, которую закрывают.
   startAudio(import.meta.env.BASE_URL)
   unlockAudioOnGesture()
+  // Звук возвращается после блокировки экрана и переключения приложений.
+  resumeAudioOnVisible()
   attachUiSounds()
   startGameLoop()
-  // Сохраняемся, когда вкладка уходит в фон: на мобильных это надёжнее beforeunload.
+  // Уход в фон и возврат из фона — ОБА события, а не одно.
+  //
+  // Раньше здесь был только уход: сохраниться (на мобильных это надёжнее
+  // beforeunload). Возврата не было вовсе, а цикл при скрытой вкладке стоит и
+  // накопленное время выбрасывает, — поэтому восемь часов в соседней вкладке
+  // давали ровно ноль, тогда как те же восемь часов с ЗАКРЫТОЙ вкладкой
+  // давали пятую часть живой игры. Выйти из игры было выгоднее, чем оставить
+  // её открытой; в idle-игре это худшее, что можно построить.
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') persistNow()
+    if (document.visibilityState === 'hidden') handleTabHidden()
+    else handleTabVisible()
   })
   markReady('game')
 }

@@ -2,16 +2,26 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { get } from 'svelte/store'
 import {
   applyScreenshotState,
+  backupSaveString,
+  currentSavePreview,
   debugResetSave,
+  dismissNotice,
   exportSaveString,
   gameStarted,
   gameState,
+  handleTabHidden,
+  handleTabVisible,
+  importSaveString,
   initGame,
+  offlineReport,
   persistNow,
+  previewSaveString,
+  saveNotice,
+  setClockForTests,
   startNewGame,
 } from './game'
 import { createInitialState } from '../game/state'
-import { SAVE_KEY } from '../game/save'
+import { SAVE_BACKUP_KEY, SAVE_KEY } from '../game/save'
 
 // Стор пишет в globalThis.localStorage, которого в node нет. Подсовываем свой:
 // проверять надо именно то, ЧТО попадает в хранилище и когда.
@@ -131,5 +141,154 @@ describe('режим съёмки', () => {
     persistNow()
     exportSaveString()
     expect(data.has(SAVE_KEY)).toBe(false)
+  })
+})
+
+// ПРОГРЕСС НЕЛЬЗЯ ПОТЕРЯТЬ МОЛЧА (находки 2.2, 4.1 в AUDIT.md).
+describe('отказ записи виден игроку', () => {
+  function breakStorage(setItem: () => never) {
+    ;(globalThis as unknown as { localStorage: unknown }).localStorage = {
+      getItem: (k: string) => data.get(k) ?? null,
+      setItem,
+      removeItem: (k: string) => void data.delete(k),
+    }
+  }
+
+  it('игра идёт, сохранить не может — уведомление поднимается', () => {
+    startNewGame('warden')
+    expect(get(saveNotice)).toBeNull()
+    breakStorage(() => {
+      throw new Error('write failed')
+    })
+    persistNow()
+    // Раньше здесь был пустой catch: игра три часа шла, ничего не сохраняя,
+    // и игрок узнавал об этом, вернувшись к первому уровню.
+    expect(get(saveNotice)).toBe('save-write-failed')
+  })
+
+  it('переполнение квоты называется своим кодом', () => {
+    startNewGame('warden')
+    breakStorage(() => {
+      throw Object.assign(new Error('quota'), { name: 'QuotaExceededError' })
+    })
+    persistNow()
+    expect(get(saveNotice)).toBe('save-quota-exceeded')
+  })
+
+  it('говорит ОДИН РАЗ за сессию, а не на каждый автосейв', () => {
+    // Автосейв идёт раз в несколько секунд. Одинаковые сообщения подряд
+    // игрок закрывает не читая — то есть остаётся так же не предупреждён.
+    startNewGame('warden')
+    breakStorage(() => {
+      throw new Error('write failed')
+    })
+    persistNow()
+    dismissNotice()
+    persistNow()
+    persistNow()
+    expect(get(saveNotice)).toBeNull()
+  })
+
+  it('исключение наружу не выходит', () => {
+    startNewGame('warden')
+    breakStorage(() => {
+      throw new Error('SecurityError')
+    })
+    expect(() => persistNow()).not.toThrow()
+  })
+})
+
+describe('импорт сейва', () => {
+  it('строку читает ДО замены: мусор не трогает героя', () => {
+    startNewGame('reaver')
+    const before = get(gameState).classId
+    expect(previewSaveString('это не сейв')).toBeNull()
+    expect(importSaveString('это не сейв')).toBe(false)
+    expect(get(gameState).classId).toBe(before)
+    expect(get(saveNotice)).toBe('import-invalid')
+  })
+
+  it('называет обоих героев до замены', () => {
+    startNewGame('warden')
+    const mine = currentSavePreview()
+    expect(mine).toMatchObject({ level: 1 })
+    // Строка чужого героя разбирается, но НИЧЕГО не меняет.
+    const other = exportSaveString()
+    expect(previewSaveString(other)).toMatchObject({ level: 1 })
+    expect(get(gameState).classId).toBe('warden')
+  })
+
+  it('кладёт прежнего героя в запасную копию ДО замены', () => {
+    startNewGame('warden')
+    const mine = exportSaveString()
+    debugResetSave()
+    startNewGame('reaver')
+    expect(backupSaveString()).toBeNull()
+    // Импортируем чужого — своего обязаны сохранить.
+    expect(importSaveString(mine)).toBe(true)
+    expect(get(gameState).classId).toBe('warden')
+    const saved = backupSaveString()
+    expect(saved).not.toBeNull()
+    // И копия — это именно прежний герой, а не тот, кого только что загрузили.
+    expect(previewSaveString(saved!)).not.toBeNull()
+    expect(data.has(SAVE_BACKUP_KEY)).toBe(true)
+  })
+})
+
+// ОФФЛАЙН В ФОНОВОЙ ВКЛАДКЕ (находка 1.2). Проверяется через стор, потому что
+// именно он сводит часы, отметку ухода в фон и модалку возврата.
+describe('вкладка уходит в фон и возвращается', () => {
+  let now = 0
+  beforeEach(() => {
+    now = 1_000_000
+    setClockForTests(() => now)
+  })
+
+  it('восемь часов в фоне начисляют прогресс и показывают отчёт', () => {
+    startNewGame('warden')
+    const before = get(gameState).gold
+    handleTabHidden()
+    now += 8 * 60 * 60 * 1000
+    handleTabVisible()
+    // Раньше здесь был ровный ноль: цикл при скрытой вкладке стоит, а
+    // накопленное время сбрасывалось.
+    expect(get(gameState).gold.gt(before)).toBe(true)
+    expect(get(offlineReport)).not.toBeNull()
+  })
+
+  it('короткое переключение не показывает модалку и не двигает игру', () => {
+    startNewGame('warden')
+    const before = get(gameState).gold
+    handleTabHidden()
+    now += 5_000
+    handleTabVisible()
+    expect(get(offlineReport)).toBeNull()
+    expect(get(gameState).gold.eq(before)).toBe(true)
+  })
+
+  it('возврат без ухода в фон ничего не делает', () => {
+    startNewGame('warden')
+    const before = get(gameState).gold
+    now += 8 * 60 * 60 * 1000
+    handleTabVisible()
+    expect(get(gameState).gold.eq(before)).toBe(true)
+    expect(get(offlineReport)).toBeNull()
+  })
+
+  it('до выбора класса фон не начисляет ничего', () => {
+    expect(get(gameStarted)).toBe(false)
+    handleTabHidden()
+    now += 8 * 60 * 60 * 1000
+    handleTabVisible()
+    expect(get(gameStarted)).toBe(false)
+  })
+
+  it('начисленное за фон сразу уходит в сейв', () => {
+    startNewGame('warden')
+    data.delete(SAVE_KEY)
+    handleTabHidden()
+    now += 8 * 60 * 60 * 1000
+    handleTabVisible()
+    expect(data.has(SAVE_KEY)).toBe(true)
   })
 })

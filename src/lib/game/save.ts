@@ -17,7 +17,7 @@ import {
   type ActivePotion,
 } from './state'
 import { createRng, randomSeed } from './rng'
-import { TEMPLE_BY_ID } from '../data/temple'
+import { TEMPLE, TEMPLE_BY_ID } from '../data/temple'
 import { advancePotions, gatherHerbs } from './potions'
 import { ENCHANT_BY_ID } from '../data/enchants'
 import { PROC_BY_ID } from '../data/procs'
@@ -64,6 +64,18 @@ import { leaveTemple } from './temple'
 import type { Rng } from './rng'
 
 export const SAVE_KEY = 'idle-rpg-save'
+
+/**
+ * Запасной ключ: сюда кладётся ПРЕЖНЕЕ содержимое сейва перед любой
+ * перезаписью, способной уничтожить прогресс, — то есть перед импортом и
+ * перед тем, как игрок начнёт заново поверх нечитаемого сейва.
+ *
+ * Зачем. Раньше исходные байты жили ровно до первого нажатия: на экране
+ * «сохранение повреждено» единственным действием был выбор класса, и он же
+ * затирал единственную копию. У владельца нет ни консоли, ни локальной среды —
+ * узнать, что чинить уже нечего, он мог только постфактум.
+ */
+export const SAVE_BACKUP_KEY = 'idle-rpg-save-backup'
 /**
  * Сдвиг сида для потока лута в оффлайне. Нужен, чтобы этот поток не совпадал
  * с потоком спавна моба при загрузке: оба заводятся от одного сида состояния,
@@ -134,7 +146,16 @@ export interface SavedDungeonRun {
 }
 
 export interface SavePayloadV21 {
-  version: 20
+  /**
+   * ВЕРСИЯ БЕРЁТСЯ ИЗ КОНСТАНТЫ, а не переписывается числом.
+   *
+   * Здесь стояло `20` при `SAVE_VERSION = 21`, и игра штамповала свои сейвы
+   * чужим номером. Каждая загрузка считала свежий сейв устаревшим и прогоняла
+   * миграцию 20→21, а та сбрасывала `templeCleared` — награда за полную
+   * зачистку Храма пропадала после первого же F5. Числу здесь не место:
+   * поднимут `SAVE_VERSION` — тип поедет следом сам.
+   */
+  version: typeof SAVE_VERSION
   /** Мешок: материалы, травы, еда и склянки — id -> количество строкой. */
   materials: Record<string, string>
   /** Пыль зачарования: величина растущая, поэтому строкой. */
@@ -209,8 +230,20 @@ export interface SaveDeps {
   now?: () => number
 }
 
-function defaultStorage(): SaveStorage {
-  return globalThis.localStorage
+/**
+ * Хранилище браузера — или `null`, если его нет.
+ *
+ * Здесь стояло голое `globalThis.localStorage`. В Safari с запретом хранилища
+ * (и во встроенном браузере приложения) бросает САМ ДОСТУП к свойству, ещё до
+ * всякой записи, — и исключение улетало наружу из saveGame, где его глушил
+ * пустой catch в сторе. Игрок при этом не узнавал ничего.
+ */
+function defaultStorage(): SaveStorage | null {
+  try {
+    return globalThis.localStorage ?? null
+  } catch {
+    return null
+  }
 }
 
 // new Decimal('мусор') даёт NaN, а не исключение — проверяем поля руками.
@@ -279,7 +312,7 @@ export function payloadFromState(state: GameState, lastTimestamp: number): SaveP
     if (state.dungeonsCleared[key] === true) dungeonsCleared[key] = true
   }
   return {
-    version: 20,
+    version: SAVE_VERSION,
     classId: state.classId,
     materials: Object.fromEntries(
       Object.entries(state.materials)
@@ -1151,13 +1184,40 @@ export const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
     // значил ровно то же самое — «максимальный полностью пройденный этаж», —
     // и им же открыты рецепты рубежей. Обнулить его значило бы отобрать у
     // ветерана храма уже открытые рецепты, то есть потерять прогресс.
-    next.templeBestWave =
+    const bestWave =
       typeof raw.templeBestWave === 'number' && raw.templeBestWave > 0
         ? Math.floor(raw.templeBestWave)
         : 0
-    // Полной зачистки в старом формате не существовало: флаг начинается с
-    // нуля, и первая же зачистка выдаст токен и уникальный рецепт.
-    next.templeCleared = false
+    next.templeBestWave = bestWave
+    // ФЛАГ ПОЛНОЙ ЗАЧИСТКИ. Здесь стояло безусловное `false`, и это было верно
+    // ровно до тех пор, пока сюда приходили только настоящие сейвы 20-й
+    // версии: полной зачистки в том формате не существовало.
+    //
+    // Но игра штамповала СВОИ сейвы номером 20 (см. SavePayloadV21.version),
+    // поэтому в миграцию приезжали и свежие сейвы 21-й версии — с уже взятой
+    // зачисткой, — и безусловное `false` её стирало. Значение, если оно
+    // осмысленное, теперь сохраняется.
+    next.templeCleared = raw.templeCleared === true
+
+    // РАЗОВАЯ ПОЧИНКА УЖЕ ИСПОРЧЕННЫХ СЕЙВОВ (находка 2.1 в AUDIT.md).
+    //
+    // Пункта выше мало: у тех, кто уже загружался со сломанной сборкой, флаг
+    // в сейве стёрт, а вернуть его игра не может — платят только этажи ВЫШЕ
+    // рекорда (game/temple.ts), а рекорд уже равен потолку. Без этой строки
+    // фикс не даёт видимого результата: рецепт «Венец испытаний» так и
+    // остаётся запертым навсегда.
+    //
+    // Рекорд на потолке — ДОКАЗАТЕЛЬСТВО того, что зачистка была: и в 20-й
+    // версии, и в 21-й `templeBestWave` значит «максимальный ПОЛНОСТЬЮ
+    // пройденный этаж», а взять его целиком иначе, чем пройдя храм, нельзя.
+    //
+    // Это починка конкретной ошибки, а не правило игры. Материалы она НЕ
+    // выдаёт намеренно: мешок переживает поломку сам (она стирала только
+    // флаг), а выдача уникального токена из миграции удвоила бы его тому,
+    // кто уже успел на него сковать «Венец».
+    // Рекорд в сейве один на игру, поэтому и потолок берётся у того храма,
+    // которому он принадлежит: появится второй — поедет и формат сейва.
+    if (next.templeCleared !== true && bestWave >= TEMPLE.floors) next.templeCleared = true
     // У прерванного забега появилось поле пройденных этажей. Старый забег
     // всё равно расформируется при загрузке (resumeOutside), но формат
     // обязан быть согласован сам по себе.
@@ -1182,19 +1242,77 @@ export const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
   }),
 }
 
-// null = сейв непригоден (не объект или из более новой версии игры).
-export function migrateSave(raw: unknown): SavePayloadV21 | null {
-  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null
+/**
+ * Поля, которые писала САМАЯ ПЕРВАЯ сборка игры — до того, как у сейва
+ * появилась версия. По ним и опознаётся доверсионный сейв.
+ *
+ * Зачем это нужно. Раньше отсутствие версии молча считалось нулём, и через
+ * все двадцать с лишним миграций прогонялось ЛЮБОЕ постороннее содержимое,
+ * оказавшееся под ключом сейва. Но и обратное — «нет версии, значит мусор» —
+ * неверно: доверсионные сейвы настоящие, и у них поля version нет по праву
+ * (fixtures: save-v0.json). Различает их форма, а не наличие числа.
+ */
+const V0_MARKERS = [
+  'gold',
+  'level',
+  'xp',
+  'currentXp',
+  'damagePerSecond',
+  'baseDamage',
+  'upgrades',
+  'totalTicks',
+  'playtimeMs',
+] as const
+
+/** Результат чтения сейва: либо payload, либо ПРИЧИНА отказа. */
+export type MigrateResult =
+  | { kind: 'ok'; payload: SavePayloadV21 }
+  | { kind: 'error'; reason: LoadErrorReason }
+
+/**
+ * Приводит сейв любой версии к текущей.
+ *
+ * Причина отказа возвращается КОДОМ, как и везде в проекте. Раньше здесь был
+ * общий `null` на шесть разных случаев, и UI показывал на все шесть один
+ * текст — «игра обновилась». Игрок с испорченным сейвом читал сообщение про
+ * обновление и ждал следующего деплоя, которого для него не будет.
+ */
+export function readSave(raw: unknown): MigrateResult {
+  const fail = (reason: LoadErrorReason): MigrateResult => ({ kind: 'error', reason })
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return fail('corrupt')
   let data = raw as RawSave
-  let version = typeof data.version === 'number' ? data.version : 0
-  if (version > SAVE_VERSION) return null
+
+  let version: number
+  if (data.version === undefined) {
+    // Версии нет: либо доверсионный сейв, либо посторонний объект.
+    const looksLikeV0 = V0_MARKERS.some((key) => data[key] !== undefined)
+    if (!looksLikeV0) return fail('corrupt')
+    version = 0
+  } else if (typeof data.version !== 'number' || !Number.isInteger(data.version) || data.version < 0) {
+    return fail('corrupt')
+  } else {
+    version = data.version
+  }
+
+  if (version > SAVE_VERSION) return fail('newer-version')
   while (version < SAVE_VERSION) {
     const step = MIGRATIONS[version]
-    if (!step) return null
+    // Версия внутри диапазона, а шага миграции нет: формат из ветки, которая
+    // до релиза не дожила. Это не «игра обновилась» и не мусор — свой случай.
+    if (!step) return fail('unsupported-version')
     data = step(data)
     version = typeof data.version === 'number' ? data.version : version + 1
   }
-  return data as unknown as SavePayloadV21
+  return { kind: 'ok', payload: data as unknown as SavePayloadV21 }
+}
+
+/**
+ * Тот же разбор, но одним значением: payload или `null`.
+ * Тонкая обёртка для мест, которым причина отказа не нужна.
+ */
+export function migrateSave(raw: unknown): SavePayloadV21 | null {
+  const result = readSave(raw)
+  return result.kind === 'ok' ? result.payload : null
 }
 
 export interface OfflineReport {
@@ -1389,10 +1507,63 @@ export function applyOfflineProgress(
   }
 }
 
-export function saveGame(state: GameState, deps: SaveDeps = {}): void {
+/** Почему сохранить не удалось. Текст по коду рендерит UI, как и везде. */
+export type SaveWriteError = 'storage-unavailable' | 'quota-exceeded' | 'write-failed'
+
+export type SaveResult = { kind: 'ok' } | { kind: 'error'; reason: SaveWriteError }
+
+/**
+ * Сохраняет игру и ГОВОРИТ, получилось ли.
+ *
+ * Раньше возвращала void: отличить «сохранил» от «не смог» вызывающему было
+ * нечем, и отказ хранилища превращался в тишину. Игрок узнавал о нём через
+ * часы — закрыв вкладку и открыв игру заново с первого уровня.
+ */
+export function saveGame(state: GameState, deps: SaveDeps = {}): SaveResult {
   const storage = deps.storage ?? defaultStorage()
+  if (!storage) return { kind: 'error', reason: 'storage-unavailable' }
   const now = deps.now ?? Date.now
-  storage.setItem(SAVE_KEY, JSON.stringify(payloadFromState(state, now())))
+  try {
+    storage.setItem(SAVE_KEY, JSON.stringify(payloadFromState(state, now())))
+    return { kind: 'ok' }
+  } catch (error) {
+    return { kind: 'error', reason: writeErrorOf(error) }
+  }
+}
+
+/** Переполнение квоты браузеры сообщают по-разному — по имени, не по классу. */
+function writeErrorOf(error: unknown): SaveWriteError {
+  const name = (error as { name?: string } | null)?.name ?? ''
+  const quota =
+    name === 'QuotaExceededError' ||
+    name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
+    (error as { code?: number } | null)?.code === 22
+  return quota ? 'quota-exceeded' : 'write-failed'
+}
+
+/**
+ * Кладёт строку под запасной ключ. Молча: это спасательная копия, и её
+ * собственный отказ не должен подменять собой то, ради чего её делают.
+ */
+export function backupRawSave(raw: string, deps: SaveDeps = {}): void {
+  const storage = deps.storage ?? defaultStorage()
+  if (!storage) return
+  try {
+    storage.setItem(SAVE_BACKUP_KEY, raw)
+  } catch {
+    /* места нет — копию не сделали, но исходную задачу не сорвали */
+  }
+}
+
+/** Прежнее сохранение из запасного ключа; null — копии нет. */
+export function readBackupSave(deps: SaveDeps = {}): string | null {
+  const storage = deps.storage ?? defaultStorage()
+  if (!storage) return null
+  try {
+    return storage.getItem(SAVE_BACKUP_KEY)
+  } catch {
+    return null
+  }
 }
 
 /**
@@ -1403,11 +1574,30 @@ export function saveGame(state: GameState, deps: SaveDeps = {}): void {
  */
 export function clearSave(deps: SaveDeps = {}): void {
   const storage = deps.storage ?? defaultStorage()
-  storage.removeItem(SAVE_KEY)
+  if (!storage) return
+  try {
+    storage.removeItem(SAVE_KEY)
+  } catch {
+    /* хранилище запрещено — стирать нечего */
+  }
 }
 
-// Причины отказа загрузки; текст для игрока по коду рендерит UI.
-export type LoadErrorReason = 'corrupted' | 'newer-version'
+/**
+ * Причины отказа загрузки; текст для игрока по коду рендерит UI.
+ *
+ * Раньше их было две на шесть разных случаев, и всё, что не пережило разбор,
+ * объявлялось сейвом «из более новой версии». Игрок с испорченным сейвом
+ * читал про обновление игры и ждал следующего деплоя.
+ */
+export type LoadErrorReason =
+  /** Не объект, не тот объект, или версия не похожа на версию. */
+  | 'corrupt'
+  /** Записан игрой новее этой: понижать формат мы не умеем и не должны. */
+  | 'newer-version'
+  /** Версия из диапазона, но шага миграции для неё нет (формат из чужой ветки). */
+  | 'unsupported-version'
+  /** Хранилище недоступно целиком: читать нечего и писать некуда. */
+  | 'storage-unavailable'
 
 export type LoadResult =
   | { kind: 'fresh' }
@@ -1416,31 +1606,109 @@ export type LoadResult =
 
 export function loadGame(deps: SaveDeps = {}): LoadResult {
   const storage = deps.storage ?? defaultStorage()
+  if (!storage) return { kind: 'error', reason: 'storage-unavailable' }
   const now = deps.now ?? Date.now
-  const raw = storage.getItem(SAVE_KEY)
+  let raw: string | null
+  try {
+    raw = storage.getItem(SAVE_KEY)
+  } catch {
+    return { kind: 'error', reason: 'storage-unavailable' }
+  }
   if (raw === null) return { kind: 'fresh' }
+
+  // КОПИЯ ДЕЛАЕТСЯ ДО ТОГО, как игрок сможет что-нибудь затереть. Дальше по
+  // любой ветке отказа он попадёт на выбор класса, и первое же нажатие
+  // перезапишет сейв — а это единственные оставшиеся байты его прогресса.
+  const keep = (reason: LoadErrorReason): LoadResult => {
+    backupRawSave(raw as string, { storage })
+    return { kind: 'error', reason }
+  }
 
   let parsed: unknown
   try {
     parsed = JSON.parse(raw)
   } catch {
-    return { kind: 'error', reason: 'corrupted' }
+    return keep('corrupt')
   }
-  const payload = migrateSave(parsed)
-  if (payload === null) return { kind: 'error', reason: 'newer-version' }
+  const read = readSave(parsed)
+  if (read.kind === 'error') return keep(read.reason)
+  const payload = read.payload
 
   // Читаем ДО загрузки: она расформирует забег, и по состоянию его уже не видно.
   const interrupted = interruptedRunOf(payload)
-  let state = stateFromPayload(payload)
   // Отрицательная разница (часы перевели назад) — ничего не начисляем;
   // lastTimestamp обновится ближайшим сохранением.
-  const elapsedMs = now() - payload.lastTimestamp
-  let offline: OfflineReport | null = null
-  if (elapsedMs > 0) ({ state, report: offline } = applyOfflineProgress(state, elapsedMs))
+  const { state, offline } = accrueAway(
+    stateFromPayload(payload),
+    now() - payload.lastTimestamp,
+    interrupted,
+  )
+  return { kind: 'loaded', state, offline }
+}
+
+/**
+ * НАЧИСЛЕНИЕ ЗА ОТСУТСТВИЕ — одной точкой на всю игру.
+ *
+ * Сюда приходят оба пути: загрузка страницы (сейв прочитан) и возврат во
+ * вкладку, которая висела в фоне. Второй модели начисления быть не должно —
+ * иначе потолок восьми часов, коэффициент, лут, штраф опыта и расформирование
+ * забега разъехались бы между «закрыл вкладку» и «свернул вкладку», а
+ * заметить это было бы нечем.
+ */
+function accrueAway(
+  state: GameState,
+  elapsedMs: number,
+  interrupted: InterruptedRun | null,
+): { state: GameState; offline: OfflineReport | null } {
+  if (elapsedMs <= 0) return { state, offline: null }
+  const { state: next, report } = applyOfflineProgress(state, elapsedMs)
   // Про оборванный забег модалка обязана сказать вслух: молча пропавшая
   // цепочка боссов читается как потеря прогресса, а не как правило.
-  if (offline) offline = { ...offline, interrupted }
-  return { kind: 'loaded', state, offline }
+  return { state: next, offline: report ? { ...report, interrupted } : null }
+}
+
+/**
+ * ВОЗВРАТ ВО ВКЛАДКУ, которая висела в фоне.
+ *
+ * Раньше этого пути не было вовсе, и получалось три режима игры вместо двух:
+ * играть — сто процентов, закрыть вкладку — двадцать (OFFLINE_EFFICIENCY),
+ * оставить вкладку открытой в фоне — НОЛЬ. Браузер не зовёт
+ * requestAnimationFrame у скрытой вкладки, цикл стоит, а накопленный долг
+ * при возврате сбрасывается (см. loop.ts). Выгодной стратегией в idle-игре
+ * оказывалось выйти из игры.
+ *
+ * Отличий от загрузки сейва здесь нет ни одного: тот же `resumeOutside`
+ * расформировывает забег, тот же `accrueAway` начисляет.
+ */
+export function resumeAfterAway(
+  state: GameState,
+  elapsedMs: number,
+  rng: Rng = createRng(state.rngSeed),
+): { state: GameState; offline: OfflineReport | null } {
+  // КОРОТКОЕ ПЕРЕКЛЮЧЕНИЕ — НЕ ОТСУТСТВИЕ. Ниже одного шага агрегата считать
+  // нечего по построению: он меряет время шагами по OFFLINE_CHUNK_MIN, и
+  // тридцать секунд в нём округляются в ноль убийств.
+  //
+  // Важнее другое: за такой отскок нельзя расформировывать забег. Игрок,
+  // глянувший в соседнюю вкладку посреди данжа, не должен возвращаться к
+  // сорванной цепочке — это было бы наказание за переключение окна.
+  //
+  // ОТРИЦАТЕЛЬНАЯ РАЗНИЦА СЮДА НЕ ПОПАДАЕТ, и это не придирка: часы, ушедшие
+  // назад (ноутбук проснулся и пересинхронизировал время), означают, что
+  // длительность отсутствия НЕИЗВЕСТНА, а не что её не было. Пропусти мы её
+  // здесь — и перевод часов стал бы способом поставить забег на паузу.
+  // Дальше по общему пути забег расформируется, а начислений не будет:
+  // accrueAway ничего не платит за неположительное время.
+  if (elapsedMs >= 0 && elapsedMs < OFFLINE_CHUNK_MS) return { state, offline: null }
+  // Что оборвалось — читаем ДО расформирования, как и при загрузке.
+  const interrupted: InterruptedRun | null = state.dungeonRun
+    ? 'dungeon'
+    : state.templeRun
+      ? 'temple'
+      : null
+  // Забег снимаем ВСЕГДА, даже когда начислять нечего (часы перевели назад):
+  // иначе герой остался бы заперт внутри цепочки, которая уже не идёт.
+  return accrueAway(resumeOutside(state, rng), elapsedMs, interrupted)
 }
 
 // base64 для экспорта/импорта: btoa в браузере, Buffer в node (для тестов).
