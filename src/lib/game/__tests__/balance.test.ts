@@ -51,7 +51,8 @@ import {
 } from '../../data/zones'
 import { ONE_HANDED, WEAPONS } from '../../data/items'
 import { BRANCHES, type BranchDef, type BranchStyle } from '../../data/talents'
-import { CLASSES, DEFAULT_CLASS } from '../../data/classes'
+import { DEFAULT_CLASS } from '../../data/classes'
+import { classIt, contractClasses } from './class-set'
 import { ABILITY_BY_ID } from '../../data/abilities'
 import { monsterFromTemplate, type GameState } from '../state'
 
@@ -85,7 +86,9 @@ const ZONE_SET: Zone[] = SAMPLE
 
 /** Классы: в выборке один. Дерево привязано к классу, поэтому вместе с ним
  *  сужается и набор веток — иначе ветки чужого класса прогонялись бы впустую. */
-const CLASS_SET = SAMPLE ? CLASSES.slice(0, 1) : CLASSES
+// Готовые классы первыми, превью следом; выборка — только основной класс.
+// Контракты превью-класса некритичны: см. `class-set.ts`.
+const CLASS_SET = contractClasses(SAMPLE)
 
 /** Часы игрового времени на клетку матрицы. Вчетверо меньше в выборке. */
 const sampleHours = (full: number) => (SAMPLE ? Math.max(1, Math.round(full / 4)) : full)
@@ -640,7 +643,12 @@ describe('ветки талантов', () => {
     return { zoneId: ZONE_SET[0].id, runs: runBranch(branch, ZONE_SET[0].id) }
   }
 
-  it(`три чистых билда на ${points} очках сходятся в пределах ${pct(branchSpreadLimit)}`, () => {
+  // Таблица строится ОДИН раз на все классы: ветка играет свою лучшую зону,
+  // это десятки часов тика. Каждый класс потом читает свои строки.
+  type BranchRow = { branch: BranchDef; zoneId: string; runs: SimResult[] }
+  let branchRows: BranchRow[] | null = null
+  const branchTable = (): BranchRow[] => {
+    if (branchRows) return branchRows
     header(
       `Чистые билды по веткам, герой ${branchLevel} уровня в средней экипировке, ` +
         `${branchHours} ч на сид. Каждая ветка играет самую глубокую зону, которую тянет.`,
@@ -660,64 +668,77 @@ describe('ветки талантов', () => {
           `${pct(idle).padStart(7)}`,
       )
     })
-    // Разброс считается ВНУТРИ КЛАССА: ветки одного класса — это выбор игрока
-    // между собой, а страж против изувера — другой вопрос, и меряется он
-    // таблицей темпа, а не здесь.
-    for (const cls of CLASS_SET) {
-      const own = rows.filter((r) => r.branch.classId === cls.id)
-      const spread = spreadOf(own.map((r) => mean(r.runs)))
-      log(`${cls.name}: разброс ${pct(spread)} при потолке ${pct(branchSpreadLimit)}.`)
-      // Ветка, отставшая сильнее этого, — ловушка: игрок вложил очки и получил
-      // меньше, чем если бы вложил куда угодно ещё. Сброс стоит золота, так что
-      // ошибка выбора наказывает дважды.
-      expect(spread, cls.id).toBeLessThanOrEqual(branchSpreadLimit)
-    }
-  }, 600_000)
+    branchRows = rows
+    return rows
+  }
 
-  it('ветки различаются СТИЛЕМ, а не только числом', () => {
-    // Итог сопоставим, а путь разный — иначе выбор ветки декоративен.
-    // Сравниваем В ОДНОЙ зоне: здесь важно не «сколько», а «чем».
-    // И проверяется это у ОБОИХ классов: обещание стиля одно на игру.
-    const zone = intendedZone(branchLevel).id
-    // Урон за час БОЯ, а не за час прогона. Делить на все часы теперь нельзя:
-    // с ценой боя в четверть запаса герой треть времени сидит на привале, и
-    // «урона в час» мерило бы ещё и то, чья ветка реже отдыхает. Обещание
-    // ветки урона — БИТЬ сильнее, и меряться оно должно временем под ударом.
-    const damage = (runs: SimResult[]) =>
-      avg(runs, (r) =>
-        r.autoDamage
-          .plus(r.abilityDamage)
-          .div(r.hours * Math.max(1e-9, 1 - r.restShare))
-          .toNumber(),
-      )
-    for (const cls of CLASS_SET) {
-      const byStyle = new Map<BranchStyle, SimResult[]>()
-      for (const branch of BRANCHES.filter((b) => b.classId === cls.id)) {
-        byStyle.set(branch.style, runBranch(branch, zone))
-      }
-      const damageRuns = byStyle.get('damage')!
-      const survivalRuns = byStyle.get('survival')!
-      const autonomyRuns = byStyle.get('autonomy')!
-      log(
-        `${cls.name} в зоне ${ZONE_BY_ID[zone].name}. Урон/ч: ` +
-          `урон ${damage(damageRuns).toFixed(0)}, ` +
-          `живучесть ${damage(survivalRuns).toFixed(0)}, ` +
-          `автономность ${damage(autonomyRuns).toFixed(0)}.`,
-      )
-      log(
-        `Доля простоя: урон ${pct(avg(damageRuns, (r) => r.restShare))}, ` +
-          `живучесть ${pct(avg(survivalRuns, (r) => r.restShare))}, ` +
-          `автономность ${pct(avg(autonomyRuns, (r) => r.restShare))}.`,
-      )
-      // Ветка урона бьёт сильнее всех — это её обещание.
-      expect(damage(damageRuns), cls.id).toBeGreaterThan(damage(survivalRuns))
-      expect(damage(damageRuns), cls.id).toBeGreaterThan(damage(autonomyRuns))
-      // Ветка живучести меньше всех простаивает — это её обещание.
-      expect(avg(survivalRuns, (r) => r.restShare), cls.id).toBeLessThanOrEqual(
-        avg(damageRuns, (r) => r.restShare) + 1e-9,
-      )
-    }
-  }, 900_000)
+  // Разброс считается ВНУТРИ КЛАССА: ветки одного класса — это выбор игрока
+  // между собой, а страж против изувера — другой вопрос, и меряется он
+  // таблицей темпа, а не здесь.
+  for (const cls of CLASS_SET) {
+    classIt(cls)(
+      `${cls.name}: три чистых билда на ${points} очках сходятся в пределах ${pct(branchSpreadLimit)}`,
+      () => {
+        const own = branchTable().filter((r) => r.branch.classId === cls.id)
+        const spread = spreadOf(own.map((r) => mean(r.runs)))
+        log(`${cls.name}: разброс ${pct(spread)} при потолке ${pct(branchSpreadLimit)}.`)
+        // Ветка, отставшая сильнее этого, — ловушка: игрок вложил очки и получил
+        // меньше, чем если бы вложил куда угодно ещё. Сброс стоит золота, так что
+        // ошибка выбора наказывает дважды.
+        expect(spread, cls.id).toBeLessThanOrEqual(branchSpreadLimit)
+      },
+      600_000,
+    )
+  }
+
+  // Итог сопоставим, а путь разный — иначе выбор ветки декоративен.
+  // Сравниваем В ОДНОЙ зоне: здесь важно не «сколько», а «чем».
+  // И проверяется это у КАЖДОГО класса: обещание стиля одно на игру.
+  for (const cls of CLASS_SET) {
+    classIt(cls)(
+      `${cls.name}: ветки различаются СТИЛЕМ, а не только числом`,
+      () => {
+        const zone = intendedZone(branchLevel).id
+        // Урон за час БОЯ, а не за час прогона. Делить на все часы теперь нельзя:
+        // с ценой боя в четверть запаса герой треть времени сидит на привале, и
+        // «урона в час» мерило бы ещё и то, чья ветка реже отдыхает. Обещание
+        // ветки урона — БИТЬ сильнее, и меряться оно должно временем под ударом.
+        const damage = (runs: SimResult[]) =>
+          avg(runs, (r) =>
+            r.autoDamage
+              .plus(r.abilityDamage)
+              .div(r.hours * Math.max(1e-9, 1 - r.restShare))
+              .toNumber(),
+          )
+        const byStyle = new Map<BranchStyle, SimResult[]>()
+        for (const branch of BRANCHES.filter((b) => b.classId === cls.id)) {
+          byStyle.set(branch.style, runBranch(branch, zone))
+        }
+        const damageRuns = byStyle.get('damage')!
+        const survivalRuns = byStyle.get('survival')!
+        const autonomyRuns = byStyle.get('autonomy')!
+        log(
+          `${cls.name} в зоне ${ZONE_BY_ID[zone].name}. Урон/ч: ` +
+            `урон ${damage(damageRuns).toFixed(0)}, ` +
+            `живучесть ${damage(survivalRuns).toFixed(0)}, ` +
+            `автономность ${damage(autonomyRuns).toFixed(0)}.`,
+        )
+        log(
+          `Доля простоя: урон ${pct(avg(damageRuns, (r) => r.restShare))}, ` +
+            `живучесть ${pct(avg(survivalRuns, (r) => r.restShare))}, ` +
+            `автономность ${pct(avg(autonomyRuns, (r) => r.restShare))}.`,
+        )
+        // Ветка урона бьёт сильнее всех — это её обещание.
+        expect(damage(damageRuns), cls.id).toBeGreaterThan(damage(survivalRuns))
+        expect(damage(damageRuns), cls.id).toBeGreaterThan(damage(autonomyRuns))
+        // Ветка живучести меньше всех простаивает — это её обещание.
+        expect(avg(survivalRuns, (r) => r.restShare), cls.id).toBeLessThanOrEqual(
+          avg(damageRuns, (r) => r.restShare) + 1e-9,
+        )
+      },
+      900_000,
+    )
+  }
 })
 
 // ---------------------------------------------------------------------------
@@ -736,7 +757,7 @@ describe('интервал решений', () => {
   // Что считается решением — в simulate.ts: находка выше обычной, очко
   // таланта, открывшаяся зона. Мерим в подходящей по уровню зоне: игрок
   // в ней и сидит, и «сколько раз в час игра спросила» — это про неё.
-  const rows = CLASSES.flatMap((hero) =>
+  const rows = CLASS_SET.flatMap((hero) =>
     telemetryLevels.map((level) => {
       const zone = intendedZone(level)
       const result = simulate({
@@ -750,17 +771,15 @@ describe('интервал решений', () => {
     }),
   )
 
-  it(`интервал решений ${decisionMinSec}-${decisionMaxSec} с на большей части прогрессии`, () => {
+  it('печатает интервал решений по классам и уровням', () => {
     header(
       `Эталонный герой в подходящей зоне, ${telemetryHours} ч на строку. ` +
         'Решение — находка выше обычной, очко таланта, открывшаяся зона.',
       'класс          ур.   зона                 интервал   привалов/ч   простой   смертей/ч',
     )
-    let inWindow = 0
     for (const row of rows) {
       const gap = row.result.decisionIntervalSec
       const mark = gap !== null && gap >= decisionMinSec && gap <= decisionMaxSec ? '✓' : ' '
-      if (mark === '✓') inWindow += 1
       log(
         `${row.hero.name.padEnd(14)} ${String(row.level).padStart(3)}   ` +
           `${row.zone.name.padEnd(20)} ${(gap?.toFixed(0) ?? '—').padStart(6)}с${mark}  ` +
@@ -768,27 +787,48 @@ describe('интервал решений', () => {
           `${pct(row.result.restShare).padStart(7)}   ` +
           `${row.result.deathsPerHour.toFixed(2).padStart(9)}`,
       )
-      // ПОТОЛОК ТРЕВОГИ. Реже раза в три минуты — это уже не idle, а пустой
-      // экран: игрок открывает вкладку и не находит, что нажать.
-      expect(gap ?? Number.POSITIVE_INFINITY, `${row.hero.id}, ур. ${row.level}`).toBeLessThanOrEqual(
-        decisionAlertSec,
-      )
     }
-    log(`В окне ${inWindow} из ${rows.length} строк (${pct(inWindow / rows.length)}).`)
-    // «На большей части»: края прогрессии выпадают законно — на первом уровне
-    // решений больше обычного, на последнем меньше.
-    expect(inWindow / rows.length).toBeGreaterThanOrEqual(0.6)
-  }, 600_000)
+    expect(rows.length).toBe(CLASS_SET.length * telemetryLevels.length)
+  })
 
-  it(`на привалах уходит не больше ${pct(restShareMax)} времени`, () => {
-    // Привал — пауза, а не занятие. Четверть времени на костре ещё читается
-    // как ритм; больше — как налог на то, что герой вообще дерётся.
-    for (const row of rows) {
-      expect(row.result.restShare, `${row.hero.id}, ур. ${row.level}`).toBeLessThanOrEqual(
-        restShareMax,
-      )
-    }
-  }, 600_000)
+  for (const cls of CLASS_SET) {
+    const own = rows.filter((row) => row.hero.id === cls.id)
+
+    classIt(cls)(
+      `${cls.name}: интервал решений ${decisionMinSec}-${decisionMaxSec} с на большей части прогрессии`,
+      () => {
+        let inWindow = 0
+        for (const row of own) {
+          const gap = row.result.decisionIntervalSec
+          if (gap !== null && gap >= decisionMinSec && gap <= decisionMaxSec) inWindow += 1
+          // ПОТОЛОК ТРЕВОГИ. Реже раза в три минуты — это уже не idle, а пустой
+          // экран: игрок открывает вкладку и не находит, что нажать.
+          expect(gap ?? Number.POSITIVE_INFINITY, `${row.hero.id}, ур. ${row.level}`).toBeLessThanOrEqual(
+            decisionAlertSec,
+          )
+        }
+        log(`${cls.name}: в окне ${inWindow} из ${own.length} строк (${pct(inWindow / own.length)}).`)
+        // «На большей части»: края прогрессии выпадают законно — на первом уровне
+        // решений больше обычного, на последнем меньше.
+        expect(inWindow / own.length).toBeGreaterThanOrEqual(0.6)
+      },
+      600_000,
+    )
+
+    classIt(cls)(
+      `${cls.name}: на привалах уходит не больше ${pct(restShareMax)} времени`,
+      () => {
+        // Привал — пауза, а не занятие. Четверть времени на костре ещё читается
+        // как ритм; больше — как налог на то, что герой вообще дерётся.
+        for (const row of own) {
+          expect(row.result.restShare, `${row.hero.id}, ур. ${row.level}`).toBeLessThanOrEqual(
+            restShareMax,
+          )
+        }
+      },
+      600_000,
+    )
+  }
 })
 
 // ---------------------------------------------------------------------------
@@ -814,10 +854,12 @@ describe('контракт темпа боя', () => {
   // Контракт держится для КАЖДОГО класса, а не только для дефолтного: класс
   // меняет ресурс, умения и стартовые статы, то есть ровно те числа, из
   // которых складывается длина боя.
-  describe.each(CLASS_SET.map((c) => [c.name, c.id] as const))('%s', (_name, classId) => {
+  describe.each(CLASS_SET)('$name', (cls) => {
+    const classId = cls.id
     const classRows = pacing(classId)
+    const cit = classIt(cls)
 
-    it(`моб актуальной зоны живёт ${TTK_TARGET_MIN}-${TTK_TARGET_MAX} секунд`, () => {
+    cit(`моб актуальной зоны живёт ${TTK_TARGET_MIN}-${TTK_TARGET_MAX} секунд`, () => {
       const ttks = classRows.map((r) => currentCell(r).ttk.avg)
       log(
         `${classId}: TTK ${Math.min(...ttks).toFixed(1)}-${Math.max(...ttks).toFixed(1)} с, ` +
@@ -832,7 +874,7 @@ describe('контракт темпа боя', () => {
       }
     })
 
-    it(`разброс TTK по уровням ≤ ${pct(TTK_DRIFT_MAX)}`, () => {
+    cit(`разброс TTK по уровням ≤ ${pct(TTK_DRIFT_MAX)}`, () => {
       expect(ttkDrift(classRows)).toBeLessThanOrEqual(TTK_DRIFT_MAX)
     })
   }, 300_000)
@@ -1044,8 +1086,11 @@ describe('контракт темпа боя', () => {
       return buildSimState({ ...base, gearLevel }, zone.id, CONTRACT_SEED)
     }
 
-    describe.each(CLASS_SET.map((c) => [c.name, c.id] as const))('%s', (_name, classId) => {
-      it(`эталон теряет ${TARGET_MIN}-${TARGET_MAX}% запаса за бой (допуск ${TOLERANCE} п.п., промахов не больше ${OUTLIERS_ALLOWED})`, () => {
+    describe.each(CLASS_SET)('$name', (cls) => {
+      const classId = cls.id
+      const cit = classIt(cls)
+
+      cit(`эталон теряет ${TARGET_MIN}-${TARGET_MAX}% запаса за бой (допуск ${TOLERANCE} п.п., промахов не больше ${OUTLIERS_ALLOWED})`, () => {
         const shares = entries.map(({ zone, level }) => ({
           zone: zone.id,
           level,
@@ -1077,7 +1122,7 @@ describe('контракт темпа боя', () => {
         expect(mean).toBeLessThanOrEqual(TARGET_MAX)
       })
 
-      it('снаряжение ЛУЧШЕ эталона теряет меньше, ХУЖЕ эталона — больше', () => {
+      cit('снаряжение ЛУЧШЕ эталона теряет меньше, ХУЖЕ эталона — больше', () => {
         // ОБА отклонения в одном тесте и на каждой ступени лестницы. Проверь
         // только одно — и «урон моба = доля запаса героя» прошла бы: там обе
         // стороны дают ровно ту же долю, что эталон.

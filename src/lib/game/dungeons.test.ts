@@ -27,10 +27,14 @@ import { RARITIES } from '../data/rarity'
 import { XP_GAP_PENALTY } from '../data/balance'
 import { zoneForMonsterLevel } from '../data/zones'
 import { averageGear, branchPoints, pureBranchTalents } from './simulate'
-import { CLASSES, DEFAULT_CLASS } from '../data/classes'
+import { DEFAULT_CLASS } from '../data/classes'
+import { classIt, contractClasses } from './__tests__/class-set'
 
-/** Оба класса: обещание данжа одно на игру, а не на дефолтного героя. */
-const CLASS_SET = CLASSES
+/**
+ * Все классы: обещание данжа одно на игру, а не на дефолтного героя. Держит
+ * его готовый класс; у превью-класса расхождение — предупреждение, не провал.
+ */
+const CLASS_SET = contractClasses(false)
 import { BRANCHES } from '../data/talents'
 import { ZONE_BY_ID, representativeMonster } from '../data/zones'
 
@@ -512,26 +516,29 @@ describe('правило чисел держится на всех восьми 
   // для своего уровня, а между схватками герой отдыхает. Два утверждения, и
   // второе несёт первое: три схватки по 80% на одном запасе не проходятся
   // никак. Замер — 69-89% при цели 80.
-  it.each(CLASS_SET.map((c) => [c.name, c.id] as const))(
-    '%s: схватка с боссом стоит около 80% запаса, между боссами привал',
-    (_name, classId) => {
-      for (const dungeon of DUNGEONS) {
-        const gear = zoneForMonsterLevel(dungeon.unlockRequirement).monsterLevelRange.max
-        const { costs, rests, dead } = chainCosts(heroFor(dungeon, gear, classId), dungeon)
-        const where = `${classId}, ${dungeon.id}`
-        expect(dead, where).toBe(false)
-        expect(costs, where).toHaveLength(dungeon.bosses.length)
-        for (const cost of costs) {
-          expect(cost, `${where}: цена схватки ${(cost * 100).toFixed(0)}%`).toBeGreaterThan(0.6)
-          expect(cost, `${where}: цена схватки ${(cost * 100).toFixed(0)}%`).toBeLessThan(0.95)
+  for (const cls of CLASS_SET) {
+    classIt(cls)(
+      `${cls.name}: схватка с боссом стоит около 80% запаса, между боссами привал`,
+      () => {
+        const classId = cls.id
+        for (const dungeon of DUNGEONS) {
+          const gear = zoneForMonsterLevel(dungeon.unlockRequirement).monsterLevelRange.max
+          const { costs, rests, dead } = chainCosts(heroFor(dungeon, gear, classId), dungeon)
+          const where = `${classId}, ${dungeon.id}`
+          expect(dead, where).toBe(false)
+          expect(costs, where).toHaveLength(dungeon.bosses.length)
+          for (const cost of costs) {
+            expect(cost, `${where}: цена схватки ${(cost * 100).toFixed(0)}%`).toBeGreaterThan(0.6)
+            expect(cost, `${where}: цена схватки ${(cost * 100).toFixed(0)}%`).toBeLessThan(0.95)
+          }
+          // Привал ровно между схватками: после последнего босса отдыхать не от
+          // чего — герой выходит наружу.
+          expect(rests, where).toBe(dungeon.bosses.length - 1)
         }
-        // Привал ровно между схватками: после последнего босса отдыхать не от
-        // чего — герой выходит наружу.
-        expect(rests, where).toBe(dungeon.bosses.length - 1)
-      }
-    },
-    300_000,
-  )
+      },
+      300_000,
+    )
+  }
 
   it('на своём уровне в вещах своей полосы цепочка проходится', () => {
     for (const dungeon of DUNGEONS) {

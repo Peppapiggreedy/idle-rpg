@@ -1768,6 +1768,13 @@ export const CLASS_SCHEMA: EntitySchema<ClassDef> = {
   extra: (hero, content, report) => {
     const where = `класс ${hero.id}`
     report.need(!!hero.tagline?.trim(), where, 'нет строки о том, как в него играют (data/classes.ts)')
+    // Готовность — одно из двух значений, и это данные: по ней тесты решают,
+    // роняет ли класс прогон, а экран выбора — ставить ли пометку.
+    report.need(
+      hero.status === 'ready' || hero.status === 'preview',
+      where,
+      `готовность «${String(hero.status)}» не из ready/preview (data/classes.ts)`,
+    )
     // Умения: без них у класса нет ни одной кнопки.
     report.need(
       Array.isArray(hero.abilityIds) && hero.abilityIds.length > 0,
@@ -2262,6 +2269,14 @@ function checkReachable(content: Content, report: Report): void {
         'здесь быть не может (data/dungeons.ts)',
     )
   }
+  // Хотя бы один класс готов: по нему идут golden, полный путь и миграция
+  // сейвов без класса. Одни превью — точки отсчёта нет ни у чего.
+  report.need(
+    content.classes.some((c) => c.status === 'ready'),
+    'классы',
+    'ни одного готового класса (status: ready) — не по кому считать контракты ' +
+      'и куда мигрировать старые сейвы (data/classes.ts)',
+  )
   const safe = content.zones.filter((z) => z.isSafe)
   report.need(
     safe.length === 1,

@@ -45,7 +45,7 @@ import { SLOT_IDS, type SlotId } from '../data/slots'
 import { SAFE_ZONE, ZONES, averageMonsterLevel, zoneForMonsterLevel } from '../data/zones'
 import { BRANCHES, talentsInBranch, type BranchId } from '../data/talents'
 import { DUNGEONS } from '../data/dungeons'
-import { CLASSES, DEFAULT_CLASS, classById } from '../data/classes'
+import { DEFAULT_CLASS, classById } from '../data/classes'
 import { TALENT_FIRST_LEVEL } from '../data/balance'
 import type { AttackEvent, Item, Rarity } from '../types'
 
@@ -289,8 +289,6 @@ export const BALANCE_PRESET = {
   telemetryHours: 3,
   /** Потолок доли времени на привалах в подходящей по уровню зоне. */
   restShareMax: 0.25,
-  /** Классы, по которым идёт прогон: контракт темпа держится для КАЖДОГО. */
-  classIds: CLASSES.map((c) => c.id),
   // Контракт темпа: сид эталонного прохождения и его потолок по времени.
   pacingSeed: 4242,
   pacingHours: 60,

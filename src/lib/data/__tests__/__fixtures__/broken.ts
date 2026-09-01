@@ -12,7 +12,7 @@ import { Decimal } from '../../../game/numbers'
 import type { IconName } from '../../../ui/icons/manifest'
 import type { StatId } from '../../../game/stats'
 import type { SlotId } from '../../slots'
-import { CLASS_BY_ID } from '../../classes'
+import { CLASS_BY_ID, type ClassDef } from '../../classes'
 import type { ShieldTemplate, WeaponTemplate } from '../../items'
 import { realContent } from '../content'
 import type { Content } from '../schema'
@@ -437,6 +437,24 @@ export function brokenCases(): BrokenCase[] {
         classes: patch(real.classes, first(real.classes).id, { abilityIds: ['нет-такого'] }),
       },
       expect: [first(real.classes).id, 'нет-такого', 'data/abilities.ts'],
+    },
+    {
+      title: 'все классы в превью: не по кому считать контракты',
+      content: {
+        ...real,
+        classes: real.classes.map((c) => ({ ...c, status: 'preview' as const })),
+      },
+      expect: ['ни одного готового класса'],
+    },
+    {
+      title: 'готовность класса не из ready/preview',
+      content: {
+        ...real,
+        classes: patch(real.classes, first(real.classes).id, {
+          status: 'done' as unknown as ClassDef['status'],
+        }),
+      },
+      expect: [first(real.classes).id, 'не из ready/preview'],
     },
     {
       title: 'класс без веток талантов: очки некуда вкладывать',

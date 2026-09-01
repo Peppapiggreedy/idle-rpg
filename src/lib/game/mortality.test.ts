@@ -18,6 +18,8 @@ import { COMMON, MONSTER_BASE, buildMonster } from '../data/monsters'
 import { SAFE_ZONE, ZONES, ZONE_BY_ID } from '../data/zones'
 import { OFFLINE_EFFICIENCY } from '../data/balance'
 import { PACING_MAX_LEVEL, averageGear } from './simulate'
+import { CLASSES } from '../data/classes'
+import { classIt } from './__tests__/class-set'
 import type { MonsterTemplate } from '../types'
 
 const NO_LUCK = () => 1 // без критов и без дропа
@@ -148,52 +150,56 @@ describe('цена входа в бой: с полного запаса и с о
   // собой эталонное прохождение (полста секунд симуляции), а быстрый набор
   // обязан оставаться быстрым. Числа те же: уровень входа в зону, вещи
   // средние по её полосе, первая зона — в стартовом комплекте.
-  const worstShares = () => {
+  const worstShares = (classId: string) => {
     const out: { zone: string; classId: string; share: number }[] = []
-    for (const classId of ['warden', 'reaver']) {
-      ZONES.forEach((zone, index) => {
-        const level = zone.monsterLevelRange.min
-        const gearLevel = Math.round(
-          (zone.monsterLevelRange.min + zone.monsterLevelRange.max) / 2,
-        )
-        const state = ensureStats({
-          ...createInitialState(1, classId),
-          level: new Decimal(level),
-          equipment: index === 0 ? createInitialState(1, classId).equipment : averageGear(gearLevel),
-          currentZoneId: zone.id,
-          statsDirty: true,
-        })
-        out.push({
-          zone: zone.id,
-          classId,
-          share: zoneSafety(state, zone).worstFight.div(state.stats.maxHp).toNumber(),
-        })
+    ZONES.forEach((zone, index) => {
+      const level = zone.monsterLevelRange.min
+      const gearLevel = Math.round(
+        (zone.monsterLevelRange.min + zone.monsterLevelRange.max) / 2,
+      )
+      const state = ensureStats({
+        ...createInitialState(1, classId),
+        level: new Decimal(level),
+        equipment: index === 0 ? createInitialState(1, classId).equipment : averageGear(gearLevel),
+        currentZoneId: zone.id,
+        statsDirty: true,
       })
-    }
+      out.push({
+        zone: zone.id,
+        classId,
+        share: zoneSafety(state, zone).worstFight.div(state.stats.maxHp).toNumber(),
+      })
+    })
     return out
   }
 
-  it('с полного запаса смерть практически невозможна', () => {
-    for (const { zone, classId, share } of worstShares()) {
-      expect(share, `${classId} @ ${zone}`).toBeLessThan(0.7)
-    }
-  })
+  // Контракт держит готовый класс; у превью-класса расхождение —
+  // предупреждение в прогоне, а не провал (см. __tests__/class-set.ts).
+  for (const cls of CLASSES) {
+    const cit = classIt(cls)
 
-  it('войти с остатком запаса — реальная смерть, а не испуг', () => {
-    const shares = worstShares()
-    // С СЕДЬМОЙ ЧАСТЬЮ ЗАПАСА герой гибнет ВЕЗДЕ: худший бой дороже во всех
-    // двадцати зонах и у обоих классов. Это нижняя граница контракта — если
-    // она перестанет держаться, бой снова станет бесплатным.
-    for (const { zone, classId, share } of shares) {
-      expect(share, `${classId} @ ${zone}`).toBeGreaterThan(0.14)
-    }
-    // С ПЯТОЙ ЧАСТЬЮ запаса смерть реальна на БОЛЬШЕЙ ЧАСТИ лестницы, но не
-    // везде: замер даёт 15-42%, и в самых мягких зонах пятую часть герой
-    // переживает. Проверяется поэтому большинство, а не «всюду» — обещать
-    // больше значило бы обещать то, чего числа не дают.
-    const deadlyAtFifth = shares.filter((r) => r.share > 0.2).length
-    expect(deadlyAtFifth).toBeGreaterThan(shares.length / 2)
-  })
+    cit(`${cls.name}: с полного запаса смерть практически невозможна`, () => {
+      for (const { zone, classId, share } of worstShares(cls.id)) {
+        expect(share, `${classId} @ ${zone}`).toBeLessThan(0.7)
+      }
+    })
+
+    cit(`${cls.name}: войти с остатком запаса — реальная смерть, а не испуг`, () => {
+      const shares = worstShares(cls.id)
+      // С СЕДЬМОЙ ЧАСТЬЮ ЗАПАСА герой гибнет ВЕЗДЕ: худший бой дороже во всех
+      // двадцати зонах. Это нижняя граница контракта — если она перестанет
+      // держаться, бой снова станет бесплатным.
+      for (const { zone, classId, share } of shares) {
+        expect(share, `${classId} @ ${zone}`).toBeGreaterThan(0.14)
+      }
+      // С ПЯТОЙ ЧАСТЬЮ запаса смерть реальна на БОЛЬШЕЙ ЧАСТИ лестницы, но не
+      // везде: замер даёт 15-42%, и в самых мягких зонах пятую часть герой
+      // переживает. Проверяется поэтому большинство, а не «всюду» — обещать
+      // больше значило бы обещать то, чего числа не дают.
+      const deadlyAtFifth = shares.filter((r) => r.share > 0.2).length
+      expect(deadlyAtFifth).toBeGreaterThan(shares.length / 2)
+    })
+  }
 })
 
 describe('оффлайн моделирует цикл фарм -> смерть -> воскрешение', () => {

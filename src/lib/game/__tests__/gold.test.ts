@@ -20,10 +20,15 @@
 import { describe, expect, it } from 'vitest'
 import { referenceBuild, simulate } from '../simulate'
 import { ZONES, zoneForMonsterLevel } from '../../data/zones'
-import { CLASSES } from '../../data/classes'
+import { DEFAULT_CLASS } from '../../data/classes'
+import { classIt, contractClasses } from './class-set'
 import { LEVEL_CAP } from '../../data/balance'
 import { MONSTER_GROWTH } from '../../data/monsters'
 import { RECIPES, craftToll, goldPerHourAt, recipeLevel } from '../../data/recipes'
+
+const SAMPLE = process.env.BALANCE_SAMPLE === '1'
+/** Готовые классы — контракт, превью — предупреждение (см. class-set.ts). */
+const CLASS_SET = contractClasses(SAMPLE)
 
 const STEP = 10
 const LEVELS = Array.from({ length: 1 + (LEVEL_CAP - STEP) / STEP }, (_, i) => STEP + i * STEP)
@@ -54,11 +59,11 @@ function goldPerHour(level: number, classId: string, zoneId?: string): number {
 
 describe('кран золота', () => {
   const income = new Map(
-    CLASSES.map((cls) => [cls.id, LEVELS.map((level) => goldPerHour(level, cls.id))] as const),
+    CLASS_SET.map((cls) => [cls.id, LEVELS.map((level) => goldPerHour(level, cls.id))] as const),
   )
 
   it('печатает кривую дохода', () => {
-    for (const cls of CLASSES) {
+    for (const cls of CLASS_SET) {
       const values = income.get(cls.id)!
       // eslint-disable-next-line no-console
       console.log(`\n${cls.name}`)
@@ -71,22 +76,21 @@ describe('кран золота', () => {
         })),
       )
     }
-    expect(income.size).toBe(CLASSES.length)
+    expect(income.size).toBe(CLASS_SET.length)
   }, 900_000)
 
-  it.each(CLASSES.map((c) => [c.name, c.id] as const))(
-    '%s: доход растёт на каждой ступени — плато нет нигде',
-    (_name, classId) => {
+  for (const cls of CLASS_SET) {
+    const cit = classIt(cls)
+    const classId = cls.id
+
+    cit(`${cls.name}: доход растёт на каждой ступени — плато нет нигде`, () => {
       const values = income.get(classId)!
       for (let i = 1; i < values.length; i += 1) {
         expect(values[i], `ур. ${LEVELS[i]}`).toBeGreaterThan(values[i - 1])
       }
-    },
-  )
+    })
 
-  it.each(CLASSES.map((c) => [c.name, c.id] as const))(
-    '%s: рост не проваливается и не выстреливает',
-    (_name, classId) => {
+    cit(`${cls.name}: рост не проваливается и не выстреливает`, () => {
       // ПОРОГ РЕГРЕССИИ, а не цель. Цель — ровный рост (разброс около 1.2),
       // и она недостижима, пока открыта дыра отстающей зоны: см. отдельный
       // тест-арифметику ниже. Здесь заперта нынешняя форма, чтобы она не
@@ -96,26 +100,26 @@ describe('кран золота', () => {
       expect(Math.min(...ratios), 'самая пологая ступень').toBeGreaterThan(1.1)
       expect(Math.max(...ratios), 'самая крутая ступень').toBeLessThan(2.35)
       expect(Math.max(...ratios) / Math.min(...ratios), 'разброс').toBeLessThan(2)
-    },
-  )
+    })
 
-  it.each(CLASSES.map((c) => [c.name, c.id] as const))(
-    '%s: время до следующей покупки не гуляет больше чем втрое',
-    (_name, classId) => {
-      const perRung = Math.pow(LADDER_PRICE_GROWTH, 1 / (LADDER_RUNGS - 1))
-      const hours = RUNG_LEVELS.map(
-        (level, i) => Math.pow(perRung, i) / goldPerHour(level, classId),
-      )
-      const relative = hours.map((h) => h / hours[0])
-      // eslint-disable-next-line no-console
-      console.log(
-        `${classId}: время до покупки по ступеням — ` +
-          relative.map((r, i) => `ур.${RUNG_LEVELS[i]}:${r.toFixed(2)}`).join(' '),
-      )
-      expect(Math.max(...relative) / Math.min(...relative)).toBeLessThan(3)
-    },
-    900_000,
-  )
+    cit(
+      `${cls.name}: время до следующей покупки не гуляет больше чем втрое`,
+      () => {
+        const perRung = Math.pow(LADDER_PRICE_GROWTH, 1 / (LADDER_RUNGS - 1))
+        const hours = RUNG_LEVELS.map(
+          (level, i) => Math.pow(perRung, i) / goldPerHour(level, classId),
+        )
+        const relative = hours.map((h) => h / hours[0])
+        // eslint-disable-next-line no-console
+        console.log(
+          `${classId}: время до покупки по ступеням — ` +
+            relative.map((r, i) => `ур.${RUNG_LEVELS[i]}:${r.toFixed(2)}`).join(' '),
+        )
+        expect(Math.max(...relative) / Math.min(...relative)).toBeLessThan(3)
+      },
+      900_000,
+    )
+  }
 
   it('НАКЛОН НАГРАДЫ РОВНУЮ КРИВУЮ НЕ ДАЁТ — ни при каком числе', () => {
     // ГЛАВНЫЙ ВЫВОД ШАГА, и он арифметический, а не измеренный.
@@ -172,8 +176,8 @@ describe('дыра отстающей зоны', () => {
   it('печатает обе цифры по уровням', () => {
     const rows = [20, 40, 60, 80, 100].map((level) => {
       const own = zoneForMonsterLevel(level) ?? ZONES[0]
-      const start = goldPerHour(level, 'warden', ZONES[0].id)
-      const mine = goldPerHour(level, 'warden', own.id)
+      const start = goldPerHour(level, DEFAULT_CLASS.id, ZONES[0].id)
+      const mine = goldPerHour(level, DEFAULT_CLASS.id, own.id)
       return {
         уровень: level,
         'стартовая 1-5, зол/ч': Math.round(start),
@@ -192,7 +196,7 @@ describe('дыра отстающей зоны', () => {
     // примерно равна своей. Это уже плохо — но это ИЗВЕСТНО плохо, и правка
     // формы кривой не имеет права сделать хуже незаметно.
     const own = zoneForMonsterLevel(20) ?? ZONES[0]
-    const share = goldPerHour(20, 'warden', ZONES[0].id) / goldPerHour(20, 'warden', own.id)
+    const share = goldPerHour(20, DEFAULT_CLASS.id, ZONES[0].id) / goldPerHour(20, DEFAULT_CLASS.id, own.id)
     expect(share).toBeLessThan(1.25)
   }, 900_000)
 })
@@ -205,7 +209,7 @@ describe('пошлина крафта на настоящих ценах', () =>
   // Разъедется — и цены поедут молча, оставшись формально правильными.
   it('модель дохода из данных совпадает с прогоном', () => {
     const rows = [10, 20, 40, 60, 80, 100].map((level) => {
-      const real = goldPerHour(level, 'warden')
+      const real = goldPerHour(level, DEFAULT_CLASS.id)
       const model = goldPerHourAt(level).toNumber()
       return { уровень: level, прогон: Math.round(real), модель: Math.round(model),
         расхождение: `${(((model - real) / real) * 100).toFixed(0)}%` }
@@ -213,7 +217,7 @@ describe('пошлина крафта на настоящих ценах', () =>
     // eslint-disable-next-line no-console
     console.table(rows)
     for (const level of [10, 20, 40, 60, 80, 100]) {
-      const real = goldPerHour(level, 'warden')
+      const real = goldPerHour(level, DEFAULT_CLASS.id)
       const model = goldPerHourAt(level).toNumber()
       expect(Math.abs(model - real) / real, `ур. ${level}`).toBeLessThan(0.3)
     }
