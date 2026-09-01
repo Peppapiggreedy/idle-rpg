@@ -105,6 +105,7 @@ import {
   clearedXpBonus,
   currentBoss,
   enrageMultiplier,
+  hasNextBoss,
   leaveDungeon,
   type BossDef,
 } from './dungeons'
@@ -203,14 +204,14 @@ const applyRestCheck: TickStep = (s) => {
   // В храме привала нет: поток волн не прерывается на отдых, иначе «пока
   // герой не погибнет» превратилось бы в «пока не надоест».
   if (s.templeRun) return s
-  // И В ДАНЖЕ ЕГО НЕТ — цепочка боссов идёт без перерыва, ровно поэтому
-  // запаса к третьему боссу остаётся треть, а не девять десятых. Раньше эта
-  // строка была не нужна: до порога внутри данжа герой не доживал ни разу,
-  // потому что боссы почти не били. Теперь бой стоит четверти запаса, порог
-  // достижим — и без проверки герой садился отдыхать между боссами. Хуже
-  // того, отсидка шла ВНУТРЬ схватки: счётчик fightMs не останавливается, и
-  // с привала герой возвращался к боссу, разъярённому на всю длину отдыха.
-  if (s.dungeonRun) return s
+  // В ДАНЖЕ ПРИВАЛ ЕСТЬ — между боссами, но не после последнего. Каждая
+  // схватка цепочки начинается с полного запаса, и это то, ради чего боссу
+  // отдана почти вся полоска здоровья героя: одна схватка стоит около 80%
+  // запаса, три подряд без передышки не пережил бы никто.
+  //
+  // После ПОСЛЕДНЕГО босса отдыхать не от чего: цепочка кончилась, и герой
+  // выходит наружу. Привал там только оттянул бы выход на десять секунд.
+  if (s.dungeonRun && !hasNextBoss(s)) return s
   // Только между боями: пока моб жив, порог ничего не запускает.
   if (s.monster.currentHp.gt(0)) return s
   if (!needsRest(s)) return s
@@ -230,7 +231,10 @@ const applyCooldowns: TickStep = (s, ctx) => advanceCooldowns(s, ctx.dtMs)
 // Скачок ярости пишем в лог один раз, в момент перехода на новую ступень.
 const applyEnrage: TickStep = (s, ctx) => {
   const boss = currentBoss(s)
-  if (!s.dungeonRun || !boss || s.heroState === 'dead') return s
+  // НА ПРИВАЛЕ СЧЁТЧИК СТОИТ. Ярость — проверка на урон в секунду, а на
+  // привале герой не бьёт: продолжай счётчик тикать, и с отдыха герой
+  // возвращался бы к боссу, разъярённому на всю длину отсидки.
+  if (!s.dungeonRun || !boss || s.heroState !== 'alive') return s
   const fightMs = s.dungeonRun.fightMs + ctx.dtMs
   const before = enrageMultiplier(boss, s.dungeonRun.fightMs)
   const after = enrageMultiplier(boss, fightMs)
@@ -810,6 +814,12 @@ const applyRespawn: TickStep = (s, ctx) => {
     if (left > 0) return { ...s, respawnMsLeft: left }
     return advanceDungeon(s, ctx.rng)
   }
+  // ПОСЛЕ ПРИВАЛА цепочку двигаем здесь. Привал начинается на том же тике,
+  // на котором босс умер, и до этого шага тик уже не доходит (герой стал
+  // 'resting', см. первую строку) — значит пауза респауна не взводится вовсе.
+  // Без этой ветки цепочка вставала бы намертво: босс лежит, таймер ноль,
+  // следующий не выходит никогда.
+  if (s.dungeonRun && s.monster.currentHp.lte(0)) return advanceDungeon(s, ctx.rng)
   if (s.respawnMsLeft <= 0) return s
   const left = s.respawnMsLeft - ctx.dtMs
   if (left > 0) return { ...s, respawnMsLeft: left }

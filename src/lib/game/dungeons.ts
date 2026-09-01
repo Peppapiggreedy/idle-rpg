@@ -58,6 +58,17 @@ export function currentBoss(state: GameState): BossDef | null {
   return dungeon.bosses[state.dungeonRun.bossIndex] ?? null
 }
 
+/**
+ * Есть ли за текущим боссом следующий. Нужен привалу: между схватками цепочки
+ * герой отдыхает, а после последней — выходит наружу, и отдыхать ему уже не
+ * от чего.
+ */
+export function hasNextBoss(state: GameState): boolean {
+  const dungeon = activeDungeon(state)
+  if (!dungeon || !state.dungeonRun) return false
+  return state.dungeonRun.bossIndex + 1 < dungeon.bosses.length
+}
+
 // Почему в данж не войти. Каждый случай — свой код, текст рендерит UI.
 export type DungeonBlockReason = 'level' | 'wrong-zone' | 'dead' | 'already-inside'
 
