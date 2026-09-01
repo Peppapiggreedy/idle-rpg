@@ -10,10 +10,14 @@ import { craft, materialCount, recipeStatus, rollMaterial, takeFood } from './cr
 import { restDurationMs, startRest } from './rest'
 import { MATERIALS, materialsInZone } from '../data/materials'
 import {
+  CRAFT_TOLL_HOURS,
   FOOD_BY_ID,
   PROFESSIONS,
   RECIPES,
   RECIPE_BY_ID,
+  craftToll,
+  goldPerHourAt,
+  recipeLevel,
   recipeUnlockLevel,
   recipesOf,
 } from '../data/recipes'
@@ -35,6 +39,11 @@ function hero(patch: Partial<GameState> = {}): GameState {
   return ensureStats({
     ...createInitialState(1),
     abilitySettings: manualOnlySettings(),
+    // ЗОЛОТА С ЗАПАСОМ ПО УМОЛЧАНИЮ. У крафта теперь есть пошлина, и без неё
+    // каждый тест про материалы упирался бы в отказ по золоту — то есть мерил
+    // бы не то, что написано в его названии. Про саму пошлину есть свои тесты
+    // ниже, и там золото задаётся явно.
+    gold: new Decimal(1e9),
     statsDirty: true,
     ...patch,
   })
@@ -240,5 +249,81 @@ describe('еда сокращает привал и расходуется', () 
     expect(fed.hp.eq(fed.max)).toBe(true)
     expect(plain.hp.eq(plain.max)).toBe(true)
     expect(fed.at).toBeLessThan(plain.at)
+  })
+})
+
+
+// ---------------------------------------------------------------------------
+// ПОШЛИНА КРАФТА
+// ---------------------------------------------------------------------------
+//
+// До неё крафт не стоил золота вовсе, и золото тратилось ровно на одно —
+// сброс талантов. Кран льёт, слива нет; к пятидесятому уровню счётчик
+// становится украшением, а «накопить» перестаёт быть решением.
+describe('пошлина крафта', () => {
+  it('считается ДОЛЕЙ часового дохода, а не числом', () => {
+    // Числом её пришлось бы держать в двух местах — в цене и в кривой
+    // золота, — и они разъехались бы на первой правке баланса.
+    for (const recipe of RECIPES) {
+      const hours = CRAFT_TOLL_HOURS[
+        recipe.output.kind === 'item'
+          ? recipe.output.procId
+            ? 'unique'
+            : 'item'
+          : recipe.output.kind
+      ]
+      const expected = goldPerHourAt(recipeLevel(recipe)).times(hours).ceil()
+      expect(craftToll(recipe).toNumber(), recipe.id).toBe(expected.toNumber())
+    }
+  })
+
+  it('еда втрое дешевле склянки, уникум дороже кованого', () => {
+    // Порядок цен — часть замысла: еду жгут пачками, склянку берут в данж,
+    // кованую вещь делают на невезение, уникум планируют заранее.
+    expect(CRAFT_TOLL_HOURS.potion / CRAFT_TOLL_HOURS.food).toBeCloseTo(3, 1)
+    expect(CRAFT_TOLL_HOURS.item).toBeGreaterThan(CRAFT_TOLL_HOURS.potion)
+    expect(CRAFT_TOLL_HOURS.unique).toBeGreaterThan(CRAFT_TOLL_HOURS.item)
+    // И расходники укладываются в обещанные 35-40% часа.
+    expect(CRAFT_TOLL_HOURS.potion).toBeGreaterThanOrEqual(0.35)
+    expect(CRAFT_TOLL_HOURS.potion).toBeLessThanOrEqual(0.4)
+  })
+
+  it('РАСТЁТ ПО ТИРУ: глубокий рецепт дороже мелкого', () => {
+    // Пошлина обязана расти вместе с доходом — иначе к концу игры она
+    // превращается в округление, и слив снова пропадает.
+    const byLevel = [...RECIPES].sort((a, b) => recipeLevel(a) - recipeLevel(b))
+    const cheapest = byLevel[0]
+    const deepest = byLevel[byLevel.length - 1]
+    expect(recipeLevel(deepest)).toBeGreaterThan(recipeLevel(cheapest))
+    expect(craftToll(deepest).gt(craftToll(cheapest))).toBe(true)
+  })
+
+  it('не хватило золота — отказ КОДОМ, и видно, сколько не хватает', () => {
+    const toll = craftToll(BROTH)
+    const poor = hero({
+      materials: { 'meadow-herb': new Decimal(5) },
+      gold: toll.minus(1),
+    })
+    const status = recipeStatus(poor, BROTH)
+    expect(status.canCraft).toBe(false)
+    expect(status.reason).toBe('gold')
+    expect(status.tollShort.toNumber()).toBe(1)
+    // И состояние не меняется: отказ — это ничего не делать.
+    expect(craft(poor, BROTH.id)).toBe(poor)
+  })
+
+  it('золото списывается ровно на пошлину', () => {
+    const toll = craftToll(BROTH)
+    const rich = hero({ materials: { 'meadow-herb': new Decimal(5) }, gold: toll.times(3) })
+    const after = craft(rich, BROTH.id)
+    expect(after.gold.toNumber()).toBe(toll.times(2).toNumber())
+  })
+
+  it('материалы важнее золота в порядке отказов', () => {
+    // Материалы копятся сами, пока герой в зоне, а золото игрок тратит и на
+    // другое. «Не хватает золота» — это решение, и показывать его надо
+    // тогда, когда всё остальное уже есть.
+    const broke = hero({ materials: {}, gold: new Decimal(0) })
+    expect(recipeStatus(broke, BROTH).reason).toBe('materials')
   })
 })

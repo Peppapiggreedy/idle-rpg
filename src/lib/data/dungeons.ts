@@ -14,7 +14,7 @@ import type { IconName } from '../ui/icons/manifest'
 import { Decimal } from '../game/numbers'
 import { buildMonster, COMMON, type MonsterRole } from './monsters'
 import { DUNGEON_SCENES, type DungeonSceneKey, type SceneConfig } from './scenery'
-import { zoneForMonsterLevel } from './zones'
+import { ZONES, zoneForMonsterLevel } from './zones'
 import type { SlotId } from './slots'
 import { BOSS_ABILITY_BY_ID, HEROIC } from './heroic'
 import { reagentOf } from './reagents'
@@ -60,6 +60,17 @@ export interface DungeonDef {
   lootTier: LootTier
   zoneId: string // из какой зоны вход
   unlockRequirement: number // уровень персонажа
+  /**
+   * КАКИЕ ЗОНЫ ОТКРЫВАЕТ ПЕРВОЕ ПРОХОЖДЕНИЕ. Ровно две у каждого данжа —
+   * так двадцать зон и раскладываются: четыре стартовых плюс восемь данжей
+   * по две. Без остатка, и это не совпадение, а условие ритма «десять
+   * уровней зоны — данж — десять уровней».
+   *
+   * Список лежит ЗДЕСЬ, а не в зоне, по той же причине, по какой вход в данж
+   * лежит здесь же: у зоны нет своего мнения о том, кто её открывает, а у
+   * данжа есть — он ради этого и стоит на лестнице.
+   */
+  opensZoneIds: string[]
   /** Реагент тира: его роняет последний босс цепочки. */
   reagentId: string
   /** Ключ интерьера. Держится рядом с самим конфигом ради проверки данных:
@@ -68,6 +79,32 @@ export interface DungeonDef {
   /** Как выглядит место. Интерьеров четыре на восемь данжей — см. scenery.ts. */
   scene: SceneConfig
   bosses: BossDef[] // порядок фиксирован: цепочка идёт сверху вниз
+}
+
+/**
+ * СКОЛЬКО ЭКИПИРОВКИ НУЖНО, ЧТОБЫ ВЗЯТЬ ДАНЖ ТИРА T.
+ *
+ * Данж — жёсткие ворота: не прошёл, значит дальше не идёшь, зоны не открылись.
+ * Но жёсткость обязана РАСТИ, а не стоять стеной с самого начала: первый данж
+ * берётся примерно шестьюдесятью процентами доступной экипировки, последний
+ * требует девяноста пяти. Между ними ровный шаг в пять процентов на тир.
+ *
+ * «Доля доступной экипировки» — это уровень вещей относительно верхнего моба
+ * зоны входа: вещи такого уровня в этой зоне и падают. Восемьдесят процентов
+ * на тире пятом значит «вещи 48 уровня при мобах до 60».
+ *
+ * Число проверяется В ОБЕ СТОРОНЫ (game/__tests__/dungeon-ladder.test.ts):
+ * с этой долей цепочка проходится, с долей на пятнадцать пунктов меньше —
+ * нет. Односторонняя проверка пропустила бы данж, который проходится вообще
+ * всегда, — то есть перестал быть воротами.
+ */
+export const GEAR_SHARE_BASE = 0.55
+export const GEAR_SHARE_PER_TIER = 0.05
+/** На сколько пунктов ниже доли данж обязан НЕ проходиться. */
+export const GEAR_SHARE_MARGIN = 0.15
+
+export function requiredGearShare(tier: number): number {
+  return GEAR_SHARE_BASE + GEAR_SHARE_PER_TIER * tier
 }
 
 // Ярость: каждые enrageStepSec урон растёт на enrageGrowth от исходного.
@@ -106,10 +143,19 @@ interface ChainStep {
 // hpMult растёт по цепочке быстрее damageMult: длиннее бой — больше времени
 // под ударами, и пресс копится сам. Разгонять ещё и урон значило бы считать
 // одно и то же дважды.
+//
+// УРОН СРЕЗАН НА ЧЕТВЕРТЬ ПРОТИВ ПРЕЖНЕГО (было 1.4/1.7/2.0), и это плата
+// за то, что данж стал ВОРОТАМИ. Раньше все восемь требовали около девяноста
+// процентов доступной экипировки — то есть первый стоял такой же стеной, как
+// восьмой, ровно там, где игрок только начал собирать вещи. Теперь требование
+// растёт по тирам (см. requiredGearShare), а стартовая точка опустилась.
+// Ниже срезать нельзя: у первого босса урон за удар обязан остаться выше,
+// чем у типичного моба зоны входа, — иначе он не босс. Это держит тест
+// «боссы крепче и злее мобов своей зоны».
 const CHAIN: readonly ChainStep[] = [
   {
     hpMult: 3.6,
-    damageMult: 1.4,
+    damageMult: 1.05,
     goldMult: 12,
     xpMult: 10,
     swingTime: 2.4,
@@ -118,7 +164,7 @@ const CHAIN: readonly ChainStep[] = [
   },
   {
     hpMult: 4.6,
-    damageMult: 1.7,
+    damageMult: 1.28,
     goldMult: 20,
     xpMult: 16,
     swingTime: 2.0,
@@ -127,7 +173,7 @@ const CHAIN: readonly ChainStep[] = [
   },
   {
     hpMult: 6.0,
-    damageMult: 2.0,
+    damageMult: 1.5,
     goldMult: 34,
     xpMult: 27,
     swingTime: 1.8,
@@ -145,14 +191,24 @@ const CHAIN: readonly ChainStep[] = [
  */
 export const TIER_GROWTH = {
   hp: 1.03,
-  // ЕДИНИЦА — это решение, а не пропуск. Пресс тира и так растёт уровнем
-  // босса: у мобов damagePerLevel круче hpPerLevel (data/monsters.ts), то
-  // есть входящий урон с уровнем разгоняется сам. Вторая ставка сверху
-  // съедала бы запас героя, который после шестидесятого почти не растёт —
-  // зон дальше нет, вещи упираются в потолок. Старшие данжи становятся
-  // труднее ДРУГИМ: отметка ярости подступает раньше, и они превращаются
-  // в проверку урона в секунду, а не в мясорубку.
-  damage: 1,
+  // ЗДЕСЬ БЫЛА ЕДИНИЦА, и это было верно, пока данж не был ВОРОТАМИ. Теперь
+  // он ими стал: не прошёл — две зоны не открылись, дальше идти некуда. А
+  // ворота обязаны становиться требовательнее, иначе восьмой данж отличался
+  // бы от первого только уровнем боссов, то есть ничем: сила героя растёт
+  // ровно так же.
+  //
+  // Ставка подобрана ЗАМЕРОМ и держится тестом в обе стороны: первый данж
+  // берётся шестьюдесятью процентами доступной экипировки, восьмой требует
+  // девяноста пяти (requiredGearShare). До правки все восемь требовали
+  // около девяноста — то есть требовательность не росла вовсе, а первый
+  // данж стоял стеной ровно там, где игрок только начинает собирать вещи.
+  //
+  // Растёт именно УРОН, а не HP, и это не вкус. Запас героя тает как
+  // «входящий минус регенерация»: прибавка к урону бьёт по разности, то есть
+  // сильнее собственной величины, а прибавка к HP только растягивает бой,
+  // давая регенерации больше времени. Ставка на HP давала кривую, идущую
+  // в ОБРАТНУЮ сторону — замер показал требование, падающее от тира к тиру.
+  damage: 1.04,
   reward: 1.12,
   // Ярость подступает с тиром раньше: единственная ставка НИЖЕ единицы.
   // Ставка ПОЛОГАЯ (0.99, а не 0.97): у восьмого тира она множится семь раз,
@@ -195,7 +251,7 @@ function tierScale(rate: number, tier: number): number {
  * Разница принципиальна, и оба соседних варианта неверны. «Зона, где дверь» —
  * это про место на карте, а не про силу противника: дверь первого данжа
  * стоит в Топких лощинах, но открывается на двадцатом. А «самая дальняя
- * ОТКРЫТАЯ зона» (zoneForLevel) уводит в другую крайность: зоны открываются
+ * ОТКРЫТАЯ зона» уводит в другую крайность: зоны открываются
  * заметно быстрее, чем герой начинает в них выживать, и на двадцатом уровне
  * это дало бы боссов тридцать пятого — данж стал бы непроходим на своём же
  * уровне входа. По силам герою полоса СВОЕГО уровня, от неё и считаем.
@@ -216,6 +272,8 @@ export interface DungeonSpec {
   icon: IconName
   zoneId: string
   unlockRequirement: number
+  /** Какие две зоны открывает первое прохождение. См. DungeonDef. */
+  opensZoneIds: string[]
   lootTier: LootTier
   reagentId: string
   scenery: DungeonSceneKey
@@ -234,6 +292,7 @@ export const DUNGEON_SPECS: readonly DungeonSpec[] = [
     icon: 'dungeon-sunken-barrow',
     zoneId: 'mirefen-hollows',
     unlockRequirement: 20,
+    opensZoneIds: ['glasswaste', 'ashen-ridge'],
     lootTier: 1,
     reagentId: 'reagent-silt-clot',
     scenery: 'cistern',
@@ -248,8 +307,9 @@ export const DUNGEON_SPECS: readonly DungeonSpec[] = [
     id: 'ninth-drift',
     name: 'Девятая штольня',
     icon: 'dungeon-ninth-drift',
-    zoneId: 'mine-collapse',
+    zoneId: 'ashen-ridge',
     unlockRequirement: 30,
+    opensZoneIds: ['mine-collapse', 'root-vaults'],
     lootTier: 1,
     reagentId: 'reagent-drift-sinter',
     scenery: 'vault',
@@ -264,8 +324,9 @@ export const DUNGEON_SPECS: readonly DungeonSpec[] = [
     id: 'tier-cisterns',
     name: 'Ярусные цистерны',
     icon: 'dungeon-tier-cisterns',
-    zoneId: 'flooded-tier',
+    zoneId: 'root-vaults',
     unlockRequirement: 40,
+    opensZoneIds: ['flooded-tier', 'mold-horizon'],
     lootTier: 1,
     reagentId: 'reagent-sediment-core',
     scenery: 'cistern',
@@ -280,8 +341,9 @@ export const DUNGEON_SPECS: readonly DungeonSpec[] = [
     id: 'boiling-adits',
     name: 'Кипящие штольни',
     icon: 'dungeon-boiling-adits',
-    zoneId: 'sulfur-springs',
+    zoneId: 'mold-horizon',
     unlockRequirement: 50,
+    opensZoneIds: ['sulfur-springs', 'ashen-terrace'],
     lootTier: 1,
     reagentId: 'reagent-sulfur-growth',
     scenery: 'forge',
@@ -296,8 +358,9 @@ export const DUNGEON_SPECS: readonly DungeonSpec[] = [
     id: 'wind-galleries',
     name: 'Ветровые галереи',
     icon: 'dungeon-wind-galleries',
-    zoneId: 'windswept-pass',
+    zoneId: 'ashen-terrace',
     unlockRequirement: 60,
+    opensZoneIds: ['windswept-pass', 'wormwood-rise'],
     lootTier: 2,
     reagentId: 'reagent-wind-glass',
     scenery: 'rime',
@@ -312,8 +375,9 @@ export const DUNGEON_SPECS: readonly DungeonSpec[] = [
     id: 'salt-womb',
     name: 'Соляная утроба',
     icon: 'dungeon-salt-womb',
-    zoneId: 'salt-pit',
+    zoneId: 'wormwood-rise',
     unlockRequirement: 70,
+    opensZoneIds: ['salt-pit', 'emery-stack'],
     lootTier: 2,
     reagentId: 'reagent-brine-crystal',
     scenery: 'vault',
@@ -330,8 +394,9 @@ export const DUNGEON_SPECS: readonly DungeonSpec[] = [
     icon: 'dungeon-rime-catacombs',
     // Полоса 81-85: вход открывается ровно на её пороге, как у всех
     // остальных данжей лестницы (см. инвариант в content:check).
-    zoneId: 'rimeback-ridge',
+    zoneId: 'emery-stack',
     unlockRequirement: 80,
+    opensZoneIds: ['rimeback-ridge', 'frozen-crookwood'],
     lootTier: 2,
     reagentId: 'reagent-rime-vein',
     scenery: 'rime',
@@ -347,8 +412,9 @@ export const DUNGEON_SPECS: readonly DungeonSpec[] = [
     name: 'Полость под кручей',
     icon: 'dungeon-bluff-hollow',
     // Полоса 91-95, а не 96-100: вход на пороге своей зоны.
-    zoneId: 'hollow-dell',
+    zoneId: 'frozen-crookwood',
     unlockRequirement: 90,
+    opensZoneIds: ['hollow-dell', 'mute-bluff'],
     lootTier: 2,
     reagentId: 'reagent-mute-shard',
     scenery: 'vault',
@@ -396,6 +462,10 @@ export function buildDungeon(
     lootTier,
     zoneId: spec.zoneId,
     unlockRequirement,
+    // ЗОНЫ ОТКРЫВАЕТ ТОЛЬКО ОБЫЧНАЯ ВЕРСИЯ. Героика — второй проход по той же
+    // лестнице, и открывать ей уже нечего: к моменту, когда она доступна,
+    // все двадцать зон давно открыты обычными прохождениями.
+    opensZoneIds: heroic ? [] : spec.opensZoneIds,
     reagentId,
     scenery: spec.scenery,
     scene: DUNGEON_SCENES[spec.scenery],
@@ -435,6 +505,24 @@ export const ALL_DUNGEONS: DungeonDef[] = [...DUNGEONS, ...HEROIC_DUNGEONS]
 /** Самый глубокий тир лестницы. По нему растут реагенты, реликвии и проки:
  *  добавили девятый данж — всё, что считается от тира, продолжилось само. */
 export const MAX_DUNGEON_TIER = DUNGEONS.reduce((max, d) => Math.max(max, d.tier), 0)
+
+/**
+ * Зоны, открытые С НАЧАЛА ИГРЫ: те, которые не открывает ни один данж.
+ *
+ * Выводится, а не перечисляется. Список руками разъехался бы с `opensZoneIds`
+ * при первой же правке лестницы, и «зона, в которую нельзя попасть никогда»
+ * появилась бы молча. Здесь же она невозможна по построению, а число
+ * стартовых зон (четыре) держит проверка контента.
+ */
+export const INITIAL_ZONE_IDS: readonly string[] = (() => {
+  const opened = new Set(DUNGEONS.flatMap((d) => d.opensZoneIds))
+  return ZONES.filter((z) => !opened.has(z.id)).map((z) => z.id)
+})()
+
+/** Какой данж открывает эту зону; null — она открыта с начала игры. */
+export function dungeonOpening(zoneId: string): DungeonDef | null {
+  return DUNGEONS.find((d) => d.opensZoneIds.includes(zoneId)) ?? null
+}
 
 export const DUNGEON_BY_ID: Record<string, DungeonDef> = Object.fromEntries(
   DUNGEONS.map((d) => [d.id, d]),

@@ -9,6 +9,8 @@ import {
   rollSlot,
   sellItem,
   sellPrice,
+  shieldMods,
+  weaponMods,
 } from './loot'
 import { equipItem } from './equipment'
 import { SLOT_IDS } from '../data/slots'
@@ -23,6 +25,8 @@ import {
   ARMOR_BASE_PRIMARY,
   ARMOR_BASE_VITALITY,
   ARMOR_BONUS_STAT,
+  SHIELDS,
+  WEAPONS,
 } from '../data/items'
 import type { Item } from '../types'
 
@@ -369,5 +373,54 @@ describe('модификаторы брони', () => {
     const plain = avg.find((m) => m.stat !== ARMOR_BONUS_STAT)!
     // Довесок делает свой стат тяжелее ровно на ARMOR_BASE_VITALITY.
     expect(bonus.value.minus(plain.value).eq(ARMOR_BASE_VITALITY)).toBe(true)
+  })
+})
+
+describe('на выпадающих вещах только флэт', () => {
+  // ПОЧЕМУ ПРАВИЛО ВООБЩЕ ЕСТЬ. Процент считается от СУММЫ конвейера, то есть
+  // от остальной экипировки: такой предмет нельзя оценить сам по себе, а
+  // сравнение находок в игре именно поштучное. И он не растёт ни от уровня
+  // вещи, ни от тира — множитель силы умножает плоские прибавки, а проценту
+  // умножать нечего. Крушитель с «+10% силы» это показывал в упор: на первом
+  // уровне, когда силы нет вовсе, прибавка была РОВНО НУЛЁМ.
+  //
+  // Данные держит проверка контента; здесь проверяется ГЕНЕРАЦИЯ — что ни
+  // один путь появления предмета не заводит процент сам.
+  const allowed = new Set(['flat', 'base'])
+
+  it('тысяча бросков дропа не даёт ни одного не-плоского модификатора', () => {
+    const rng = createRng(31337)
+    for (let i = 0; i < 1000; i += 1) {
+      const item = rollLoot(rng, i, 1 + (i % 100))
+      if (!item) continue
+      for (const mod of item.mods) {
+        expect(allowed.has(mod.kind), `${item.name}: ${mod.stat} ${mod.kind}`).toBe(true)
+      }
+    }
+  })
+
+  it('ни один шаблон оружия и щита не заводит процент', () => {
+    for (const template of WEAPONS) {
+      for (const mod of weaponMods(template, RARITY_BY_ID.legendary, 'mainHand', 80)) {
+        expect(allowed.has(mod.kind), `${template.id}: ${mod.stat} ${mod.kind}`).toBe(true)
+      }
+    }
+    for (const template of SHIELDS) {
+      for (const mod of shieldMods(template, RARITY_BY_ID.legendary, 80)) {
+        expect(allowed.has(mod.kind), `${template.id}: ${mod.stat} ${mod.kind}`).toBe(true)
+      }
+    }
+  })
+
+  it('побочный стат растёт от уровня вещи и от тира — процент не рос бы', () => {
+    // Та самая причина, по которой процент на вещи бессмыслен: плоская
+    // прибавка множится на силу предмета, а процент остался бы прежним.
+    const template = WEAPONS.find((w) => w.extra.length > 0)!
+    const stat = template.extra[0].stat
+    const low = weaponMods(template, RARITY_BY_ID.common, 'mainHand', 1)
+    const high = weaponMods(template, RARITY_BY_ID.legendary, 'mainHand', 80)
+    const value = (mods: ReturnType<typeof weaponMods>) =>
+      mods.find((m) => m.stat === stat)!.value.toNumber()
+    expect(value(high)).toBeGreaterThan(value(low) * 5)
   })
 })

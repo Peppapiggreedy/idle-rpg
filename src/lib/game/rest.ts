@@ -9,7 +9,7 @@
 // Текста для игрока здесь нет: наружу идут числа и состояния, подписи рисует UI.
 import { Decimal } from './numbers'
 import { estimateCombatRate, expectedMonsterDamage } from './combat'
-import { MIN_REST_DURATION_S, REST_FOOD_SPEEDUP } from '../data/balance'
+import { levelGapDamageMult, MIN_REST_DURATION_S, REST_FOOD_SPEEDUP } from '../data/balance'
 import { zoneMonsterVariants, type Zone } from '../data/zones'
 import type { StatBlock } from './stats'
 import { restCooldownMultiplier, restDurationMultiplier } from './talents'
@@ -114,15 +114,20 @@ export function restProgress(state: GameState): number {
 // ---------------------------------------------------------------------------
 
 /** Самый сильный удар, который может прилететь в этой зоне. */
-export function maxMonsterHit(zone: Zone, stats: StatBlock): Decimal {
+export function maxMonsterHit(zone: Zone, stats: StatBlock, heroLevel: number): Decimal {
   return zoneMonsterVariants(zone).reduce((max, template) => {
     const hit = expectedMonsterDamage(
       { ...template, currentHp: template.maxHp, swingProgress: 0 },
       stats,
+      heroLevel,
     )
     // Берём верхнюю границу разброса, а не среднее: безопасность — про худший
-    // случай, иначе метка обещала бы то, чего не гарантирует.
-    const worst = template.damageMax.times(1 - stats.damageReduction)
+    // случай, иначе метка обещала бы то, чего не гарантирует. Штраф за разрыв
+    // уровней здесь тот же, что и в бою: иначе метка обещала бы безопасность
+    // зоне, где герой не переживает и одного удара.
+    const worst = template.damageMax
+      .times(levelGapDamageMult(heroLevel, template.level))
+      .times(1 - stats.damageReduction)
     return Decimal.max(max, Decimal.max(hit, worst))
   }, new Decimal(0))
 }
@@ -151,7 +156,7 @@ export function fightLoss(state: GameState, template: MonsterTemplate): Decimal 
   const cycleSec = new Decimal(1).div(rate.idealKillsPerSecond)
   const hits = Math.max(0, Math.floor(cycleSec.div(template.swingTime).toNumber()))
   if (hits === 0) return new Decimal(0)
-  const mean = expectedMonsterDamage(monster, state.stats)
+  const mean = expectedMonsterDamage(monster, state.stats, state.level.toNumber())
   // Разброс одного удара: равномерное распределение min..max даёт
   // стандартное отклонение (max - min) / sqrt(12).
   const spread = template.damageMax
@@ -189,7 +194,7 @@ export interface ZoneSafety {
  */
 export function zoneSafety(state: GameState, zone: Zone): ZoneSafety {
   const thresholdHp = state.stats.maxHp.times(state.stats.restThreshold)
-  const worstHit = maxMonsterHit(zone, state.stats)
+  const worstHit = maxMonsterHit(zone, state.stats, state.level.toNumber())
   const worstFight = zoneMonsterVariants(zone).reduce(
     (max, template) => Decimal.max(max, fightLoss(state, template)),
     new Decimal(0),

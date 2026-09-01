@@ -18,11 +18,11 @@ import {
   ZONE_BY_ID,
   averageMonsterLevel,
   representativeMonster,
-  zoneForLevel,
   zoneForMonsterLevel,
   zoneMonsterVariants,
   type Zone,
 } from '../data/zones'
+import { INITIAL_ZONE_IDS } from '../data/dungeons'
 import type { Rng } from './rng'
 
 export function zoneById(id: string): Zone {
@@ -33,9 +33,19 @@ export function currentZone(state: GameState): Zone {
   return zoneById(state.currentZoneId)
 }
 
-/** Открыта ли зона: уровень героя дорос до unlockRequirement. */
+/**
+ * Открыта ли зона: её открыл ПРОЙДЕННЫЙ ДАНЖ, либо она открыта с начала игры.
+ *
+ * Уровень героя тут больше ни при чём, и это главное изменение лестницы.
+ * Раньше зона открывалась числом (`unlockRequirement`), которое шло тройками,
+ * тогда как полосы мобов идут пятёрками: последняя зона открывалась на 58
+ * уровне при мобах 96-100, а сорок два уровня второй половины игры не
+ * приносили ни одной новой зоны. Двумя числами одну лестницу описать нельзя,
+ * поэтому число осталось одно — тир данжа.
+ */
 export function isZoneUnlocked(state: GameState, zone: Zone): boolean {
-  return state.level.gte(zone.unlockRequirement)
+  if (INITIAL_ZONE_IDS.includes(zone.id)) return true
+  return state.unlockedZoneIds[zone.id] === true
 }
 
 /**
@@ -186,7 +196,7 @@ export interface ZoneForecast {
 export function forecastZone(state: GameState, zone: Zone): ZoneForecast {
   const rate = zoneRate(state, zone)
   const typical = stateInZone(state, zone)
-  const incoming = expectedMonsterDamage(typical.monster, state.stats)
+  const incoming = expectedMonsterDamage(typical.monster, state.stats, state.level.toNumber())
   // Сколько ударов типичного моба герой держит с полного запаса: нулевой
   // входящий урон означает бесконечность, поэтому отдельной веткой.
   const hitsSurvived = incoming.lte(0)

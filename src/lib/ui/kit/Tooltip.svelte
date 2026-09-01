@@ -9,11 +9,22 @@
   // Закрывается по Esc и по клику вне: открытая подсказка, которую нечем
   // убрать, хуже отсутствующей.
   //
-  // Позиционируется чистым CSS, но края экрана поправляются числом: на 390px
-  // подсказка у правой кнопки иначе уезжает за границу окна по горизонтали,
-  // а длинное описание умения у верхнего края — за верх экрана. Горизонталь
-  // лечится сдвигом, вертикаль — переворотом на другую сторону хоста.
-  // Замер идёт по требованию, при открытии, — не на каждый кадр.
+  // ПОЗИЦИЯ — FIXED, И ЭТО НЕ ПРИДИРКА К СТИЛЮ.
+  //
+  // Пузырь висел `absolute` внутри хоста и клипался ЛЮБЫМ прокручиваемым
+  // предком. Ряд действий под сценой — как раз такой: у него `overflow-x:
+  // auto`, чтобы иконки прокручивались на узком экране. Подсказка умения
+  // открывается ВВЕРХ, то есть целиком за пределы этого блока, и срезалась
+  // до последнего пикселя.
+  //
+  // Хуже всего то, как это выглядело в прогоне: `getBoundingClientRect`
+  // отдаёт неурезанный прямоугольник, а `getComputedStyle` — `visibility:
+  // visible`. Playwright такой элемент считает видимым, поэтому ШЕСТЬ тестов
+  // на подсказку были зелёными, пока игрок не видел ничего. Правка приезжала
+  // дважды и дважды «не доезжала».
+  //
+  // `fixed` вырывает пузырь из всех клипов (у предков нет transform), но
+  // тогда координаты обязан считать JS: CSS больше не знает, где хост.
   import type { Snippet } from 'svelte'
 
   interface Props {
@@ -40,30 +51,53 @@
   let bubble = $state<HTMLElement | null>(null)
   /** Открыта нажатием: живёт до Esc, клика вне или повторного нажатия. */
   let pinned = $state(false)
-  /** Сдвиг пузыря по горизонтали, чтобы он не вылезал за край окна. */
-  let shift = $state(0)
+  /** Место пузыря в координатах окна: считает JS, потому что позиция fixed. */
+  let pos = $state({ left: 0, top: 0 })
   /** Пузырь не влез со своей стороны — показываем с противоположной. */
   let flipped = $state(false)
 
   const shown = $derived(open || pinned)
   const side = $derived(flipped ? (placement === 'top' ? 'bottom' : 'top') : placement)
 
-  function clamp(): void {
-    if (!bubble) return
-    // Сначала снимаем прежние поправки, иначе замеряем уже поправленное.
-    shift = 0
-    flipped = false
-    requestAnimationFrame(() => {
-      if (!bubble) return
-      const rect = bubble.getBoundingClientRect()
-      const margin = 8
-      if (rect.left < margin) shift = margin - rect.left
-      else if (rect.right > window.innerWidth - margin) {
-        shift = window.innerWidth - margin - rect.right
-      }
-      if (placement === 'top' && rect.top < margin) flipped = true
-      else if (placement === 'bottom' && rect.bottom > window.innerHeight - margin) flipped = true
-    })
+  /** Отступ пузыря от хоста и от края окна. */
+  const GAP = 8
+
+  /**
+   * Считает место для пузыря в координатах ОКНА.
+   *
+   * По горизонтали — по центру хоста, прижимаясь к краям; по вертикали —
+   * со стороны `placement`, а если там не помещается, с противоположной.
+   */
+  function place(): void {
+    if (!host || !bubble) return
+    const h = host.getBoundingClientRect()
+    const b = bubble.getBoundingClientRect()
+    const w = b.width
+    const hgt = b.height
+
+    let left = h.left + h.width / 2 - w / 2
+    left = Math.max(GAP, Math.min(left, window.innerWidth - GAP - w))
+
+    const above = h.top - GAP - hgt
+    const below = h.bottom + GAP
+    let top: number
+    if (placement === 'top') {
+      flipped = above < GAP
+      top = flipped ? below : above
+    } else {
+      flipped = below + hgt > window.innerHeight - GAP
+      top = flipped ? above : below
+    }
+    // Последняя защита: не даём уехать за верх или низ окна.
+    top = Math.max(GAP, Math.min(top, window.innerHeight - GAP - hgt))
+
+    pos = { left, top }
+  }
+
+  /** Замер идёт ПОСЛЕ отрисовки: до неё у пузыря нет размеров. */
+  function schedule(): void {
+    place()
+    requestAnimationFrame(place)
   }
 
   function toggle(event: MouseEvent): void {
@@ -71,7 +105,7 @@
     // это подсказка, а не модалка.
     void event
     pinned = !pinned
-    if (pinned) clamp()
+    if (pinned) schedule()
   }
 
   function onKey(event: KeyboardEvent): void {
@@ -91,6 +125,26 @@
     document.addEventListener('pointerdown', onPointerDown, true)
     return () => document.removeEventListener('pointerdown', onPointerDown, true)
   })
+
+  // Витрина примитивов открывает пузырь пропсом, без наведения: место ему
+  // всё равно нужно посчитать.
+  $effect(() => {
+    if (open) schedule()
+  })
+
+  // fixed НЕ ЕДЕТ ЗА ХОСТОМ. Пока подсказка приколота, страницу могут
+  // прокрутить или повернуть телефон — пересчитываем, иначе пузырь останется
+  // висеть там, где хоста уже нет.
+  $effect(() => {
+    if (!pinned) return
+    const again = () => place()
+    window.addEventListener('scroll', again, true)
+    window.addEventListener('resize', again)
+    return () => {
+      window.removeEventListener('scroll', again, true)
+      window.removeEventListener('resize', again)
+    }
+  })
 </script>
 
 <svelte:window onkeydown={onKey} />
@@ -106,15 +160,15 @@
   class:block
   bind:this={host}
   onclick={toggle}
-  onmouseenter={clamp}
-  onfocusin={clamp}
+  onmouseenter={schedule}
+  onfocusin={schedule}
 >
   {@render children()}
   <span
     class="bubble {side} {width}"
     class:open={shown}
     bind:this={bubble}
-    style="--shift: {shift}px"
+    style="left: {pos.left}px; top: {pos.top}px"
     role="tooltip">{text}</span
   >
 </span>
@@ -137,10 +191,9 @@
     pointer-events: none;
   }
   .bubble {
-    position: absolute;
-    left: 50%;
-    /* --shift держит пузырь в пределах окна на узком экране. */
-    transform: translateX(calc(-50% + var(--shift, 0px)));
+    /* fixed, а не absolute: иначе любой прокручиваемый предок срезает пузырь
+       (см. объяснение вверху файла). Координаты приходят из place(). */
+    position: fixed;
     z-index: 50;
     width: max-content;
     max-width: min(18rem, calc(100vw - 2 * var(--space-4)));
@@ -164,12 +217,6 @@
   }
   .bubble.wide {
     max-width: min(24rem, calc(100vw - 2 * var(--space-4)));
-  }
-  .bubble.top {
-    bottom: calc(100% + var(--space-2));
-  }
-  .bubble.bottom {
-    top: calc(100% + var(--space-2));
   }
   .bubble.open,
   .host:hover .bubble,

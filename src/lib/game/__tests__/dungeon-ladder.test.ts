@@ -14,8 +14,10 @@ import { RESPAWN_DELAY_MS } from '../../data/balance'
 import {
   ALL_DUNGEONS,
   DUNGEONS,
+  GEAR_SHARE_MARGIN,
   HEROIC_DUNGEONS,
   buildBoss,
+  requiredGearShare,
   type BossDef,
 } from '../../data/dungeons'
 import { REAGENTS } from '../../data/reagents'
@@ -46,6 +48,18 @@ function heroAtEntry(level: number): GameState {
   // данжа вовсе. Дверь открывается тому, кто дошёл, а не тому, кто забежал.
   const state = buildSimState(
     { ...referenceBuild(level), level, gearLevel: zone.monsterLevelRange.max },
+    zone.id,
+    4242,
+  )
+  return { ...state, restHpThreshold: 0, restResourceThreshold: 0 }
+}
+
+/** Герой уровня входа в вещах заданной ДОЛИ от верхнего моба зоны входа. */
+function heroWithGearShare(dungeon: (typeof DUNGEONS)[number], share: number): GameState {
+  const zone = zoneForMonsterLevel(dungeon.unlockRequirement)
+  const gearLevel = Math.max(1, Math.round(zone.monsterLevelRange.max * share))
+  const state = buildSimState(
+    { ...referenceBuild(dungeon.unlockRequirement), level: dungeon.unlockRequirement, gearLevel },
     zone.id,
     4242,
   )
@@ -85,7 +99,7 @@ function runChain(state: GameState, bosses: BossDef[], dpsShare = 1): ChainResul
     // idealKillsPerSecond — это 1 / (бой + респаун); сам бой получается вычитанием.
     const cycle = 1 / rate.idealKillsPerSecond.toNumber()
     const fight = Math.max(0, cycle - RESPAWN_DELAY_MS / 1000) / dpsShare
-    const incoming = expectedMonsterDamage(monster, state.stats).toNumber() / boss.swingTime
+    const incoming = expectedMonsterDamage(monster, state.stats, state.level.toNumber()).toNumber() / boss.swingTime
     const loss = incoming * averageEnrage(boss, fight) - regen
     hp -= Math.max(0, loss) * fight
     seconds += fight
@@ -141,7 +155,14 @@ describe('лестница данжей', () => {
   it.each(DUNGEONS.map((d) => [`${d.tier}. ${d.name}`, d] as const))(
     '%s: отставший по урону цепочку не проходит',
     (_title, dungeon) => {
-      const chain = runChain(heroAtEntry(dungeon.unlockRequirement), dungeon.bosses, BEHIND_DPS_SHARE)
+      // Меряется на ПОГРАНИЧНОМ герое — том, для кого ворота и настроены
+      // (requiredGearShare), а не на полностью одетом. У полностью одетого
+      // запас такой, что отставание по урону он переживает просто временем:
+      // урон боссов ниже его регенерации, и цепочка тянется, но не убивает.
+      // Ворота проверяют того, кто пришёл к ним вовремя, а не того, кто
+      // вернулся за ними через двадцать уровней.
+      const hero = heroWithGearShare(dungeon, requiredGearShare(dungeon.tier))
+      const chain = runChain(hero, dungeon.bosses, BEHIND_DPS_SHARE)
       expect(chain.hpLeftShare).toBeLessThan(0)
     },
   )
@@ -156,4 +177,62 @@ describe('лестница данжей', () => {
       expect(chain.worstEnrageRatio).toBeGreaterThan(1)
     },
   )
+})
+
+// ---------------------------------------------------------------------------
+// ЖЁСТКИЕ ВОРОТА: сколько экипировки нужно, чтобы пройти
+// ---------------------------------------------------------------------------
+//
+// Данж закрывает две зоны, и не пройти его значит не пойти дальше. Поэтому
+// требование к экипировке проверяется В ОБЕ СТОРОНЫ: с положенной долей
+// цепочка проходится, с долей на GEAR_SHARE_MARGIN меньше — нет. Проверка
+// в одну сторону пропустила бы данж, который проходится всегда, то есть
+// перестал быть воротами вовсе.
+describe('данж — жёсткие ворота, и требовательность растёт по тирам', () => {
+  it('таблица требовательности', () => {
+    const rows = DUNGEONS.map((d) => {
+      const share = requiredGearShare(d.tier)
+      const pass = runChain(heroWithGearShare(d, share), d.bosses)
+      const fail = runChain(heroWithGearShare(d, share - GEAR_SHARE_MARGIN), d.bosses)
+      const scan = [0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.2]
+        .map((x) => `${(x * 100).toFixed(0)}:${runChain(heroWithGearShare(d, x), d.bosses).hpLeftShare.toFixed(2)}`)
+        .join(' ')
+      return {
+        тир: d.tier,
+        данж: d.name,
+        'нужно вещей': `${(share * 100).toFixed(0)}%`,
+        'запас HP': pass.hpLeftShare.toFixed(2),
+        'на 15 пп ниже': fail.hpLeftShare.toFixed(2),
+        развёртка: scan,
+      }
+    })
+    console.table(rows)
+    expect(rows).toHaveLength(8)
+  }, 300_000)
+
+  it.each(DUNGEONS.map((d) => [`${d.tier}. ${d.name}`, d] as const))(
+    '%s: с положенной долей экипировки проходится',
+    (_title, dungeon) => {
+      const chain = runChain(heroWithGearShare(dungeon, requiredGearShare(dungeon.tier)), dungeon.bosses)
+      expect(chain.hpLeftShare).toBeGreaterThan(0)
+    },
+  )
+
+  it.each(DUNGEONS.map((d) => [`${d.tier}. ${d.name}`, d] as const))(
+    '%s: на 15 пунктов меньше экипировки — не проходится',
+    (_title, dungeon) => {
+      const share = requiredGearShare(dungeon.tier) - GEAR_SHARE_MARGIN
+      const chain = runChain(heroWithGearShare(dungeon, share), dungeon.bosses)
+      expect(chain.hpLeftShare).toBeLessThan(0)
+    },
+  )
+
+  it('требовательность растёт от тира к тиру, а не стоит стеной', () => {
+    const shares = DUNGEONS.map((d) => requiredGearShare(d.tier))
+    for (let i = 1; i < shares.length; i += 1) {
+      expect(shares[i], `тир ${DUNGEONS[i].tier}`).toBeGreaterThan(shares[i - 1])
+    }
+    expect(shares[0]).toBeCloseTo(0.6, 9)
+    expect(shares[shares.length - 1]).toBeCloseTo(0.95, 9)
+  })
 })

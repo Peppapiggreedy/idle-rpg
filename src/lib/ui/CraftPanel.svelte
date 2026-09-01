@@ -19,13 +19,14 @@
   import { PROFESSIONS, recipesOf, type RecipeDef } from '../data/recipes'
   import { SLOT_NAMES } from '../data/slots'
   import { rarityName } from './kit'
-  import { Button, Panel, Tooltip } from './kit'
+  import { Button, NumberText, Panel, Tooltip } from './kit'
   import { Icon } from './icons'
 
   const REASON_TEXT: Record<CraftBlockReason, string> = {
     level: 'Рецепт откроется позже',
     locked: 'Награда храма: дойди до своего рубежа волн',
     materials: 'Не хватает материалов',
+    gold: 'Не хватает золота',
     'inventory-full': 'Сумка полна — освободи место',
   }
 
@@ -141,6 +142,16 @@
               </div>
             </Tooltip>
             <ul class="inputs">
+              <!-- ПОШЛИНА ВИДНА ДО НАЖАТИЯ, и это половина смысла шага: цена,
+                   о которой узнаёшь после клика, — не цена, а сюрприз. Строка
+                   стоит первой и подсвечивается нехваткой ровно так же, как
+                   недостающий материал. -->
+              <li class="toll" class:short={status.tollShort.gt(0)}>
+                Пошлина <NumberText value={status.toll} tone="gold" />
+                {#if status.tollShort.gt(0)}
+                  <span class="lack">не хватает <NumberText value={status.tollShort} tone="gold" /></span>
+                {/if}
+              </li>
               {#each recipe.inputs as input (input.materialId)}
                 {@const have = materialCount($gameState, input.materialId)}
                 <li class:short={have.lt(input.count)}>
@@ -250,6 +261,19 @@
     font-size: var(--text-xs);
     color: var(--c-text-muted);
   }
+  .inputs .toll {
+    /* Пошлина отделена от материалов: это другая валюта и другая причина
+       отказа. Линия снизу читается как «итог», а не как ещё один материал. */
+    border-bottom: 1px solid var(--c-border);
+    padding-bottom: var(--space-1);
+    margin-bottom: var(--space-1);
+  }
+
+  .inputs .lack {
+    margin-left: var(--space-1);
+    color: var(--c-warning);
+  }
+
   .inputs .short {
     color: var(--c-warning);
   }

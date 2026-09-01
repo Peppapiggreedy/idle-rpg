@@ -123,7 +123,7 @@
       >
         <span class="fill" style="height: {Math.min(100, status.cooldownFraction * 100)}%"></span>
         {#if ability.triggersGcd && gcdFraction > 0 && status.cooldownMsLeft <= 0}
-          <span class="gcd" style="width: {gcdFraction * 100}%"></span>
+          <span class="gcd" style="height: {Math.min(100, gcdFraction * 100)}%"></span>
         {/if}
         <span class="key">{hotkey(i)}</span>
         <Icon name={ability.icon} size="lg" />
@@ -214,13 +214,17 @@
   /* Общая задержка: тонкая полоска у нижнего края, отдельным цветом.
      Показывается, только когда СВОЙ кулдаун уже вышел, — иначе игрок видел
      бы две шкалы и не понимал, какая из них его держит. */
+  /* ОБЩАЯ ЗАДЕРЖКА — ТАКАЯ ЖЕ ЗАЛИВКА, как у кулдауна умения, только своим
+     цветом и слабее. Раньше она была тонкой полоской внизу иконки и вдобавок
+     дублировалась у полоски замаха — то есть жила в двух местах и ни в одном
+     не читалась как «кнопку пока нельзя». Теперь язык один: иконка залита —
+     значит ждём. */
   .gcd {
     position: absolute;
-    left: 0;
-    bottom: 0;
-    height: 2px;
-    background: var(--c-xp);
-    z-index: 1;
+    inset: auto 0 0 0;
+    background: color-mix(in srgb, var(--c-xp) var(--tint-weak), transparent);
+    z-index: -1;
+    transition: height var(--dur-tick) linear;
   }
   /* Заливка кулдауна: растёт снизу, под иконкой. */
   .fill {

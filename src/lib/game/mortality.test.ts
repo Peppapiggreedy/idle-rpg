@@ -54,8 +54,10 @@ function inZone(template: MonsterTemplate): GameState {
 
 describe('ответные удары моба', () => {
   it('моб бьёт по своему свинг-таймеру, герой теряет HP', () => {
-    // Явный моб: спавн в зоне случаен. Числа берём из данных, а не повторяем:
-    // обычный моб 1 уровня бьёт ровно на MONSTER_BASE.damage раз в COMMON.swingTime.
+    // Явный моб: спавн в зоне случаен. Урон берём У САМОГО МОБА, а не из
+    // MONSTER_BASE: на ранних полосах поверх базы лежит скидка
+    // (EARLY_HP_DISCOUNT), и повторять её здесь значило бы завести вторую
+    // копию правил масштаба.
     const squelcher = buildMonster(
       { id: 'test-squelcher', name: 'Хлюпень', role: COMMON },
       1,
@@ -66,7 +68,7 @@ describe('ответные удары моба', () => {
     // До удара HP на капе (реген в потолок не копится); удар на полном свинге,
     // затем реген того же тика.
     const regenPerStep = state.stats.hpRegen.times(STEP_MS / 1000)
-    const expected = state.stats.maxHp.minus(MONSTER_BASE.damage).plus(regenPerStep)
+    const expected = state.stats.maxHp.minus(squelcher.damageMin).plus(regenPerStep)
     expect(s.currentHp.toNumber()).toBeCloseTo(expected.toNumber(), 6)
     expect(s.combatLog.some((e) => e.type === 'hurt')).toBe(true)
   })
@@ -141,8 +143,25 @@ describe('оффлайн моделирует цикл фарм -> смерть 
     const HOURS8 = 8 * 3_600_000
     // Одна и та же зона, одни и те же награды за моба — разница только
     // в том, сколько времени герой в ней жив.
-    const zone = ZONES[2]
-    const rookie: GameState = { ...createInitialState(1), currentZoneId: zone.id }
+    // Новобранец ОДЕТ, хоть и бедно: в вещи первого уровня, то есть в первые
+    // же находки. Голый герой — в одном белом клинке при шести пустых слотах —
+    // за стартовой зоной не выживает вовсе, и «разница только в том, сколько
+    // он жив» превратилась бы в «один приносит, другой не приносит ничего».
+    //
+    // Зона выбирается ПОИСКОМ, а не номером: нужна та, где он уже платит
+    // смертями, но ещё что-то приносит. Номер разъезжался бы с любой правкой
+    // стартовых сил — а она только что и случилась.
+    const rookie0 = ensureStats({
+      ...createInitialState(1),
+      equipment: averageGear(1),
+      statsDirty: true,
+    })
+    const zone =
+      ZONES.find((z) => {
+        const share = zoneRate({ ...rookie0, currentZoneId: z.id }, z).uptime
+        return share > 0 && share < 0.95
+      }) ?? ZONES[2]
+    const rookie: GameState = { ...rookie0, currentZoneId: zone.id }
     const veteran: GameState = ensureStats({
       ...rookie,
       level: new Decimal(PACING_MAX_LEVEL),

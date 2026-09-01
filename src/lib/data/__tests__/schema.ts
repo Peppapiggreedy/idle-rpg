@@ -29,6 +29,7 @@ import { QUEST_CHAIN, type QuestDef } from '../quests'
 import { MECHANIC_IDS, type ProgressionStep } from '../progression'
 import type { ReagentDef } from '../reagents'
 import type { DungeonSceneKey } from '../scenery'
+import { craftToll, recipeLevel } from '../recipes'
 import type { ProfessionDef, RecipeDef } from '../recipes'
 import type { RarityDef } from '../rarity'
 import type { SoundCue } from '../sounds'
@@ -603,7 +604,6 @@ export const ZONE_SCHEMA: EntitySchema<Zone> = {
     { field: 'monsterLevelRange.min', get: (z) => z.monsterLevelRange?.min, min: 1, integer: true },
     { field: 'monsterLevelRange.max', get: (z) => z.monsterLevelRange?.max, min: 1, integer: true },
     { field: 'rewardMultiplier', get: (z) => z.rewardMultiplier, min: 0, exclusiveMin: true },
-    { field: 'unlockRequirement', get: (z) => z.unlockRequirement, min: 1, integer: true },
   ],
   extra: (zone, _content, report) => {
     const where = `зона ${zone.id}`
@@ -935,6 +935,38 @@ export const PROGRESSION_SCHEMA: EntitySchema<ProgressionStep> = {
   },
 }
 
+/**
+ * ТОЛЬКО ФЛЭТ НА ВЕЩАХ, КОТОРЫЕ ПАДАЮТ И КУЮТСЯ.
+ *
+ * Процент считается от СУММЫ конвейера, то есть от остальной экипировки, и
+ * из этого следуют сразу две беды. Предмет с процентом нельзя оценить сам по
+ * себе — его ценность зависит от того, что надето в других слотах, а
+ * сравнение находок в игре именно поштучное. И он не растёт ни от уровня
+ * вещи, ни от тира: множитель силы в `loot.ts` умножает плоские прибавки,
+ * а проценту умножать нечего. Крушитель с «+10% силы» это показывал в упор:
+ * на первом уровне, когда силы нет вовсе, прибавка была РОВНО НУЛЁМ.
+ *
+ * Проценты остались там, где они и осмысленны: в зачарованиях, талантах и
+ * зельях. Там они множат растущий флэт — поэтому позднее зачарование само
+ * по себе сильнее раннего, и это правильно.
+ */
+function flatOnly(
+  mods: ReadonlyArray<{ stat: string; kind: string }> | undefined,
+  where: string,
+  file: string,
+  report: Report,
+): void {
+  for (const mod of mods ?? []) {
+    if (mod.kind === 'flat' || mod.kind === 'base') continue
+    report.add(
+      where,
+      `стат «${mod.stat}» помечен kind: '${mod.kind}' — на выпадающих и кованых ` +
+        `вещах бывает только 'flat': процент считается от остальной экипировки ` +
+        `и не растёт ни от уровня вещи, ни от тира (${file})`,
+    )
+  }
+}
+
 export const WEAPON_SCHEMA: EntitySchema<WeaponTemplate> = {
   kind: 'оружие',
   file: 'data/items.ts',
@@ -989,6 +1021,7 @@ export const WEAPON_SCHEMA: EntitySchema<WeaponTemplate> = {
         )
       }
     }
+    flatOnly(weapon.extra, where, 'data/items.ts', report)
   },
 }
 
@@ -1052,6 +1085,7 @@ export const SHIELD_SCHEMA: EntitySchema<ShieldTemplate> = {
         )
       }
     }
+    flatOnly(shield.extra, where, 'data/items.ts', report)
   },
 }
 
@@ -1163,6 +1197,29 @@ export const RECIPE_SCHEMA: EntitySchema<RecipeDef> = {
         )
       }
     }
+    // ПОШЛИНА: сколько золота стоит нажать «сделать». Считается долей часового
+    // дохода на уровне рецепта, поэтому проверяется не число, а то, что доля
+    // осмысленна: бесплатный крафт — это не слив золота, а его отсутствие,
+    // а крафт дороже полусуток игры не купит никто.
+    // Проверяется УРОВЕНЬ рецепта, а не сама пошлина: пошлина считается долей
+    // часового дохода на этом уровне, то есть от него и зависит целиком.
+    // Уровень за потолком лестницы даёт цену, которой не соответствует ни один
+    // час игры, — и «доля часа» перестаёт что-либо значить.
+    const level = recipeLevel(recipe as RecipeDef)
+    report.need(
+      level >= 1 && level <= content.balance.levelCap,
+      where,
+      `уровень рецепта ${level} вне лестницы 1..${content.balance.levelCap}: пошлина ` +
+        'считается долей часового дохода на этом уровне, а такого уровня в игре нет ' +
+        '(data/recipes.ts)',
+    )
+    report.need(
+      craftToll(recipe as RecipeDef).gt(0),
+      where,
+      'пошлина нулевая — крафт не тратит золота, и слив золота из игры пропадает ' +
+        '(data/recipes.ts, CRAFT_TOLL_HOURS)',
+    )
+
     const output = recipe.output
     if (output.kind === 'item') {
       report.need(
@@ -1779,16 +1836,34 @@ export const CLASS_SCHEMA: EntitySchema<ClassDef> = {
         `стартовое оружие лежит в слоте «${item.slot}»: оружие бывает только в руках (data/classes.ts)`,
       )
     }
-    // Полный комплект: с голыми руками первые бои идут вдвое дольше коридора,
-    // а автонадевания, которое раньше это чинило, больше нет.
-    const startSlots = new Set((hero.startingEquipment ?? []).map((i) => i.slot))
-    for (const slot of content.slots) {
-      if (slot === 'offHand') continue // двуручным левая рука не нужна
+    // ОДНА БЕЛАЯ ВЕЩЬ, И БОЛЬШЕ НИЧЕГО.
+    //
+    // Комплект — это то, с чем игрок остаётся, пока не найдёт первую вещь.
+    // Полный редкий комплект прежней версии закрывал все семь слотов вещами
+    // выше среднего по рулетке, и петля «убил — нашёл — надел» не запускалась
+    // часами: находка почти всегда была хуже подарка. Пустые слоты — это
+    // место под находки, а не недосмотр, поэтому правило держится проверкой,
+    // а не комментарием.
+    const start = hero.startingEquipment ?? []
+    report.need(
+      start.length === 1,
+      where,
+      `в стартовом комплекте ${start.length} предметов вместо одного: пустые ` +
+        'слоты — это место под находки, и закрывать их подарком нельзя ' +
+        '(data/classes.ts)',
+    )
+    for (const item of start) {
       report.need(
-        startSlots.has(slot),
+        item.kind === 'weapon' && item.slot === 'mainHand',
         where,
-        `в стартовом комплекте нет слота «${slot}»: первые бои пойдут дольше ` +
-          'коридора темпа, а надеть находку игроку будет ещё нечего (data/classes.ts)',
+        `стартовый предмет — «${item.kind}» в слоте «${item.slot}»: комплект ` +
+          'состоит из одного оружия в правой руке (data/classes.ts)',
+      )
+      report.need(
+        item.rarity === 'common',
+        where,
+        `стартовое оружие тира «${item.rarity}»: комплект обязан быть белым, ` +
+          'иначе первые находки будут хуже подарка (data/classes.ts)',
       )
     }
     // Ресурс обязан хоть как-то пополняться: либо временем, либо боем.
@@ -2144,12 +2219,49 @@ function checkReachable(content: Content, report: Report): void {
   }
 
   // --- Зоны: в каждую есть путь ---
-  const openAtStart = content.zones.filter((z) => z.unlockRequirement <= 1)
+  //
+  // ЛЕСТНИЦА ЗОН ДЕРЖИТСЯ НА ДАНЖАХ, и проверок здесь три. Зону не должны
+  // открывать двое (иначе «пройди тот или этот» — уже не лестница), стартовых
+  // зон должно быть ровно столько, чтобы герой дошёл до первого данжа, и
+  // раскладка обязана сойтись без остатка: двадцать зон это четыре стартовых
+  // плюс восемь данжей по две.
+  const openedBy = new Map<string, string[]>()
+  for (const dungeon of content.dungeons) {
+    if (dungeon.difficulty === 'heroic') continue // героика второй раз не открывает
+    for (const zoneId of dungeon.opensZoneIds ?? []) {
+      openedBy.set(zoneId, [...(openedBy.get(zoneId) ?? []), dungeon.id])
+      report.need(
+        content.zones.some((z) => z.id === zoneId),
+        `данж ${dungeon.id}`,
+        `открывает зону «${zoneId}», которой нет в data/zones.ts`,
+      )
+    }
+  }
+  for (const [zoneId, openers] of openedBy) {
+    report.need(
+      openers.length === 1,
+      `зона ${zoneId}`,
+      `её открывают сразу ${openers.length} данжа (${openers.join(', ')}) — ` +
+        'лестница должна быть лестницей, а не развилкой (data/dungeons.ts)',
+    )
+  }
+  const openAtStart = content.zones.filter((z) => !openedBy.has(z.id))
   report.need(
     openAtStart.length > 0,
     'зоны',
-    'ни одна зона не открыта на первом уровне — игроку негде начать (data/zones.ts)',
+    'каждую зону открывает какой-нибудь данж — игроку негде начать и нечем ' +
+      'открыть первый данж (data/dungeons.ts)',
   )
+  for (const dungeon of content.dungeons) {
+    if (dungeon.difficulty === 'heroic') continue
+    report.need(
+      (dungeon.opensZoneIds ?? []).length === 2,
+      `данж ${dungeon.id}`,
+      `открывает ${(dungeon.opensZoneIds ?? []).length} зон вместо двух: двадцать зон ` +
+        'раскладываются как четыре стартовых плюс восемь данжей по две, и остатка ' +
+        'здесь быть не может (data/dungeons.ts)',
+    )
+  }
   const safe = content.zones.filter((z) => z.isSafe)
   report.need(
     safe.length === 1,
@@ -2159,10 +2271,10 @@ function checkReachable(content: Content, report: Report): void {
   )
   if (safe.length === 1) {
     report.need(
-      safe[0].unlockRequirement <= 1,
+      !openedBy.has(safe[0].id),
       `зона ${safe[0].id}`,
-      'безопасная зона открывается не с первого уровня — вернуться в неё будет некуда ' +
-        '(data/zones.ts)',
+      'безопасную зону открывает данж — вернуться в неё до его прохождения будет ' +
+        'некуда (data/dungeons.ts)',
     )
   }
 
@@ -2256,15 +2368,27 @@ function checkReachable(content: Content, report: Report): void {
     }
   })
 
-  // --- Данжи: вход из зоны, до которой игрок дорос раньше ---
+  // --- Данжи: вход из зоны, которая открыта РАНЬШЕ самого данжа ---
+  //
+  // Кольцо — самая тихая поломка лестницы: данж, вход в который лежит в зоне,
+  // открываемой им же, недостижим навсегда, и ни один тест боя этого не
+  // заметит. Порядок считается по тиру: данж тира T открывается тем, что
+  // прошли данж T-1.
+  const tierOfZone = new Map<string, number>()
   for (const dungeon of content.dungeons) {
+    if (dungeon.difficulty === 'heroic') continue
+    for (const zoneId of dungeon.opensZoneIds ?? []) tierOfZone.set(zoneId, dungeon.tier)
+  }
+  for (const dungeon of content.dungeons) {
+    if (dungeon.difficulty === 'heroic') continue
     const zone = content.zones.find((z) => z.id === dungeon.zoneId)
     if (!zone) continue // про отсутствие зоны уже сказала схема
-    if (dungeon.unlockRequirement < zone.unlockRequirement) {
+    const openedAt = tierOfZone.get(zone.id)
+    if (openedAt !== undefined && openedAt >= dungeon.tier) {
       report.add(
         `данж ${dungeon.id}`,
-        `открывается с ${dungeon.unlockRequirement} уровня, а зона ${zone.id}, из которой в ` +
-          `него входят, — только с ${zone.unlockRequirement}: до входа не добраться ` +
+        `вход в него лежит в зоне ${zone.id}, которую открывает данж тира ${openedAt} — ` +
+          `то есть он сам или тот, что за ним: до входа не добраться никогда ` +
           '(data/dungeons.ts)',
       )
     }
@@ -2489,10 +2613,6 @@ function checkUnlockLevels(content: Content, report: Report): void {
   const cap = content.balance.levelCap
   type Entry = { where: string; field: string; level: number; file: string }
   const entries: Entry[] = [
-    ...content.zones.map((z) => ({
-      where: `зона ${z.id}`, field: 'unlockRequirement', level: z.unlockRequirement,
-      file: 'data/zones.ts',
-    })),
     ...content.dungeons.map((d) => ({
       where: `данж ${clearKey(d.id, d.difficulty)}`, field: 'unlockRequirement',
       level: d.unlockRequirement, file: 'data/dungeons.ts',

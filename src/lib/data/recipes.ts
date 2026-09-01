@@ -9,6 +9,8 @@
 import { Decimal } from '../game/numbers'
 import type { StatModifier } from '../game/stats'
 import { HERB_BY_ID } from './herbs'
+import { MATERIAL_BY_ID } from './materials'
+import { ZONE_BY_ID, representativeMonster, zoneForMonsterLevel } from './zones'
 import type { IconName } from '../ui/icons/manifest'
 import type { SlotId } from './slots'
 import { ARMOR_ATTRIBUTES, type AttributeId } from './items'
@@ -55,6 +57,90 @@ export const PROFESSIONS: ProfessionDef[] = [
       'у того, кто её выпил: сам себя герой не поит.',
   },
 ]
+
+/**
+ * ПОШЛИНА КРАФТА: сколько ЗОЛОТА стоит нажать «сделать», помимо материалов.
+ *
+ * Зачем она вообще. До неё крафт не стоил золота вовсе, и золото в игре
+ * тратилось ровно на одно — сброс талантов. Кран льёт, слива нет; к
+ * пятидесятому уровню счётчик становится украшением, а «накопить» перестаёт
+ * быть решением.
+ *
+ * ПОШЛИНА СЧИТАЕТСЯ ДОЛЕЙ ЧАСОВОГО ДОХОДА, а не числом. Числом её пришлось бы
+ * держать в двух местах — в цене и в кривой золота, — и они разъехались бы на
+ * первой же правке баланса. Доля не разъезжается: поедет доход, поедут и цены,
+ * и «сколько это в часах игры» останется тем же.
+ *
+ * Часовой доход берётся ТАМ ЖЕ, где кривая опыта берёт цену уровня: награда
+ * типичного моба зоны, куда игра ведёт героя, помноженная на убийства в час.
+ * Второй модели дохода в игре нет.
+ */
+export const CRAFT_TOLL_HOURS: Record<'food' | 'potion' | 'item' | 'unique', number> = {
+  // Еда — расходник на один привал, и её жгут пачками: втрое дешевле склянки.
+  food: 0.125,
+  // Склянка меняет бой на три минуты. Тридцать семь процентов часа — это
+  // «одна склянка за полчаса фарма»: держать её постоянно нельзя, а взять
+  // с собой в данж и на храм — можно.
+  potion: 0.375,
+  // Кованая вещь — подстраховка от невезения, а не обход лута. Час игры:
+  // дороже любого расходника и заметно дешевле уникума.
+  item: 1,
+  // Уникум с проком планируют заранее и делают раз. Два часа дохода.
+  unique: 2,
+}
+
+/** Убийств в час у героя в своей зоне. Замер по всем уровням и обоим
+ *  классам дал 282..369 — берём 300. */
+export const KILLS_PER_HOUR = 300
+
+/**
+ * Уровень рецепта: насколько глубоко надо зайти, чтобы его собрать.
+ *
+ * У кованой вещи он записан прямо (`output.level` — уровень находки, которую
+ * она заменяет). У расходников его нет, и брать его неоткуда, кроме как из
+ * ВХОДОВ: рецепт стоит ровно столько, сколько стоит добраться до самого
+ * глубокого его материала.
+ */
+export function recipeLevel(recipe: RecipeDef): number {
+  if (recipe.output.kind === 'item') return recipe.output.level
+  // САМЫЙ ГЛУБОКИЙ ИЗ САМЫХ МЕЛКИХ, а не просто самый глубокий. Материал падает
+  // в НЕСКОЛЬКИХ зонах, и брать по нему максимум значит считать, что за
+  // луговой травой ходят на девяностый уровень: травяной отвар получал бы
+  // цену в сорок тысяч, будучи доступным с первого уровня. Каждый вход стоит
+  // столько, сколько стоит МЕЛЧАЙШАЯ зона, где он есть; а рецепт — столько,
+  // сколько стоит самый труднодоступный из его входов.
+  let level = recipe.unlockLevel ?? 1
+  for (const input of recipe.inputs) {
+    let shallowest = Number.POSITIVE_INFINITY
+    for (const zoneId of materialZoneIds(input.materialId)) {
+      const zone = ZONE_BY_ID[zoneId]
+      if (zone) shallowest = Math.min(shallowest, zone.monsterLevelRange.max)
+    }
+    if (Number.isFinite(shallowest)) level = Math.max(level, shallowest)
+  }
+  return level
+}
+
+/** Где падает материал, трава или реагент. Пусто — добывается не в зоне. */
+function materialZoneIds(materialId: string): readonly string[] {
+  return MATERIAL_BY_ID[materialId]?.zoneIds ?? HERB_BY_ID[materialId]?.zoneIds ?? []
+}
+
+/** Часовой доход золота на этом уровне — по награде типичного моба своей зоны. */
+export function goldPerHourAt(level: number): Decimal {
+  return representativeMonster(zoneForMonsterLevel(level)).goldReward.times(KILLS_PER_HOUR)
+}
+
+/** Сколько золота стоит собрать рецепт. Ноль не бывает: бесплатный слив — не слив. */
+export function craftToll(recipe: RecipeDef): Decimal {
+  const kind =
+    recipe.output.kind === 'item'
+      ? recipe.output.procId
+        ? 'unique'
+        : 'item'
+      : recipe.output.kind
+  return goldPerHourAt(recipeLevel(recipe)).times(CRAFT_TOLL_HOURS[kind]).ceil()
+}
 
 export interface RecipeInput {
   materialId: string

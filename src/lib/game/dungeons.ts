@@ -198,9 +198,15 @@ export function advanceDungeon(state: GameState, rng: Rng): GameState {
     firstClear,
   })
   if (!firstClear) return { ...cleared, combatLog: log }
+  // ПЕРВОЕ ПРОХОЖДЕНИЕ ОТКРЫВАЕТ ЗОНЫ. Список — в данных данжа: логика только
+  // переносит его в сейв, ни одного «если данж такой-то» здесь нет. Героика
+  // не открывает ничего (у неё пустой список) — к ней все зоны давно открыты.
+  const unlockedZoneIds = { ...state.unlockedZoneIds }
+  for (const zoneId of dungeon.opensZoneIds) unlockedZoneIds[zoneId] = true
   return {
     ...cleared,
     dungeonsCleared: { ...state.dungeonsCleared, [key]: true },
+    unlockedZoneIds,
     combatLog: log,
   }
 }

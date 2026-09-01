@@ -74,3 +74,23 @@ describe('дизайн-система: компоненты живут на то
     expect(offenders).toEqual([])
   })
 })
+
+// ОБЩАЯ ЗАДЕРЖКА ПОКАЗЫВАЕТСЯ ТАМ, ГДЕ НУЖНА, И ТЕМ ЖЕ ЯЗЫКОМ.
+//
+// Она жила в двух местах сразу: тонкой полоской у полоски замаха (которая
+// про оружие, а не про умения) и такой же полоской внизу иконки. Ни там, ни
+// там она не читалась как «кнопку пока нельзя». Теперь язык один — заливка
+// иконки снизу вверх, как у обычного кулдауна умения.
+describe('общая задержка', () => {
+  it('у полоски замаха её нет вовсе', () => {
+    const swing = read(UI_DIR, 'SwingIndicator.svelte')
+    expect(swing).not.toContain('gcd')
+    expect(swing).not.toContain('GCD_MS')
+  })
+
+  it('на иконке умения она — заливка по высоте, а не полоска по ширине', () => {
+    const bar = read(UI_DIR, 'ActionBar.svelte')
+    expect(bar).toMatch(/class="gcd"\s+style="height:/)
+    expect(bar).not.toMatch(/class="gcd"\s+style="width:/)
+  })
+})

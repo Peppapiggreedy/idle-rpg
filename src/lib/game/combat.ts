@@ -18,6 +18,7 @@ import {
   AP_NORMALIZATION,
   AUTOCAST_DELAY_MS,
   AUTOCAST_MAX_LOSS,
+  levelGapDamageMult,
   REGEN_TICK_S,
   RESPAWN_DELAY_MS,
   REVIVE_DELAY_MS,
@@ -145,20 +146,37 @@ export function expectedAbilityDamage(stats: StatBlock, weaponDamagePercent: Dec
   return expectedSwingDamage(stats).times(weaponDamagePercent)
 }
 
-// Урон моба по герою: бросок из диапазона, затем срез на damageReduction.
+// Урон моба по герою: бросок из диапазона, штраф за разрыв уровней, затем
+// срез на damageReduction.
 // damageMultiplier — ярость босса: до неё единица, дальше растёт (см. dungeons.ts).
+//
+// УРОВЕНЬ ГЕРОЯ ПРИХОДИТ ПАРАМЕТРОМ, а не берётся из статов: конвейер статов
+// про уровни мобов ничего не знает и знать не должен, а штраф за разрыв —
+// свойство ПАРЫ «герой против этого моба», а не свойство героя.
 export function rollMonsterDamage(
   monster: Monster,
   stats: StatBlock,
+  heroLevel: number,
   rng: Rng,
   damageMultiplier = 1,
 ): Decimal {
   const raw = randRange(rng, monster.damageMin, monster.damageMax)
-  return raw.times(damageMultiplier).times(1 - stats.damageReduction)
+  return raw
+    .times(damageMultiplier)
+    .times(levelGapDamageMult(heroLevel, monster.level))
+    .times(1 - stats.damageReduction)
 }
 
-export function expectedMonsterDamage(monster: Monster, stats: StatBlock): Decimal {
-  return monster.damageMin.plus(monster.damageMax).div(2).times(1 - stats.damageReduction)
+export function expectedMonsterDamage(
+  monster: Monster,
+  stats: StatBlock,
+  heroLevel: number,
+): Decimal {
+  return monster.damageMin
+    .plus(monster.damageMax)
+    .div(2)
+    .times(levelGapDamageMult(heroLevel, monster.level))
+    .times(1 - stats.damageReduction)
 }
 
 export interface CombatRate {
@@ -760,7 +778,7 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
     .plus(rotation.damagePerSecond)
     .minus(replaced)
     .plus(procDps)
-    .plus(reflectPerSecond(s, expectedMonsterDamage(s.monster, stats)))
+    .plus(reflectPerSecond(s, expectedMonsterDamage(s.monster, stats, s.level.toNumber())))
   const perKill = damagePerKill(s, plan, stream)
   const damagePerSecond = raw.times(s.monster.maxHp.div(perKill))
   // Длина боя — из уже посчитанного урона в секунду (он уже с поправкой на
@@ -783,7 +801,7 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
 
   // Баланс HP за цикл: входящие удары моба (целым числом за фазу боя) минус
   // реген (в бою медленный, в паузе респауна быстрый).
-  const avgIncoming = expectedMonsterDamage(s.monster, stats)
+  const avgIncoming = expectedMonsterDamage(s.monster, stats, s.level.toNumber())
   const monsterHitsPerCycle = avgIncoming.gt(0)
     ? fightSec.div(s.monster.swingTime).floor()
     : new Decimal(0)

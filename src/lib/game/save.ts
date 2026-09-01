@@ -46,6 +46,7 @@ import { FOOD_BY_ID, POTION_RECIPE_BY_ID, isBagId } from '../data/recipes'
 import { BRANCHES, talentsInBranch, talentsOfClass } from '../data/talents'
 import {
   ALL_DUNGEONS,
+  DUNGEONS,
   DUNGEON_BY_ID,
   clearKey,
   dungeonView,
@@ -56,7 +57,7 @@ import { QUEST_CHAIN } from '../data/quests'
 import type { DungeonRun, QuestProgress, TempleRun } from '../types'
 import { rankOf } from './talents'
 import { FALLBACK_ITEM_NAME, ITEM_BASE_SELL_PRICE } from '../data/loot'
-import { SAFE_ZONE, ZONE_BY_ID } from '../data/zones'
+import { SAFE_ZONE, ZONES, ZONE_BY_ID } from '../data/zones'
 import { currentZone, offlineZone, zoneRate } from './zones'
 import { isUpgradeValue, lootValue, rollLoot, stashLoot, type LootValueCache } from './loot'
 import { averageMonsterLevel } from '../data/zones'
@@ -86,7 +87,7 @@ const OFFLINE_LOOT_SALT = 0x9e37_79b9
 /** Все хваты одним списком: сейв принимает только их. */
 const GRIPS: Grip[] = ['one', 'two', 'shield']
 
-export const SAVE_VERSION = 21
+export const SAVE_VERSION = 22
 export const AUTOSAVE_INTERVAL_MS = AUTOSAVE_INTERVAL_S * 1000
 // Потолок оффлайн-прогресса: дольше отсутствовать можно, но не оплачивается.
 export const OFFLINE_CAP_MS = OFFLINE_CAP_HOURS * 60 * 60 * 1000
@@ -201,6 +202,8 @@ export interface SavePayloadV21 {
   // Забег по данжу переживает перезагрузку, но не смерть внутри.
   dungeonRun: SavedDungeonRun | null
   dungeonsCleared: Record<string, boolean>
+  /** Зоны, открытые прохождением данжей. Стартовых здесь нет: они выводятся. */
+  unlockedZoneIds: Record<string, boolean>
   /** Цепочка преквестов: сданные задания и счётчик текущего. */
   questProgress: { done: Record<string, boolean>; counter: number }
   // Умения: мана уже была, добавились кулдауны и глобальный кулдаун.
@@ -311,6 +314,12 @@ export function payloadFromState(state: GameState, lastTimestamp: number): SaveP
     const key = clearKey(dungeon.id, dungeon.difficulty)
     if (state.dungeonsCleared[key] === true) dungeonsCleared[key] = true
   }
+  // Открытые зоны — по тому же правилу: только настоящие id и только true.
+  // Стартовые не пишем вовсе: они открыты всегда и выводятся из данных.
+  const unlockedZoneIds: Record<string, boolean> = {}
+  for (const zone of ZONES) {
+    if (state.unlockedZoneIds[zone.id] === true) unlockedZoneIds[zone.id] = true
+  }
   return {
     version: SAVE_VERSION,
     classId: state.classId,
@@ -341,6 +350,7 @@ export function payloadFromState(state: GameState, lastTimestamp: number): SaveP
     lastSurvivedZoneId: state.lastSurvivedZoneId,
     dungeonRun: state.dungeonRun ? { ...state.dungeonRun } : null,
     dungeonsCleared,
+    unlockedZoneIds,
     questProgress: {
       done: questsDone,
       counter: Math.max(0, Math.floor(state.questProgress.counter)),
@@ -697,6 +707,15 @@ function clearedFromSaved(raw: unknown): Record<string, boolean> {
   return cleared
 }
 
+/** Открытые зоны из сейва: чужие id отбрасываются, как и у данжей. */
+function unlockedZonesFromSaved(raw: unknown): Record<string, boolean> {
+  const unlocked: Record<string, boolean> = {}
+  if (typeof raw !== 'object' || raw === null) return unlocked
+  const saved = raw as Record<string, unknown>
+  for (const zone of ZONES) if (saved[zone.id] === true) unlocked[zone.id] = true
+  return unlocked
+}
+
 export function stateFromPayload(p: SavePayloadV21): GameState {
   const level = Decimal.max(parseDec(p.level, '1'), new Decimal(1))
 
@@ -745,6 +764,7 @@ export function stateFromPayload(p: SavePayloadV21): GameState {
     equipment: equipmentFromSaved(p.equipment),
     dungeonRun: dungeonRunFromSaved(p.dungeonRun),
     dungeonsCleared: clearedFromSaved(p.dungeonsCleared),
+    unlockedZoneIds: unlockedZonesFromSaved(p.unlockedZoneIds),
     questProgress: questsFromSaved(p.questProgress),
     currentZoneId: zoneIdFromSaved(p.currentZoneId, SAFE_ZONE.id),
     lastSurvivedZoneId:
@@ -836,6 +856,26 @@ export function resumeOutside(state: GameState, rng: Rng): GameState {
     return leaveTemple({ ...state, currentZoneId: offlineZone(state).id }, rng, false, false)
   }
   return { ...state, monster: spawnMonster(currentZone(state), rng) }
+}
+
+/**
+ * ЗАМОРОЖЕННАЯ ФОРМУЛА СТАРОЙ ЛЕСТНИЦЫ ЗОН (формат 21 и раньше).
+ *
+ * Там зона с индексом i открывалась на уровне 1 + 3i — тройками. Данж с
+ * индексом d открывает зоны 2d+4 и 2d+5, и первая из них по старым правилам
+ * открывалась на 1 + 3*(2d+4) = 6d+13 уровне.
+ *
+ * Именно это число и есть порог миграции: герой, который по СТАРЫМ правилам
+ * уже видел зону, обязан видеть её и по новым. Взять порог у самого данжа
+ * (20, 30, ... 90) было бы мало — зона 21-25 открывалась на тринадцатом
+ * уровне, и герой четырнадцатого потерял бы её.
+ *
+ * Формула заморожена здесь, а не читается из данных: данные уехали, и
+ * читать из них прошлое нельзя. Тот же приём, что и у константы скорости
+ * удара в миграции v2 -> v3.
+ */
+function v21ZoneUnlock(dungeonIndex: number): number {
+  return 6 * dungeonIndex + 13
 }
 
 // Цепочка миграций: MIGRATIONS[v] переводит формат v в v+1.
@@ -1227,6 +1267,40 @@ export const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
       run.cleared = 0
       next.templeRun = run
     }
+    return next
+  },
+  21: (raw) => {
+    // ЗОНЫ ТЕПЕРЬ ОТКРЫВАЮТ ДАНЖИ, а не уровень героя. Поле `unlockRequirement`
+    // у зоны исчезло, и «какие зоны открыты» стало ПРОИЗВОДНЫМ от
+    // `dungeonsCleared`. В сейве от этого не меняется ни одного поля — но
+    // меняется смысл уже лежащих там: ветеран 60 уровня, ни разу не заходивший
+    // в данж, по новым правилам имел бы четыре стартовые зоны вместо
+    // двадцати. Это потеря прогресса, и допустить её нельзя.
+    //
+    // Поэтому миграция ОТКРЫВАЕТ ЗОНЫ, которые герой уже видел по старой
+    // лестнице, — и только их. Данжи пройденными она НЕ засчитывает: за
+    // прохождение идёт постоянный бонус к опыту и уникальные награды, и
+    // выдавать их за то, чего игрок не делал, нельзя. Ровно ради этого
+    // «открытые зоны» и лежат в сейве отдельным полем, а не выводятся из
+    // списка пройденных данжей.
+    const next: RawSave = { ...raw, version: 22 }
+    const level = Number(raw.level ?? 1)
+    const unlocked: Record<string, boolean> = {}
+    // 1. Зоны, которые герой уже видел по СТАРОЙ лестнице уровней.
+    for (const [index, dungeon] of DUNGEONS.entries()) {
+      if (!Number.isFinite(level) || level < v21ZoneUnlock(index)) continue
+      for (const zoneId of dungeon.opensZoneIds) unlocked[zoneId] = true
+    }
+    // 2. И зоны за данжи, которые он и правда прошёл: их флаг в сейве уже
+    //    есть, а открытых зон под него ещё не было.
+    const cleared = raw.dungeonsCleared
+    if (typeof cleared === 'object' && cleared !== null) {
+      for (const dungeon of DUNGEONS) {
+        if ((cleared as Record<string, unknown>)[dungeon.id] !== true) continue
+        for (const zoneId of dungeon.opensZoneIds) unlocked[zoneId] = true
+      }
+    }
+    next.unlockedZoneIds = unlocked
     return next
   },
   0: (raw) => ({

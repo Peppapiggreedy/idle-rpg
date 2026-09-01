@@ -7,10 +7,12 @@ import { describe, expect, it } from 'vitest'
 import { Decimal } from '../numbers'
 import { expectedSwingDamage } from '../combat'
 import { estimateTtk } from '../combat'
+import { dungeonOpening } from '../../data/dungeons'
 import {
   AVERAGE_WEAPON,
   BALANCE_PRESET,
   buildSimState,
+  unlockedByLevel,
   currentCell,
   pacingTable,
   referenceBuild,
@@ -208,9 +210,13 @@ describe('нет доминирующей зоны', () => {
     // «лучшая» среди недоступных — не выбор, а арифметика.
     const winners: string[] = []
     for (const level of LEVELS) {
-      const open = ZONE_SET.filter((z) => z.unlockRequirement <= level)
+      // ОТКРЫТА ли зона, теперь решают пройденные данжи, а не уровень.
+      // Модель та же, что у прибора: герой делает данж, когда тот открылся.
+      const unlocked = unlockedByLevel(level)
+      const isOpen = (zone: Zone) => !dungeonOpening(zone.id) || unlocked[zone.id] === true
+      const open = ZONE_SET.filter(isOpen)
       const gold = ZONE_SET.map((zone) =>
-        zone.unlockRequirement > level
+        !isOpen(zone)
           ? new Decimal(0)
           : simulate({
               hours: 1,
@@ -221,7 +227,7 @@ describe('нет доминирующей зоны', () => {
       )
       let best = 0
       gold.forEach((g, i) => {
-        if (ZONE_SET[i].unlockRequirement <= level && g.gt(gold[best])) best = i
+        if (isOpen(ZONE_SET[i]) && g.gt(gold[best])) best = i
       })
       expect(open.length, `на ${level} уровне не открыто ни одной зоны`).toBeGreaterThan(0)
       winners.push(ZONE_SET[best].id)
@@ -291,10 +297,12 @@ describe('смертность в подходящей зоне', () => {
   // нельзя — берём именно правление.
   // Правление берётся по НАСТОЯЩЕЙ лестнице зон, а не по месту в выборке:
   // в выборке соседи не соседи, и «следующая зона» там значила бы не то.
-  const reignEnd = (zone: Zone) => {
-    const index = ZONES.indexOf(zone)
-    return index + 1 < ZONES.length ? ZONES[index + 1].unlockRequirement - 1 : PACING_MAX_LEVEL
-  }
+  // «Правление» зоны — это её ПОЛОСА МОБОВ, и ничто другое. Раньше правление
+  // считалось по `unlockRequirement` следующей зоны, а те шли тройками при
+  // полосах по пять: у последней зоны получалось правление до 62 уровня при
+  // мобах 96-100, то есть герой мерился против мобов на сорок уровней выше.
+  // Требований у зон больше нет, и правление совпало с полосой.
+  const reignEnd = (zone: Zone) => zone.monsterLevelRange.max
 
   it('смертей в час близко к нулю', () => {
     header('Герой на последнем уровне правления зоны, 1 час на зону.', 'зона                 мобы     уровень героя   смертей/ч')
@@ -586,7 +594,8 @@ describe('ветки талантов', () => {
    *  игре упирается в travelToZone, и мерить закрытые значит мерить не игру. */
   function bestZone(branch: BranchDef): { zoneId: string; runs: SimResult[] } {
     for (let i = ZONE_SET.length - 1; i >= 0; i -= 1) {
-      if (ZONE_SET[i].unlockRequirement > branchLevel) continue
+      const opener = dungeonOpening(ZONE_SET[i].id)
+      if (opener && branchLevel < opener.unlockRequirement) continue
       const runs = runBranch(branch, ZONE_SET[i].id)
       const deaths = avg(runs, (r) => r.deathsPerHour)
       const rest = avg(runs, (r) => r.restShare)

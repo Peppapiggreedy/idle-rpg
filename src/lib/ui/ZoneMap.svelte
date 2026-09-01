@@ -10,9 +10,9 @@
   // линией. Порядок берётся ИЗ ДАННЫХ — по нижнему краю полосы мобов, — и
   // отдельного списка нигде не лежит: добавили зону в data/zones.ts, узел
   // появился сам, на своём месте.
-  import { forecastAllZones, type ZoneForecast, type ZoneVerdict } from '../game'
+  import { forecastAllZones, isZoneUnlocked, type ZoneForecast, type ZoneVerdict } from '../game'
   import { ZONES } from '../data/zones'
-  import { ALL_DUNGEONS } from '../data/dungeons'
+  import { ALL_DUNGEONS, dungeonOpening } from '../data/dungeons'
   import { TEMPLES } from '../data/temple'
   import { gameState } from '../stores/game'
   import { NumberText } from './kit'
@@ -48,9 +48,15 @@
 
   type NodeState = 'passed' | 'open' | 'locked'
   function nodeState(zone: (typeof ZONES)[number]): NodeState {
-    if (heroLevel < zone.unlockRequirement) return 'locked'
+    if (!isZoneUnlocked($gameState, zone)) return 'locked'
     // «Пройдено» — герой перерос ВСЮ полосу: даже её верхний моб ниже него.
     return heroLevel > zone.monsterLevelRange.max ? 'passed' : 'open'
+  }
+
+  /** Чем открывается закрытая зона: именем данжа. */
+  function lockReason(zoneId: string): string {
+    const opener = dungeonOpening(zoneId)
+    return opener ? `пройди «${opener.name}»` : 'закрыта'
   }
 
   const VERDICT_SHORT: Record<ZoneVerdict, string> = {
@@ -99,7 +105,10 @@
         <span class="band">{zone.monsterLevelRange.min}–{zone.monsterLevelRange.max}</span>
         <span class="title"><Icon name={zone.icon} /><span class="name">{zone.name}</span></span>
         {#if state === 'locked'}
-          <span class="need">с {zone.unlockRequirement} уровня</span>
+          <!-- ЧТО ИМЕННО ОТКРОЕТ ЗОНУ. Раньше здесь стоял уровень, и «с 58
+               уровня» ничего не говорило игроку о том, что делать. Данж —
+               говорит: это место, куда можно пойти прямо сейчас. -->
+          <span class="need">{lockReason(zone.id)}</span>
         {:else if f}
           <span class="verdict {f.verdict}">{VERDICT_SHORT[f.verdict]}</span>
           <span class="xp" class:none={f.xpShare <= 0}>{xpLabel(f)}</span>

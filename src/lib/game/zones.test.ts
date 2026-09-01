@@ -27,7 +27,8 @@ import {
   RUNT,
   BRUTE,
 } from '../data/monsters'
-import { PACING_MAX_LEVEL, averageGear } from './simulate'
+import { PACING_MAX_LEVEL, averageGear, unlockedByLevel } from './simulate'
+import { INITIAL_ZONE_IDS } from '../data/dungeons'
 
 const QUARRY = ZONE_BY_ID['hollow-quarry']
 const RIDGE = ZONE_BY_ID['ashen-ridge']
@@ -39,23 +40,26 @@ function heroAt(level: number, gearLevel: number): GameState {
     ...createInitialState(1),
     level: new Decimal(level),
     equipment: averageGear(gearLevel),
+    // Зоны открывают ДАНЖИ: герой этого уровня прошёл те, что были по пути.
+    unlockedZoneIds: unlockedByLevel(level),
     statsDirty: true,
   })
 }
 
 describe('данные зон', () => {
-  it('ровно одна безопасная зона, и она открыта с первого уровня', () => {
+  it('ровно одна безопасная зона, и она открыта с начала игры', () => {
     const safe = ZONES.filter((z) => z.isSafe)
     expect(safe).toHaveLength(1)
-    expect(safe[0].unlockRequirement).toBe(1)
+    // «Открыта с начала» = её не открывает ни один данж. Иначе вернуться
+    // после смерти было бы некуда, пока данж не пройден.
+    expect(INITIAL_ZONE_IDS).toContain(safe[0].id)
     expect(SAFE_ZONE.id).toBe(safe[0].id)
   })
 
-  it('зоны идут по возрастанию требования, уровня мобов и награды', () => {
+  it('зоны идут по возрастанию уровня мобов и награды', () => {
     for (let i = 1; i < ZONES.length; i++) {
       const prev = ZONES[i - 1]
       const zone = ZONES[i]
-      expect(zone.unlockRequirement).toBeGreaterThan(prev.unlockRequirement)
       // Растёт СРЕДНИЙ уровень пула, а полосы соседних зон могут и
       // перекрываться — так у каждого уровня героя есть и «полегче», и
       // «потяжелее», а не одна ступень на всю игру.
@@ -76,9 +80,10 @@ describe('данные зон', () => {
 describe('масштаб мобов от уровня', () => {
   it('моб 1 уровня с обычной ролью равен базовым числам', () => {
     const m = buildMonster({ id: 'x', name: 'x', role: COMMON }, 1, new Decimal(1))
-    // HP — со скидкой ранней полосы: у героя пока одна кнопка из трёх.
+    // HP И УРОН — со скидкой ранней полосы: у героя пока одна кнопка из трёх
+    // и одно белое оружие при шести пустых слотах.
     expect(m.maxHp.eq(MONSTER_BASE.maxHp.times(EARLY_HP_DISCOUNT[0].mult))).toBe(true)
-    expect(m.damageMin.eq(MONSTER_BASE.damage)).toBe(true)
+    expect(m.damageMin.eq(MONSTER_BASE.damage.times(EARLY_HP_DISCOUNT[0].damageMult))).toBe(true)
     expect(m.goldReward.eq(MONSTER_BASE.goldReward)).toBe(true)
     expect(m.xpReward.eq(MONSTER_BASE.xpReward)).toBe(true)
   })
@@ -96,8 +101,11 @@ describe('масштаб мобов от уровня', () => {
   })
 
   it('с уровнем растут и hp, и урон, и награда', () => {
-    const low = buildMonster({ id: 'x', name: 'x', role: COMMON }, 1, new Decimal(1))
-    const high = buildMonster({ id: 'x', name: 'x', role: COMMON }, 10, new Decimal(1))
+    // Уровни взяты ВЫШЕ ранних полос: там на числа наложена скидка
+    // (EARLY_HP_DISCOUNT), и она не ставка роста, а отдельный механизм —
+    // пара «1 против 10» мерила бы её, а не отношение ставок.
+    const low = buildMonster({ id: 'x', name: 'x', role: COMMON }, 11, new Decimal(1))
+    const high = buildMonster({ id: 'x', name: 'x', role: COMMON }, 30, new Decimal(1))
     expect(high.maxHp.gt(low.maxHp)).toBe(true)
     expect(high.damageMin.gt(low.damageMin)).toBe(true)
     expect(high.goldReward.gt(low.goldReward)).toBe(true)

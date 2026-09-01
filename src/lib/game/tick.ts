@@ -633,6 +633,7 @@ const applyMonsterAttack: TickStep = (s, ctx) => {
     const raw = rollMonsterDamage(
       s.monster,
       s.stats,
+      s.level.toNumber(),
       ctx.rng,
       boss && s.dungeonRun ? enrageMultiplier(boss, s.dungeonRun.fightMs) : 1,
     )

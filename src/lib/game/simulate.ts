@@ -43,6 +43,7 @@ import { ARMOR_NOUNS, ONE_HANDED, SHIELDS, WEAPONS, WEAPON_BY_ID } from '../data
 import { SLOT_IDS, type SlotId } from '../data/slots'
 import { ZONES, averageMonsterLevel, zoneForMonsterLevel } from '../data/zones'
 import { BRANCHES, talentsInBranch, type BranchId } from '../data/talents'
+import { DUNGEONS } from '../data/dungeons'
 import { CLASSES, DEFAULT_CLASS, classById } from '../data/classes'
 import { TALENT_FIRST_LEVEL } from '../data/balance'
 import type { AttackEvent, Item, Rarity } from '../types'
@@ -105,7 +106,10 @@ export interface SimBuild {
   // Экипировка эталонного героя. 'average' — все слоты заняты СРЕДНИМ по
   // рулетке предметом (см. TYPICAL_RARITY): это не «повезло» и не «не
   // повезло», а то, во что игрок одет обычно. 'none' — голый герой.
-  gear?: 'none' | 'average'
+  // 'starting' — СТАРТОВЫЙ комплект класса, то есть одно белое оружие при
+  // шести пустых слотах: так игра встречает нового игрока, и первые полосы
+  // меряются именно этим героем.
+  gear?: 'none' | 'average' | 'starting'
   talents?: Record<string, number>
   // Какие умения жмёт автокаст: 'all' — все, 'none' — ни одного (только
   // автоатака), список id — только они, в порядке приоритета.
@@ -201,7 +205,12 @@ export const BALANCE_PRESET = {
   // Связки меряются с ОБЩЕЙ средней бронёй: реген живёт на живучести вещей,
   // и совсем голый герой умирал бы в зоне замера, меряя смертность, а не удар.
   // Броня одна на все стили, поэтому нормализацию она не трогает.
-  weaponBuild: { level: 22, gear: 'average', gearLevel: 81 } as SimBuild,
+  // УРОВЕНЬ ГЕРОЯ — ПО ЗОНЕ ЗАМЕРА, и это не косметика. За подъём в зону выше
+  // своей теперь платят входящим уроном (LEVEL_GAP_DAMAGE_PER_LEVEL), а прибор
+  // ставит героя в глубокую зону НАРОЧНО — ради длинного боя, а не ради
+  // риска. С прежним 22 уровнем против мобов 56-60 штраф был десятикратным,
+  // и связки сравнивались бы по смертности, а не по удару.
+  weaponBuild: { level: 58, gear: 'average', gearLevel: 81 } as SimBuild,
   /** Уровень голых связок в замерах стилей: под стать зоне замера. */
   weaponLevel: 18,
   // Урон за ману считается по умениям «на следующий удар».
@@ -215,7 +224,10 @@ export const BALANCE_PRESET = {
   // Плата за щит проверяется ПОД ДАВЛЕНИЕМ: слабый герой в зоне не по себе.
   // Там, где герой не теряет HP вовсе, живучесть измерить нечем — и щит
   // выглядел бы чистым проигрышем.
-  stressBuild: { level: 8, gear: 'average', gearLevel: 8 } as SimBuild,
+  // Давление идёт от НЕДООДЕТОСТИ (вещи 8 уровня против мобов 26-30), а не от
+  // разрыва уровней: разрыв — отдельный механизм, и мешать его в замер щита
+  // значило бы мерить штраф, а не щит.
+  stressBuild: { level: 28, gear: 'average', gearLevel: 8 } as SimBuild,
   /** Уровень связки в стресс-замере щита: герой всё равно не по себе. */
   stressWeaponLevel: 8,
   stressZoneId: 'ashen-ridge',
@@ -257,8 +269,44 @@ export const BALANCE_PRESET = {
  * обрывалась бы раньше, чем открывается последняя зона.
  */
 export const PACING_TAIL_LEVELS = 4
+// Лестницу задают ДАНЖИ: последний из них открывает последние две зоны, и
+// прохождение кончается там же. Раньше здесь стоял `unlockRequirement`
+// последней зоны — число, которое шло тройками при полосах по пять, из-за
+// чего таблица обрывалась на 62 уровне при потолке в сто.
 export const PACING_MAX_LEVEL =
-  ZONES[ZONES.length - 1].unlockRequirement + PACING_TAIL_LEVELS
+  DUNGEONS[DUNGEONS.length - 1].unlockRequirement + PACING_TAIL_LEVELS
+
+/**
+ * ЗОНЫ, ОТКРЫТЫЕ ГЕРОЮ ПРОГОНА К ЭТОМУ УРОВНЮ.
+ *
+ * Зоны теперь открывают данжи, а не уровень, и прибору нужна модель того,
+ * кто их проходит. Модель простая и честная: герой делает данж, когда тот
+ * открывается, — он же «просто играет», а данж стоит ровно на его пути.
+ * Без этого прогон навсегда застрял бы в четырёх стартовых зонах и мерил бы
+ * игру, которой нет.
+ *
+ * ПРОХОДИМОСТЬ САМИХ ДАНЖЕЙ ЗДЕСЬ НЕ ПРОВЕРЯЕТСЯ, и это правильное
+ * разделение: её держит отдельный прогон цепочки боссов
+ * (game/__tests__/dungeon-ladder.test.ts), причём в обе стороны — с
+ * положенной долей экипировки данж проходится, с меньшей нет.
+ */
+export function unlockedByLevel(level: number): Record<string, boolean> {
+  const unlocked: Record<string, boolean> = {}
+  for (const dungeon of DUNGEONS) {
+    // СТРОГО ВЫШЕ, а не «не ниже»: данж проходят, ДОСТИГНУВ его уровня, и
+    // на самом этом уровне он ещё впереди. Ровно так ложится и ритм: на
+    // двадцатом герой идёт в первый данж, на двадцать первом у него открыты
+    // две новые зоны — те, куда двадцать первый уровень его и ведёт.
+    if (level <= dungeon.unlockRequirement) continue
+    for (const zoneId of dungeon.opensZoneIds) unlocked[zoneId] = true
+  }
+  return unlocked
+}
+
+/** Сколько зон герою уже открыто. Считается по тем же правилам, что и вход. */
+function openZoneCount(state: GameState): number {
+  return ZONES.filter((zone) => isZoneUnlocked(state, zone)).length
+}
 
 export interface PacingCell {
   zoneId: string
@@ -364,10 +412,27 @@ export function pacingTable(
   //
   // Автонадевание выключено: переодевание идёт РУКАМИ на смене зоны, чтобы
   // кривая оставалась кривой эталона, а не удачи конкретного прогона.
+  //
+  // НО НЕ С ПЕРВОЙ СЕКУНДЫ. Раньше эталон был одет в полный средний комплект
+  // уже на первом уровне, и это было почти правдой: игра сама дарила полный
+  // комплект. Теперь она даёт одно белое оружие, и такой эталон описывал бы
+  // героя, которого не существует, — против мобов стартовой зоны он быстрее
+  // настоящего почти вдвое (28 секунд на моба против 15). Поэтому первую
+  // зону герой проходит в СТАРТОВОМ комплекте и одевается на первом переезде.
+  //
+  // Сколько находок у игрока к этому моменту, считается из чисел самой игры:
+  // убийства на уровень (KILLS_PER_LEVEL) × шанс дропа (DROP_CHANCE) ÷ число
+  // слотов. По одной находке на слот набирается к седьмому уровню, а вторая
+  // зона открывается на четвёртом — то есть эталон всё ещё чуть оптимистичен
+  // на уровнях 4-6. Это вход в правку кривой и лестницы зон, а не то, что
+  // чинится подбором числа здесь.
   const gearFor = (level: number): number =>
     Math.round(averageMonsterLevel(intendedZone(level)))
-  let gearLevel = gearFor(1)
-  let state = buildSimState({ gear: 'average', gearLevel, classId }, ZONES[0].id, seed)
+  // Первая полоса — В СТАРТОВОМ КОМПЛЕКТЕ, то есть в одном белом оружии.
+  // Полный средний комплект приходит на FIRST_GEARED_LEVEL, когда игра
+  // действительно выдала по находке на слот (см. константу).
+  let gearLevel = 1
+  let state = buildSimState({ gear: 'starting', classId }, ZONES[0].id, seed)
   const rows: PacingRow[] = []
   let deaths = 0
 
@@ -394,10 +459,14 @@ export function pacingTable(
     if (prev.heroState === 'alive' && state.heroState === 'dead') deaths += 1
     if (state.level.gt(prev.level)) {
       const level = state.level.toNumber()
+      // Данж делается, когда открывается: он и открывает следующие зоны.
+      state = { ...state, unlockedZoneIds: unlockedByLevel(level) }
       const zone = intendedZone(level)
       if (zone.id !== state.currentZoneId) state = travelToZone(state, zone.id, rng)
       // Переодевание на новую ступень: средние вещи уровня СВОЕЙ зоны.
-      const nextGear = gearFor(level)
+      // Пока герой в ПЕРВОЙ зоне — он в стартовом комплекте: игра выдала ему
+      // одно белое оружие, и надеть он ещё ничего не успел.
+      const nextGear = zone.id === ZONES[0].id ? 1 : gearFor(level)
       if (nextGear !== gearLevel) {
         gearLevel = nextGear
         state = ensureStats({
@@ -570,6 +639,10 @@ export function buildSimState(build: SimBuild, zoneId: string, seed: number): Ga
     currentXp: new Decimal(0),
     xpToNext: xpToNextLevel(level),
     talents: { ...(build.talents ?? {}) },
+    // Зоны открывают ДАНЖИ, поэтому герою прогона они и проставляются: он
+    // делает данж, когда тот открывается (см. unlockedByLevel). Без этого
+    // прибор мерил бы героя, запертого в четырёх стартовых зонах.
+    unlockedZoneIds: unlockedByLevel(level.toNumber()),
     equipment: buildEquipment(build, weapon),
     abilitySettings: settingsFor(build.autocast, base.classId),
     // Прогон меряет ЗАДАННЫЙ билд: автонадевание подменило бы его на середине.
@@ -642,7 +715,10 @@ export function simulate(options: SimOptions): SimResult {
   let restingMs = 0
   let decisions = 0
   let dropDecisions = 0
-  let openZones = ZONES.filter((z) => z.unlockRequirement <= state.level.toNumber()).length
+  // Открытые зоны считаются по ПРОЙДЕННЫМ ДАНЖАМ: уровень их больше не
+  // открывает. В прогоне данжи не проходятся, поэтому число не меняется —
+  // и «решение о переезде» из телеметрии честно пропадает вместе с ними.
+  let openZones = openZoneCount(state)
   let talentPoints = branchPoints(state.level.toNumber())
   let autoDamage = new Decimal(0)
   let abilityDamage = new Decimal(0)
@@ -709,7 +785,7 @@ export function simulate(options: SimOptions): SimResult {
     }
     if (state.level.gt(prev.level)) {
       const level = state.level.toNumber()
-      const zonesNow = ZONES.filter((z) => z.unlockRequirement <= level).length
+      const zonesNow = openZoneCount(state)
       const pointsNow = branchPoints(level)
       decisions += zonesNow - openZones + Math.max(0, pointsNow - talentPoints)
       openZones = zonesNow
@@ -797,14 +873,32 @@ export function equipUpgrades(state: GameState): GameState {
   // По одному предмету за проход: надевание меняет статы, и следующая вещь
   // сравнивается уже с новым набором.
   for (let guard = 0; guard < SLOT_IDS.length + 1; guard += 1) {
-    const best = next.inventory
+    const candidates = next.inventory
       .map((item) => ({ item, share: upgradeShare(next, item) }))
       .filter((c): c is { item: Item; share: number } => c.share !== null)
-      .sort((a, b) => b.share - a.share)[0]
-    if (!best) return next
-    const after = equipItem(next, best.item.id)
-    if (after === next) return next
-    next = after
+      .sort((a, b) => b.share - a.share)
+    // ОТКАЗ ПО ОДНОЙ ВЕЩИ — НЕ КОНЕЦ РАЗБОРА. Раньше проход брал ровно
+    // лучшего кандидата и, получив отказ, возвращался ни с чем — навсегда,
+    // потому что на следующей находке повторялось то же самое.
+    //
+    // Ловится это только длинным путём, и прогон его поймал: с ПОЛНОЙ сумкой
+    // двуручное надеть нельзя (снимаются две руки, а место освобождается
+    // одно — код `two-handed-needs-both`), и как только лучшим апгрейдом
+    // становилось двуручное, герой замирал в тех вещах, что на нём были.
+    // В прогоне он так и шёл с 30 по 80 уровень в вещах 24 уровня: время
+    // убийства выросло с 11 секунд до 25, а путь — с 11 часов до тридцати.
+    //
+    // Живой игрок в этом месте просто надевает второе по списку (или продаёт
+    // лишнее), поэтому модель игрока и обязана перебирать список дальше.
+    let moved = false
+    for (const candidate of candidates) {
+      const after = equipItem(next, candidate.item.id)
+      if (after === next) continue
+      next = after
+      moved = true
+      break
+    }
+    if (!moved) return next
   }
   return next
 }
@@ -869,7 +963,7 @@ export function simulateRun(options: RunOptions = {}): RunResult {
   let deaths = 0
   let restingMs = 0
   let decisions = 0
-  let openZones = ZONES.filter((z) => z.unlockRequirement <= 1).length
+  let openZones = openZoneCount(state)
   let talentPoints = branchPoints(1)
   const startGold = state.gold
   let xpTotal = new Decimal(0)
@@ -918,7 +1012,10 @@ export function simulateRun(options: RunOptions = {}): RunResult {
       })
       levelKills = 0
       levelStartSec = sec
-      const zonesNow = ZONES.filter((z) => z.unlockRequirement <= reached).length
+      // Данж делается, когда открывается: без этого зоны не открылись бы
+      // никогда и прогон застрял бы в стартовой четвёрке.
+      state = { ...state, unlockedZoneIds: unlockedByLevel(reached) }
+      const zonesNow = openZoneCount(state)
       const pointsNow = branchPoints(reached)
       decisions += zonesNow - openZones + Math.max(0, pointsNow - talentPoints)
       openZones = zonesNow
