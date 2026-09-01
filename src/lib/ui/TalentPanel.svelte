@@ -4,11 +4,11 @@
   // коды причин и структурированные эффекты.
   import {
     availablePoints,
-    canResetTalents,
     heroBranches,
-    resetCost,
+    resetStatus,
     spentInBranch,
     talentStatus,
+    type ResetBlockReason,
     type StatId,
     type TalentBlockReason,
   } from '../game'
@@ -26,8 +26,13 @@
   import { Icon } from './icons'
 
   const points = $derived(availablePoints($gameState))
-  const cost = $derived(resetCost($gameState))
-  const canReset = $derived(canResetTalents($gameState))
+  const reset = $derived(resetStatus($gameState))
+
+  // Почему кнопка сброса заперта. Заперта молча она читалась как сломанная.
+  const RESET_REASON: Record<ResetBlockReason, string> = {
+    'nothing-spent': 'Сбрасывать нечего — очки не вложены',
+    gold: 'Не хватает золота на сброс',
+  }
 
   // Ресурс называется по классу: ветки у классов разные, но общие статы
   // описываются одними и теми же строками.
@@ -164,11 +169,13 @@
   </div>
 
   {#snippet footer()}
-    <Button disabled={!canReset} onclick={() => resetTalentTree()}>
-      Сбросить таланты за <NumberText value={cost} tone="gold" />
+    <Button disabled={!reset.canReset} onclick={() => resetTalentTree()}>
+      Сбросить таланты за <NumberText value={reset.cost} tone="gold" />
     </Button>
     <span class="hint">
-      {#if $gameState.talentResets > 0}
+      {#if reset.reason}
+        {RESET_REASON[reset.reason]}.
+      {:else if $gameState.talentResets > 0}
         Сбросов было {$gameState.talentResets} — каждый следующий дороже.
       {:else}
         Первый сброс по базовой цене; каждый следующий дороже.

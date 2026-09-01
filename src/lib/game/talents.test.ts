@@ -6,6 +6,7 @@ import { applyModifiers, ensureStats, type StatModifier } from './stats'
 import {
   availablePoints,
   canResetTalents,
+  resetStatus,
   earnedPoints,
   heroBranches,
   heroTalents,
@@ -454,11 +455,18 @@ describe('сброс за золото', () => {
   it('сбрасывать нечего или нечем — состояние не меняется', () => {
     const nothingSpent = rich()
     expect(canResetTalents(nothingSpent)).toBe(false)
+    expect(resetStatus(nothingSpent).reason).toBe('nothing-spent')
     expect(resetTalents(nothingSpent)).toBe(nothingSpent)
 
     const poor = invest(hero(TALENT_FIRST_LEVEL + 20, { gold: new Decimal(0) }), EDGE.id, 1)
     expect(canResetTalents(poor)).toBe(false)
+    expect(resetStatus(poor).reason).toBe('gold')
     expect(resetTalents(poor)).toBe(poor)
+
+    // Есть что и чем — кода отказа нет, цена та же, что списывает сброс.
+    const ok = resetStatus(invest(rich(), EDGE.id, 1))
+    expect(ok).toMatchObject({ canReset: true, reason: null })
+    expect(ok.cost.eq(resetCost(rich()))).toBe(true)
   })
 
   it('после сброса статы возвращаются к исходным', () => {

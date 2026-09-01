@@ -101,13 +101,14 @@ export {
   investTalent,
   resetTalents,
   resetCost,
+  resetStatus,
   canResetTalents,
   talentModifiers,
   talentFlags,
   hasTalentFlag,
   reviveMultiplier,
 } from './talents'
-export type { TalentStatus, TalentBlockReason, TalentRanks } from './talents'
+export type { TalentStatus, TalentBlockReason, TalentRanks, ResetStatus, ResetBlockReason } from './talents'
 export {
   TEMPLES,
   TEMPLE_BY_ID,

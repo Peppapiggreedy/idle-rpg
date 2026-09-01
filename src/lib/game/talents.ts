@@ -130,8 +130,25 @@ export function resetCost(state: GameState): Decimal {
   return TALENT_RESET_BASE_COST.times(TALENT_RESET_COST_GROWTH.pow(state.talentResets))
 }
 
+// Почему таланты не сбросить. Каждый случай — свой код, текст рендерит UI.
+export type ResetBlockReason = 'nothing-spent' | 'gold'
+
+export interface ResetStatus {
+  canReset: boolean
+  reason: ResetBlockReason | null
+  cost: Decimal
+}
+
+/** Порядок фиксирован: сперва то, что не лечится золотом. */
+export function resetStatus(state: GameState): ResetStatus {
+  const cost = resetCost(state)
+  if (spentPoints(state.talents) <= 0) return { canReset: false, reason: 'nothing-spent', cost }
+  if (state.gold.lt(cost)) return { canReset: false, reason: 'gold', cost }
+  return { canReset: true, reason: null, cost }
+}
+
 export function canResetTalents(state: GameState): boolean {
-  return spentPoints(state.talents) > 0 && state.gold.gte(resetCost(state))
+  return resetStatus(state).canReset
 }
 
 /** Сброс за золото: все ранги обнуляются, счётчик сбросов растёт. */
