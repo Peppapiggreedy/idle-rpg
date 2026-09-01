@@ -8,6 +8,7 @@ import {
   forecastZone,
   isZoneUnlocked,
   retreatZone,
+  travelStatus,
   travelToZone,
   zoneRate,
 } from './zones'
@@ -192,6 +193,31 @@ describe('доступ к зонам', () => {
     const s = heroAt(20, 1)
     expect(travelToZone(s, 'нет-такой-зоны', createRng(1))).toBe(s)
     expect(travelToZone(s, s.currentZoneId, createRng(1))).toBe(s)
+  })
+
+  it('каждый отказ переезда — своим кодом, и код совпадает с делом', () => {
+    const s = heroAt(20, 1)
+    expect(travelStatus(s, QUARRY.id)).toEqual({ canTravel: true, reason: null })
+    expect(travelStatus(s, 'нет-такой-зоны').reason).toBe('unknown')
+    expect(travelStatus(s, s.currentZoneId).reason).toBe('same-zone')
+    expect(travelStatus(s, LAST.id).reason).toBe('locked')
+    const dead = { ...s, heroState: 'dead' as const }
+    expect(travelStatus(dead, QUARRY.id).reason).toBe('dead')
+    expect(travelToZone(dead, QUARRY.id, createRng(1))).toBe(dead)
+  })
+
+  it('из данжа переезд закрыт: иначе моб зоны засчитался бы за босса цепочки', () => {
+    // Цепочка двигается по паузе респауна (advanceDungeon), и раньше переезд
+    // посреди забега оставлял dungeonRun висеть — убийство обычного моба
+    // открывало следующего босса. Ворота закрываются здесь, кодом.
+    const s = heroAt(20, 1)
+    const inside = {
+      ...s,
+      dungeonRun: { dungeonId: 'x', difficulty: 'normal' as const, bossIndex: 0, fightMs: 0 },
+    }
+    expect(travelStatus(inside, QUARRY.id).reason).toBe('in-dungeon')
+    expect(travelToZone(inside, QUARRY.id, createRng(1))).toBe(inside)
+    expect(inside.dungeonRun.bossIndex).toBe(0)
   })
 
   it('откат после смерти: последняя выжитая зона, иначе безопасная', () => {

@@ -64,6 +64,7 @@ export {
   isZoneUnlocked,
   forecastZone,
   forecastAllZones,
+  travelStatus,
   travelToZone,
   retreatZone,
   reviveInZone,
@@ -71,7 +72,7 @@ export {
   intendedZone,
   zoneStanding,
 } from './zones'
-export type { ZoneForecast, ZoneVerdict, ZoneStanding } from './zones'
+export type { ZoneForecast, ZoneVerdict, ZoneStanding, TravelBlockReason, TravelStatus } from './zones'
 export {
   ABILITIES,
   ABILITY_BY_ID,

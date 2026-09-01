@@ -1,6 +1,13 @@
 <script lang="ts">
   // Экран выбора зоны. Весь текст — здесь; логика отдаёт только числа и вердикт.
-  import { formatNumber, forecastAllZones, type ZoneForecast, type ZoneVerdict } from '../game'
+  import {
+    formatNumber,
+    forecastAllZones,
+    travelStatus,
+    type TravelBlockReason,
+    type ZoneForecast,
+    type ZoneVerdict,
+  } from '../game'
   import { ZONES, ZONE_BY_ID } from '../data/zones'
   import { REST_DURATION_S, REST_HP_PRESETS } from '../data/balance'
   import { zoneSafety } from '../game/rest'
@@ -95,6 +102,16 @@
   const heroicById = $derived(new Map(HEROIC_DUNGEONS.map((d) => [d.id, d])))
   const zoneDungeons = $derived(DUNGEONS.filter((d) => d.zoneId === selectedId))
 
+  // Почему нельзя переехать. Кнопка не пропадает молча: на её месте причина.
+  const TRAVEL_REASON: Record<TravelBlockReason, string> = {
+    unknown: 'Нет такой зоны',
+    'in-temple': 'Сначала выйди из храма',
+    'in-dungeon': 'Сначала выйди из данжа',
+    dead: 'Сначала воскресни',
+    locked: 'Закрыта',
+    'same-zone': 'Ты здесь',
+  }
+
   const DUNGEON_REASON: Record<DungeonBlockReason, (d: DungeonDef) => string> = {
     level: (d) => `Откроется с ${d.unlockRequirement} уровня`,
     'wrong-zone': () => 'Сначала перейди в эту зону',
@@ -159,7 +176,12 @@
       {#if zone.id === $gameState.currentZoneId}
         <Tag tone="accent" label="ты здесь" />
       {:else if f.unlocked}
-        <Button size="sm" onclick={() => travelToZone(zone.id)}>Отправиться</Button>
+        {@const travel = travelStatus($gameState, zone.id)}
+        {#if travel.canTravel}
+          <Button size="sm" onclick={() => travelToZone(zone.id)}>Отправиться</Button>
+        {:else}
+          <span class="reason">{TRAVEL_REASON[travel.reason ?? 'locked']}</span>
+        {/if}
       {:else}
         <!-- ЧЕМ ОТКРЫВАЕТСЯ. Не уровнем, а конкретным данжем: игроку нужно
              знать, куда идти, а не сколько ждать. -->
