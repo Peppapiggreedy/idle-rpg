@@ -3,7 +3,7 @@
 // в данных зоны нет ни слова про «тут опасно». Текст рендерит UI по вердикту.
 import { Decimal } from './numbers'
 import { restDurationMs, zoneSafety } from './rest'
-import { estimateCombatRate, estimateTtk, expectedMonsterDamage, uptimeFromHpLoss } from './combat'
+import { estimateCombatRate, estimateTtk, expectedMonsterDamage, farmCycle } from './combat'
 import type { PlayMode } from './rotation'
 import { monsterFromTemplate, pushEvent, spawnMonster, type GameState } from './state'
 import {
@@ -107,7 +107,18 @@ export interface ZoneRate {
   killsPerSecond: Decimal
   goldPerSecond: Decimal
   xpPerSecond: Decimal
-  uptime: number // доля времени, которую герой в зоне жив
+  /**
+   * Доля времени, которую герой в зоне ЧТО-ТО ПРИНОСИТ. Простой бывает двух
+   * природ, и это НЕ одно и то же: привал (герой жив, просто отдыхает) и
+   * смерть с воскрешением. Различает их поле `dies` рядом — из одного только
+   * аптайма понять, отдыхает герой или гибнет, нельзя.
+   *
+   * Смешанного случая не бывает по построению: цикл упирается либо в порог
+   * привала, либо в смерть, смотря что наступает раньше (см. farmCycle).
+   */
+  uptime: number
+  /** Гибнет ли герой в цикле. Если нет — весь простой аптайма это привалы. */
+  dies: boolean
 }
 
 /**
@@ -152,16 +163,20 @@ export function zoneRate(state: GameState, zone: Zone, mode: PlayMode = 'auto'):
   // Считается ПО БОЯМ ЦЕЛИКОМ: длина средней схватки зоны — второй вход
   // модели, потому что уйти на привал герой может только между боями.
   // Порог берётся из конвейера (настройка плюс таланты), а не сырым полем.
-  const uptime = uptimeFromHpLoss(state.stats.maxHp, hpLoss.div(n), {
-    hpThreshold: state.stats.restThreshold,
-    durationMs: restDurationMs(state),
+  const cycle = farmCycle({
+    maxHp: state.stats.maxHp,
+    lossPerSecond: hpLoss.div(n),
     cycleSec: cycleSec / variants.length,
+    hpThreshold: state.stats.restThreshold,
+    restSec: restDurationMs(state) / 1000,
   })
+  const uptime = cycle.uptime
   return {
     killsPerSecond: kills.div(n).times(uptime),
     goldPerSecond: gold.div(n).times(uptime),
     xpPerSecond: xp.div(n).times(uptime),
     uptime,
+    dies: cycle.dies,
   }
 }
 
@@ -216,7 +231,7 @@ export function forecastZone(state: GameState, zone: Zone): ZoneForecast {
     goldPerHour: rate.goldPerSecond.times(3600),
     xpPerHour: rate.xpPerSecond.times(3600),
     xpShare: xpGapShare(state.level.toNumber(), averageMonsterLevel(zone)),
-    verdict: verdictFor(rate.uptime, killsPerHour, zoneSafety(state, zone).safe),
+    verdict: verdictFor(rate, killsPerHour, zoneSafety(state, zone).safe),
   }
 }
 
@@ -227,13 +242,18 @@ export function forecastZone(state: GameState, zone: Zone): ZoneForecast {
  * на бой целиком с запасом на разброс (zoneSafety, 95-й процентиль), а не
  * когда баланс HP сошёлся в ноль.
  */
-function verdictFor(uptime: number, killsPerHour: Decimal, safeByThreshold: boolean): ZoneVerdict {
+function verdictFor(rate: ZoneRate, killsPerHour: Decimal, safeByThreshold: boolean): ZoneVerdict {
   // «Безнадёжно» — герой не дожимает даже одного моба: убийств нет вовсе.
   // Порог uptime этого не ловит сам по себе, поэтому проверка отдельная.
   if (killsPerHour.lte(0)) return 'hopeless'
   if (safeByThreshold) return 'safe'
-  if (uptime >= ZONE_VERDICT_UPTIME.risky) return 'risky'
-  if (uptime >= ZONE_VERDICT_UPTIME.deadly) return 'deadly'
+  // ШКАЛА ZONE_VERDICT_UPTIME — ПРО СМЕРТИ, а не про простой вообще. Теперь,
+  // когда бой стоит четверти запаса, герой отдыхает в КАЖДОЙ зоне и аптайм
+  // 0.7-0.8 — норма живой игры, а не признак беды. Пропусти это различие —
+  // и любая зона на свете читалась бы как «смертельно».
+  if (!rate.dies) return 'risky'
+  if (rate.uptime >= ZONE_VERDICT_UPTIME.risky) return 'risky'
+  if (rate.uptime >= ZONE_VERDICT_UPTIME.deadly) return 'deadly'
   return 'hopeless'
 }
 

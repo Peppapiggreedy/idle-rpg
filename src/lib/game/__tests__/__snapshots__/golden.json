@@ -1,8 +1,8 @@
 {
   "step-3000": {
-    "gold": "1113.58",
+    "gold": "964.86",
     "level": "5",
-    "currentXp": "283.84000000000003",
+    "currentXp": "183.95999999999998",
     "attackPower": "92",
     "avgSwingDamage": "30.9571428571429",
     "weaponSpeed": "2.2000",
@@ -10,17 +10,17 @@
     "equipped": "mainHand",
     "zone": "shepherds-meadow",
     "lastSurvivedZone": "shepherds-meadow",
-    "monster": "pasture-tick:5",
-    "mana": "0.0",
-    "abilityCasts": 0,
+    "monster": "pasture-tick:1",
+    "mana": "13.0",
+    "abilityCasts": 1,
     "totalTicks": "3000",
-    "inventoryCount": 6,
-    "inventorySellTotal": "65"
+    "inventoryCount": 5,
+    "inventorySellTotal": "40"
   },
   "step-12000": {
-    "gold": "4720.3",
+    "gold": "4434.820000000001",
     "level": "9",
-    "currentXp": "904.86",
+    "currentXp": "631.4",
     "attackPower": "100",
     "avgSwingDamage": "32.2142857142857",
     "weaponSpeed": "2.2000",
@@ -28,17 +28,17 @@
     "equipped": "mainHand",
     "zone": "shepherds-meadow",
     "lastSurvivedZone": "shepherds-meadow",
-    "monster": "meadow-squelcher:3",
+    "monster": "meadow-squelcher:1",
     "mana": "1.0",
     "abilityCasts": 3,
     "totalTicks": "12000",
-    "inventoryCount": 21,
-    "inventorySellTotal": "215"
+    "inventoryCount": 22,
+    "inventorySellTotal": "175"
   },
   "step-36000": {
-    "gold": "15384.932",
+    "gold": "15275.712",
     "level": "13",
-    "currentXp": "75.58",
+    "currentXp": "70.96000000000001",
     "attackPower": "108",
     "avgSwingDamage": "33.4714285714286",
     "weaponSpeed": "2.2000",
@@ -46,11 +46,11 @@
     "equipped": "mainHand",
     "zone": "shepherds-meadow",
     "lastSurvivedZone": "shepherds-meadow",
-    "monster": "straw-lumberer:2",
-    "mana": "4.0",
-    "abilityCasts": 1,
+    "monster": "pasture-tick:2",
+    "mana": "38.0",
+    "abilityCasts": 0,
     "totalTicks": "36000",
     "inventoryCount": 24,
-    "inventorySellTotal": "455"
+    "inventorySellTotal": "280"
   }
 }

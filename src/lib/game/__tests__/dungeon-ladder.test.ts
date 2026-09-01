@@ -79,20 +79,34 @@ function averageEnrage(boss: BossDef, sec: number): number {
 }
 
 interface ChainResult {
-  /** Доля запаса HP, оставшаяся после всех трёх схваток; меньше нуля — смерть. */
+  /**
+   * Доля запаса, остающаяся после САМОЙ ДОРОГОЙ схватки цепочки; меньше нуля —
+   * смерть. Не «после всех трёх подряд»: между боссами есть привал, и каждая
+   * ступень начинается с полной полоски, поэтому цепочку губит не сумма, а
+   * одна непосильная схватка.
+   */
   hpLeftShare: number
+  /** Цена каждой схватки в долях запаса — по ней и стоит контракт боссов. */
+  costShares: number[]
   /** Худшее отношение «длина боя / отметка ярости» по цепочке. */
   worstEnrageRatio: number
   seconds: number
 }
 
-/** Цепочка боссов подряд: запас HP один на все три схватки. */
+/**
+ * Цепочка боссов. МЕЖДУ СХВАТКАМИ ПРИВАЛ, поэтому запас у каждой свой.
+ *
+ * Раньше здесь был один запас HP на все три схватки, и это было верно, пока
+ * привала внутри данжа не было. Теперь герой отдыхает между боссами (см.
+ * applyRestCheck в tick.ts), и модель обязана считать так же — иначе она
+ * объявила бы непроходимым данж, который проходится в игре.
+ */
 function runChain(state: GameState, bosses: BossDef[], dpsShare = 1): ChainResult {
   const maxHp = state.stats.maxHp.toNumber()
   const regen = state.stats.hpRegen.toNumber()
-  let hp = maxHp
   let seconds = 0
   let worstEnrageRatio = 0
+  const costShares: number[] = []
   for (const boss of bosses) {
     const monster = monsterFromTemplate(buildBoss(boss))
     const rate = estimateCombatRate({ ...state, monster }, 'auto')
@@ -101,11 +115,11 @@ function runChain(state: GameState, bosses: BossDef[], dpsShare = 1): ChainResul
     const fight = Math.max(0, cycle - RESPAWN_DELAY_MS / 1000) / dpsShare
     const incoming = expectedMonsterDamage(monster, state.stats, state.level.toNumber()).toNumber() / boss.swingTime
     const loss = incoming * averageEnrage(boss, fight) - regen
-    hp -= Math.max(0, loss) * fight
+    costShares.push((Math.max(0, loss) * fight) / maxHp)
     seconds += fight
     worstEnrageRatio = Math.max(worstEnrageRatio, fight / boss.enrageAfterSec)
   }
-  return { hpLeftShare: hp / maxHp, worstEnrageRatio, seconds }
+  return { hpLeftShare: 1 - Math.max(...costShares), costShares, worstEnrageRatio, seconds }
 }
 
 describe('лестница данжей', () => {
@@ -232,7 +246,11 @@ describe('данж — жёсткие ворота, и требовательн�
     for (let i = 1; i < shares.length; i += 1) {
       expect(shares[i], `тир ${DUNGEONS[i].tier}`).toBeGreaterThan(shares[i - 1])
     }
-    expect(shares[0]).toBeCloseTo(0.6, 9)
-    expect(shares[shares.length - 1]).toBeCloseTo(0.95, 9)
+    // Концы лестницы закреплены числом: подвинуть требование можно только
+    // осознанно, вместе с этой строкой. Было 0.60 и 0.95 — при боссе, который
+    // почти не бил. С контрактом «схватка стоит около 80% запаса» перелом
+    // уехал вверх, и лестница стала выше и уже (см. GEAR_SHARE_BASE).
+    expect(shares[0]).toBeCloseTo(0.82, 9)
+    expect(shares[shares.length - 1]).toBeCloseTo(0.96, 9)
   })
 })

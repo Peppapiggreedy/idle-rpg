@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest'
 import { Decimal } from '../numbers'
 import { expectedSwingDamage } from '../combat'
-import { estimateTtk } from '../combat'
+import { estimateCombatRate, estimateTtk } from '../combat'
 import { dungeonOpening } from '../../data/dungeons'
 import {
   AVERAGE_WEAPON,
@@ -30,6 +30,7 @@ import {
 } from '../simulate'
 import { intendedZone, type ZoneStanding } from '../zones'
 import {
+  RESPAWN_DELAY_MS,
   REST_DURATION_S,
   TTK_AHEAD_MIN,
   TTK_BEHIND_MAX,
@@ -39,11 +40,22 @@ import {
   TTK_TARGET_MAX,
   TTK_TARGET_MIN,
 } from '../../data/balance'
-import { ZONES, ZONE_BY_ID, zoneMonsterVariants, type Zone } from '../../data/zones'
+import {
+  averageMonsterLevel,
+  representativeMonster,
+  ZONES,
+  ZONE_BY_ID,
+  zoneMonsterVariants,
+  type Zone,
+} from '../../data/zones'
 import { ONE_HANDED, WEAPONS } from '../../data/items'
 import { BRANCHES, type BranchDef, type BranchStyle } from '../../data/talents'
 import { CLASSES, DEFAULT_CLASS } from '../../data/classes'
 import { ABILITY_BY_ID } from '../../data/abilities'
+import { monsterFromTemplate, type GameState } from '../state'
+
+/** Сид контракта цены боя: контракт обязан быть воспроизводимым до числа. */
+const CONTRACT_SEED = 4242
 
 /**
  * БЫСТРЫЙ РЕЖИМ ПРОГОНА: `BALANCE_SAMPLE=1`.
@@ -356,9 +368,15 @@ describe('стиль боя', () => {
         zoneId: weaponZoneId,
         seed,
         freezeLevel: true,
-        // Привалы выключены: измерение про УДАР, а не про то, кто чаще
-        // садится отдыхать. С ними разброс мерил бы живучесть связки.
-        build: { ...weaponBuild, ...styleBuild(style, true, WEAPON_LEVEL), autocast, restThreshold: 0 },
+        // ПРИВАЛ ВКЛЮЧЁН, ПОРОГ ОБЫЧНЫЙ. Раньше здесь стоял ноль: «измерение
+        // про удар, а не про то, кто чаще отдыхает». Пока мобы почти не били,
+        // ноль означал «простоя нет вовсе». Теперь бой стоит четверти запаса,
+        // и ноль означает уже не «без привалов», а «до смерти» — прогон
+        // начинал мерить, кому из связок повезло умереть попозже, и разброс
+        // подскочил до 10%. Обе парные связки одинаково защищены (щита нет
+        // ни у одной), поэтому привал у них общий и из сравнения выпадает —
+        // а смерть выпадает вовсе.
+        build: { ...weaponBuild, ...styleBuild(style, true, WEAPON_LEVEL), autocast },
       }),
     )
   }
@@ -643,8 +661,17 @@ describe('ветки талантов', () => {
     // Сравниваем В ОДНОЙ зоне: здесь важно не «сколько», а «чем».
     // И проверяется это у ОБОИХ классов: обещание стиля одно на игру.
     const zone = intendedZone(branchLevel).id
+    // Урон за час БОЯ, а не за час прогона. Делить на все часы теперь нельзя:
+    // с ценой боя в четверть запаса герой треть времени сидит на привале, и
+    // «урона в час» мерило бы ещё и то, чья ветка реже отдыхает. Обещание
+    // ветки урона — БИТЬ сильнее, и меряться оно должно временем под ударом.
     const damage = (runs: SimResult[]) =>
-      avg(runs, (r) => r.autoDamage.plus(r.abilityDamage).div(r.hours).toNumber())
+      avg(runs, (r) =>
+        r.autoDamage
+          .plus(r.abilityDamage)
+          .div(r.hours * Math.max(1e-9, 1 - r.restShare))
+          .toNumber(),
+      )
     for (const cls of CLASS_SET) {
       const byStyle = new Map<BranchStyle, SimResult[]>()
       for (const branch of BRANCHES.filter((b) => b.classId === cls.id)) {
@@ -923,6 +950,143 @@ describe('контракт темпа боя', () => {
         `(от ${current[0].toFixed(1)} до ${current[current.length - 1].toFixed(1)}).`,
     )
     expect(REST_DURATION_S).toBeLessThanOrEqual(median)
+  })
+
+  // -------------------------------------------------------------------------
+  // КОНТРАКТ ЦЕНЫ БОЯ — второй контракт на ту же схватку. Темп задаёт её
+  // ДЛИНУ (здоровье моба), цена — её СТОИМОСТЬ (урон моба). Ручки разные,
+  // и правится каждая своим числом.
+  //
+  //   Герой уровня L в актуальном для L снаряжении теряет 20-25%
+  //   максимального здоровья за один бой с МЕДИАННЫМ мобом своей зоны.
+  //   Нетто, с учётом регенерации.
+  //
+  // ЧЕГО КОНТРАКТ НЕ ЗНАЧИТ: «урон моба = 22% запаса героя». Так живучесть и
+  // броня стали бы украшением — сколько их ни набирай, доля та же. Контракт
+  // ставится на ЭТАЛОННОМ герое, а дальше числа расходятся сами. Проверяются
+  // ОБА расхождения: односторонняя проверка не отличила бы верную
+  // реализацию от подмены.
+  // -------------------------------------------------------------------------
+  describe('контракт цены боя', () => {
+    const TARGET_MIN = 20
+    const TARGET_MAX = 25
+    // Допуск ±2 пункта — не послабление, а разрешение измерения. Цена боя это
+    // `урон × ЦЕЛОЕ число ударов ÷ запас`: один лишний удар из шести-восьми
+    // двигает долю на два-три пункта, а какой именно выпадет — решает длина
+    // боя внутри коридора 8-15 секунд. Уже коридора темпа цена быть не может.
+    const TOLERANCE = 2
+    // ЖЁСТКАЯ граница: за неё не выходит ни одна точка, и промахов такого
+    // размера контракт не прощает вовсе.
+    const HARD_TOLERANCE = 4
+    // И РОВНО ОДИН ПРОМАХ НА КЛАСС в пределах жёсткой границы. Не «широкий
+    // допуск», а поимённо посчитанное исключение: сейчас это Изувер на
+    // полосе мобов 6-10 (16.3%), и почему его нельзя вылечить множителем
+    // полосы — написано в data/monsters.ts рядом с самим множителем.
+    // Появится второй промах — тест упадёт, и это правильно.
+    const OUTLIERS_ALLOWED = 1
+
+    /** Доля запаса, теряемая за ОДИН бой (без паузы респауна), в процентах. */
+    const lossShare = (state: GameState, zone: Zone): number => {
+      const facing = { ...state, monster: monsterFromTemplate(representativeMonster(zone)) }
+      const rate = estimateCombatRate(facing)
+      if (rate.idealKillsPerSecond.lte(0)) return Number.POSITIVE_INFINITY
+      const cycleSec = new Decimal(1).div(rate.idealKillsPerSecond)
+      return rate.hpLossPerSecond
+        .times(cycleSec)
+        // Пауза респауна к бою не относится: за неё платит не схватка.
+        .plus(facing.stats.hpRegenOutOfCombat.times(RESPAWN_DELAY_MS / 1000))
+        .div(facing.stats.maxHp)
+        .toNumber() * 100
+    }
+
+    // Меряется ВХОД в зону: уровень, с которого игра в неё приводит. Внутри
+    // зоны доля падает сама — герой растёт пять уровней, мобы стоят на месте.
+    const entries = ZONES.map((zone) => ({ zone, level: zone.monsterLevelRange.min }))
+
+    const stateFor = (level: number, classId: string, gearDelta: number): GameState => {
+      const zone = intendedZone(level)
+      const base = referenceBuild(level, classId)
+      if (gearDelta === 0) return buildSimState(base, zone.id, CONTRACT_SEED)
+      // Стартовый комплект деталями не двигается: хуже него только голый
+      // герой, лучше — первый же средний комплект своей полосы.
+      if (base.gear === 'starting') {
+        const build =
+          gearDelta < 0
+            ? { ...base, gear: 'none' as const }
+            : {
+                ...base,
+                gear: 'average' as const,
+                gearLevel: Math.max(1, Math.round(averageMonsterLevel(zone))),
+              }
+        return buildSimState(build, zone.id, CONTRACT_SEED)
+      }
+      // Отклонение ДОЛЕЙ, а не пунктами: пять уровней вещей на девяностом
+      // уровне — это пять процентов, а на десятом — половина силы.
+      const gearLevel = Math.max(1, Math.round((base.gearLevel ?? 1) * (gearDelta < 0 ? 0.6 : 1.5)))
+      return buildSimState({ ...base, gearLevel }, zone.id, CONTRACT_SEED)
+    }
+
+    describe.each(CLASS_SET.map((c) => [c.name, c.id] as const))('%s', (_name, classId) => {
+      it(`эталон теряет ${TARGET_MIN}-${TARGET_MAX}% запаса за бой (допуск ${TOLERANCE} п.п., промахов не больше ${OUTLIERS_ALLOWED})`, () => {
+        const shares = entries.map(({ zone, level }) => ({
+          zone: zone.id,
+          level,
+          share: lossShare(stateFor(level, classId, 0), zone),
+        }))
+        log(
+          `${classId}: цена боя ${Math.min(...shares.map((r) => r.share)).toFixed(1)}-` +
+            `${Math.max(...shares.map((r) => r.share)).toFixed(1)}%, ` +
+            `в среднем ${(shares.reduce((a, r) => a + r.share, 0) / shares.length).toFixed(1)}%.`,
+        )
+        for (const { zone, level, share } of shares) {
+          const where = `${classId}, ур. ${level}, ${zone}`
+          expect(share, where).toBeGreaterThan(TARGET_MIN - HARD_TOLERANCE)
+          expect(share, where).toBeLessThan(TARGET_MAX + HARD_TOLERANCE)
+        }
+        const outliers = shares.filter(
+          (r) => r.share < TARGET_MIN - TOLERANCE || r.share > TARGET_MAX + TOLERANCE,
+        )
+        expect(
+          outliers.length,
+          `${classId}: промахи — ${outliers.map((r) => `${r.zone} ${r.share.toFixed(1)}%`).join(', ')}`,
+        ).toBeLessThanOrEqual(OUTLIERS_ALLOWED)
+        // И СРЕДНЕЕ ПОПАДАЕТ В КОРИДОР БЕЗ ДОПУСКА. Допуск разрешён каждой
+        // отдельной точке, но не смещению всей кривой: иначе контракт можно
+        // было бы выполнить, стоя на два пункта ниже пола во всех двадцати
+        // зонах сразу.
+        const mean = shares.reduce((a, r) => a + r.share, 0) / shares.length
+        expect(mean).toBeGreaterThanOrEqual(TARGET_MIN)
+        expect(mean).toBeLessThanOrEqual(TARGET_MAX)
+      })
+
+      it('снаряжение ЛУЧШЕ эталона теряет меньше, ХУЖЕ эталона — больше', () => {
+        // ОБА отклонения в одном тесте и на каждой ступени лестницы. Проверь
+        // только одно — и «урон моба = доля запаса героя» прошла бы: там обе
+        // стороны дают ровно ту же долю, что эталон.
+        for (const { zone, level } of entries) {
+          const where = `${classId}, ур. ${level}, ${zone.id}`
+          const worse = lossShare(stateFor(level, classId, -1), zone)
+          const reference = lossShare(stateFor(level, classId, 0), zone)
+          const better = lossShare(stateFor(level, classId, 1), zone)
+          expect(worse, `хуже эталона: ${where}`).toBeGreaterThan(reference)
+          expect(better, `лучше эталона: ${where}`).toBeLessThan(reference)
+        }
+      })
+    }, 300_000)
+
+    it('печатает цену боя по зонам', () => {
+      const rowsOut = entries.map(({ zone, level }) => {
+        const out: Record<string, string | number> = { 'ур.': level, зона: zone.name }
+        for (const cls of CLASS_SET) {
+          out[`${cls.name}: хуже`] = lossShare(stateFor(level, cls.id, -1), zone).toFixed(1)
+          out[`${cls.name}: эталон`] = lossShare(stateFor(level, cls.id, 0), zone).toFixed(1)
+          out[`${cls.name}: лучше`] = lossShare(stateFor(level, cls.id, 1), zone).toFixed(1)
+        }
+        return out
+      })
+      console.table(rowsOut)
+      expect(rowsOut).toHaveLength(ZONES.length)
+    }, 300_000)
   })
 
   it('везение ускоряет бой, а не задаёт коридор', () => {

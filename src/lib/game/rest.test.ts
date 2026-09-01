@@ -14,7 +14,7 @@ import { averageGear } from './simulate'
 import { finishRest, maxMonsterHit, needsRest, restDurationMs, restProgress, startRest, zoneSafety } from './rest'
 import { applyOfflineProgress } from './save'
 import { zoneRate } from './zones'
-import { REST_DURATION_S, REST_FOOD_SPEEDUP } from '../data/balance'
+import { REST_DURATION_S, REST_FOOD_SPEEDUP, REST_HP_THRESHOLD_DEFAULT } from '../data/balance'
 import { ZONES } from '../data/zones'
 
 const NO_LUCK = () => 1
@@ -183,6 +183,23 @@ describe('длительность и восстановление', () => {
     expect(stopped.currentMana.div(stopped.stats.maxMana).toNumber()).toBeCloseTo(progress, 6)
   })
 
+  it('длина привала НЕ зависит от того, сколько потеряно: так и задумано', () => {
+    // Привал стоит одно и то же, поцарапан герой или почти добит. Это не
+    // недоделка, а несущее правило экономики: отдыхать после каждого боя
+    // невыгодно (полная цена за пять процентов запаса), а дотерпеть до
+    // низкого HP и рискнуть — выгодно (та же цена за шестьдесят). Сделай
+    // привал пропорциональным потере — и обе стратегии сравняются, а вместе
+    // с ними исчезнет и смысл порога.
+    const scratched = hero({ currentHp: new Decimal(95) })
+    const battered = hero({ currentHp: new Decimal(5) })
+    expect(restDurationMs(battered)).toBe(restDurationMs(scratched))
+    expect(startRest(battered).restTotalMs).toBe(startRest(scratched).restTotalMs)
+    // И тот и другой выходят с полным запасом: цена одна, возврат разный.
+    const healed = (s: GameState) => finishRest(run(startRest(s), REST_DURATION_S * 1000))
+    expect(healed(battered).currentHp.eq(battered.stats.maxHp)).toBe(true)
+    expect(healed(scratched).currentHp.eq(scratched.stats.maxHp)).toBe(true)
+  })
+
   it('источник ускорения сокращает привал вдвое и расходуется', () => {
     // Само поле пока заполняет только кулинария из следующего шага; здесь
     // проверено, что место его учёта живое, а не декоративное.
@@ -220,8 +237,17 @@ describe('индикатор безопасности зоны', () => {
     // zoneSafety): порога должно хватать не на один удар, а на всё, что
     // моб успеет снять за схватку. Иначе обещание «умереть нельзя»
     // держалось бы ровно до первого затяжного боя.
+    // Герой с НАСТРОЙКАМИ ПО УМОЛЧАНИЮ, а не ручной: метка обещает безопасность
+    // тому, кто играет как играет игра, — с автокастом и порогом из баланса.
+    // Ручной герой, который не жмёт ничего, в стартовой зоне гибнет от
+    // здоровяка верхнего края, и метка честно говорит об этом «нет».
     const zone = ZONES[0]
-    let s = hero({ restHpThreshold: 0.5, currentZoneId: zone.id })
+    let s = ensureStats({
+      ...createInitialState(1),
+      statsDirty: true,
+      restHpThreshold: REST_HP_THRESHOLD_DEFAULT,
+      currentZoneId: zone.id,
+    })
     expect(zoneSafety(s, zone).safe).toBe(true)
     for (let t = 0; t < 600_000; t += STEP_MS) {
       s = tick(s, STEP_MS, () => 0.999, () => {})
