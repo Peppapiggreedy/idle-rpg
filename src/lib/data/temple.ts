@@ -10,7 +10,6 @@
 import type { IconName } from '../ui/icons/manifest'
 import { Decimal } from '../game/numbers'
 import { BRUTE, COMMON, RUNT, buildMonster, type MonsterArchetype } from './monsters'
-import { DUNGEON_SCENES, type DungeonSceneKey, type SceneConfig } from './scenery'
 import { LEVEL_CAP } from './balance'
 import type { MonsterTemplate } from '../types'
 
@@ -29,9 +28,6 @@ export interface TempleDef {
   zoneId: string
   /** Уровень героя, с которого храм открыт. */
   unlockRequirement: number
-  /** Ключ интерьера — держится рядом с конфигом ради проверки данных. */
-  scenery: DungeonSceneKey
-  scene: SceneConfig
   /**
    * СКОЛЬКО ЭТАЖЕЙ В ХРАМЕ. Храм конечен, и это условие всей системы наград:
    * без потолка «полная зачистка» недостижима, а значит недостижимы и
@@ -108,8 +104,6 @@ export const TEMPLES: TempleDef[] = [
     // до девяносто первых мобов». Инвариант в content:check держит связь.
     zoneId: 'salt-pit',
     unlockRequirement: 70,
-    scenery: 'vault',
-    scene: DUNGEON_SCENES.vault,
     // Двадцать этажей: столько же, сколько зон в мире. Число видно игроку
     // с первого захода, и «дошёл до 12 из 20» читается сразу.
     floors: 20,

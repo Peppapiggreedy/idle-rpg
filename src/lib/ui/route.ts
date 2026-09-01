@@ -58,15 +58,6 @@ export function isSceneDisabled(location: Location = window.location): boolean {
 }
 
 /**
- * Включена ли ПРЕЖНЯЯ трёхмерная сцена (`?scene=3d`). По умолчанию бой
- * рисует двумерная сцена; трёхмерный слой остаётся в коде до его удаления
- * и грузится только по этому флагу — в основной путь он не входит.
- */
-export function isScene3d(location: Location = window.location): boolean {
-  return new URLSearchParams(location.search).get('scene') === '3d'
-}
-
-/**
  * Позы сцены для съёмки эталонов: покой, замах, попадание, крит, лечение,
  * привал. Каждая — застывший пик соответствующего эффекта, чтобы эталон
  * держал не только раскладку, но и сам эффект.
@@ -88,14 +79,4 @@ export function screenshotPose(location: Location = window.location): ScenePose 
 /** Открыт ли отладочный режим (`?debug=1`). */
 export function isDebugMode(location: Location = window.location): boolean {
   return new URLSearchParams(location.search).get('debug') === '1'
-}
-
-/**
- * Показывать ли в сцене оси и сетку (`?helpers=1`).
- * Флаг ОТДЕЛЬНЫЙ от ?debug=1 нарочно: числа отладочного оверлея смотрят
- * на производительность, а оси и сетка — на раскладку, и включать их
- * хочется по отдельности. Ни то, ни другое ничего в игре не меняет.
- */
-export function showsSceneHelpers(location: Location = window.location): boolean {
-  return new URLSearchParams(location.search).get('helpers') === '1'
 }

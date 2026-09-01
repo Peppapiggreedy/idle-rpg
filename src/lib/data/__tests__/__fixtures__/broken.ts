@@ -120,14 +120,6 @@ export function brokenCases(): BrokenCase[] {
       expect: ['weaponSpeed', 'haste'],
     },
     {
-      title: 'модель ссылается на файл, которого нет в public/models',
-      content: {
-        ...real,
-        models: patch(real.models, first(real.models).id, { path: 'models/Wyvern.glb' }),
-      },
-      expect: [first(real.models).id, 'Wyvern.glb', 'public/models'],
-    },
-    {
       title: 'иконки нет в реестре',
       content: {
         ...real,
@@ -634,22 +626,6 @@ export function brokenCases(): BrokenCase[] {
       expect: [real.backgrounds[1].id, 'без фона', 'data/sprites.ts'],
     },
     {
-      title: 'пропс ссылается на модель, которой нет в public/models/props',
-      content: {
-        ...real,
-        props: patch(real.props, first(real.props).id, { path: 'models/props/нету.glb' }),
-      },
-      expect: [first(real.props).id, 'нету.glb'],
-    },
-    {
-      title: 'у пропса не указан автор — это нарушение лицензии',
-      content: {
-        ...real,
-        props: patch(real.props, first(real.props).id, { author: '' }),
-      },
-      expect: [first(real.props).id, 'автор'],
-    },
-    {
       title: 'звук ссылается на файл, которого нет в public/',
       content: {
         ...real,
@@ -835,16 +811,6 @@ export function brokenCases(): BrokenCase[] {
         }),
       },
       expect: [first(real.dungeons).id, 'своего тира', 'data/reagents.ts'],
-    },
-    {
-      title: 'у данжа нет обстановки: ключ интерьера промахнулся',
-      content: {
-        ...real,
-        dungeons: patch(real.dungeons, first(real.dungeons).id, {
-          scenery: 'подземелье' as never,
-        }),
-      },
-      expect: [first(real.dungeons).id, 'подземелье', 'data/scenery.ts'],
     },
     {
       title: 'лестница данжей с дыркой: тира нет ни у кого',

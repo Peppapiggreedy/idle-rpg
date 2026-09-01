@@ -11,29 +11,6 @@ import {
   type MonsterRole,
 } from './monsters'
 import type { MonsterTemplate } from '../types'
-import {
-  ASHEN_SCENE,
-  BLUFF_SCENE,
-  COLLAPSE_SCENE,
-  CROOKWOOD_SCENE,
-  DELL_SCENE,
-  EMERY_SCENE,
-  FLOODED_SCENE,
-  FURROWS_SCENE,
-  GLASSWASTE_SCENE,
-  MEADOW_SCENE,
-  MIREFEN_SCENE,
-  MOLD_SCENE,
-  PASS_SCENE,
-  QUARRY_SCENE,
-  RIMEBACK_SCENE,
-  ROOTS_SCENE,
-  SALTPIT_SCENE,
-  SULFUR_SCENE,
-  TERRACE_SCENE,
-  WORMWOOD_SCENE,
-  type SceneConfig,
-} from './scenery'
 
 export interface Zone {
   id: string
@@ -45,9 +22,6 @@ export interface Zone {
   monsterPool: MonsterArchetype[]
   rewardMultiplier: Decimal // множитель золота и опыта поверх уровня моба
   isSafe: boolean // стартовая зона: сюда возвращают, когда возвращаться некуда
-  /** Как выглядит место: туман, свет, площадка и расстановка пропсов.
-   *  Поле ОБЯЗАТЕЛЬНОЕ — новая зона без вида не соберётся. */
-  scene: SceneConfig
 }
 
 // Лестница зон. Двадцать ступеней по ПЯТЬ уровней мобов: 1-5, 6-10, ... 96-100.
@@ -83,7 +57,6 @@ export interface Zone {
 export const ZONES: Zone[] = [
   {
     id: 'shepherds-meadow',
-    scene: MEADOW_SCENE,
     icon: 'zone-shepherds-meadow',
     name: 'Пастуший луг',
     monsterLevelRange: { min: 1, max: 5 },
@@ -97,7 +70,6 @@ export const ZONES: Zone[] = [
   },
   {
     id: 'hollow-quarry',
-    scene: QUARRY_SCENE,
     icon: 'zone-hollow-quarry',
     name: 'Полая каменоломня',
     monsterLevelRange: { min: 6, max: 10 },
@@ -111,7 +83,6 @@ export const ZONES: Zone[] = [
   },
   {
     id: 'rusted-furrows',
-    scene: FURROWS_SCENE,
     icon: 'zone-rusted-furrows',
     name: 'Ржавые борозды',
     monsterLevelRange: { min: 11, max: 15 },
@@ -125,7 +96,6 @@ export const ZONES: Zone[] = [
   },
   {
     id: 'mirefen-hollows',
-    scene: MIREFEN_SCENE,
     icon: 'zone-mirefen-hollows',
     name: 'Топкие лощины',
     monsterLevelRange: { min: 16, max: 20 },
@@ -139,7 +109,6 @@ export const ZONES: Zone[] = [
   },
   {
     id: 'glasswaste',
-    scene: GLASSWASTE_SCENE,
     icon: 'zone-glasswaste',
     name: 'Стеклянная пустошь',
     monsterLevelRange: { min: 21, max: 25 },
@@ -153,7 +122,6 @@ export const ZONES: Zone[] = [
   },
   {
     id: 'ashen-ridge',
-    scene: ASHEN_SCENE,
     icon: 'zone-ashen-ridge',
     name: 'Пепельный гребень',
     monsterLevelRange: { min: 26, max: 30 },
@@ -167,7 +135,6 @@ export const ZONES: Zone[] = [
   },
   {
     id: 'mine-collapse',
-    scene: COLLAPSE_SCENE,
     icon: 'zone-mine-collapse',
     name: 'Обвал старой шахты',
     monsterLevelRange: { min: 31, max: 35 },
@@ -181,7 +148,6 @@ export const ZONES: Zone[] = [
   },
   {
     id: 'root-vaults',
-    scene: ROOTS_SCENE,
     icon: 'zone-root-vaults',
     name: 'Корневые своды',
     monsterLevelRange: { min: 36, max: 40 },
@@ -195,7 +161,6 @@ export const ZONES: Zone[] = [
   },
   {
     id: 'flooded-tier',
-    scene: FLOODED_SCENE,
     icon: 'zone-flooded-tier',
     name: 'Затопленный ярус',
     monsterLevelRange: { min: 41, max: 45 },
@@ -209,7 +174,6 @@ export const ZONES: Zone[] = [
   },
   {
     id: 'mold-horizon',
-    scene: MOLD_SCENE,
     icon: 'zone-mold-horizon',
     name: 'Плесневый горизонт',
     monsterLevelRange: { min: 46, max: 50 },
@@ -223,7 +187,6 @@ export const ZONES: Zone[] = [
   },
   {
     id: 'sulfur-springs',
-    scene: SULFUR_SCENE,
     icon: 'zone-sulfur-springs',
     name: 'Серные ключи',
     monsterLevelRange: { min: 51, max: 55 },
@@ -237,7 +200,6 @@ export const ZONES: Zone[] = [
   },
   {
     id: 'ashen-terrace',
-    scene: TERRACE_SCENE,
     icon: 'zone-ashen-terrace',
     name: 'Пепельная терраса',
     monsterLevelRange: { min: 56, max: 60 },
@@ -251,7 +213,6 @@ export const ZONES: Zone[] = [
   },
   {
     id: 'windswept-pass',
-    scene: PASS_SCENE,
     icon: 'zone-windswept-pass',
     name: 'Продувной перевал',
     monsterLevelRange: { min: 61, max: 65 },
@@ -265,7 +226,6 @@ export const ZONES: Zone[] = [
   },
   {
     id: 'wormwood-rise',
-    scene: WORMWOOD_SCENE,
     icon: 'zone-wormwood-rise',
     name: 'Полынный увал',
     monsterLevelRange: { min: 66, max: 70 },
@@ -279,7 +239,6 @@ export const ZONES: Zone[] = [
   },
   {
     id: 'salt-pit',
-    scene: SALTPIT_SCENE,
     icon: 'zone-salt-pit',
     name: 'Соляной провал',
     monsterLevelRange: { min: 71, max: 75 },
@@ -293,7 +252,6 @@ export const ZONES: Zone[] = [
   },
   {
     id: 'emery-stack',
-    scene: EMERY_SCENE,
     icon: 'zone-emery-stack',
     name: 'Наждачный останец',
     monsterLevelRange: { min: 76, max: 80 },
@@ -307,7 +265,6 @@ export const ZONES: Zone[] = [
   },
   {
     id: 'rimeback-ridge',
-    scene: RIMEBACK_SCENE,
     icon: 'zone-rimeback-ridge',
     name: 'Стылая гряда',
     monsterLevelRange: { min: 81, max: 85 },
@@ -321,7 +278,6 @@ export const ZONES: Zone[] = [
   },
   {
     id: 'frozen-crookwood',
-    scene: CROOKWOOD_SCENE,
     icon: 'zone-frozen-crookwood',
     name: 'Мёрзлое криволесье',
     monsterLevelRange: { min: 86, max: 90 },
@@ -335,7 +291,6 @@ export const ZONES: Zone[] = [
   },
   {
     id: 'hollow-dell',
-    scene: DELL_SCENE,
     icon: 'zone-hollow-dell',
     name: 'Порожняя падь',
     monsterLevelRange: { min: 91, max: 95 },
@@ -349,7 +304,6 @@ export const ZONES: Zone[] = [
   },
   {
     id: 'mute-bluff',
-    scene: BLUFF_SCENE,
     icon: 'zone-mute-bluff',
     name: 'Немая круча',
     monsterLevelRange: { min: 96, max: 100 },

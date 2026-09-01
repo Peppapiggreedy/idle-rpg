@@ -3,7 +3,7 @@
 // Живут ОТДЕЛЬНО от игрового сейва и намеренно: это настройки конкретной
 // машины, а не прогресс. Утащить их вместе с экспортом сейва на другой
 // компьютер значило бы принести туда лимит кадров слабого ноутбука и
-// текстовый режим машины без WebGL. Поэтому свой ключ в localStorage,
+// текстовый режим чужого экрана. Поэтому свой ключ в localStorage,
 // своя версия и никакого влияния на формат сейва.
 import { get, readonly, writable } from 'svelte/store'
 import { SOUND_DEFAULT_VOLUMES } from '../data/balance'
@@ -30,8 +30,8 @@ export type DrawerId = 'hero' | 'log'
 export const DRAWER_IDS: DrawerId[] = ['hero', 'log']
 
 /**
- * Текстовый режим. 'auto' — включается сам, если WebGL недоступен;
- * 'on' / 'off' — явный выбор игрока, он сильнее автоопределения.
+ * Текстовый режим. 'auto' — сцена (двумерная рисуется обычными элементами
+ * и заводится везде); 'on' / 'off' — явный выбор игрока.
  */
 export type TextModeSetting = 'auto' | 'on' | 'off'
 
@@ -67,52 +67,6 @@ const DEFAULTS: UiSettings = {
   fpsLimit: 30,
   volumes: { ...SOUND_DEFAULT_VOLUMES },
   drawers: { hero: false, log: false },
-}
-
-// --- Доступность WebGL -------------------------------------------------
-
-let webglChecked = false
-let webglOk = true
-
-/**
- * Есть ли в браузере WebGL. Проверяем ОДИН раз и запоминаем: создавать
- * контексты на каждый рендер нельзя — их число в браузере ограничено.
- * Контекст сразу отпускаем, чтобы не занимать слот у настоящей сцены.
- */
-export function hasWebgl(): boolean {
-  if (webglChecked) return webglOk
-  webglChecked = true
-  try {
-    const canvas = document.createElement('canvas')
-    const gl =
-      canvas.getContext('webgl2') ??
-      canvas.getContext('webgl') ??
-      canvas.getContext('experimental-webgl')
-    webglOk = gl !== null
-    // Освобождаем контекст сразу: их в браузере конечное число.
-    const lose = (gl as WebGLRenderingContext | null)?.getExtension('WEBGL_lose_context')
-    lose?.loseContext()
-  } catch {
-    webglOk = false
-  }
-  return webglOk
-}
-
-// Сцена может не завестись и после успешной проверки выше: контекст WebGL
-// дают не всегда (старый драйвер, политика браузера, исчерпанный лимит
-// контекстов), да и чанк с three может не доехать. Это факт машины
-// текущего запуска, а не настройка, поэтому в localStorage он не пишется:
-// на следующей загрузке игра снова попробует показать сцену.
-const sceneFailed = writable(false)
-export const sceneUnavailable = readonly(sceneFailed)
-
-/**
- * Слой 3D сообщает, что сцены не будет. ЕДИНСТВЕННАЯ запись, которую он
- * делает наружу, и та в настройки интерфейса, а не в состояние игры:
- * без неё игрок остался бы смотреть на чёрный прямоугольник.
- */
-export function reportSceneFailure(): void {
-  sceneFailed.set(true)
 }
 
 // --- Хранилище ---------------------------------------------------------
@@ -187,15 +141,12 @@ function persist(next: UiSettings): void {
 }
 
 /**
- * Текстовый режим прямо сейчас: явный выбор игрока либо автоопределение.
- * Двумерной сцене WebGL не нужен, поэтому «как получится» по умолчанию
- * означает сцену. Проверка WebGL остаётся только для прежней трёхмерной
- * сцены (`?scene=3d`) — её включает `requiresWebgl`.
+ * Текстовый режим прямо сейчас: только явный выбор игрока. Двумерной сцене
+ * не нужно ничего сверх обычных элементов страницы, поэтому «как получится»
+ * означает сцену — автоопределения больше нет.
  */
-export function isTextMode(value: UiSettings = get(settings), requiresWebgl = false): boolean {
-  if (value.textMode === 'on') return true
-  if (value.textMode === 'off') return false
-  return requiresWebgl ? !hasWebgl() : false
+export function isTextMode(value: UiSettings = get(settings)): boolean {
+  return value.textMode === 'on'
 }
 
 export function setTextMode(mode: TextModeSetting): void {

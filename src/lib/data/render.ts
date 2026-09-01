@@ -22,18 +22,6 @@ export const FLOATER_LIFE_MS = 900
  */
 export const FLOATER_MAX_SPEED = 1
 
-/** Потолок частоты кадров сцены по умолчанию и доступные значения. */
-export const SCENE_FPS_DEFAULT = 30
-export const SCENE_FPS_OPTIONS = [60, 30, 15] as const
-
-/**
- * Потолок плотности пикселей. На экране с плотностью 3 разницы для
- * примитивов не видно, а пикселей на кадр вчетверо больше.
- * На мобильном ещё ниже: там этот запас оплачивается батареей.
- */
-export const MAX_PIXEL_RATIO = 2
-export const MAX_PIXEL_RATIO_MOBILE = 1.5
-
 /** Ширина, ниже которой машина считается мобильной (тот же брейкпоинт, что в CSS). */
 export const MOBILE_BREAKPOINT = 720
 

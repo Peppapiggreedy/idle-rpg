@@ -1,11 +1,10 @@
 // Слепок живого контента для проверки целостности.
 //
-// Здесь и только здесь проверка касается диска: читает спрайт иконок и список
-// файлов в public/models. Сама проверка (schema.ts) остаётся чистой — иначе её
+// Здесь и только здесь проверка касается диска: читает спрайт иконок и списки
+// файлов в public/sprites и public/audio. Сама проверка (schema.ts) остаётся чистой — иначе её
 // нельзя было бы прогнать на заведомо битой фикстуре.
 import { readFileSync, readdirSync } from 'node:fs'
 import { ABILITIES } from '../abilities'
-import { MODEL_ASSETS, PROP_ASSETS } from '../assets'
 import { BACKGROUND_BANDS, HERO_SPRITE, MONSTER_SPRITES, MONSTER_SPRITE_BY_ARCHETYPE } from '../sprites'
 import {
   AUTOCAST_MAX_LOSS,
@@ -39,7 +38,6 @@ import { TEMPLES } from '../temple'
 import { QUESTS, QUEST_CHAIN } from '../quests'
 import { PROGRESSION } from '../progression'
 import { REAGENTS } from '../reagents'
-import { DUNGEON_SCENE_KEYS } from '../scenery'
 import { PROFESSIONS, RECIPES } from '../recipes'
 import { SLOT_DROP_WEIGHTS, SLOT_ICONS, SLOT_IDS, SLOT_NAMES } from '../slots'
 import { BRANCHES, TALENTS } from '../talents'
@@ -49,20 +47,13 @@ import { ICON_NAMES } from '../../ui/icons/manifest'
 import type { Content } from './schema'
 
 const SPRITE = new URL('../../ui/icons/sprite.svg', import.meta.url)
-const MODELS_DIR = new URL('../../../../public/models/', import.meta.url)
 const AUDIO_DIR = new URL('../../../../public/audio/', import.meta.url)
-const PROPS_DIR = new URL('../../../../public/models/props/', import.meta.url)
 const SPRITES_DIR = new URL('../../../../public/sprites/', import.meta.url)
 
 /** Имена иконок, у которых в спрайте реально есть symbol. */
 function spriteIconNames(): string[] {
   const svg = readFileSync(SPRITE, 'utf8')
   return [...svg.matchAll(/id="icon-([\w-]+)"/g)].map((m) => m[1])
-}
-
-/** Что лежит в public/models — по этому списку проверяются пути ассетов. */
-function modelFiles(): string[] {
-  return readdirSync(MODELS_DIR)
 }
 
 /**
@@ -98,7 +89,6 @@ export function realContent(): Content {
     weapons: WEAPONS,
     shields: SHIELDS,
     rarities: RARITIES,
-    models: MODEL_ASSETS,
     sprites: [HERO_SPRITE, ...MONSTER_SPRITES],
     backgrounds: BACKGROUND_BANDS,
     spriteByArchetype: MONSTER_SPRITE_BY_ARCHETYPE,
@@ -111,7 +101,6 @@ export function realContent(): Content {
     statIds: STAT_IDS,
     iconNames: ICON_NAMES,
     spriteIconNames: spriteIconNames(),
-    modelFiles: modelFiles(),
     sounds: SOUNDS,
     classes: CLASSES,
     materials: MATERIALS,
@@ -125,11 +114,8 @@ export function realContent(): Content {
     enchantFlatStats: ENCHANT_FLAT_STATS,
     progression: PROGRESSION,
     reagents: REAGENTS,
-    dungeonSceneKeys: DUNGEON_SCENE_KEYS,
     recipes: RECIPES,
     professions: PROFESSIONS,
-    props: PROP_ASSETS,
-    propFiles: readdirSync(PROPS_DIR),
     audioFiles: audioFiles(),
     questChainUnlockLevel: QUEST_CHAIN.unlockLevel,
     balance: {

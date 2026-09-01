@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import {
   debugRoute,
   isBalanceRoute,
-  isScene3d,
   isSceneDisabled,
   isScreenshotMode,
   presetName,
@@ -71,18 +70,16 @@ describe('пресет состояния для съёмки', () => {
   })
 })
 
-describe('переключатели сцены', () => {
-  it('?scene=off и ?scene=3d — разные флаги и не требуют ?debug=1', () => {
+describe('переключатель сцены', () => {
+  it('?scene=off убирает сцену и не требует ?debug=1', () => {
     expect(isSceneDisabled(loc('https://x.dev/idle-rpg/?scene=off'))).toBe(true)
-    expect(isScene3d(loc('https://x.dev/idle-rpg/?scene=off'))).toBe(false)
-    expect(isScene3d(loc('https://x.dev/idle-rpg/?scene=3d'))).toBe(true)
-    expect(isSceneDisabled(loc('https://x.dev/idle-rpg/?scene=3d'))).toBe(false)
+    expect(isSceneDisabled(loc('https://x.dev/idle-rpg/?scene=off&debug=1'))).toBe(true)
   })
 
-  it('по умолчанию — ни текст, ни трёхмерная: двумерная сцена', () => {
+  it('по умолчанию и с любым другим значением — сцена', () => {
     expect(isSceneDisabled(loc('https://x.dev/idle-rpg/'))).toBe(false)
-    expect(isScene3d(loc('https://x.dev/idle-rpg/'))).toBe(false)
-    expect(isScene3d(loc('https://x.dev/idle-rpg/?scene=2d'))).toBe(false)
+    expect(isSceneDisabled(loc('https://x.dev/idle-rpg/?scene=2d'))).toBe(false)
+    expect(isSceneDisabled(loc('https://x.dev/idle-rpg/?scene=3d'))).toBe(false)
   })
 })
 

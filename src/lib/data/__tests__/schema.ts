@@ -14,7 +14,6 @@
 // Модуль лежит в __tests__, а не в data/: в data/ живут ДАННЫЕ, а это код.
 import { Decimal } from '../../game/numbers'
 import type { AbilityDef } from '../abilities'
-import type { ModelAsset, PropAsset } from '../assets'
 import type { BackgroundBand, SpriteAsset } from '../sprites'
 import type { DungeonDef } from '../dungeons'
 import { ARMOR_ATTRIBUTES, type AttributeId, type ShieldTemplate, type WeaponTemplate } from '../items'
@@ -29,7 +28,6 @@ import type { TempleDef } from '../temple'
 import { QUEST_CHAIN, type QuestDef } from '../quests'
 import { MECHANIC_IDS, type ProgressionStep } from '../progression'
 import type { ReagentDef } from '../reagents'
-import type { DungeonSceneKey } from '../scenery'
 import { craftToll, recipeLevel } from '../recipes'
 import type { ProfessionDef, RecipeDef } from '../recipes'
 import type { RarityDef } from '../rarity'
@@ -77,17 +75,11 @@ export interface Content {
   materials: readonly MaterialDef[]
   progression: readonly ProgressionStep[]
   reagents: readonly ReagentDef[]
-  /** Ключи интерьеров данжей из data/scenery.ts. */
-  dungeonSceneKeys: readonly DungeonSceneKey[]
   recipes: readonly RecipeDef[]
   professions: readonly ProfessionDef[]
-  props: readonly PropAsset[]
-  /** Имена файлов в public/models/props. */
-  propFiles: readonly string[]
   /** Пути звуковых файлов, реально лежащих в public/. */
   audioFiles: readonly string[]
   rarities: readonly RarityDef[]
-  models: readonly ModelAsset[]
   /** Спрайты двумерной сцены: герой и силуэты мобов (data/sprites.ts). */
   sprites: readonly SpriteAsset[]
   /** Фоны по полосам уровней (data/sprites.ts). */
@@ -108,8 +100,6 @@ export interface Content {
   iconNames: readonly string[]
   /** Имена, под которыми symbol реально лежит в sprite.svg. */
   spriteIconNames: readonly string[]
-  /** Имена файлов в public/models. */
-  modelFiles: readonly string[]
   /** Числа баланса, у которых есть допустимый диапазон. */
   balance: BalanceNumbers
 }
@@ -669,49 +659,6 @@ export const ZONE_SCHEMA: EntitySchema<Zone> = {
         report,
       )
     }
-    // Вид зоны — обязательное поле: новая зона без сцены не должна собираться.
-    if (!zone.scene) {
-      report.add(where, 'нет конфигурации сцены — добавь её в data/scenery.ts и сошлись полем scene')
-      return
-    }
-    checkNumber(
-      zone.scene,
-      { field: 'scene.fogDensity', get: (s) => s.fogDensity, min: 0 },
-      where,
-      'data/scenery.ts',
-      report,
-    )
-    checkNumber(
-      zone.scene,
-      { field: 'scene.lightIntensity', get: (s) => s.lightIntensity, min: 0 },
-      where,
-      'data/scenery.ts',
-      report,
-    )
-    checkNumber(
-      zone.scene,
-      { field: 'scene.seed', get: (s) => s.seed, min: 0, integer: true },
-      where,
-      'data/scenery.ts',
-      report,
-    )
-    for (const [index, cluster] of (zone.scene.props ?? []).entries()) {
-      checkNumber(
-        cluster,
-        { field: `scene.props[${index}].count`, get: (p) => p.count, min: 0, integer: true },
-        where,
-        'data/scenery.ts',
-        report,
-      )
-      const [lo, hi] = cluster.scaleRange ?? [Number.NaN, Number.NaN]
-      if (!(lo > 0) || !(hi >= lo)) {
-        report.add(
-          where,
-          `scene.props[${index}].scaleRange = [${lo}, ${hi}] — разброс размера обязан быть ` +
-            'положительным и по возрастанию (data/scenery.ts)',
-        )
-      }
-    }
   },
 }
 
@@ -754,17 +701,6 @@ export const DUNGEON_SCHEMA: EntitySchema<DungeonDef> = {
   ],
   extra: (dungeon, content, report) => {
     const where = `данж ${dungeon.id}`
-    // Интерьер — ключ, а не собственный конфиг: восемь наборов пропсов руками
-    // держать нельзя, а промах по ключу дал бы пустую сцену без ошибки.
-    if (!content.dungeonSceneKeys.includes(dungeon.scenery)) {
-      report.add(
-        where,
-        `ссылается на обстановку «${dungeon.scenery}», которой нет в DUNGEON_SCENES ` +
-          '(data/scenery.ts)',
-      )
-    } else if (!dungeon.scene) {
-      report.add(where, 'ключ обстановки есть, а конфига нет — проверь DUNGEON_SCENES в data/scenery.ts')
-    }
     // Реагент обязан быть СВОЕГО тира: перепутанные реагенты сделали бы
     // два данжа взаимозаменяемыми, и никто бы этого не заметил.
     const reagent = content.reagents.find((r) => r.id === dungeon.reagentId)
@@ -1676,11 +1612,6 @@ export const TEMPLE_SCHEMA: EntitySchema<TempleDef> = {
       where,
       'пул бойцов пуст — волне некого выставить (data/temple.ts)',
     )
-    report.need(
-      content.dungeonSceneKeys.includes(temple.scenery),
-      where,
-      `обстановки «${temple.scenery}» нет в DUNGEON_SCENES (data/scenery.ts)`,
-    )
     // Рубежи строго по возрастанию: иначе «дошёл до пятой» открывало бы
     // награду десятой, и лестница наград перестала бы быть лестницей.
     let previous = 0
@@ -1908,38 +1839,6 @@ export const CLASS_SCHEMA: EntitySchema<ClassDef> = {
   },
 }
 
-export const PROP_SCHEMA: EntitySchema<PropAsset> = {
-  kind: 'пропс',
-  file: 'data/assets.ts',
-  entities: (c) => c.props,
-  id: (p) => p.id,
-  name: (p) => p.id,
-  numbers: [
-    {
-      field: 'targetHeight',
-      get: (p) => p.targetHeight,
-      min: 0,
-      exclusiveMin: true,
-      max: 20,
-      why: 'высота пропса на площадке в метрах: ноль не видно, двадцать закроет бой',
-    },
-  ],
-  extra: (prop, content, report) => {
-    const where = `пропс ${prop.id}`
-    const file = prop.path?.split('/').pop() ?? ''
-    // Ассет → файл: та же проверка, что у моделей бойцов. Промах даёт не
-    // ошибку, а вечную коробку вместо бочки, и этого никто не заметит.
-    report.need(
-      content.propFiles.includes(file),
-      where,
-      `файла «${prop.path}» нет в public/models/props (data/assets.ts)`,
-    )
-    report.need(!!prop.license?.trim(), where, 'не указана лицензия (data/assets.ts)')
-    report.need(!!prop.author?.trim(), where, 'не указан автор (data/assets.ts)')
-    report.need(!!prop.sourceUrl?.trim(), where, 'не указан источник (data/assets.ts)')
-  },
-}
-
 export const SOUND_SCHEMA: EntitySchema<SoundCue> = {
   kind: 'звук',
   file: 'data/sounds.ts',
@@ -2024,61 +1923,9 @@ export const RARITY_SCHEMA: EntitySchema<RarityDef> = {
   },
 }
 
-export const MODEL_SCHEMA: EntitySchema<ModelAsset> = {
-  kind: 'модель',
-  file: 'data/assets.ts',
-  entities: (c) => c.models,
-  id: (m) => m.id,
-  numbers: [
-    {
-      field: 'scale',
-      get: (m) => m.scale,
-      min: 0,
-      exclusiveMin: true,
-      why: 'это тонкая подстройка около единицы, основной масштаб считается сам',
-    },
-  ],
-  extra: (model, content, report) => {
-    const where = `модель ${model.id}`
-    for (const [field, value] of [
-      ['license', model.license],
-      ['author', model.author],
-      ['sourceUrl', model.sourceUrl],
-    ] as const) {
-      report.need(
-        typeof value === 'string' && value.trim().length > 0,
-        where,
-        `не заполнено поле ${field} — этого требует лицензия, см. CREDITS.md`,
-      )
-    }
-    const path = model.path ?? ''
-    const file = path.split('/').pop() ?? ''
-    if (!path.startsWith('models/')) {
-      report.add(
-        where,
-        `путь «${path}» обязан начинаться с models/ — файлы моделей лежат в public/models`,
-      )
-    } else if (!content.modelFiles.includes(file)) {
-      report.add(
-        where,
-        `ссылается на файл «${file}», которого нет в public/models — ` +
-          'положи файл рядом с остальными или поправь path в data/assets.ts',
-      )
-    }
-    // idle есть у любой модели: это состояние по умолчанию, и без него боец
-    // застынет в T-позе. Остальные состояния деградируют осмысленно.
-    report.need(
-      typeof model.clips?.idle === 'string' && model.clips.idle.length > 0,
-      where,
-      'не указан клип покоя (clips.idle) — без него боец застынет в T-позе ' +
-        '(data/assets.ts)',
-    )
-  },
-}
-
 /**
- * Спрайты 2D-сцены. Та же дисциплина, что у моделей: путь ведёт в
- * public/sprites, поля лицензии заполнены. Промах пути дал бы не ошибку,
+ * Спрайты 2D-сцены: путь ведёт в public/sprites, поля лицензии
+ * заполнены. Промах пути дал бы не ошибку,
  * а пустое место на сцене, которое никто не заметит.
  */
 function checkSpriteAsset(
@@ -2154,7 +2001,6 @@ export const SCHEMAS = [
   WEAPON_SCHEMA,
   SHIELD_SCHEMA,
   SOUND_SCHEMA,
-  PROP_SCHEMA,
   CLASS_SCHEMA,
   MATERIAL_SCHEMA,
   HERB_SCHEMA,
@@ -2167,7 +2013,6 @@ export const SCHEMAS = [
   PROGRESSION_SCHEMA,
   RECIPE_SCHEMA,
   RARITY_SCHEMA,
-  MODEL_SCHEMA,
   SPRITE_SCHEMA,
   BACKGROUND_SCHEMA,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- разные типы сущностей

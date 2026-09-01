@@ -13,7 +13,6 @@
 import type { IconName } from '../ui/icons/manifest'
 import { Decimal } from '../game/numbers'
 import { buildMonster, COMMON, type MonsterRole } from './monsters'
-import { DUNGEON_SCENES, type DungeonSceneKey, type SceneConfig } from './scenery'
 import { ZONES, zoneForMonsterLevel } from './zones'
 import type { SlotId } from './slots'
 import { BOSS_ABILITY_BY_ID, HEROIC } from './heroic'
@@ -73,11 +72,6 @@ export interface DungeonDef {
   opensZoneIds: string[]
   /** Реагент тира: его роняет последний босс цепочки. */
   reagentId: string
-  /** Ключ интерьера. Держится рядом с самим конфигом ради проверки данных:
-   *  «обстановки key нет в DUNGEON_SCENES» читается, а сравнение объектов — нет. */
-  scenery: DungeonSceneKey
-  /** Как выглядит место. Интерьеров четыре на восемь данжей — см. scenery.ts. */
-  scene: SceneConfig
   bosses: BossDef[] // порядок фиксирован: цепочка идёт сверху вниз
 }
 
@@ -308,7 +302,6 @@ export interface DungeonSpec {
   opensZoneIds: string[]
   lootTier: LootTier
   reagentId: string
-  scenery: DungeonSceneKey
   /** Три босса цепочки: только id и имя — числа приходят из формулы. */
   bosses: readonly { id: string; name: string }[]
 }
@@ -327,7 +320,6 @@ export const DUNGEON_SPECS: readonly DungeonSpec[] = [
     opensZoneIds: ['glasswaste', 'ashen-ridge'],
     lootTier: 1,
     reagentId: 'reagent-silt-clot',
-    scenery: 'cistern',
     bosses: [
       { id: 'barrow-warden', name: 'Страж кургана' },
       { id: 'silt-matron', name: 'Тинная матрона' },
@@ -344,7 +336,6 @@ export const DUNGEON_SPECS: readonly DungeonSpec[] = [
     opensZoneIds: ['mine-collapse', 'root-vaults'],
     lootTier: 1,
     reagentId: 'reagent-drift-sinter',
-    scenery: 'vault',
     bosses: [
       { id: 'collapse-shorer', name: 'Крепильщик обвала' },
       { id: 'foreman-crag', name: 'Штейгер Кряж' },
@@ -361,7 +352,6 @@ export const DUNGEON_SPECS: readonly DungeonSpec[] = [
     opensZoneIds: ['flooded-tier', 'mold-horizon'],
     lootTier: 1,
     reagentId: 'reagent-sediment-core',
-    scenery: 'cistern',
     bosses: [
       { id: 'bottom-keeper', name: 'Донный смотритель' },
       { id: 'sluice-warden', name: 'Ключарь шлюзов' },
@@ -378,7 +368,6 @@ export const DUNGEON_SPECS: readonly DungeonSpec[] = [
     opensZoneIds: ['sulfur-springs', 'ashen-terrace'],
     lootTier: 1,
     reagentId: 'reagent-sulfur-growth',
-    scenery: 'forge',
     bosses: [
       { id: 'steam-scalder', name: 'Парильщик' },
       { id: 'sulfur-bittern', name: 'Серная выпь' },
@@ -395,7 +384,6 @@ export const DUNGEON_SPECS: readonly DungeonSpec[] = [
     opensZoneIds: ['windswept-pass', 'wormwood-rise'],
     lootTier: 2,
     reagentId: 'reagent-wind-glass',
-    scenery: 'rime',
     bosses: [
       { id: 'wall-draught', name: 'Стенной сквозняк' },
       { id: 'pass-whistler', name: 'Свистун перевала' },
@@ -412,7 +400,6 @@ export const DUNGEON_SPECS: readonly DungeonSpec[] = [
     opensZoneIds: ['salt-pit', 'emery-stack'],
     lootTier: 2,
     reagentId: 'reagent-brine-crystal',
-    scenery: 'vault',
     bosses: [
       { id: 'brine-cleg', name: 'Рассольный слепень' },
       { id: 'crust-keyman', name: 'Корковый ключник' },
@@ -431,7 +418,6 @@ export const DUNGEON_SPECS: readonly DungeonSpec[] = [
     opensZoneIds: ['rimeback-ridge', 'frozen-crookwood'],
     lootTier: 2,
     reagentId: 'reagent-rime-vein',
-    scenery: 'rime',
     bosses: [
       { id: 'rime-acolyte', name: 'Изморозный служка' },
       { id: 'brittle-overseer', name: 'Хрусткий надзиратель' },
@@ -449,7 +435,6 @@ export const DUNGEON_SPECS: readonly DungeonSpec[] = [
     opensZoneIds: ['hollow-dell', 'mute-bluff'],
     lootTier: 2,
     reagentId: 'reagent-mute-shard',
-    scenery: 'vault',
     bosses: [
       { id: 'verge-gatekeeper', name: 'Кромочный привратник' },
       { id: 'mute-bellringer', name: 'Немой звонарь' },
@@ -499,8 +484,6 @@ export function buildDungeon(
     // все двадцать зон давно открыты обычными прохождениями.
     opensZoneIds: heroic ? [] : spec.opensZoneIds,
     reagentId,
-    scenery: spec.scenery,
-    scene: DUNGEON_SCENES[spec.scenery],
     bosses: spec.bosses.map((boss, index) => {
       const step = CHAIN[Math.min(index, CHAIN.length - 1)]
       return {

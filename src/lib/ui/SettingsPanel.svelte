@@ -11,10 +11,8 @@
   } from '../stores/game'
   import {
     FPS_LIMITS,
-    hasWebgl,
     isTextMode,
     setFpsLimit,
-    sceneUnavailable,
     setTextMode,
     setVolume,
     soundUnlocked,
@@ -25,7 +23,7 @@
     type VolumeId,
   } from '../stores/ui'
   import { Button, Panel, Tag } from './kit'
-  import { isScene3d, isSceneDisabled } from './route'
+  import { isSceneDisabled } from './route'
 
   const ISSUES_URL = 'https://github.com/Peppapiggreedy/idle-rpg/issues'
   const CREDITS_URL = 'https://github.com/Peppapiggreedy/idle-rpg/blob/main/CREDITS.md'
@@ -82,11 +80,7 @@
   // ?scene=off перекрывает настройку: панель должна показывать то, что
   // игрок видит на экране, а не то, что записано в настройках.
   const sceneOff = isSceneDisabled()
-  // WebGL нужен только прежней трёхмерной сцене (?scene=3d); двумерная
-  // рисуется обычными элементами и заводится везде.
-  const scene3d = isScene3d()
-  const webgl = scene3d ? hasWebgl() : true
-  const textNow = $derived(sceneOff || $sceneUnavailable || isTextMode($uiSettings, scene3d))
+  const textNow = $derived(sceneOff || isTextMode($uiSettings))
 
   const TEXT_MODE_LABEL: Record<TextModeSetting, string> = {
     auto: 'Как получится',
@@ -152,11 +146,6 @@
       {#if sceneOff}
         Сейчас сцена выключена параметром адреса <code>?scene=off</code>, и он
         сильнее любой настройки.
-      {:else if $sceneUnavailable}
-        Сцена не запустилась в этом браузере, поэтому идёт текст. Перезагрузка
-        страницы попробует ещё раз.
-      {:else if !webgl}
-        WebGL в этом браузере недоступен — «как получится» означает текст.
       {:else}
         Сцена рисуется обычными элементами страницы и работает в любом браузере.
       {/if}
