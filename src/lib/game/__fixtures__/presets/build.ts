@@ -13,6 +13,7 @@ import { DEFAULT_CLASS } from '../../../data/classes'
 import { ensureStats } from '../../stats'
 import { xpToNextLevel } from '../../formulas'
 import { equipItem } from '../../equipment'
+import { equipUpgrades } from '../../simulate'
 import { rollBossLoot, rollLoot } from '../../loot'
 import { investTalent } from '../../talents'
 import { travelToZone } from '../../zones'
@@ -73,13 +74,26 @@ function mid(): GameState {
   // Оружие и пара вещей — надеваем через обычный equipItem. Оружие берём
   // ЯВНО, а не первым по порядку: без него герой на снимке дерётся кулаками,
   // и «урон оружия 8–12» в статах читается как поломка, а не как пустая рука.
-  const loot = rollItems(state, 2024, 9, 8)
+  const loot = rollItems(state, 2024, 14, 8)
   state = addToInventory(state, loot)
+  // Оружие берём ЯВНО: без него герой на снимке дерётся кулаками, и «урон
+  // оружия 8-12» в статах читается как поломка, а не как пустая рука.
   const weapon = loot.find((i) => i.slot === 'mainHand')
-  const rest = loot.filter((i) => i !== weapon).slice(0, 4)
-  for (const item of [weapon, ...rest]) {
-    if (item) state = equipItem(state, item.id)
-  }
+  if (weapon) state = equipItem(state, weapon.id)
+  // ОСТАЛЬНОЕ НАДЕВАЕТ МОДЕЛЬ ИГРОКА, а не слепой обход слотов. Прежний отбор
+  // брал «первые четыре из сумки»: два слота оставались пустыми, а из надетого
+  // почти ничего не давало живучести — герой десятого уровня выходил с 345
+  // запаса вместо восьмисот с лишним у эталона своей полосы. Пока мобы почти
+  // не били, это было незаметно; с ценой боя в четверть запаса такой герой
+  // погибал прямо на снимке. equipUpgrades — та же оценка «лучше или нет»,
+  // которой игра зажигает значок апгрейда, и она сама берёт живучесть, когда
+  // та начинает решать.
+  state = equipUpgrades(state)
+  // Остаток сумки подрезаем до четырёх находок. Бросков стало больше — иначе
+  // на иной слот не выпадало ни одного кандидата, — но лишнее в сумке делало
+  // бы «середину» богаче «поздней игры», а пресеты обязаны отличаться друг от
+  // друга именно этим (см. presets.test.ts).
+  state = { ...state, inventory: state.inventory.slice(0, 4) }
   state = travelToZone(state, 'hollow-quarry', createRng(303))
   // Первое очко таланта приходит как раз на десятом уровне.
   state = investTalent(state, 'honed-edge')
@@ -89,7 +103,10 @@ function mid(): GameState {
     // Умения в разных фазах: одно готово, одно тикает, одно только ушло в кд.
     abilityCooldownsMs: { 'rending-wound': 2400, 'shattering-blow': 9100 },
     gcdMsLeft: 600,
-    currentHp: state.stats.maxHp.times(0.62).floor(),
+    // Запас ВЫШЕ порога привала (0.6), и это не косметика: с ценой боя в
+    // четверть запаса герой на 62% уходит отдыхать после первого же убийства,
+    // а до него успевает погибнуть — снимок «середины игры» показывал труп.
+    currentHp: state.stats.maxHp.times(0.85).floor(),
     currentMana: state.stats.maxMana.times(0.45).floor(),
   }
 }
