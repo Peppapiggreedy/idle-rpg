@@ -373,6 +373,9 @@ describe('эффекты талантов', () => {
     const expected = REVIVE_DELAY_MS * reviveMultiplier(swift.talents)
     expect(dead.reviveMsLeft).toBeLessThanOrEqual(expected)
     expect(dead.reviveMsLeft).toBeGreaterThan(expected * 0.8)
+    // Лог называет УРЕЗАННЫЙ срок, а не константу: иначе талант куплен,
+    // а строка в логе по-прежнему обещает тридцать секунд.
+    expect(dead.combatLog).toContainEqual({ type: 'death', reviveMs: expected })
   })
 
   it('капстоун ветки урона даёт умению второй заряд', () => {

@@ -5,6 +5,7 @@
   import { formatNumber } from '../game'
   import { gameState } from '../stores/game'
   import { ABILITY_BY_ID } from '../data/abilities'
+  import { DUNGEON_CLEAR_XP_BONUS, HEROIC_CLEAR_XP_BONUS } from '../data/dungeons'
   import { MATERIAL_BY_ID } from '../data/materials'
   import { RECIPE_BY_ID } from '../data/recipes'
   import { ENCHANT_BY_ID } from '../data/enchants'
@@ -128,7 +129,7 @@
       case 'block':
         return `Блок! ${e.monsterName} бьёт: −${formatNumber(e.damage)} здоровья (щит снял ${formatNumber(e.blocked)})`
       case 'death':
-        return 'Ты пал в бою! Воскрешение через 30 с…'
+        return `Ты пал в бою! Воскрешение через ${Math.round(e.reviveMs / 1000)} с…`
       case 'revive':
         return 'Ты воскрес — полный запас сил'
       case 'zone':
@@ -141,10 +142,13 @@
         return `Ярость! ${e.bossName} бьёт на ${Math.round((e.multiplier - 1) * 100)}% сильнее`
       case 'dungeon-exit':
         return e.defeated ? 'Тебя вынесли из данжа — цепочка сброшена' : 'Ты вышел из данжа'
-      case 'dungeon-clear':
+      case 'dungeon-clear': {
+        // Число бонуса — из данных, по сложности: героика платит больше.
+        const bonus = e.difficulty === 'heroic' ? HEROIC_CLEAR_XP_BONUS : DUNGEON_CLEAR_XP_BONUS
         return e.firstClear
-          ? `«${e.dungeonName}» пройден впервые! Достижение: +5% опыта навсегда`
+          ? `«${e.dungeonName}» пройден впервые! Достижение: +${Math.round(bonus.toNumber() * 100)}% опыта навсегда`
           : `«${e.dungeonName}» пройден`
+      }
     }
   }
   // Иконка типа события: строку видно боковым зрением ещё до чтения.

@@ -9,8 +9,8 @@
     type ZoneVerdict,
   } from '../game'
   import { ZONES, ZONE_BY_ID } from '../data/zones'
-  import { REST_DURATION_S, REST_HP_PRESETS } from '../data/balance'
-  import { zoneSafety } from '../game/rest'
+  import { REST_HP_PRESETS } from '../data/balance'
+  import { restDurationMs, zoneSafety } from '../game/rest'
   import { enterDungeonRun, gameState, setRestHpThreshold, travelToZone } from '../stores/game'
   import { allDungeonStatuses, type DungeonBlockReason, type DungeonDef } from '../game'
   import { DUNGEONS, HEROIC, HEROIC_DUNGEONS, clearKey, dungeonOpening } from '../data/dungeons'
@@ -251,7 +251,7 @@
 
   {#snippet footer()}
     <p class="hint">
-      Привал длится {REST_DURATION_S} с и восстанавливает всё. Уйти на него
+      Привал длится {Math.round(restDurationMs($gameState) / 1000)} с и восстанавливает всё. Уйти на него
       можно ТОЛЬКО МЕЖДУ БОЯМИ: начатую схватку герой доводит до конца. Чем
       выше порог, тем безопаснее и тем больше времени уходит на отдых, —
       это и есть выбор.

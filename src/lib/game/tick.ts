@@ -67,14 +67,15 @@ import {
  * HP в момент траты ресурса), и оформлять смерть двумя способами нельзя.
  */
 function heroDies(state: GameState, rng: Rng): GameState {
+  // Талант «Скорое возвращение» режет простой; множитель живёт в данных.
+  const reviveMs = REVIVE_DELAY_MS * reviveMultiplier(state.talents)
   const dead: GameState = {
     ...state,
     heroState: 'dead',
-    // Талант «Скорое возвращение» режет простой; множитель живёт в данных.
-    reviveMsLeft: REVIVE_DELAY_MS * reviveMultiplier(state.talents),
+    reviveMsLeft: reviveMs,
     queuedAbilityId: null,
     activeEffects: [],
-    combatLog: pushEvent(state.combatLog, { type: 'death' }),
+    combatLog: pushEvent(state.combatLog, { type: 'death', reviveMs }),
   }
   // СМЕРТЬ В ХРАМЕ ЗАСЧИТЫВАЕТСЯ. Это завершение забега С РЕЗУЛЬТАТОМ, а не
   // потеря: этаж, на котором героя добили, пройденным не считается (его
@@ -725,14 +726,15 @@ const applyMonsterAttack: TickStep = (s, ctx) => {
   }
   if (!died) return next
   // Смерть героя: 30 игровых секунд простоя, награды не капают.
+  // Талант «Скорое возвращение» режет простой; множитель живёт в данных.
+  const reviveMs = REVIVE_DELAY_MS * reviveMultiplier(next.talents)
   const dead: GameState = {
     ...next,
     heroState: 'dead',
-    // Талант «Скорое возвращение» режет простой; множитель живёт в данных.
-    reviveMsLeft: REVIVE_DELAY_MS * reviveMultiplier(next.talents),
+    reviveMsLeft: reviveMs,
     queuedAbilityId: null,
     activeEffects: [],
-    combatLog: pushEvent(next.combatLog, { type: 'death' }),
+    combatLog: pushEvent(next.combatLog, { type: 'death', reviveMs }),
   }
   // Смерть в данже выкидывает наружу: лут за убитых боссов уже в сумке,
   // а прогресс цепочки не сохраняется — заходить придётся заново.
