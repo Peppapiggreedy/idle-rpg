@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 200" width="160" height="200" role="img" aria-label="Босс">
+  <g fill="#8a2f2f" stroke="#3d1212" stroke-width="3" stroke-linejoin="round">
+    <ellipse cx="80" cy="192" rx="56" ry="8" fill="#000" fill-opacity=".4" stroke="none"/>
+    <path d="M80 18 l34 20 v30 l-34 20 l-34 -20 v-30 z"/>
+    <path d="M46 18 l-14 -16 l22 10 z M114 18 l14 -16 l-22 10 z M80 6 l6 -6 l-12 0 z"/>
+    <path d="M24 88 h112 l18 64 h-24 l-10 -34 v70 h-28 v-46 h-24 v46 h-28 v-70 l-10 34 h-24 z"/>
+    <path d="M136 92 l22 -30 l2 24 l-20 18 z M24 92 l-22 -30 l-2 24 l20 18 z" fill="#c74848"/>
+    <circle cx="68" cy="50" r="5" fill="#ff5a5a" stroke="none"/><circle cx="92" cy="50" r="5" fill="#ff5a5a" stroke="none"/>
+  </g>
+</svg>

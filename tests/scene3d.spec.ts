@@ -16,12 +16,14 @@ async function probe(page: Page, label: string): Promise<number> {
 }
 
 async function openGame(page: Page, query = ''): Promise<string[]> {
+  // Трёхмерная сцена больше не рисует бой по умолчанию: она осталась в коде
+  // до удаления и грузится только за ?scene=3d — весь этот файл про неё.
   const errors: string[] = []
   page.on('pageerror', (e) => errors.push(String(e)))
   page.on('console', (m) => {
     if (m.type() === 'error') errors.push(m.text())
   })
-  await page.goto(`?debug=1&state=rich${query}`)
+  await page.goto(`?debug=1&state=rich&scene=3d${query}`)
   await expect(page.locator('html')).toHaveAttribute('data-ready', 'preset')
   return errors
 }

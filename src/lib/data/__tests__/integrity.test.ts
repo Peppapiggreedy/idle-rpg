@@ -50,6 +50,7 @@ describe('целостность контента', () => {
       'data/items.ts',
       'data/rarity.ts',
       'data/sounds.ts',
+      'data/sprites.ts',
       'data/talents.ts',
       'data/zones.ts',
     ]) {
@@ -81,6 +82,8 @@ describe('целостность контента', () => {
       'рецепт',
       'редкость',
       'модель',
+      'спрайт',
+      'фон',
     ]) {
       expect(kinds, `тип «${kind}» без схемы`).toContain(kind)
     }

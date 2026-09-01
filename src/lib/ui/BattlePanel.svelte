@@ -1,7 +1,7 @@
 <script lang="ts">
   // Текстовая боевая панель. В графическом режиме то же самое показывает
   // сцена; здесь — словами и полосками, чтобы игра оставалась полностью
-  // играбельной без 3D. Занимает место сцены в текстовом режиме и при
+  // играбельной без картинки. Занимает место сцены в текстовом режиме и при
   // ?scene=off.
   import { activeDungeon, currentBoss, estimateCombatRate, formatNumber, secondsToEnrage, enrageMultiplier } from '../game'
   import { gameState } from '../stores/game'

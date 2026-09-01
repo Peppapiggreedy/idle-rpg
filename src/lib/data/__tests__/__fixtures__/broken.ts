@@ -588,6 +588,52 @@ export function brokenCases(): BrokenCase[] {
       expect: ['reaver', 'не тает вне боя'],
     },
     {
+      title: 'спрайт ссылается на файл, которого нет в public/sprites',
+      content: {
+        ...real,
+        sprites: patch(real.sprites, first(real.sprites).id, { path: 'sprites/нету.svg' }),
+      },
+      expect: [first(real.sprites).id, 'нету.svg', 'data/sprites.ts'],
+    },
+    {
+      title: 'у фона не указан автор — это нарушение лицензии',
+      content: {
+        ...real,
+        backgrounds: patch(real.backgrounds, first(real.backgrounds).id, { author: '' }),
+      },
+      expect: [first(real.backgrounds).id, 'author', 'data/sprites.ts'],
+    },
+    {
+      title: 'у архетипа моба нет спрайта',
+      content: {
+        ...real,
+        spriteByArchetype: Object.fromEntries(
+          Object.entries(real.spriteByArchetype).filter(
+            ([id]) => id !== first(first(real.zones).monsterPool).id,
+          ),
+        ),
+      },
+      expect: [first(first(real.zones).monsterPool).id, 'нет спрайта', 'data/sprites.ts'],
+    },
+    {
+      title: 'в маппинге спрайтов мёртвый архетип',
+      content: {
+        ...real,
+        spriteByArchetype: { ...real.spriteByArchetype, 'nobody-here': 'common' },
+      },
+      expect: ['nobody-here', 'мёртвая', 'data/sprites.ts'],
+    },
+    {
+      title: 'между полосами фонов дыра',
+      content: {
+        ...real,
+        backgrounds: patch(real.backgrounds, real.backgrounds[1].id, {
+          minLevel: real.backgrounds[1].minLevel + 1,
+        }),
+      },
+      expect: [real.backgrounds[1].id, 'без фона', 'data/sprites.ts'],
+    },
+    {
       title: 'пропс ссылается на модель, которой нет в public/models/props',
       content: {
         ...real,

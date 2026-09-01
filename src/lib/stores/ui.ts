@@ -186,11 +186,16 @@ function persist(next: UiSettings): void {
   }
 }
 
-/** Текстовый режим прямо сейчас: явный выбор игрока либо автоопределение. */
-export function isTextMode(value: UiSettings = get(settings)): boolean {
+/**
+ * Текстовый режим прямо сейчас: явный выбор игрока либо автоопределение.
+ * Двумерной сцене WebGL не нужен, поэтому «как получится» по умолчанию
+ * означает сцену. Проверка WebGL остаётся только для прежней трёхмерной
+ * сцены (`?scene=3d`) — её включает `requiresWebgl`.
+ */
+export function isTextMode(value: UiSettings = get(settings), requiresWebgl = false): boolean {
   if (value.textMode === 'on') return true
   if (value.textMode === 'off') return false
-  return !hasWebgl()
+  return requiresWebgl ? !hasWebgl() : false
 }
 
 export function setTextMode(mode: TextModeSetting): void {

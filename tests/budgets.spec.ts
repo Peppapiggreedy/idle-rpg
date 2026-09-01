@@ -1,15 +1,19 @@
 import { expect, test, type Page } from '@playwright/test'
 import { openSettings } from './screen.js'
 
-// Бюджеты слоя представления. 3D-сцена, работающая часами, греет телефон
+// Бюджеты слоя представления. Сцена, работающая часами, греет телефон
 // и ест батарею — а заметно это становится через час игры, когда чинить
 // уже дорого. Поэтому пределы закреплены здесь, а не проверяются на глаз.
+//
+// По умолчанию бой рисует двумерная сцена, и бюджеты меряются на ней.
+// Прежняя трёхмерная осталась в коде до удаления и открывается только
+// за ?scene=3d — ей здесь принадлежит ровно один тест, про память видеокарты.
 
 const SCENE_READY = '[data-scene="ready"]'
 
-async function openLiveGame(page: Page): Promise<void> {
+async function openLiveGame(page: Page, query = ''): Promise<void> {
   // ЖИВАЯ игра, а не пресет: бюджеты меряются на работающем цикле.
-  await page.goto('?debug=1')
+  await page.goto(`?debug=1${query}`)
   await expect(page.locator('html')).toHaveAttribute('data-ready', 'game')
   // Новая игра начинается с выбора класса, и до выбора экран закрыт им же.
   // Берём первый класс: бюджеты слоя представления от класса не зависят,
@@ -52,24 +56,19 @@ test('за полчаса игрового времени сцена и DOM не
   await expect(bagTab).toContainText(`${limit}/${limit}`, { timeout: 240_000 })
   await page.waitForTimeout(5_000)
   const nodesBefore = await domNodes(page)
-  const geometriesBefore = await probe(page, 'geometries')
 
   await page.waitForTimeout(60_000)
   await page.getByRole('button', { name: '×1', exact: true }).click()
   await page.waitForTimeout(2500)
 
   const nodesAfter = await domNodes(page)
-  const geometriesAfter = await probe(page, 'geometries')
   const playtime = await page.evaluate(() => document.body.innerText.match(/0:\d\d:\d\d/)?.[0])
-  console.log(
-    `узлов DOM: ${nodesBefore} → ${nodesAfter}, геометрий: ${geometriesBefore} → ${geometriesAfter}, игровое время: ${playtime}`,
-  )
+  console.log(`узлов DOM: ${nodesBefore} → ${nodesAfter}, игровое время: ${playtime}`)
 
-  // Требование шага: не больше пяти процентов расхождения.
+  // Требование шага: не больше пяти процентов расхождения. Для двумерной
+  // сцены это и есть весь бюджет памяти: спрайты, эффекты и всплывающие
+  // числа — обычные узлы DOM, и утечка любого из них видна здесь.
   expect(nodesAfter).toBeLessThanOrEqual(Math.ceil(nodesBefore * 1.05))
-  // Геометрия не растёт вовсе: мобы переиспользуют один меш, обстановка
-  // зоны выгружается целиком.
-  expect(geometriesAfter).toBeLessThanOrEqual(geometriesBefore + 1)
 })
 
 test('тяжёлый раздел не роняет кадры против лёгкого', async ({ page }) => {
@@ -129,8 +128,10 @@ test('при document.hidden сцена не создаёт всплывающи
   expect(rows).toBeLessThanOrEqual(50)
 })
 
-test('десять переключений текстового режима не растят память', async ({ page }) => {
-  await openLiveGame(page)
+test('десять переключений текстового режима не растят память видеокарты', async ({ page }) => {
+  // Единственный тест про прежнюю трёхмерную сцену: счётчик геометрий есть
+  // только у неё, поэтому открываем её явно.
+  await openLiveGame(page, '&scene=3d')
   await openSettings(page)
   const toText = page.getByRole('button', { name: 'Всегда текст' })
   const toScene = page.getByRole('button', { name: 'Всегда сцена' })

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 200" width="160" height="200" role="img" aria-label="Здоровяк">
+  <g fill="#6b4c8a" stroke="#2e1f40" stroke-width="3" stroke-linejoin="round">
+    <ellipse cx="80" cy="192" rx="52" ry="8" fill="#000" fill-opacity=".35" stroke="none"/>
+    <path d="M80 30 l30 16 v28 l-30 16 l-30 -16 v-28 z"/>
+    <path d="M30 84 h100 l16 60 h-22 l-8 -30 v74 h-26 v-50 h-20 v50 h-26 v-74 l-8 30 h-22 z"/>
+    <path d="M22 96 l-14 -30 l18 6 z M138 96 l14 -30 l-18 6 z"/>
+    <circle cx="70" cy="58" r="4" fill="#ffb066" stroke="none"/><circle cx="90" cy="58" r="4" fill="#ffb066" stroke="none"/>
+  </g>
+</svg>

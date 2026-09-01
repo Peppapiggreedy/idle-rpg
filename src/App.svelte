@@ -16,7 +16,7 @@
   import { placeTitle } from './lib/ui/placeText'
   import { activeSection } from './lib/stores/ui'
   import { isTextMode, sceneUnavailable, toggleDrawer, uiSettings } from './lib/stores/ui'
-  import { isSceneDisabled } from './lib/ui/route'
+  import { isScene3d, isSceneDisabled } from './lib/ui/route'
 
   import BattleScene from './lib/ui/BattleScene.svelte'
   import BattlePanel from './lib/ui/BattlePanel.svelte'
@@ -58,7 +58,9 @@
   // завестись и не смогла. Игра обязана продолжаться текстом, а не чёрным
   // прямоугольником, поэтому этот случай сильнее настройки «всегда сцена».
   const sceneOff = isSceneDisabled()
-  const textMode = $derived(sceneOff || $sceneUnavailable || isTextMode($uiSettings))
+  // Трёхмерная сцена живёт только за ?scene=3d и одна нуждается в WebGL.
+  const scene3d = isScene3d()
+  const textMode = $derived(sceneOff || $sceneUnavailable || isTextMode($uiSettings, scene3d))
   const points = $derived(availablePoints($gameState))
   const place = $derived(placeTitle($gameState))
   const drawers = $derived($uiSettings.drawers)

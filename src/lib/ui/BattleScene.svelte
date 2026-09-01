@@ -1,19 +1,30 @@
 <script lang="ts">
   // Рама боевой сцены: держит пропорции (16:9 на десктопе, 4:3 на мобильном)
-  // и накрывает холст читаемой подписью — имя моба и его здоровье игрок
-  // должен видеть, а по цветной коробке уровень не прочитать.
+  // и накрывает картинку читаемой подписью — имя моба и его здоровье игрок
+  // должен видеть, а по силуэту уровень не прочитать.
   //
-  // Сам холст и всё, что связано с three, — в render3d/Scene3D.svelte.
-  // Рама про WebGL не знает вовсе и остаётся верной, даже если сцена
+  // Сама картинка — render2d/Scene2D.svelte: фон, спрайты, эффекты и
+  // всплывающие числа обычными элементами. Прежняя трёхмерная сцена
+  // (render3d/) остаётся в коде до удаления и грузится ТОЛЬКО за
+  // ?scene=3d — в основной путь three не входит.
+  // Рама про рендер не знает вовсе и остаётся верной, даже если сцена
   // не заведётся: тогда App покажет на этом месте текстовую панель.
   import { formatNumber } from '../game'
   import { gameState } from '../stores/game'
+  import Scene2D from '../render2d/Scene2D.svelte'
   import Scene3D from '../render3d/Scene3D.svelte'
   import { StatBar } from './kit'
+  import { isScene3d } from './route'
+
+  const scene3d = isScene3d()
 </script>
 
 <div class="scene" role="img" aria-label="Боевая сцена: {$gameState.monster.name}">
-  <Scene3D />
+  {#if scene3d}
+    <Scene3D />
+  {:else}
+    <Scene2D />
+  {/if}
   <div class="inner">
     <div class="target">
       <span class="name">{$gameState.monster.name}</span>
@@ -43,8 +54,8 @@
     align-items: flex-end;
     border: 1px solid var(--c-border);
     border-radius: var(--radius-lg);
-    /* Фон под холстом: он виден ровно те доли секунды, пока грузится чанк
-       с three, и не должен мигать чёрным прямоугольником. */
+    /* Фон под картинкой: он виден ровно те доли секунды, пока грузится
+       фон зоны, и не должен мигать чёрным прямоугольником. */
     background:
       radial-gradient(
         120% 90% at 50% 0%,

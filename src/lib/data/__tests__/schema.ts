@@ -15,6 +15,7 @@
 import { Decimal } from '../../game/numbers'
 import type { AbilityDef } from '../abilities'
 import type { ModelAsset, PropAsset } from '../assets'
+import type { BackgroundBand, SpriteAsset } from '../sprites'
 import type { DungeonDef } from '../dungeons'
 import { ARMOR_ATTRIBUTES, type AttributeId, type ShieldTemplate, type WeaponTemplate } from '../items'
 import type { ClassDef } from '../classes'
@@ -87,6 +88,14 @@ export interface Content {
   audioFiles: readonly string[]
   rarities: readonly RarityDef[]
   models: readonly ModelAsset[]
+  /** Спрайты двумерной сцены: герой и силуэты мобов (data/sprites.ts). */
+  sprites: readonly SpriteAsset[]
+  /** Фоны по полосам уровней (data/sprites.ts). */
+  backgrounds: readonly BackgroundBand[]
+  /** Архетип моба → id спрайта (MONSTER_SPRITE_BY_ARCHETYPE). */
+  spriteByArchetype: Readonly<Record<string, string>>
+  /** Имена файлов в public/sprites. */
+  spriteFiles: readonly string[]
   /** Уровень, с которого открыта цепочка преквестов (QUEST_CHAIN.unlockLevel). */
   questChainUnlockLevel: number
   slots: readonly SlotId[]
@@ -2067,6 +2076,75 @@ export const MODEL_SCHEMA: EntitySchema<ModelAsset> = {
   },
 }
 
+/**
+ * Спрайты 2D-сцены. Та же дисциплина, что у моделей: путь ведёт в
+ * public/sprites, поля лицензии заполнены. Промах пути дал бы не ошибку,
+ * а пустое место на сцене, которое никто не заметит.
+ */
+function checkSpriteAsset(
+  where: string,
+  asset: SpriteAsset,
+  content: Content,
+  report: Report,
+): void {
+  for (const [field, value] of [
+    ['license', asset.license],
+    ['author', asset.author],
+    ['sourceUrl', asset.sourceUrl],
+  ] as const) {
+    report.need(
+      typeof value === 'string' && value.trim().length > 0,
+      where,
+      `не заполнено поле ${field} — этого требует лицензия, см. CREDITS.md (data/sprites.ts)`,
+    )
+  }
+  const path = asset.path ?? ''
+  const file = path.split('/').pop() ?? ''
+  if (!path.startsWith('sprites/')) {
+    report.add(
+      where,
+      `путь «${path}» обязан начинаться с sprites/ — картинки сцены лежат в public/sprites ` +
+        '(data/sprites.ts)',
+    )
+  } else if (!content.spriteFiles.includes(file)) {
+    report.add(
+      where,
+      `ссылается на файл «${file}», которого нет в public/sprites — ` +
+        'положи файл рядом с остальными или поправь path в data/sprites.ts',
+    )
+  }
+}
+
+export const SPRITE_SCHEMA: EntitySchema<SpriteAsset> = {
+  kind: 'спрайт',
+  file: 'data/sprites.ts',
+  entities: (c) => c.sprites,
+  id: (s) => s.id,
+  extra: (sprite, content, report) => {
+    checkSpriteAsset(`спрайт ${sprite.id}`, sprite, content, report)
+  },
+}
+
+export const BACKGROUND_SCHEMA: EntitySchema<BackgroundBand> = {
+  kind: 'фон',
+  file: 'data/sprites.ts',
+  entities: (c) => c.backgrounds,
+  id: (b) => b.id,
+  numbers: [
+    { field: 'minLevel', get: (b) => b.minLevel, min: 1, integer: true },
+    { field: 'maxLevel', get: (b) => b.maxLevel, min: 1, integer: true },
+  ],
+  extra: (band, content, report) => {
+    const where = `фон ${band.id}`
+    checkSpriteAsset(where, band, content, report)
+    report.need(
+      band.minLevel <= band.maxLevel,
+      where,
+      `полоса ${band.minLevel}-${band.maxLevel} вывернута: minLevel больше maxLevel (data/sprites.ts)`,
+    )
+  },
+}
+
 export const SCHEMAS = [
   ABILITY_SCHEMA,
   BRANCH_SCHEMA,
@@ -2090,6 +2168,8 @@ export const SCHEMAS = [
   RECIPE_SCHEMA,
   RARITY_SCHEMA,
   MODEL_SCHEMA,
+  SPRITE_SCHEMA,
+  BACKGROUND_SCHEMA,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- разные типы сущностей
 ] as unknown as EntitySchema<unknown>[]
 
@@ -2658,6 +2738,75 @@ function checkUnlockLevels(content: Content, report: Report): void {
   }
 }
 
+/**
+ * Сцена: у каждого моба есть силуэт, у каждого уровня — фон.
+ *
+ * Маппинг «архетип → спрайт» проверяется В ОБЕ СТОРОНЫ: архетип без спрайта
+ * получил бы запасную тень, а мёртвый ключ маппинга пережил бы удаление моба.
+ * Полосы фонов обязаны идти подряд от первого уровня до потолка: дыра — моб
+ * без фона, наложение — два фона спорят за один уровень.
+ */
+function checkScene(content: Content, report: Report): void {
+  const spriteIds = new Set(content.sprites.map((s) => s.id))
+  const archetypeIds = new Set(content.zones.flatMap((z) => z.monsterPool?.map((m) => m.id) ?? []))
+  for (const zone of content.zones) {
+    for (const archetype of zone.monsterPool ?? []) {
+      const spriteId = content.spriteByArchetype[archetype.id]
+      if (spriteId === undefined) {
+        report.add(
+          `моб ${archetype.id}`,
+          `у архетипа из зоны ${zone.id} нет спрайта — добавь строку в ` +
+            'MONSTER_SPRITE_BY_ARCHETYPE (data/sprites.ts), иначе сцена покажет тень',
+        )
+      } else if (!spriteIds.has(spriteId)) {
+        report.add(
+          `моб ${archetype.id}`,
+          `ссылается на спрайт «${spriteId}», которого нет в MONSTER_SPRITES (data/sprites.ts)`,
+        )
+      }
+    }
+  }
+  for (const key of Object.keys(content.spriteByArchetype)) {
+    report.need(
+      archetypeIds.has(key),
+      `спрайт для ${key}`,
+      `в маппинге есть архетип «${key}», которого нет ни в одном пуле зон — ` +
+        'мёртвая строка (data/sprites.ts)',
+    )
+  }
+
+  const bands = [...content.backgrounds]
+    .filter((b) => Number.isFinite(b.minLevel) && Number.isFinite(b.maxLevel))
+    .sort((a, b) => a.minLevel - b.minLevel)
+  if (bands.length === 0) return
+  report.need(
+    bands[0].minLevel === 1,
+    `фон ${bands[0].id}`,
+    `первая полоса фонов начинается с ${bands[0].minLevel}, а мобы бывают с первого уровня ` +
+      '(data/sprites.ts)',
+  )
+  for (let i = 1; i < bands.length; i++) {
+    const prev = bands[i - 1]
+    const band = bands[i]
+    if (band.minLevel === prev.maxLevel + 1) continue
+    report.add(
+      `фон ${band.id}`,
+      band.minLevel > prev.maxLevel + 1
+        ? `полоса ${band.minLevel}-${band.maxLevel} начинается после ${prev.maxLevel} у фона ` +
+            `${prev.id}: уровни ${prev.maxLevel + 1}-${band.minLevel - 1} без фона (data/sprites.ts)`
+        : `полоса ${band.minLevel}-${band.maxLevel} налезает на ${prev.minLevel}-${prev.maxLevel} ` +
+            `у фона ${prev.id}: два фона спорят за одни уровни (data/sprites.ts)`,
+    )
+  }
+  const top = bands[bands.length - 1]
+  report.need(
+    top.maxLevel === content.balance.levelCap,
+    `фон ${top.id}`,
+    `последняя полоса фонов кончается на ${top.maxLevel}, а LEVEL_CAP = ` +
+      `${content.balance.levelCap}: у мобов последних уровней нет фона (data/sprites.ts)`,
+  )
+}
+
 export function checkContent(content: Content): ContentIssue[] {
   const report = new Report()
   for (const schema of SCHEMAS) runSchema(schema, content, report)
@@ -2665,6 +2814,7 @@ export function checkContent(content: Content): ContentIssue[] {
   checkInstanceEntrances(content, report)
   checkBalance(content, report)
   checkUnlockLevels(content, report)
+  checkScene(content, report)
   return report.issues
 }
 

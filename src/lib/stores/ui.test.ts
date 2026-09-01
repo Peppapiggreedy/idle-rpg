@@ -78,10 +78,17 @@ describe('текстовый режим', () => {
     expect(isTextMode(settings('off'))).toBe(false)
   })
 
-  it('в среде без WebGL «как получится» означает текст', () => {
-    // Тест идёт в node: document нет, значит и WebGL нет — ровно тот случай,
-    // ради которого текстовый режим и делался.
-    expect(isTextMode(settings('auto'))).toBe(true)
+  it('«как получится» — сцена: двумерной сцене WebGL не нужен', () => {
+    // Тест идёт в node: document нет, значит и WebGL нет. Двумерной сцене
+    // это безразлично — она рисуется обычными элементами.
+    expect(isTextMode(settings('auto'))).toBe(false)
+  })
+
+  it('прежней трёхмерной сцене без WebGL «как получится» означает текст', () => {
+    // Тот же node без WebGL, но сцена запрошена трёхмерная (?scene=3d):
+    // ровно тот случай, ради которого текстовый режим и делался.
+    expect(isTextMode(settings('auto'), true)).toBe(true)
+    expect(isTextMode(settings('off'), true)).toBe(false)
   })
 })
 

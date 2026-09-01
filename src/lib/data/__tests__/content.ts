@@ -6,6 +6,7 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { ABILITIES } from '../abilities'
 import { MODEL_ASSETS, PROP_ASSETS } from '../assets'
+import { BACKGROUND_BANDS, HERO_SPRITE, MONSTER_SPRITES, MONSTER_SPRITE_BY_ARCHETYPE } from '../sprites'
 import {
   AUTOCAST_MAX_LOSS,
   BASE_STATS,
@@ -51,6 +52,7 @@ const SPRITE = new URL('../../ui/icons/sprite.svg', import.meta.url)
 const MODELS_DIR = new URL('../../../../public/models/', import.meta.url)
 const AUDIO_DIR = new URL('../../../../public/audio/', import.meta.url)
 const PROPS_DIR = new URL('../../../../public/models/props/', import.meta.url)
+const SPRITES_DIR = new URL('../../../../public/sprites/', import.meta.url)
 
 /** Имена иконок, у которых в спрайте реально есть symbol. */
 function spriteIconNames(): string[] {
@@ -97,6 +99,10 @@ export function realContent(): Content {
     shields: SHIELDS,
     rarities: RARITIES,
     models: MODEL_ASSETS,
+    sprites: [HERO_SPRITE, ...MONSTER_SPRITES],
+    backgrounds: BACKGROUND_BANDS,
+    spriteByArchetype: MONSTER_SPRITE_BY_ARCHETYPE,
+    spriteFiles: readdirSync(SPRITES_DIR),
     slots: SLOT_IDS,
     slotNames: SLOT_NAMES,
     slotIcons: SLOT_ICONS,
