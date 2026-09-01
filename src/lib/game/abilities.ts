@@ -10,7 +10,7 @@ import { talentAbilityEffect, talentExtraCharges } from './talents'
 import { punishResourceSpend } from './bossAbilities'
 import { abilitiesOf, pushEvent, type ActiveEffect, type GameState } from './state'
 import type { Rng } from './rng'
-import type { AttackEvent } from '../types'
+import type { AttackEvent, CombatEvent } from '../types'
 
 export { ABILITIES, ABILITY_BY_ID } from '../data/abilities'
 export type { AbilityDef, AbilityEffect, AbilityType } from '../data/abilities'
@@ -238,6 +238,20 @@ export function useAbility(
   return strikeWithAbility(payFor(state, ability), ability, rng, emitAttack)
 }
 
+// Почему умение из очереди сорвётся на замахе. Код уходит в лог событием
+// `ability-dropped`, текст рендерит UI.
+export type QueueDropReason = Extract<CombatEvent, { type: 'ability-dropped' }>['reason']
+
+/** null — очередь пуста или умение ударит; иначе причина срыва. */
+export function queuedAbilityDropReason(state: GameState): QueueDropReason | null {
+  const ability = state.queuedAbilityId ? ABILITY_BY_ID[state.queuedAbilityId] : null
+  if (!ability) return null
+  // Мана списывается В МОМЕНТ УДАРА, а не при постановке в очередь.
+  if (state.currentMana.lt(ability.manaCost)) return 'no-mana'
+  if (chargesLeft(state, ability) <= 0) return 'no-charges'
+  return null
+}
+
 /**
  * Замах наступил, а в очереди стоит умение. Если маны хватает — умение
  * заменяет автоатаку; если нет, очередь снимается и бьёт обычная автоатака.
@@ -249,11 +263,8 @@ export function consumeQueuedAbility(
   emitAttack: (event: AttackEvent) => void,
 ): GameState | null {
   const ability = state.queuedAbilityId ? ABILITY_BY_ID[state.queuedAbilityId] : null
-  if (!ability) return null
+  if (!ability || queuedAbilityDropReason(state) !== null) return null
   const cleared = { ...state, queuedAbilityId: null }
-  // Мана списывается ЗДЕСЬ, в момент удара, а не при постановке в очередь.
-  if (cleared.currentMana.lt(ability.manaCost)) return null
-  if (chargesLeft(cleared, ability) <= 0) return null
   return strikeWithAbility(payFor(cleared, ability), ability, rng, emitAttack)
 }
 

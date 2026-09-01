@@ -43,7 +43,12 @@ import {
 } from '../data/balance'
 import { ABILITY_BY_ID } from '../data/abilities'
 import { currentZone, reviveInZone } from './zones'
-import { advanceCooldowns, autocastStep, consumeQueuedAbility } from './abilities'
+import {
+  advanceCooldowns,
+  autocastStep,
+  consumeQueuedAbility,
+  queuedAbilityDropReason,
+} from './abilities'
 import { finishRest, needsRest, startRest } from './rest'
 import { addMaterial, rollMaterial } from './crafting'
 import { classById } from '../data/classes'
@@ -300,6 +305,16 @@ const applyCombat: TickStep = (s, ctx) => {
       combatLog = withAbility.combatLog
       if (monster.currentHp.lte(0)) ctx.killedMonster = monster
       continue
+    }
+    // Очередь стояла и сорвалась — говорим об этом в лог: молча снятое
+    // умение игрок читает как «кнопка не сработала».
+    const dropped = queuedAbilityDropReason(swung)
+    if (swung.queuedAbilityId && dropped) {
+      combatLog = pushEvent(combatLog, {
+        type: 'ability-dropped',
+        abilityId: swung.queuedAbilityId,
+        reason: dropped,
+      })
     }
     swung = { ...swung, queuedAbilityId: null }
     // Формула удара живёт в combat.ts — здесь только применение результата.

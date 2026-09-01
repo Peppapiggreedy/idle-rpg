@@ -89,6 +89,7 @@ export {
   cooldownLeft,
   useAbility,
   consumeQueuedAbility,
+  queuedAbilityDropReason,
   advanceCooldowns,
   autocastStep,
   autocastCandidates,

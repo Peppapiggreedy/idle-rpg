@@ -60,6 +60,9 @@ export type CombatEvent =
   | { type: 'hit'; damage: Decimal; isCrit: boolean }
   // Удар умения: id, а не имя — текст рендерит UI по данным умения.
   | { type: 'ability'; abilityId: string; damage: Decimal; isCrit: boolean }
+  // Умение из очереди сорвалось в момент замаха, и удар вышел обычным.
+  // Молча снятая очередь читается как «кнопка не сработала».
+  | { type: 'ability-dropped'; abilityId: string; reason: 'no-mana' | 'no-charges' }
   // Тик эффекта (урон по времени) от умения abilityId.
   | { type: 'effect'; abilityId: string; damage: Decimal }
   // Убийство несёт и ID моба с зоной: по ним считается прогресс заданий,
