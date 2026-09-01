@@ -320,11 +320,27 @@ export function equipItem(state: GameState, itemId: string): GameState {
   })
 }
 
-/** Снимает предмет в инвентарь; при полном инвентаре ничего не делает. */
+// Почему предмет не снять. Каждый случай — свой код, текст рендерит UI.
+export type UnequipBlockReason = 'empty-slot' | 'inventory-full'
+
+export interface UnequipStatus {
+  canUnequip: boolean
+  reason: UnequipBlockReason | null
+}
+
+/** Можно ли снять предмет из слота ПРЯМО СЕЙЧАС — ему нужно место в сумке. */
+export function unequipStatus(state: GameState, slot: SlotId): UnequipStatus {
+  if (!state.equipment[slot]) return { canUnequip: false, reason: 'empty-slot' }
+  if (state.inventory.length >= INVENTORY_SIZE) {
+    return { canUnequip: false, reason: 'inventory-full' }
+  }
+  return { canUnequip: true, reason: null }
+}
+
+/** Снимает предмет в инвентарь; отказ `unequipStatus` — состояние как было. */
 export function unequipItem(state: GameState, slot: SlotId): GameState {
   const item = state.equipment[slot]
-  if (!item) return state
-  if (state.inventory.length >= INVENTORY_SIZE) return state
+  if (!item || !unequipStatus(state, slot).canUnequip) return state
   return ensureStats({
     ...state,
     inventory: [...state.inventory, item],

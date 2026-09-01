@@ -24,8 +24,16 @@ export {
   compareItem,
   farmRateWith,
   equipStatus,
+  unequipStatus,
 } from './equipment'
-export type { EquipPreview, EquipComparison, EquipStatus, EquipBlockReason } from './equipment'
+export type {
+  EquipPreview,
+  EquipComparison,
+  EquipStatus,
+  EquipBlockReason,
+  UnequipStatus,
+  UnequipBlockReason,
+} from './equipment'
 export { createRng, randomSeed, randRange } from './rng'
 export {
   recomputeStats,

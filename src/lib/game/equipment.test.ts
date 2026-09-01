@@ -9,6 +9,7 @@ import {
   isEquipped,
   isUpgrade,
   unequipItem,
+  unequipStatus,
 } from './equipment'
 import { estimateCombatRate } from './combat'
 import {
@@ -498,7 +499,11 @@ describe('слоты', () => {
     const filler = Array.from({ length: INVENTORY_SIZE }, (_, i) => armor(`м-${i}`, 'head', 1))
     let s = withItems([weapon])
     s = equipItem(s, weapon.id)
+    expect(unequipStatus(s, 'mainHand')).toEqual({ canUnequip: true, reason: null })
+    expect(unequipStatus(s, 'head').reason).toBe('empty-slot')
     s = { ...s, inventory: filler }
+    // Отказ кодом, и код совпадает с делом: состояние не меняется.
+    expect(unequipStatus(s, 'mainHand').reason).toBe('inventory-full')
     expect(unequipItem(s, 'mainHand')).toBe(s)
   })
 })
