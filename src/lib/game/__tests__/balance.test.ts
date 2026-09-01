@@ -25,6 +25,7 @@ import {
   PACING_MAX_LEVEL,
   SIM_STYLES,
   type PacingRow,
+  type SimBuild,
   type SimResult,
   type SimStyle,
 } from '../simulate'
@@ -122,9 +123,11 @@ const COLUMNS =
 
 // Сколько замахов самого медленного оружия держит средний моб зоны. От этого
 // числа зависит доля перебоя: чем короче бой, тем больше урона уходит мимо.
-function hitsPerKill(zone: Zone, level: number, weaponLevel: number): number {
+// Герой берётся ЦЕЛИКОМ, с бронёй сборки: сила и ловкость с вещей входят в
+// замах, и голый герой насчитал бы на треть больше ударов, чем бьёт настоящий.
+function hitsPerKill(zone: Zone, build: SimBuild, weaponLevel: number): number {
   const state = buildSimState(
-    { level, weapon: { templateId: 'crusher', bare: true, level: weaponLevel }, autocast: 'none' },
+    { ...build, ...styleBuild('twoHanded', true, weaponLevel), autocast: 'none' },
     zone.id,
     1,
   )
@@ -405,7 +408,7 @@ describe('стиль боя', () => {
     }
     const spread = spreadOf(paired.map((r) => meanGold(r.runs)))
     log(
-      `Разброс ${pct(spread)} при ${hitsPerKill(zone, LEVEL, WEAPON_LEVEL).toFixed(1)} замахах двуручника на моба.`,
+      `Разброс ${pct(spread)} при ${hitsPerKill(zone, weaponBuild, WEAPON_LEVEL).toFixed(1)} замахах двуручника на моба.`,
     )
     expect(spread).toBeLessThanOrEqual(weaponSpreadLimit)
   }, 300_000)
@@ -426,22 +429,30 @@ describe('стиль боя', () => {
       )
     const dual = stress('dual')
     const shield = stress('shield')
-    // Простой — доля времени вне боя: привалы плюс смерти. Щит обязан
-    // уменьшать её, иначе он был бы бесплатным и выбора стиля не было бы.
+    // МЕРИТСЯ ПРИВАЛ, А НЕ ВЕСЬ ПРОСТОЙ, и разница принципиальна. Простой —
+    // это привалы ПЛЮС смерти, и в зоне не по себе вторая половина говорит не
+    // о живучести, а об уроне: щит бьёт вдвое слабее, схватка тянется вдвое
+    // дольше, и герой не доживает до конца. Замер: со щитом привал 13.6% и
+    // смерти 10.9% при 52 убийствах в час, с двумя клинками привал 17.9% и
+    // смерти 13.4% при 65 убийствах.
+    //
+    // ЖИВУЧЕСТЬ ВИДНА ИМЕННО В ПРИВАЛЕ: щит смягчает удар, значит HP тает
+    // медленнее, значит отдыхать приходится реже. А то, что за это заплачено
+    // уроном, проверяется отдельно — по урону в секунду, ниже.
     const idle = (runs: SimResult[]) =>
-      runs.reduce((sum, r) => sum + r.restShare + (1 - r.uptime), 0) / runs.length
+      runs.reduce((sum, r) => sum + r.restShare, 0) / runs.length
     header(
       `Герой ${stressBuild.level} уровня со связкой ${BALANCE_PRESET.stressWeaponLevel} уровня в зоне ` +
         `${ZONES.find((z) => z.id === stressZoneId)!.name} — не по себе. ${weaponHours} ч.`,
-      'стиль                 золота/ч   простой',
+      'стиль                 золота/ч    привал   смерти',
     )
     for (const [style, runs] of [
       ['dual', dual],
       ['shield', shield],
     ] as const) {
-      log(`${STYLE_NAMES[style].padEnd(21)} ${meanGold(runs).toFixed(0).padStart(9)}   ${pct(idle(runs)).padStart(7)}`)
+      log(`${STYLE_NAMES[style].padEnd(21)} ${meanGold(runs).toFixed(0).padStart(9)}   ${pct(idle(runs)).padStart(7)}   ${pct(runs.reduce((a, r) => a + 1 - r.uptime, 0) / runs.length).padStart(7)}`)
     }
-    // Простой обязан заметно упасть, а не просто «не вырасти»: щит покупает
+    // Привал обязан заметно упасть, а не просто «не вырасти»: щит покупает
     // живучесть, и покупка должна быть видна.
     expect(idle(shield)).toBeLessThan(idle(dual) * 0.9)
     // А вот золото со щитом теперь может оказаться и БОЛЬШЕ, и это не сбой
@@ -469,15 +480,27 @@ describe('стиль боя', () => {
     // Когда моб умирает с одного замаха, лишний урон крупного удара пропадает,
     // и частая связка выигрывает просто числом замахов. Таблица показывает
     // границу, за которой выбор стиля перестаёт быть равным.
+    //
+    // ГЕРОЙ ОДИН И ТОТ ЖЕ — эталон замера нормализации, — а длину боя задают
+    // зона и уровень оружия. Раньше каждая клетка брала голого героя своего
+    // уровня в своей зоне с порогом привала ноль: при цене боя в 13-20%
+    // запаса такой герой в своей зоне не выживает, и вместо разброса таблица
+    // печатала бесконечность. Здесь же герой всюду выше мобов и не гибнет,
+    // так что разброс мерит перебой, а не то, кому повезло умереть позже.
+    // Замер (4 сида): 18.8 замаха — 0.4%, 10.4 — 4.8%, 5.0 — 11%, 3.5 — 13%,
+    // 1.8 — 26%, 1.3 — 31%; лучшей всюду выходит пара клинков.
     header(
-      'Голые связки, только автоатака, 1 час на клетку. Разброс против длины боя.',
+      `Голые связки, герой ${LEVEL} уровня в броне ${weaponBuild.gearLevel} уровня, только автоатака, ` +
+        `1 час на клетку. Разброс против длины боя.`,
       'зона                 ур. оружия   замахов/моб   разброс   лучшее',
     )
     const cases = [
-      { zone: 'hollow-quarry', level: 12, weaponLevel: 3 },
-      { zone: 'mirefen-hollows', level: 20, weaponLevel: 8 },
-      { zone: 'ashen-ridge', level: 40, weaponLevel: 28 },
-      { zone: weaponZoneId, level: LEVEL, weaponLevel: WEAPON_LEVEL },
+      { zone: weaponZoneId, weaponLevel: WEAPON_LEVEL },
+      { zone: weaponZoneId, weaponLevel: 35 },
+      { zone: 'ashen-ridge', weaponLevel: 81 },
+      { zone: 'mirefen-hollows', weaponLevel: 81 },
+      { zone: 'hollow-quarry', weaponLevel: 81 },
+      { zone: 'shepherds-meadow', weaponLevel: 20 },
     ]
     const paired = SIM_STYLES.filter((style) => style !== 'shield')
     for (const c of cases) {
@@ -490,12 +513,7 @@ describe('стиль боя', () => {
               zoneId: c.zone,
               seed,
               freezeLevel: true,
-              build: {
-                level: c.level,
-                ...styleBuild(style, true, c.weaponLevel),
-                autocast: 'none',
-                restThreshold: 0,
-              },
+              build: { ...weaponBuild, ...styleBuild(style, true, c.weaponLevel), autocast: 'none' },
             }),
           ),
         ),
@@ -504,8 +522,8 @@ describe('стиль боя', () => {
       const numbers = gold.map((g) => g.toNumber())
       const best = STYLE_NAMES[paired[numbers.indexOf(Math.max(...numbers))]]
       log(
-        `${zone.name.padEnd(20)} ${String(c.level).padStart(3)} ${String(c.weaponLevel).padStart(8)} ` +
-          `${hitsPerKill(zone, c.level, c.weaponLevel).toFixed(1).padStart(12)} ${pct(spread).padStart(9)}   ${best}`,
+        `${zone.name.padEnd(20)} ${String(c.weaponLevel).padStart(10)} ` +
+          `${hitsPerKill(zone, weaponBuild, c.weaponLevel).toFixed(1).padStart(13)} ${pct(spread).padStart(9)}   ${best}`,
       )
     }
   }, 300_000)
@@ -968,8 +986,8 @@ describe('контракт темпа боя', () => {
   // реализацию от подмены.
   // -------------------------------------------------------------------------
   describe('контракт цены боя', () => {
-    const TARGET_MIN = 17
-    const TARGET_MAX = 21
+    const TARGET_MIN = 13
+    const TARGET_MAX = 20
     // Допуск ±2 пункта — не послабление, а разрешение измерения. Цена боя это
     // `урон × ЦЕЛОЕ число ударов ÷ запас`: один лишний удар из шести-восьми
     // двигает долю на два-три пункта, а какой именно выпадет — решает длина

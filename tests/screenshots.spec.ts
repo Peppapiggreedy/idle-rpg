@@ -202,6 +202,11 @@ test('карточка предмета при наведении не двиг�
   await sectionTab(page, 'Сумка').click()
   const card = page.locator('.slot').filter({ has: page.locator('button', { hasText: 'Продать' }) }).first()
   await expect(card).toBeVisible()
+  // Карточку СНАЧАЛА докручиваем целиком в окно, а уже потом меряем. Иначе
+  // hover() докрутит её сам — и «сдвиг кнопки» окажется прокруткой страницы
+  // на те пиксели, на которые карточка не влезала. Координаты boundingBox
+  // считаются от окна, а не от документа, и меряют не то, что заявлено.
+  await card.scrollIntoViewIfNeeded()
   const sell = card.locator('button', { hasText: 'Продать' })
   const before = await sell.boundingBox()
   const cardBefore = await card.boundingBox()
