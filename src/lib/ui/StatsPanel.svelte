@@ -9,7 +9,6 @@
     critFactor,
     formatNumber,
     swingDamageRange,
-    STAT_IDS,
     type StatId,
     type StatModifier,
   } from '../game'
@@ -18,7 +17,7 @@
   import { Panel } from './kit'
   import { STAT_ICONS } from '../data/stats'
   import { resourceWords } from './resource'
-  import { PERCENT_STATS, SECONDS_STATS, statNames } from './statFormat'
+  import { PERCENT_STATS, SECONDS_STATS, SHOWN_STAT_IDS, statNames } from './statFormat'
   import { flatText } from './statText'
   import { Icon } from './icons'
 
@@ -134,7 +133,7 @@
         </div>
       {/if}
     </li>
-    {#each STAT_IDS as stat (stat)}
+    {#each SHOWN_STAT_IDS as stat (stat)}
       {@const breakdown = explainStat($gameState, stat)}
       <li>
         <button type="button" class="stat-row" onclick={() => toggle(stat)}>

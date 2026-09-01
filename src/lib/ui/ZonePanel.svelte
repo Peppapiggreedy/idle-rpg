@@ -11,8 +11,15 @@
   import { Icon } from './icons'
   import ZoneMap from './ZoneMap.svelte'
   import { CLOSED_RUN_WARNING } from './runText'
+  import { combatKey, createMemo } from './memo'
 
-  const forecasts = $derived(forecastAllZones($gameState))
+  // ПРОГНОЗ ВСЕХ ЗОН — самая дорогая производная в игре: боевая оценка по
+  // каждому мобу каждой из двадцати зон. Пересчитывается только когда меняются
+  // её входы, а не каждый тик (см. ui/memo.ts).
+  const forecastMemo = createMemo<ReturnType<typeof forecastAllZones>>()
+  const forecasts = $derived(forecastMemo(combatKey($gameState), () => forecastAllZones($gameState)))
+  // Метка безопасности выбранной зоны — тоже боевая оценка по всему её пулу.
+  const safetyMemo = createMemo<ReturnType<typeof zoneSafety>>()
   const byId = $derived(new Map(forecasts.map((f) => [f.zoneId, f])))
   // Показываем ЭФФЕКТИВНЫЙ порог из конвейера: настройка плюс таланты.
   // Сырое поле состояния соврало бы всем, кто вложил очки в «Походную перевязку».
@@ -76,6 +83,9 @@
   const selectedId = $derived(picked ?? $gameState.currentZoneId)
   const zone = $derived(ZONE_BY_ID[selectedId] ?? ZONE_BY_ID[$gameState.currentZoneId])
   const f = $derived(byId.get(selectedId) ?? null)
+  const safety = $derived(
+    safetyMemo([...combatKey($gameState), selectedId], () => zoneSafety($gameState, zone)),
+  )
 
   // Инстансы ВЫБРАННОЙ зоны. Отдельного списка данжей больше нет: данж —
   // это дверь в конкретном месте карты, и жить он должен рядом с местом.
@@ -91,13 +101,25 @@
     dead: () => 'Сначала воскресни',
     'already-inside': () => 'Ты уже внутри',
   }
+
+  /**
+   * ДЕЙСТВУЮЩИЙ порог — тот, что реально считает конвейер. Он совпадает с
+   * нажатой кнопкой, пока в дереве нет талантов на привал; как только они
+   * вложены, число расходится, и показать надо именно его. Раньше порог
+   * стоял отдельной строкой в общем списке статов — там он читался как
+   * находка, а не как настройка (см. SETTING_STATS в ui/statFormat.ts).
+   */
+  const effectiveRest = $derived(
+    Math.abs($gameState.stats.restThreshold - $gameState.restHpThreshold) < 1e-9
+      ? null
+      : `${Math.round($gameState.stats.restThreshold * 100)}%`,
+  )
 </script>
 
 <Panel title="Мир">
   <ZoneMap {selectedId} onselect={(id) => (picked = id)} />
 
-  {#if f}
-    {@const safety = zoneSafety($gameState, zone)}
+  {#if f && safety}
     <div class="detail {f.verdict}">
       <div class="head">
         <span class="title"><Icon name={zone.icon} /><span class="name">{zone.name}</span></span>
@@ -189,7 +211,11 @@
   {/if}
 
   <div class="rest">
-    <span class="label">Уходить на привал при HP ниже:</span>
+    <span class="label">
+      Уходить на привал при HP ниже{#if effectiveRest !== null}<span class="effective"
+          >&nbsp;(с талантами {effectiveRest})</span
+        >{/if}:
+    </span>
     {#each REST_HP_PRESETS as preset (preset)}
       <Button
         size="sm"
@@ -274,6 +300,10 @@
   }
   .safety.safe {
     color: var(--c-heal);
+  }
+  .effective {
+    color: var(--c-text-dim);
+    font-weight: 400;
   }
   .rest {
     display: flex;

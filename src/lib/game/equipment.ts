@@ -1,7 +1,9 @@
 // Надеть / снять / оценить экипировку. Чистые операции над состоянием.
 import { estimateCombatRate, swingDamageRange } from './combat'
 import { INVENTORY_SIZE } from '../data/balance'
+import { SAFE_ZONE, ZONE_BY_ID, representativeMonster } from '../data/zones'
 import { ensureStats, type StatBlock, type StatModifier } from './stats'
+import { monsterFromTemplate } from './state'
 import type { Decimal } from './numbers'
 import type { Equipment, GameState } from './state'
 import type { SlotId } from '../data/slots'
@@ -108,7 +110,7 @@ function withEquipped(state: GameState, item: Item): GameState {
 
 /** Темп фарма, каким он станет с предметом (сам предмет не надевается). */
 export function farmRateWith(state: GameState, item: Item): Decimal {
-  return farmRate(withEquipped(state, item))
+  return farmRate(facingReference(withEquipped(state, item)))
 }
 
 /**
@@ -163,10 +165,29 @@ function changesAnything(mod: { kind: StatModifier['kind']; value: Decimal }): b
   return mod.kind === 'multiplier' ? !mod.value.eq(1) : !mod.value.eq(0)
 }
 
+/**
+ * ПРОТИВ КОГО СЧИТАЕТСЯ ОЦЕНКА ПРЕДМЕТА — против МЕДИАННОГО моба текущей
+ * зоны, а не против того, кто стоит перед героем прямо сейчас.
+ *
+ * Иначе значок «Апгрейд» и процент в подсказке прыгают сами по себе: пул
+ * зоны выдаёт мобов разных ролей и уровней, темп убийств считается по
+ * конкретному противнику, и одна и та же вещь при неизменной экипировке
+ * читается то как «+12,6 %», то как «не апгрейд» — просто потому, что
+ * заспавнился другой моб. Замер до правки: три разных вердикта за полторы
+ * минуты стояния на месте.
+ *
+ * Медианный моб зоны — та же точка отсчёта, по которой считаются прогноз
+ * зоны и цена боя, так что второй меры «против кого» в игре не появляется.
+ */
+function facingReference(state: GameState): GameState {
+  const zone = ZONE_BY_ID[state.currentZoneId] ?? SAFE_ZONE
+  return { ...state, monster: monsterFromTemplate(representativeMonster(zone)) }
+}
+
 /** Лучше ли предмет надетого — по оценочному темпу убийств. */
 export function isUpgrade(state: GameState, item: Item): boolean {
   const after = farmRateWith(state, item)
-  const before = farmRate(state)
+  const before = farmRate(facingReference(state))
   return fillsEmptySlot(state, item) ? after.gte(before) : after.gt(before)
 }
 
@@ -183,13 +204,14 @@ export interface EquipPreview {
 
 function previewOf(state: GameState): EquipPreview {
   const { min, max } = swingDamageRange(state.stats)
+  const facing = facingReference(state)
   return {
     damageMin: min,
     damageMax: max,
     swingTime: state.stats.swingTime,
-    damagePerSecond: estimateCombatRate(state).damagePerSecond,
+    damagePerSecond: estimateCombatRate(facing).damagePerSecond,
     // Темп фарма — то, чем СРАВНИВАЮТСЯ предметы: в нём и урон, и аптайм.
-    killsPerSecond: farmRate(state),
+    killsPerSecond: farmRate(facing),
   }
 }
 

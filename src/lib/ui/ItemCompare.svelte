@@ -8,9 +8,9 @@
   //
   // pointer-events: none — обязательное свойство, а не украшение: окно висит
   // над карточкой, и без него оно перехватывало бы нажатия кнопок под собой.
-  import { Decimal, STAT_IDS, compareItem, type StatId } from '../game'
+  import { Decimal, compareItem, type StatId } from '../game'
   import { gameState } from '../stores/game'
-  import { formatStatDelta, isImprovement, statNames } from './statFormat'
+  import { formatStatDelta, isImprovement, SHOWN_STAT_IDS, statNames } from './statFormat'
   import { RARITY_BY_ID } from '../data/rarity'
   import EnchantLine from './EnchantLine.svelte'
   import ItemMods from './ItemMods.svelte'
@@ -30,14 +30,14 @@
 
   /**
    * Изменившиеся характеристики. Список НЕ перечисляется здесь руками: он
-   * обходит общий реестр STAT_IDS, поэтому новая характеристика попадает в
+   * обходит общий реестр SHOWN_STAT_IDS, поэтому новая характеристика попадает в
    * сравнение сама. Специального случая для живучести нет — производные
    * (здоровье от живучести, шанс крита от ловкости) приходят тем же обходом,
    * потому что конвейер уже развернул атрибуты в них.
    */
   const num = (v: Decimal | number): number => (typeof v === 'number' ? v : v.toNumber())
   const changed = $derived(
-    STAT_IDS.filter(
+    SHOWN_STAT_IDS.filter(
       (stat: StatId) => Math.abs(num(cmp.after[stat]) - num(cmp.before[stat])) > 1e-9,
     ).map((stat: StatId) => ({
       stat,

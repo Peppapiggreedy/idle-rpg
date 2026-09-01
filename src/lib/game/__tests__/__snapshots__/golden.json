@@ -1,8 +1,8 @@
 {
   "step-3000": {
-    "gold": "964.86",
+    "gold": "1029.808",
     "level": "5",
-    "currentXp": "183.95999999999998",
+    "currentXp": "216.52",
     "attackPower": "92",
     "avgSwingDamage": "30.9571428571429",
     "weaponSpeed": "2.2000",
@@ -10,17 +10,17 @@
     "equipped": "mainHand",
     "zone": "shepherds-meadow",
     "lastSurvivedZone": "shepherds-meadow",
-    "monster": "pasture-tick:1",
-    "mana": "13.0",
-    "abilityCasts": 1,
+    "monster": "straw-lumberer:3",
+    "mana": "5.0",
+    "abilityCasts": 2,
     "totalTicks": "3000",
     "inventoryCount": 5,
-    "inventorySellTotal": "40"
+    "inventorySellTotal": "35"
   },
   "step-12000": {
-    "gold": "4434.820000000001",
+    "gold": "4616.808",
     "level": "9",
-    "currentXp": "631.4",
+    "currentXp": "826.0999999999999",
     "attackPower": "100",
     "avgSwingDamage": "32.2142857142857",
     "weaponSpeed": "2.2000",
@@ -28,17 +28,17 @@
     "equipped": "mainHand",
     "zone": "shepherds-meadow",
     "lastSurvivedZone": "shepherds-meadow",
-    "monster": "meadow-squelcher:1",
-    "mana": "1.0",
-    "abilityCasts": 3,
+    "monster": "straw-lumberer:2",
+    "mana": "8.0",
+    "abilityCasts": 2,
     "totalTicks": "12000",
-    "inventoryCount": 22,
-    "inventorySellTotal": "175"
+    "inventoryCount": 24,
+    "inventorySellTotal": "205"
   },
   "step-36000": {
-    "gold": "15275.712",
+    "gold": "15660.244",
     "level": "13",
-    "currentXp": "70.96000000000001",
+    "currentXp": "142.9",
     "attackPower": "108",
     "avgSwingDamage": "33.4714285714286",
     "weaponSpeed": "2.2000",
@@ -46,11 +46,11 @@
     "equipped": "mainHand",
     "zone": "shepherds-meadow",
     "lastSurvivedZone": "shepherds-meadow",
-    "monster": "pasture-tick:2",
-    "mana": "38.0",
-    "abilityCasts": 0,
+    "monster": "meadow-squelcher:3",
+    "mana": "7.0",
+    "abilityCasts": 2,
     "totalTicks": "36000",
     "inventoryCount": 24,
-    "inventorySellTotal": "280"
+    "inventorySellTotal": "350"
   }
 }

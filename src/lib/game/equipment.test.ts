@@ -23,6 +23,7 @@ import { INVENTORY_SIZE, UNARMED } from '../data/balance'
 import { OFFHAND_PENALTY } from '../data/balance'
 import { ONE_HANDED, SHIELDS, WEAPONS, type ShieldTemplate, type WeaponTemplate } from '../data/items'
 import { SLOT_IDS } from '../data/slots'
+import { ZONE_BY_ID, zoneMonsterVariants } from '../data/zones'
 import type { Item, Rarity } from '../types'
 
 // Голый герой: стартовый комплект снят. Эти тесты про КОНВЕЙЕР и формулы,
@@ -441,6 +442,23 @@ describe('сравнение для UI', () => {
       9,
     )
     expect(c.isUpgrade).toBe(true)
+  })
+
+  it('оценка НЕ ЗАВИСИТ от того, кто стоит перед героем сейчас', () => {
+    // Значок «Апгрейд» и процент в подсказке обязаны быть свойством ВЕЩИ,
+    // а не мгновенного снимка боя. Пока оценка считалась против живого моба,
+    // одна и та же вещь при неизменной экипировке читалась то как «+12,6 %»,
+    // то как «не апгрейд» — просто потому, что заспавнился другой моб из
+    // пула зоны. Три разных вердикта за полторы минуты стояния на месте.
+    const weapon = bareWeapon(WEAPONS[1])
+    const base = withItems([weapon])
+    const zone = ZONE_BY_ID[base.currentZoneId]
+    const shares = zoneMonsterVariants(zone).map((template) =>
+      compareItem({ ...base, monster: monsterFromTemplate(template) }, weapon).combatDelta,
+    )
+    // Мобов в пуле зоны заведомо несколько, иначе проверка ничего не значит.
+    expect(shares.length).toBeGreaterThan(1)
+    for (const share of shares) expect(share).toBe(shares[0])
   })
 
   it('после надевания сравнение идёт уже с надетым предметом', () => {

@@ -23,7 +23,9 @@
   import EnchantLine from './EnchantLine.svelte'
   import ItemCompare from './ItemCompare.svelte'
   import { RARITY_BY_ID } from '../data/rarity'
-  import { Button, IconSlot, Panel, Tag } from './kit'
+  import { Button, IconSlot, NumberText, Panel, Tag } from './kit'
+  import { combatKey, createMemo } from './memo'
+  import { Icon } from './icons'
 
   const emptySlots = $derived(Math.max(0, INVENTORY_SIZE - $gameState.inventory.length))
 
@@ -31,8 +33,15 @@
   // «лучше», но и НА СКОЛЬКО: доля прироста урона в секунду. Считается тем
   // же estimateCombatRate, что и сравнение под курсором, — двух мер
   // «хорошести» в игре нет.
+  // Считается ТОЛЬКО когда меняются входы (см. ui/memo.ts): статы, экипировка,
+  // сумка, зона. Каждый тик — это две боевые оценки на каждую вещь, то есть
+  // полсотни на полной сумке десять раз в секунду; ровно из-за этого игра и
+  // начинала дёргаться при открытой сумке.
+  const sharesMemo = createMemo<Map<string, number | null>>()
   const shares = $derived(
-    new Map($gameState.inventory.map((i) => [i.id, upgradeShare($gameState, i)])),
+    sharesMemo(combatKey($gameState), () =>
+      new Map($gameState.inventory.map((i) => [i.id, upgradeShare($gameState, i)])),
+    ),
   )
   // Сортировка одна и по делу: сверху то, что сильнее всего поднимет урон.
   const sorted = $derived(
@@ -133,6 +142,16 @@
     ? ` · ${formatNumber($gameState.enchantDust)} пыли`
     : ''}"
 >
+  <!-- КОШЕЛЁК. Золото копится с каждого убийства и тратится на крафт, сброс
+       талантов и зачарования, а посмотреть на него было негде: цену покупки
+       игра называла, а остатка не показывала нигде. Место здесь: сумка — то,
+       что у героя с собой. -->
+  <div class="purse">
+    <Icon name="gold" size="sm" />
+    <NumberText value={$gameState.gold} tone="gold" bold />
+    <span class="purse-label">золота</span>
+  </div>
+
   <div class="grid" data-item-card>
     {#each sorted as item (item.id)}
       {@const share = shares.get(item.id)}
@@ -228,6 +247,16 @@
 </Panel>
 
 <style>
+  .purse {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    margin-bottom: var(--space-2);
+  }
+  .purse-label {
+    color: var(--c-text-dim);
+    font-size: var(--text-xs);
+  }
   .grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));

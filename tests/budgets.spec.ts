@@ -72,6 +72,41 @@ test('за полчаса игрового времени сцена и DOM не
   expect(geometriesAfter).toBeLessThanOrEqual(geometriesBefore + 1)
 })
 
+test('тяжёлый раздел не роняет кадры против лёгкого', async ({ page }) => {
+  test.setTimeout(300_000)
+  await openLiveGame(page)
+  await page.getByRole('button', { name: '×100', exact: true }).click()
+
+  // ЧТО ЗДЕСЬ ЛОВИТСЯ. Панели считают боевую оценку: прогноз зоны — по
+  // каждому мобу каждой из двадцати зон, сумка — по две оценки на вещь.
+  // Написанные как обычный `$derived($gameState)`, они пересчитывались
+  // ДЕСЯТЬ РАЗ В СЕКУНДУ, и «Мир» шёл на восьми кадрах против восемнадцати
+  // в «Настройках» — игра дёргалась ровно там, где эти панели открыты.
+  // Мемо (ui/memo.ts) считает их только когда меняются входы.
+  //
+  // Меряем ОТНОШЕНИЕ, а не абсолютные кадры: абсолютные зависят от машины,
+  // а разъехавшийся раздел виден отношением на любой.
+  const fps = async (): Promise<number> => {
+    const samples: number[] = []
+    for (let i = 0; i < 4; i += 1) {
+      await page.waitForTimeout(1500)
+      const text = await page.locator('text=/^fps: \\d+ · tps: /').innerText()
+      samples.push(Number(text.split(': ')[1].split(' ')[0]))
+    }
+    return samples.reduce((a, b) => a + b, 0) / samples.length
+  }
+  const openSection = async (name: string): Promise<number> => {
+    await page.locator('nav[aria-label="Разделы"] button', { hasText: name }).click()
+    await page.waitForTimeout(1000)
+    return fps()
+  }
+
+  const light = await openSection('Настройки')
+  const heavy = await openSection('Мир')
+  console.log(`кадров: «Настройки» ${light.toFixed(1)}, «Мир» ${heavy.toFixed(1)}`)
+  expect(heavy).toBeGreaterThan(light * 0.8)
+})
+
 test('при document.hidden сцена не создаёт всплывающих чисел', async ({ page }) => {
   await openLiveGame(page)
   // Убеждаемся, что на видимой вкладке они вообще бывают, — иначе тест
