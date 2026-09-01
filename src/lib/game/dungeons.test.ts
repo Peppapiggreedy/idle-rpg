@@ -26,7 +26,8 @@ import {
 import { RARITIES } from '../data/rarity'
 import { XP_GAP_PENALTY } from '../data/balance'
 import { zoneForMonsterLevel } from '../data/zones'
-import { averageGear } from './simulate'
+import { averageGear, branchPoints, pureBranchTalents } from './simulate'
+import { BRANCHES } from '../data/talents'
 import { ZONE_BY_ID, representativeMonster } from '../data/zones'
 
 const DUNGEON = DUNGEONS[0]
@@ -87,13 +88,32 @@ describe('данные данжа', () => {
     expect(DUNGEON.unlockRequirement).toBeGreaterThan(0)
   })
 
-  it('боссы крепче и злее мобов своей зоны', () => {
+  it('цепочка дороже трёх обычных боёв — вот в чём данж', () => {
+    // «ЗЛЕЕ» МЕРИТСЯ ЦЕПОЧКОЙ, а не одним ударом и даже не одной схваткой.
+    // За удар босс бьёт СЛАБЕЕ рядового моба, и это вынужденно: внутри данжа
+    // привала нет, три схватки идут на одном запасе здоровья, а сама схватка
+    // с боссом длиннее обычной впятеро. Оставь боссу урон рядового моба за
+    // удар — и цепочка станет непроходимой при любых прочих числах: три боя
+    // по пять обычных стоят пятнадцати, а весь запас героя стоит четырёх.
+    //
+    // Цена считается БЕЗ ГЕРОЯ и потому честно сравнима: длина схватки
+    // пропорциональна запасу HP противника, а урон в секунду — это
+    // damage/swingTime. Сила героя сокращается, остаётся чистое свойство
+    // данных: maxHp * damage / swingTime.
+    const fightCost = (m: { maxHp: Decimal; damageMax: Decimal; swingTime: number }) =>
+      m.maxHp.times(m.damageMax).div(m.swingTime)
     const mob = representativeMonster(ZONE_BY_ID[DUNGEON.zoneId])
+    // Каждый босс по-прежнему КРЕПЧЕ: запас HP втрое-вшестеро больше моба.
     for (const boss of DUNGEON.bosses) {
-      const built = buildBoss(boss)
-      expect(built.maxHp.gt(mob.maxHp)).toBe(true)
-      expect(built.damageMax.gt(mob.damageMax)).toBe(true)
+      expect(buildBoss(boss).maxHp.gt(mob.maxHp)).toBe(true)
     }
+    // А ЗЛЕЕ — цепочка целиком: дороже трёх обычных боёв, и это ещё без
+    // ярости и без того, что привала между схватками нет.
+    const chain = DUNGEON.bosses.reduce(
+      (sum, boss) => sum.plus(fightCost(buildBoss(boss))),
+      new Decimal(0),
+    )
+    expect(chain.gt(fightCost(mob).times(DUNGEON.bosses.length))).toBe(true)
   })
 
   it('качество и опасность растут от первого босса к третьему', () => {
@@ -398,13 +418,26 @@ describe('оффлайн и данж', () => {
 // по урону гибнет ИМЕННО ОТ ЯРОСТИ, а не от обычного удара.
 describe('правило чисел держится на всех восьми данжах', () => {
   function heroFor(dungeon: (typeof DUNGEONS)[number], gearLevel: number): GameState {
-    return ensureStats({
+    // ТАЛАНТЫ ЕСТЬ. Герой восьмидесятого уровня без единого вложенного очка
+    // в игре не существует: очки капают с TALENT_FIRST_LEVEL и деваться им
+    // некуда. Пока боссы почти не били, разница не читалась; теперь она
+    // решает исход, и мерить данж на несуществующем герое нельзя.
+    const level = dungeon.unlockRequirement
+    const branch = BRANCHES.find((b) => b.classId === createInitialState(1).classId)!
+    const ready = ensureStats({
       ...createInitialState(1),
-      level: new Decimal(dungeon.unlockRequirement),
+      level: new Decimal(level),
+      talents: pureBranchTalents(branch.id, branchPoints(level)),
       equipment: averageGear(gearLevel),
       currentZoneId: dungeon.zoneId,
       statsDirty: true,
     })
+    // ЗАПАС ПОДТЯГИВАЕТСЯ К НОВОМУ МАКСИМУМУ. createInitialState оставляет
+    // currentHp базовой сотней, а после уровня и вещей максимум уже за тысячу:
+    // без этой строки в данж заходил бы герой с восемью процентами запаса, и
+    // тест мерил бы не силу боссов, а недоделку заготовки. Пока боссы били
+    // слабо, разница не проявлялась.
+    return { ...ready, currentHp: ready.stats.maxHp, currentMana: ready.stats.maxMana }
   }
 
   /** Прогон цепочки до конца или до смерти. */

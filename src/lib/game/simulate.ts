@@ -41,7 +41,7 @@ import { ABILITIES, ABILITY_BY_ID } from '../data/abilities'
 import { RARITY_BY_ID, TYPICAL_RARITY } from '../data/rarity'
 import { ARMOR_NOUNS, ONE_HANDED, SHIELDS, WEAPONS, WEAPON_BY_ID } from '../data/items'
 import { SLOT_IDS, type SlotId } from '../data/slots'
-import { ZONES, averageMonsterLevel, zoneForMonsterLevel } from '../data/zones'
+import { SAFE_ZONE, ZONES, averageMonsterLevel, zoneForMonsterLevel } from '../data/zones'
 import { BRANCHES, talentsInBranch, type BranchId } from '../data/talents'
 import { DUNGEONS } from '../data/dungeons'
 import { CLASSES, DEFAULT_CLASS, classById } from '../data/classes'
@@ -322,6 +322,13 @@ export interface PacingRow {
   deaths: number
   /** Уровень вещей героя на этой строке: во что он одет по своей зоне. */
   gearLevel: number
+  /**
+   * ЧЕМ одет: первую зону герой проходит в стартовом комплекте (одно белое
+   * оружие), дальше — в средних вещах своей зоны. Без этого поля строка
+   * первой полосы читалась бы как «полный средний комплект первого уровня»,
+   * то есть как герой, которого в игре не существует.
+   */
+  gear: 'starting' | 'average'
   currentZoneId: string
   cells: PacingCell[]
 }
@@ -345,7 +352,7 @@ export function referenceBuild(level: number, classId: string = DEFAULT_CLASS.id
     pacingCache.set(classId, rows)
   }
   const row = rows.find((r) => r.level === level) ?? rows[rows.length - 1]
-  return { classId, level, gearLevel: row.gearLevel, gear: 'average' }
+  return { classId, level, gearLevel: row.gearLevel, gear: row.gear }
 }
 
 /**
@@ -432,6 +439,7 @@ export function pacingTable(
   // Полный средний комплект приходит на FIRST_GEARED_LEVEL, когда игра
   // действительно выдала по находке на слот (см. константу).
   let gearLevel = 1
+  let gearKind: 'starting' | 'average' = 'starting'
   let state = buildSimState({ gear: 'starting', classId }, ZONES[0].id, seed)
   const rows: PacingRow[] = []
   let deaths = 0
@@ -442,6 +450,7 @@ export function pacingTable(
       atSec,
       deaths,
       gearLevel,
+      gear: gearKind,
       currentZoneId: intendedZone(level).id,
       cells: ZONES.map((zone) => ({
         zoneId: zone.id,
@@ -457,6 +466,15 @@ export function pacingTable(
     const prev = state
     state = tick(prev, STEP_MS, rng, () => {})
     if (prev.heroState === 'alive' && state.heroState === 'dead') deaths += 1
+    // ПОСЛЕ ВОСКРЕШЕНИЯ ИГРОК ВОЗВРАЩАЕТСЯ НА ЛЕСТНИЦУ. Смерть отбрасывает в
+    // безопасную зону, а её мобы отстают от героя на десяток уровней — опыта
+    // там ноль. Без этой строки прогон вставал намертво: одна смерть на
+    // шестнадцатом уровне, и дальше двадцать семь тысяч убийств без единого
+    // очка опыта. Раньше её не требовалось, потому что смертей не было вовсе.
+    if (prev.heroState === 'dead' && state.heroState === 'alive') {
+      const back = playerZoneId(state, state.level.toNumber())
+      if (back !== state.currentZoneId) state = travelToZone(state, back, rng)
+    }
     if (state.level.gt(prev.level)) {
       const level = state.level.toNumber()
       // Данж делается, когда открывается: он и открывает следующие зоны.
@@ -469,6 +487,7 @@ export function pacingTable(
       const nextGear = zone.id === ZONES[0].id ? 1 : gearFor(level)
       if (nextGear !== gearLevel) {
         gearLevel = nextGear
+        gearKind = 'average'
         state = ensureStats({
           ...state,
           equipment: averageGear(gearLevel),
@@ -669,7 +688,52 @@ export function totalXpEarned(level: Decimal, currentXp: Decimal): Decimal {
   return sum
 }
 
+/**
+ * УБИЙСТВО, УВИДЕННОЕ СНАРУЖИ. Основной признак прежний — взведённый таймер
+ * респауна; добавлен второй, и без него счётчик врал.
+ *
+ * Почему одного мало. Решение об отдыхе принимается ПОСЛЕ убийства и ДО
+ * applyRespawn (см. порядок конвейера в tick.ts), и уход на привал обнуляет
+ * respawnMsLeft: таймер за последнего перед привалом моба не взводится
+ * никогда. Пока бой стоил пары HP и привалов не было, счётчик совпадал с
+ * правдой; теперь на привал герой уходит после каждого второго-третьего
+ * убийства, и прогон недосчитывался почти сорока процентов.
+ *
+ * Уход на привал — сам по себе признак убийства: applyRestCheck срабатывает
+ * только когда моб уже мёртв. Поэтому второе слагаемое ровно одно.
+ */
+function killObserved(prev: GameState, next: GameState): boolean {
+  if (prev.respawnMsLeft <= 0 && next.respawnMsLeft > 0) return true
+  return prev.heroState === 'alive' && next.heroState === 'resting'
+}
+
 // Лучшая по опыту ОТКРЫТАЯ зона: тот же zoneRate, которым игра считает прогноз.
+/**
+ * Куда идёт МОДЕЛЬ ИГРОКА: в свою полосу, но не глубже, чем он выживает.
+ *
+ * Раньше здесь стоял безусловный переезд в свою полосу, и это было верно,
+ * пока мобы почти не били: умереть на своей ступени было нельзя. Теперь бой
+ * стоит четверти запаса, а к шестому уровню у героя две-три находки на семь
+ * слотов — и своя полоса убивает его раньше, чем он её оденет. Живой игрок
+ * в такой ситуации не идёт вперёд: игра прямо говорит ему «смертельно»
+ * (вердикт зоны), и он остаётся дофармливать предыдущую.
+ *
+ * Модель делает ровно это: берёт САМУЮ ГЛУБОКУЮ открытую зону не глубже
+ * своей, в которой прогноз не находит смерти. Если таких нет — безопасную.
+ */
+function playerZoneId(state: GameState, level: number): string {
+  const own = zoneForMonsterLevel(level)
+  const reachable = ZONES.filter(
+    (zone) =>
+      isZoneUnlocked(state, zone) && zone.monsterLevelRange.max <= own.monsterLevelRange.max,
+  )
+  for (let i = reachable.length - 1; i >= 0; i -= 1) {
+    const zone = reachable[i]
+    if (!zoneRate(state, zone).dies) return zone.id
+  }
+  return SAFE_ZONE.id
+}
+
 function bestZoneId(state: GameState): string {
   let best = state.currentZoneId
   let bestXp = new Decimal(-1)
@@ -752,8 +816,17 @@ export function simulate(options: SimOptions): SimResult {
 
     // Убийство видно снаружи по взведённому таймеру респауна: во время
     // отсчёта он только убывает, вверх его двигает ровно смерть моба.
-    if (prev.respawnMsLeft <= 0 && state.respawnMsLeft > 0) kills = kills.plus(1)
+    if (killObserved(prev, state)) kills = kills.plus(1)
     if (prev.heroState === 'alive' && state.heroState === 'dead') deaths += 1
+    // ПОСЛЕ ВОСКРЕШЕНИЯ ИГРОК ВОЗВРАЩАЕТСЯ НА ЛЕСТНИЦУ. Смерть отбрасывает в
+    // безопасную зону, а её мобы отстают от героя на десяток уровней — опыта
+    // там ноль. Без этой строки прогон вставал намертво: одна смерть на
+    // шестнадцатом уровне, и дальше двадцать семь тысяч убийств без единого
+    // очка опыта. Раньше её не требовалось, потому что смертей не было вовсе.
+    if (prev.heroState === 'dead' && state.heroState === 'alive') {
+      const back = playerZoneId(state, state.level.toNumber())
+      if (back !== state.currentZoneId) state = travelToZone(state, back, rng)
+    }
     if (state.heroState === 'dead') deadMs += STEP_MS
     // Привал виден снаружи так же, как убийство: по переходу состояния.
     if (prev.heroState !== 'resting' && state.heroState === 'resting') rests += 1
@@ -975,11 +1048,20 @@ export function simulateRun(options: RunOptions = {}): RunResult {
     state = tick(prev, STEP_MS, rng, () => {})
     const sec = ((step + 1) * STEP_MS) / 1000
 
-    if (prev.respawnMsLeft <= 0 && state.respawnMsLeft > 0) {
+    if (killObserved(prev, state)) {
       levelKills += 1
       totalKills += 1
     }
     if (prev.heroState === 'alive' && state.heroState === 'dead') deaths += 1
+    // ПОСЛЕ ВОСКРЕШЕНИЯ ИГРОК ВОЗВРАЩАЕТСЯ НА ЛЕСТНИЦУ. Смерть отбрасывает в
+    // безопасную зону, а её мобы отстают от героя на десяток уровней — опыта
+    // там ноль. Без этой строки прогон вставал намертво: одна смерть на
+    // шестнадцатом уровне, и дальше двадцать семь тысяч убийств без единого
+    // очка опыта. Раньше её не требовалось, потому что смертей не было вовсе.
+    if (prev.heroState === 'dead' && state.heroState === 'alive') {
+      const back = playerZoneId(state, state.level.toNumber())
+      if (back !== state.currentZoneId) state = travelToZone(state, back, rng)
+    }
     if (state.heroState === 'resting') restingMs += STEP_MS
     xpTotal = xpTotal.plus(
       state.level.eq(prev.level)
@@ -1020,13 +1102,11 @@ export function simulateRun(options: RunOptions = {}): RunResult {
       decisions += zonesNow - openZones + Math.max(0, pointsNow - talentPoints)
       openZones = zonesNow
       talentPoints = pointsNow
-      // Куда переезжает МОДЕЛЬ ИГРОКА: в зону СВОЕЙ полосы, если она уже
-      // открыта. Не в «лучшую по опыту в час» — та выбирает зону, где мобы
-      // падают с одного удара, и прогон превращался бы в мясорубку с
-      // временем убийства полторы секунды вместо коридора 8-15. Игрок идёт
-      // туда, где противник ему под стать, и лестница ведёт его именно так.
-      const own = zoneForMonsterLevel(reached)
-      state = travelToZone(state, isZoneUnlocked(state, own) ? own.id : bestZoneId(state), rng)
+      // Куда переезжает МОДЕЛЬ ИГРОКА: в свою полосу, но не глубже, чем он
+      // выживает (playerZoneId). Не в «лучшую по опыту в час» — та выбирает
+      // зону, где мобы падают с одного удара, и прогон превращался бы в
+      // мясорубку с временем убийства полторы секунды вместо коридора 8-15.
+      state = travelToZone(state, playerZoneId(state, reached), rng)
       if (reached >= LEVEL_CAP) break
     }
   }

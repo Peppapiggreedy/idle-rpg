@@ -11,10 +11,12 @@ import {
 } from './tick'
 import { estimateCombatRate } from './combat'
 import { applyOfflineProgress } from './save'
+import { zoneSafety } from './rest'
 import { zoneRate } from './zones'
 import { ensureStats } from './stats'
 import { COMMON, MONSTER_BASE, buildMonster } from '../data/monsters'
 import { SAFE_ZONE, ZONES, ZONE_BY_ID } from '../data/zones'
+import { OFFLINE_EFFICIENCY } from '../data/balance'
 import { PACING_MAX_LEVEL, averageGear } from './simulate'
 import type { MonsterTemplate } from '../types'
 
@@ -132,6 +134,68 @@ describe('смерть и воскрешение', () => {
   })
 })
 
+describe('цена входа в бой: с полного запаса и с остатка', () => {
+  // КОНТРАКТ ЦЕНЫ БОЯ ЗАДАЁТ И ЦЕНУ ОШИБКИ. Пока медианный моб снимал доли
+  // процента, вход в бой не значил ничего: умереть можно было только в зоне
+  // не по зубам. Теперь бой стоит 20-25% запаса, а самый тяжёлый бой зоны —
+  // 28-54%, и «с каким запасом входить» стало решением.
+  //
+  // Меряется НЕУДАЧНЫЙ бой зоны (zoneSafety.worstFight, 95-й процентиль по
+  // разбросу), а не медианный: смерть приходит от худшего противника, а не
+  // от среднего.
+  //
+  // Герой собирается ЗДЕСЬ, а не берётся из referenceBuild: тот тянет за
+  // собой эталонное прохождение (полста секунд симуляции), а быстрый набор
+  // обязан оставаться быстрым. Числа те же: уровень входа в зону, вещи
+  // средние по её полосе, первая зона — в стартовом комплекте.
+  const worstShares = () => {
+    const out: { zone: string; classId: string; share: number }[] = []
+    for (const classId of ['warden', 'reaver']) {
+      ZONES.forEach((zone, index) => {
+        const level = zone.monsterLevelRange.min
+        const gearLevel = Math.round(
+          (zone.monsterLevelRange.min + zone.monsterLevelRange.max) / 2,
+        )
+        const state = ensureStats({
+          ...createInitialState(1, classId),
+          level: new Decimal(level),
+          equipment: index === 0 ? createInitialState(1, classId).equipment : averageGear(gearLevel),
+          currentZoneId: zone.id,
+          statsDirty: true,
+        })
+        out.push({
+          zone: zone.id,
+          classId,
+          share: zoneSafety(state, zone).worstFight.div(state.stats.maxHp).toNumber(),
+        })
+      })
+    }
+    return out
+  }
+
+  it('с полного запаса смерть практически невозможна', () => {
+    for (const { zone, classId, share } of worstShares()) {
+      expect(share, `${classId} @ ${zone}`).toBeLessThan(0.7)
+    }
+  })
+
+  it('войти с остатком запаса — реальная смерть, а не испуг', () => {
+    const shares = worstShares()
+    // С ПЯТОЙ ЧАСТЬЮ ЗАПАСА герой гибнет ВЕЗДЕ: худший бой дороже во всех
+    // двадцати зонах и у обоих классов. Это нижняя граница контракта — если
+    // она перестанет держаться, бой снова станет бесплатным.
+    for (const { zone, classId, share } of shares) {
+      expect(share, `${classId} @ ${zone}`).toBeGreaterThan(0.2)
+    }
+    // С ТРЕТЬЮ запаса смерть реальна на БОЛЬШЕЙ ЧАСТИ лестницы, но не везде:
+    // замер даёт 21-54%, и в самых мягких зонах треть запаса герой переживает.
+    // Проверяется поэтому большинство, а не «всюду» — обещать больше значило
+    // бы обещать то, чего числа не дают.
+    const deadlyAtThird = shares.filter((r) => r.share > 0.3).length
+    expect(deadlyAtThird).toBeGreaterThan(shares.length / 2)
+  })
+})
+
 describe('оффлайн моделирует цикл фарм -> смерть -> воскрешение', () => {
   it('перед одним смертельным мобом uptime мал, время до смерти конечно', () => {
     const rate = estimateCombatRate(inZone(BRUTE))
@@ -139,40 +203,43 @@ describe('оффлайн моделирует цикл фарм -> смерть 
     expect(rate.timeToDeathSec).not.toBeNull()
   })
 
-  it('смертность режет оффлайн-награду в той же зоне', () => {
+  it('простой режет оффлайн-награду в той же зоне', () => {
     const HOURS8 = 8 * 3_600_000
     // Одна и та же зона, одни и те же награды за моба — разница только
-    // в том, сколько времени герой в ней жив.
-    // Новобранец ОДЕТ, хоть и бедно: в вещи первого уровня, то есть в первые
-    // же находки. Голый герой — в одном белом клинке при шести пустых слотах —
-    // за стартовой зоной не выживает вовсе, и «разница только в том, сколько
-    // он жив» превратилась бы в «один приносит, другой не приносит ничего».
+    // в том, какую долю времени герой в ней РАБОТАЕТ.
     //
-    // Зона выбирается ПОИСКОМ, а не номером: нужна та, где он уже платит
-    // смертями, но ещё что-то приносит. Номер разъезжался бы с любой правкой
-    // стартовых сил — а она только что и случилась.
-    const rookie0 = ensureStats({
+    // ПРОСТОЙ, А НЕ СМЕРТНОСТЬ, и подмена здесь не косметическая. Пока бой
+    // стоил пары HP, единственным простоем была смерть. Теперь бой стоит
+    // четверти запаса, порог привала стоит выше худшего боя зоны — и герой
+    // ПЕРЕСТАЁТ гибнуть там, где раньше ложился: он уходит на привал. Между
+    // «отдыхает» и «гибнет» промежутка почти нет, его съедает штраф за
+    // разрыв уровней: соседняя ступень бьёт вдвое сильнее, и зона либо по
+    // зубам с привалами, либо не по зубам совсем.
+    const zone = ZONES[1]
+    const poor: GameState = ensureStats({
       ...createInitialState(1),
+      level: new Decimal(20),
+      // Недоодетый: двадцатый уровень в первых же находках.
       equipment: averageGear(1),
+      currentZoneId: zone.id,
       statsDirty: true,
     })
-    const zone =
-      ZONES.find((z) => {
-        const share = zoneRate({ ...rookie0, currentZoneId: z.id }, z).uptime
-        return share > 0 && share < 0.95
-      }) ?? ZONES[2]
-    const rookie: GameState = { ...rookie0, currentZoneId: zone.id }
     const veteran: GameState = ensureStats({
-      ...rookie,
+      ...poor,
       level: new Decimal(PACING_MAX_LEVEL),
       // Ветеран одет по своей глубине: сила теперь на вещах.
       equipment: averageGear(83),
       statsDirty: true,
     })
-    expect(zoneRate(rookie, zone).uptime).toBeLessThan(0.95)
-    expect(zoneRate(veteran, zone).uptime).toBe(1)
+    const poorRate = zoneRate(poor, zone)
+    const vetRate = zoneRate(veteran, zone)
+    // Ни тот, ни другой не гибнет: разницу делает именно простой.
+    expect(poorRate.dies).toBe(false)
+    expect(vetRate.dies).toBe(false)
+    expect(poorRate.uptime).toBeLessThan(1)
+    expect(vetRate.uptime).toBeGreaterThan(poorRate.uptime)
 
-    const weak = applyOfflineProgress(rookie, HOURS8).report
+    const weak = applyOfflineProgress(poor, HOURS8).report
     const strong = applyOfflineProgress(veteran, HOURS8).report
     expect(weak!.kills.toNumber()).toBeGreaterThan(0) // что-то приносит
     expect(weak!.gold.lt(strong!.gold.times(0.5))).toBe(true)
@@ -189,26 +256,36 @@ describe('оффлайн моделирует цикл фарм -> смерть 
     expect(applyOfflineProgress(rookie, HOURS8).report).toBeNull()
   })
 
-  it('на ступень выше своей новичок тает: uptime < 1 учтён в оффлайне', () => {
-    // Стартовую зону одетый новобранец проходит спокойно — так и задумано.
-    // Через пару ступеней он ещё выживает, но уже умирает: uptime строго
-    // между нулём и единицей, и оффлайн обязан это видеть.
-    const rookie = { ...createInitialState(1), abilitySettings: manualOnlySettings() }
-    // В безопасной зоне герой не умирает — «почти» здесь про разрешение самой
-    // модели: она квантует цикл боями, и один неудачный бой из тысячи в неё
-    // всё-таки попадает. Смысл проверки в том, что зона не отнимает времени.
-    expect(zoneRate(rookie, SAFE_ZONE).uptime).toBeGreaterThan(0.99)
-    // Соседняя ступень — ровно та, где новобранец без умений уже платит
-    // смертями, но ещё не ложится насмерть. Зона выбирается ПОИСКОМ, а не
-    // номером: лестница длинная, и номер разъезжался бы с каждой правкой сил.
-    const edge = ZONES.find((z) => {
-      const share = zoneRate(rookie, z).uptime
-      return share > 0.3 && share < 1
+  it('на ступень выше герой тает: uptime < 1 учтён в оффлайне', () => {
+    // Своя зона — не бесплатная: бой стоит четверти запаса, герой ходит на
+    // привал, и аптайм ниже единицы даже там, где смерть невозможна.
+    // Ступенью выше он тает сильнее: аптайм падает, но герой всё ещё жив.
+    const zone = ZONES[5]
+    const next = ZONES[6]
+    const level = zone.monsterLevelRange.min
+    const hero: GameState = ensureStats({
+      ...createInitialState(1),
+      level: new Decimal(level),
+      equipment: averageGear(Math.round((zone.monsterLevelRange.min + zone.monsterLevelRange.max) / 2)),
+      currentZoneId: zone.id,
+      statsDirty: true,
     })
-    expect(edge, 'нет ни одной зоны, где новичок и выживает, и умирает').toBeDefined()
-    const rate = zoneRate(rookie, edge!)
-    expect(rate.uptime).toBeGreaterThan(0.3)
-    expect(rate.uptime).toBeLessThan(1)
+    const own = zoneRate(hero, zone)
+    expect(own.dies).toBe(false)
+    expect(own.uptime).toBeLessThan(1) // привалы, а не смерть
+    const deeper = zoneRate({ ...hero, currentZoneId: next.id }, next)
+    expect(deeper.killsPerSecond.gt(0)).toBe(true)
+    expect(deeper.uptime).toBeLessThan(own.uptime)
+
+    // И оффлайн считает по УРЕЗАННОМУ темпу, а не по идеальному: добыча за
+    // восемь часов обязана быть меньше той, что вышла бы без простоя.
+    const HOURS8 = 8 * 3_600_000
+    const report = applyOfflineProgress({ ...hero, currentZoneId: next.id }, HOURS8).report
+    const ideal = deeper.killsPerSecond
+      .div(deeper.uptime)
+      .times((HOURS8 / 1000) * OFFLINE_EFFICIENCY)
+    expect(report!.kills.gt(0)).toBe(true)
+    expect(report!.kills.lt(ideal)).toBe(true)
   })
 
   it('мёртвый герой сперва досиживает воскрешение из оффлайн-времени', () => {

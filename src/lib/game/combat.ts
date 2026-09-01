@@ -167,16 +167,31 @@ export function rollMonsterDamage(
     .times(1 - stats.damageReduction)
 }
 
+/**
+ * Средний входящий удар по герою: бросок, штраф за разрыв, срез на
+ * damageReduction — и БЛОК.
+ *
+ * БЛОК ЗДЕСЬ ПОЯВИЛСЯ НЕ СРАЗУ, и его отсутствие было настоящей дырой. В тике
+ * блок есть (`rollBlock`), в модели его не было, и модель завышала входящий
+ * урон на четверть у любого героя со щитом. На этой оценке держатся прогноз
+ * зоны, аптайм, оффлайн и порог привала — то есть игра и её собственная
+ * модель расходились в самом главном числе на 25%.
+ *
+ * Считается матожиданием, как и криты: шанс блока умножить на то, сколько
+ * блок реально снимает (а снять больше самого удара он не может).
+ */
 export function expectedMonsterDamage(
   monster: Monster,
   stats: StatBlock,
   heroLevel: number,
 ): Decimal {
-  return monster.damageMin
+  const incoming = monster.damageMin
     .plus(monster.damageMax)
     .div(2)
     .times(levelGapDamageMult(heroLevel, monster.level))
     .times(1 - stats.damageReduction)
+  if (stats.blockChance <= 0 || stats.blockValue.lte(0)) return incoming
+  return incoming.minus(Decimal.min(stats.blockValue, incoming).times(stats.blockChance))
 }
 
 export interface CombatRate {
@@ -265,28 +280,6 @@ export function farmCycle(params: {
   const kills = Math.max(1, kRest)
   const total = kills * cycleSec + restSec
   return { kills, cycleSec: total, uptime: (kills * cycleSec) / total, dies: false }
-}
-
-/**
- * Доля времени, которую герой что-то приносит. Тонкая обёртка над farmCycle
- * для тех, кому нужна только доля: зоны и оффлайн-агрегат.
- */
-export function uptimeFromHpLoss(
-  maxHp: Decimal,
-  hpLossPerSecond: Decimal,
-  rest?: { hpThreshold: number; durationMs: number; cycleSec: number },
-): number {
-  if (hpLossPerSecond.lte(0)) return 1
-  // Без данных о длине боя цикл выродится в один бой: это запасной путь для
-  // вызовов, где длина схватки неизвестна.
-  const cycleSec = rest?.cycleSec ?? maxHp.div(hpLossPerSecond).toNumber()
-  return farmCycle({
-    maxHp,
-    lossPerSecond: hpLossPerSecond,
-    cycleSec,
-    hpThreshold: rest?.hpThreshold ?? 0,
-    restSec: (rest?.durationMs ?? 0) / 1000,
-  }).uptime
 }
 
 /**

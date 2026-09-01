@@ -282,7 +282,7 @@
     "shattering-blow": 9100
   },
   "regenDelayMsLeft": 0,
-  "restHpThreshold": 0.4,
+  "restHpThreshold": 0.6,
   "restResourceThreshold": 0,
   "abilitySettings": {
     "quick-strike": {
