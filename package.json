@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json && tsc -p tsconfig.tests.json",
-    "test": "npm run check && vitest run --exclude \"src/lib/game/__tests__/power-budget.test.ts\" --exclude \"src/lib/game/__tests__/balance.test.ts\" --exclude \"src/lib/game/__tests__/run.test.ts\" --exclude \"src/lib/game/level-gap.test.ts\" --exclude \"src/lib/game/__tests__/gold.test.ts\"",
+    "test": "npm run check && vitest run --exclude \"src/lib/game/__tests__/power-budget.test.ts\" --exclude \"src/lib/game/__tests__/balance-*.test.ts\" --exclude \"src/lib/game/__tests__/run.test.ts\" --exclude \"src/lib/game/level-gap.test.ts\" --exclude \"src/lib/game/__tests__/gold.test.ts\"",
     "test:balance": "vitest run --config vitest.balance.config.ts",
     "test:balance:sample": "BALANCE_SAMPLE=1 npm run test:balance",
     "test:visual": "playwright test",
