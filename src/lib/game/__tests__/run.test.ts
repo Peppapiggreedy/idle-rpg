@@ -11,7 +11,7 @@
 // разбирает сумку и надевает то, что поднимает темп, а на новом уровне
 // переезжает в полосу, которая ему по силам.
 import { describe, expect, it } from 'vitest'
-import { LEVEL_CAP } from '../../data/balance'
+import { LEVEL_CAP, RUN_SEEDS } from '../../data/balance'
 import { CLASSES, READY_CLASSES } from '../../data/classes'
 import { classIt, contractClasses } from './class-set'
 import { RUN_BANDS, simulateRun, type RunResult } from '../simulate'
@@ -60,13 +60,52 @@ const SAMPLE = process.env.BALANCE_SAMPLE === '1'
 // Контракты превью-класса некритичны: см. `class-set.ts`.
 const CLASS_SET = contractClasses(SAMPLE)
 
-const runs = new Map<string, RunResult>()
-function run(classId: string): RunResult {
+/**
+ * СИДЫ, КОТОРЫЕ ГОНЯЕТ ЭТОТ ЗАПУСК. Три — только в ночном прогоне
+ * (`RUN_ALL_SEEDS=1` в nightly.yml); везде ещё — первый, потому что путь
+ * стоит минуты, а ответ на PR нужен сразу. Список и объяснение — в
+ * `data/balance.ts`.
+ */
+const SEEDS = process.env.RUN_ALL_SEEDS === '1' ? [...RUN_SEEDS] : [RUN_SEEDS[0]]
+
+const runs = new Map<string, RunResult[]>()
+/** Прогоны класса по всем сидам запуска; считаются один раз и кешируются. */
+function runsOf(classId: string): RunResult[] {
   const cached = runs.get(classId)
   if (cached) return cached
-  const result = simulateRun({ classId, maxHours: RUN_HOURS_CAP, seed: 4242 })
+  const result = SEEDS.map((seed) => simulateRun({ classId, maxHours: RUN_HOURS_CAP, seed }))
   runs.set(classId, result)
   return result
+}
+
+/**
+ * МЕДИАНА, А НЕ СРЕДНЕЕ. Путь зависит от ранней рулетки находок, и один
+ * неудачный сид уводит среднее туда, где игры нет; медиана его переживает.
+ * При одном сиде медиана — он сам.
+ */
+function median(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b)
+  const middle = Math.floor(sorted.length / 2)
+  return sorted.length % 2 === 1
+    ? sorted[middle]
+    : (sorted[middle - 1] + sorted[middle]) / 2
+}
+
+/** Медиана метрики по сидам класса. */
+function medianOf(classId: string, pick: (r: RunResult) => number): number {
+  return median(runsOf(classId).map(pick))
+}
+
+/** Строка «4242: 10.74 | 7: 11.02 | 1234: 10.94» — чтобы выпавший сид было видно. */
+function bySeed(classId: string, pick: (r: RunResult) => number, digits = 2): string {
+  return runsOf(classId)
+    .map((r, i) => `${SEEDS[i]}: ${pick(r).toFixed(digits)}`)
+    .join(' | ')
+}
+
+/** Первый сид: по нему печатаются таблицы полос — они про форму, не про итог. */
+function run(classId: string): RunResult {
+  return runsOf(classId)[0]
 }
 
 describe('полный путь 1..100', () => {
@@ -91,6 +130,16 @@ describe('полный путь 1..100', () => {
           `смертей/ч ${r.deathsPerHour.toFixed(2)}, ` +
           `решение раз в ${r.decisionIntervalSec?.toFixed(0) ?? '—'} с`,
       )
+      // ВСЕ СИДЫ И МЕДИАНА — чтобы выпавший сид было видно, а не только итог.
+      // eslint-disable-next-line no-console
+      console.log(
+        `${cls.name}: часов по сидам — ${bySeed(cls.id, (x) => x.totalHours)} ` +
+          `(медиана ${medianOf(cls.id, (x) => x.totalHours).toFixed(2)}); ` +
+          `убийств — ${bySeed(cls.id, (x) => x.totalKills, 0)} ` +
+          `(медиана ${medianOf(cls.id, (x) => x.totalKills).toFixed(0)}); ` +
+          `смертей/ч — ${bySeed(cls.id, (x) => x.deathsPerHour)} ` +
+          `(медиана ${medianOf(cls.id, (x) => x.deathsPerHour).toFixed(2)})`,
+      )
       // eslint-disable-next-line no-console
       console.table(rows)
       expect(rows).toHaveLength(RUN_BANDS.length)
@@ -104,9 +153,12 @@ describe('полный путь 1..100', () => {
         const classId = cls.id
         // Главное свойство конечной игры: конец достижим. И достижим он ОБОИМ
         // классам — путь один, а не «страж как-нибудь, а изувер по-настоящему».
-        const r = run(classId)
-        expect(r.reachedCap, `${classId} застрял на ${r.finalLevel} уровне`).toBe(true)
-        expect(r.finalLevel).toBe(LEVEL_CAP)
+        // Потолок обязан браться на КАЖДОМ сиде: «дойти до конца» — не то
+        // свойство, которое можно усреднять.
+        for (const r of runsOf(classId)) {
+          expect(r.reachedCap, `${classId} застрял на ${r.finalLevel} уровне`).toBe(true)
+          expect(r.finalLevel).toBe(LEVEL_CAP)
+        }
       },
       1_800_000,
     )
@@ -119,9 +171,11 @@ describe('полный путь 1..100', () => {
         const classId = cls.id
         // Цена пути задана ТАБЛИЦЕЙ (KILLS_PER_LEVEL), и прогон обязан её
         // подтверждать: разойдутся — значит опыт считается не по таблице.
-        const r = run(classId)
-        expect(r.totalKills).toBeGreaterThanOrEqual(KILLS_MIN)
-        expect(r.totalKills).toBeLessThanOrEqual(KILLS_MAX)
+        const kills = medianOf(classId, (x) => x.totalKills)
+        // eslint-disable-next-line no-console
+        console.log(`${classId}: убийств по сидам ${bySeed(classId, (x) => x.totalKills, 0)}`)
+        expect(kills).toBeGreaterThanOrEqual(KILLS_MIN)
+        expect(kills).toBeLessThanOrEqual(KILLS_MAX)
       },
       1_800_000,
     )
@@ -135,9 +189,10 @@ describe('полный путь 1..100', () => {
         // Привал — плата за глубину, а не занятие. Смерти на СВОЕЙ полосе быть
         // не должно вовсе: игрок, который идёт по лестнице и надевает найденное,
         // не обязан умирать ни разу.
-        const r = run(classId)
-        expect(r.restShare).toBeLessThanOrEqual(REST_SHARE_MAX)
-        expect(r.deathsPerHour).toBeLessThan(1)
+        // По МЕДИАНЕ: один неудачный сид — это невезение рулетки находок, а
+        // не сломанный баланс (см. RUN_SEEDS в data/balance.ts).
+        expect(medianOf(classId, (x) => x.restShare)).toBeLessThanOrEqual(REST_SHARE_MAX)
+        expect(medianOf(classId, (x) => x.deathsPerHour)).toBeLessThan(1)
       },
       1_800_000,
     )
