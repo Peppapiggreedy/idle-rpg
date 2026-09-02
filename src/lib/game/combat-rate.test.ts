@@ -10,6 +10,7 @@ import { createRng } from './rng'
 import { applyOfflineProgress } from './save'
 import {
   AP_NORMALIZATION,
+  FIGHT_COST_SPREAD,
   OFFLINE_EFFICIENCY,
   RESPAWN_DELAY_MS,
   REVIVE_DELAY_MS,
@@ -49,32 +50,30 @@ describe('estimateCombatRate', () => {
       8,
     )
 
-    // Убийство квантуется по ударам: последний почти всегда с перебоем, но
-    // не меньше половины замаха.
-    const perKill = Decimal.max(
-      squelcher.maxHp.div(avgSwing).ceil().times(avgSwing),
-      squelcher.maxHp.plus(avgSwing.div(2)),
-    )
-    const hits = Decimal.max(perKill.div(avgSwing).ceil(), new Decimal(1)).toNumber()
+    // Модель считает ДОЛГОСРОЧНЫЕ СРЕДНИЕ, а не один бой: перебой добивающего
+    // удара — половина среднего удара, число ударов дробное (см. farmCycle).
+    const perKill = squelcher.maxHp.plus(avgSwing.div(2))
+    const hits = Math.max(perKill.div(avgSwing).toNumber(), 1)
     const fightSec = hits * stats.swingTime
     const cycleSec = fightSec + RESPAWN_DELAY_MS / 1000
     expect(rate.idealKillsPerSecond.toNumber()).toBeCloseTo(1 / cycleSec, 8)
 
-    // Баланс HP за цикл: целое число ответных ударов за ФАЗУ БОЯ против
-    // регена (в бою медленный, в паузе респауна быстрый).
+    // Баланс HP за цикл: ответные удары за фазу боя — среднее по боям
+    // (бой/замах минус половина, не меньше нуля) — против регена (в бою
+    // медленный, в паузе респауна быстрый).
     const incoming = squelcher.damageMin
       .plus(squelcher.damageMax)
       .div(2)
-      .times(Math.floor(fightSec / squelcher.swingTime))
+      .times(Math.max(0, fightSec / squelcher.swingTime - 0.5))
     const regen = stats.hpRegen
       .times(fightSec)
       .plus(stats.hpRegenOutOfCombat.times(RESPAWN_DELAY_MS / 1000))
     const lossPerSec = incoming.minus(regen).div(cycleSec)
 
-    // ЦИКЛ ФАРМА СЧИТАЕТСЯ ПО БОЯМ ЦЕЛИКОМ. Привал теперь между схватками,
-    // поэтому модель квантует потери боями: сколько боёв герой выдерживает
-    // до порога, на каком у него кончается здоровье — и что раньше.
-    // Баланс сошёлся в плюс — герой не тает вовсе, и цикл бесконечен.
+    // ЦИКЛ ФАРМА — СРЕДНЕЕ ПО СОТНЯМ ЦИКЛОВ. Боёв до привала: запас над
+    // порогом в боях плюс половина (целое, усреднённое по фазе), не меньше
+    // одного; гибель — доля разброса цены боя выше запаса на входе в
+    // последний бой. Баланс сошёлся в плюс — герой не тает, цикл бесконечен.
     if (lossPerSec.lte(0)) {
       expect(rate.uptime).toBe(1)
       expect(rate.killsPerSecond.toNumber()).toBeCloseTo(1 / cycleSec, 8)
@@ -82,13 +81,16 @@ describe('estimateCombatRate', () => {
     }
     const loss = lossPerSec.times(cycleSec).toNumber()
     const hp = stats.maxHp.toNumber()
-    const kDeath = Math.ceil(hp / loss)
-    const kRest = Math.floor((hp * (1 - stats.restThreshold)) / loss) + 1
-    const dies = kDeath <= kRest
-    const kills = dies ? Math.max(0, kDeath - 1) : Math.max(1, kRest)
-    const total = dies
-      ? kills * cycleSec + cycleSec + REVIVE_DELAY_MS / 1000
-      : kills * cycleSec + stats.restDuration
+    const threshold = stats.restThreshold > 0 ? hp * stats.restThreshold : 0
+    const fights = Math.max(1, (hp - threshold) / loss + 0.5)
+    const enterHp = Math.min(hp, threshold + loss / 2)
+    const spread = loss * FIGHT_COST_SPREAD
+    const deathChance = Math.min(1, Math.max(0, (loss + spread - enterHp) / (2 * spread)))
+    const kills = fights - deathChance
+    const total =
+      fights * cycleSec +
+      (1 - deathChance) * stats.restDuration +
+      (deathChance * REVIVE_DELAY_MS) / 1000
     const uptime = (kills * cycleSec) / total
     expect(rate.uptime).toBeCloseTo(uptime, 8)
     expect(rate.killsPerSecond.toNumber()).toBeCloseTo((1 / cycleSec) * uptime, 8)

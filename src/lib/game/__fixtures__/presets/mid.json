@@ -34,6 +34,27 @@
       ]
     },
     {
+      "id": "item-3",
+      "name": "Сумрачный Наруч",
+      "rarity": "uncommon",
+      "slot": "hands",
+      "level": 8,
+      "mods": [
+        {
+          "stat": "strength",
+          "kind": "flat",
+          "value": "10.600000000000001",
+          "source": "equipment:hands"
+        },
+        {
+          "stat": "vitality",
+          "kind": "flat",
+          "value": "5.300000000000001",
+          "source": "equipment:hands"
+        }
+      ]
+    },
+    {
       "id": "item-4",
       "name": "Звёздный Нагрудник",
       "rarity": "common",
@@ -72,27 +93,6 @@
           "kind": "flat",
           "value": "4.24",
           "source": "equipment:chest"
-        }
-      ]
-    },
-    {
-      "id": "item-9",
-      "name": "Сумрачный Капюшон",
-      "rarity": "uncommon",
-      "slot": "head",
-      "level": 8,
-      "mods": [
-        {
-          "stat": "agility",
-          "kind": "flat",
-          "value": "10.600000000000001",
-          "source": "equipment:head"
-        },
-        {
-          "stat": "vitality",
-          "kind": "flat",
-          "value": "5.300000000000001",
-          "source": "equipment:head"
         }
       ]
     }

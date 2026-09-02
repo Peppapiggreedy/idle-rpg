@@ -18,6 +18,7 @@ import {
   AP_NORMALIZATION,
   AUTOCAST_DELAY_MS,
   AUTOCAST_MAX_LOSS,
+  FIGHT_COST_SPREAD,
   levelGapDamageMult,
   REGEN_TICK_S,
   RESPAWN_DELAY_MS,
@@ -211,40 +212,54 @@ export interface CombatRate {
   uptime: number
   // Секунд от полного HP до смерти при отрицательном балансе HP; null — не умирает.
   timeToDeathSec: number | null
-  // Сколько мобов герой добивает между привалами; бесконечность — не тает.
+  // Сколько мобов герой добивает между привалами В СРЕДНЕМ (дробное число:
+  // см. farmCycle); бесконечность — не тает.
   killsPerCycle: number
-  // Цикл кончается смертью, а не привалом: порог выставлен слишком низко
-  // для этой зоны, и в последнюю схватку герой входит без запаса.
+  // Вероятность, что цикл кончится смертью, а не привалом: порог выставлен
+  // слишком низко для этой зоны, и в последнюю схватку герой входит без запаса.
+  deathChancePerCycle: number
+  // Смерть вероятнее привала (deathChancePerCycle >= 0.5).
   diesInCycle: boolean
 }
 
-/** Что выходит из череды боёв между двумя привалами (или до смерти). */
+/** Что выходит из череды боёв между двумя привалами (или до смерти) — В СРЕДНЕМ. */
 export interface FarmCycle {
-  /** Сколько мобов герой успевает добить за цикл. */
+  /** Матожидание убийств за цикл. Дробное: это среднее по сотням циклов. */
   kills: number
-  /** Сколько секунд длится весь цикл вместе с привалом или воскрешением. */
+  /** Матожидание длины цикла: бои плюс привал либо воскрешение, секунд. */
   cycleSec: number
-  /** Доля времени цикла, потраченная на сам фарм. */
+  /** Доля времени цикла, потраченная на бои, кончившиеся убийством. */
   uptime: number
-  /** Герой не доживает до привала: цикл кончается смертью, а не отдыхом. */
+  /** Вероятность, что цикл кончится смертью, а не привалом. */
+  deathChance: number
+  /** Смерть вероятнее привала: `deathChance >= 0.5`. */
   dies: boolean
 }
 
 /**
- * Череда боёв между привалами.
+ * Череда боёв между привалами — ДОЛГОСРОЧНОЕ СРЕДНЕЕ, а не один цикл.
  *
- * ПРИВАЛ ТЕПЕРЬ МЕЖДУ БОЯМИ, а не посреди схватки, и это меняет саму форму
- * цикла. Раньше герой выходил из боя, едва просев по здоровью, — и умереть
- * при аккуратном пороге было нельзя вовсе. Теперь он доводит бой до конца,
- * а на привал уходит только после убийства. Отсюда риск: в последнюю схватку
- * цикла герой входит с запасом чуть выше порога, и если моб снимает больше —
- * он оттуда не выйдет.
+ * Привал стоит между боями: герой доводит схватку до конца и уходит отдыхать
+ * только после убийства, если здоровье упало ниже порога. Отсюда риск: в
+ * последнюю схватку цикла он входит с запасом чуть выше порога, и если бой
+ * стоит больше — он оттуда не выйдет.
  *
- * Модель считает именно это:
- *   сколько боёв герой выдерживает до порога (kRest),
- *   на каком бою у него кончается здоровье (kDeath),
- * и что из двух наступает раньше. Своей формулы урона здесь нет — потеря
- * за бой приходит из уже посчитанного баланса HP.
+ * ПОЧЕМУ БЕЗ ЦЕЛЫХ ЧИСЕЛ. За час игры проходят сотни циклов, и цена каждого
+ * боя гуляет: броски урона героя и криты меняют длину схватки, а с ней число
+ * ответных ударов моба. Поэтому точка, где накопленная потеря пересекает
+ * порог, ложится в разные места разных боёв — фаза пересечения размазана по
+ * бою равномерно. Целое `floor(запас/цена) + 1`, усреднённое по такой фазе,
+ * равно `запас/цена + 1/2`, и именно это среднее здесь считается. Прежняя
+ * модель брала floor/ceil одного цикла, и оценка была ступенчатой: лишняя
+ * единица силы атаки перекидывала цикл с двух боёв на один или с привала на
+ * смерть, и темп убийств прыгал втрое (откат 4a000e4, AUDIT.md). Метрикой
+ * сравнения предметов такое число служить не может.
+ *
+ * По той же логике смерть — не флаг, а ВЕРОЯТНОСТЬ: запас на входе в
+ * последний бой равен порогу плюс половине цены боя (середина фазы), но не
+ * больше полного; цена самого боя разбросана на ±FIGHT_COST_SPREAD вокруг
+ * средней, и гибель — это доля разброса, лежащая выше запаса. Цикл, где
+ * гибель вероятнее привала, помечается `dies`.
  */
 export function farmCycle(params: {
   maxHp: Decimal
@@ -252,34 +267,50 @@ export function farmCycle(params: {
   lossPerSecond: Decimal
   /** Секунд на один цикл убийства: бой плюс пауза респауна. */
   cycleSec: number
-  /** Порог привала, доля запаса. 0 — привалов нет вовсе. */
+  /** Порог привала, доля запаса. 0 — привалов нет вовсе, цикл кончается смертью. */
   hpThreshold: number
   restSec: number
 }): FarmCycle {
   const { maxHp, lossPerSecond, cycleSec, hpThreshold, restSec } = params
   const reviveSec = REVIVE_DELAY_MS / 1000
-  if (lossPerSecond.lte(0) || cycleSec <= 0) {
-    return { kills: Number.POSITIVE_INFINITY, cycleSec, uptime: 1, dies: false }
+  const endless: FarmCycle = {
+    kills: Number.POSITIVE_INFINITY,
+    cycleSec,
+    uptime: 1,
+    deathChance: 0,
+    dies: false,
   }
-  const lossPerFight = lossPerSecond.times(cycleSec)
+  if (lossPerSecond.lte(0) || cycleSec <= 0) return endless
   const hp = maxHp.toNumber()
-  const loss = lossPerFight.toNumber()
-  if (loss <= 0) return { kills: Number.POSITIVE_INFINITY, cycleSec, uptime: 1, dies: false }
-  // На каком бою здоровья уже не хватит: входит герой с hp - (k-1)*loss.
-  const kDeath = Math.ceil(hp / loss)
-  // После какого боя он уходит на привал (порог мерится ПОСЛЕ убийства).
-  const kRest =
-    hpThreshold > 0 ? Math.floor((hp * (1 - hpThreshold)) / loss) + 1 : Number.POSITIVE_INFINITY
-  const dies = kDeath <= kRest
-  if (dies) {
-    // Последний бой не дожит: убийства с него нет, а время потрачено.
-    const kills = Math.max(0, kDeath - 1)
-    const total = kills * cycleSec + cycleSec + reviveSec
-    return { kills, cycleSec: total, uptime: (kills * cycleSec) / total, dies: true }
+  const loss = lossPerSecond.times(cycleSec).toNumber()
+  if (loss <= 0 || hp <= 0) return endless
+  const threshold = hpThreshold > 0 ? hp * hpThreshold : 0
+  // Сколько средних боёв помещается в запас над порогом.
+  const budget = (hp - threshold) / loss
+  // Боёв в цикле: floor(budget) + 1, усреднённое по фазе пересечения порога.
+  // Первый бой герой проводит всегда — меньше одного не бывает.
+  const fights = Math.max(1, budget + 0.5)
+  // Запас на входе в последний бой: порог плюс половина цены (середина фазы),
+  // но не больше полного — из привала герой выходит с полным запасом.
+  const enterHp = Math.min(hp, threshold + loss / 2)
+  // Гибель — доля разброса цены боя, лежащая выше запаса на входе.
+  const spread = loss * FIGHT_COST_SPREAD
+  const deathChance =
+    spread > 0
+      ? Math.min(1, Math.max(0, (loss + spread - enterHp) / (2 * spread)))
+      : loss > enterHp
+        ? 1
+        : 0
+  // Погибший бой убийства не приносит, а время его потрачено.
+  const kills = fights - deathChance
+  const total = fights * cycleSec + (1 - deathChance) * restSec + deathChance * reviveSec
+  return {
+    kills,
+    cycleSec: total,
+    uptime: (kills * cycleSec) / total,
+    deathChance,
+    dies: deathChance >= 0.5,
   }
-  const kills = Math.max(1, kRest)
-  const total = kills * cycleSec + restSec
-  return { kills, cycleSec: total, uptime: (kills * cycleSec) / total, dies: false }
 }
 
 /**
@@ -445,9 +476,12 @@ function damagePerKill(state: GameState, plan: RotationPlan, stream: HitStream):
   if (!plan.delayed) return floor
   if (stream.rate.lte(0)) return floor
   const averageHit = stream.killing.div(stream.rate)
-  // Целое число ударов среднего размера: последний почти всегда с перебоем.
-  // Ниже минимума не опускаемся — авто не может терять меньше руки.
-  return Decimal.max(hp.div(averageHit).ceil().times(averageHit), floor)
+  // Матожидание перебоя — половина СРЕДНЕГО удара потока: добивающий удар
+  // ложится в случайное место, и мимо уходит в среднем половина его. Целое
+  // число ударов одного цикла здесь не берётся — оценка считает среднее по
+  // сотням боёв (см. farmCycle). Ниже минимума не опускаемся — авто не может
+  // терять меньше руки.
+  return Decimal.max(hp.plus(averageHit.div(2)), floor)
 }
 
 /**
@@ -560,9 +594,10 @@ export function estimateCombatRate(state: GameState, mode: PlayMode = 'auto'): C
   if (mode === 'manual') return rate
   // ЖЕЛЕЗНОЕ ПРАВИЛО в одном месте: автокаст не бывает выгоднее ручной игры
   // и не отстаёт от неё больше, чем на AUTOCAST_MAX_LOSS. Внутри модели оба
-  // числа считаются одинаково честно, но округления (целое число ударов на
-  // убийство, целое число ударов моба за бой) могут дать расхождение в доли
-  // процента не в ту сторону — здесь оно и снимается.
+  // числа считаются одинаково честно, но перебой добивающего удара у авто
+  // больше (см. damagePerKill), и на коротком бою расхождение может выйти
+  // в доли процента не в ту сторону — здесь оно и снимается. Зажим
+  // непрерывный: min/max, никаких порогов.
   // Точка отсчёта — ТА ЖЕ ротация, сыгранная руками. Снятые игроком галки
   // потолок не покрывает: отказ от умения стоит ровно столько, сколько стоит.
   const byHand = rawRate(state, PLAN.autocastByHand)
@@ -774,17 +809,14 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
     .plus(reflectPerSecond(s, expectedMonsterDamage(s.monster, stats, s.level.toNumber())))
   const perKill = damagePerKill(s, plan, stream)
   const damagePerSecond = raw.times(s.monster.maxHp.div(perKill))
-  // Длина боя — из уже посчитанного урона в секунду (он уже с поправкой на
-  // перебой). Дискретность ударов сидит внутри damagePerKill, поэтому здесь
-  // деление честное и без округлений.
-  // Длина боя — ЦЕЛОЕ число ударов потока, а не «столько-то секунд ровного
-  // урона». Это принципиально: каждый бой начинается с нуля — замах копится
-  // заново, автокаст выжидает задержку реакции. Непрерывная модель этого не
-  // видит и торопит бой процентов на пятнадцать, а от длины боя зависит
-  // весь оффлайн.
+  // Длина боя — СРЕДНЕЕ число ударов потока на убийство, дробное. Перебой
+  // добивающего удара уже сидит в damagePerKill (половина среднего удара —
+  // ровно то, что даёт целое число ударов, усреднённое по фазе), поэтому
+  // округлять здесь второй раз нельзя: получился бы лишний полуудар на
+  // каждый бой. Меньше одного удара бой не длится.
   const averagePaced = stream.rate.gt(0) ? stream.paced.div(stream.rate) : new Decimal(1)
   const hitsPerKill = averagePaced.gt(0)
-    ? Decimal.max(perKill.div(averagePaced).ceil(), new Decimal(1))
+    ? Decimal.max(perKill.div(averagePaced), new Decimal(1))
     : new Decimal(1)
   const fightSec = stream.rate.gt(0)
     ? hitsPerKill.div(stream.rate)
@@ -792,11 +824,14 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
   const killCycleSec = fightSec.plus(respawnSec)
   const idealKillsPerSecond = new Decimal(1).div(killCycleSec)
 
-  // Баланс HP за цикл: входящие удары моба (целым числом за фазу боя) минус
-  // реген (в бою медленный, в паузе респауна быстрый).
+  // Баланс HP за цикл: ответные удары моба за фазу боя минус реген (в бою
+  // медленный, в паузе респауна быстрый). Ударов моба — СРЕДНЕЕ по боям:
+  // моб бьёт по своему таймеру, и сколько ударов влезет в бой, зависит от
+  // того, где бой кончится; `floor(бой/замах)`, усреднённый по фазе, равен
+  // `бой/замах - 1/2`, а меньше нуля ударов не бывает.
   const avgIncoming = expectedMonsterDamage(s.monster, stats, s.level.toNumber())
   const monsterHitsPerCycle = avgIncoming.gt(0)
-    ? fightSec.div(s.monster.swingTime).floor()
+    ? Decimal.max(fightSec.div(s.monster.swingTime).minus(0.5), new Decimal(0))
     : new Decimal(0)
   const incomingPerCycle = monsterHitsPerCycle.times(avgIncoming)
   // Оберег лечит ТОЛЬКО в бою: он срабатывает от ударов, а в паузе респауна
@@ -820,6 +855,7 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
       uptime: 1,
       timeToDeathSec: null,
       killsPerCycle: Number.POSITIVE_INFINITY,
+      deathChancePerCycle: 0,
       diesInCycle: false,
     }
   }
@@ -846,6 +882,7 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
     // прогноз зоны понимает, переживает ли он бой вообще.
     timeToDeathSec: stats.maxHp.div(netLossPerSec).toNumber(),
     killsPerCycle: cycle.kills,
+    deathChancePerCycle: cycle.deathChance,
     diesInCycle: cycle.dies,
   }
 }
