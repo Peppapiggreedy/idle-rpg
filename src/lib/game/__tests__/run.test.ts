@@ -14,6 +14,7 @@ import { describe, expect, it } from 'vitest'
 import { LEVEL_CAP, RUN_SEEDS } from '../../data/balance'
 import { CLASSES, READY_CLASSES } from '../../data/classes'
 import { classIt, contractClasses } from './class-set'
+import { dump } from './dump'
 import { RUN_BANDS, simulateRun, type RunResult } from '../simulate'
 
 /** Сколько убийств стоит весь путь. Число выводится из KILLS_PER_LEVEL, и
@@ -108,6 +109,23 @@ function run(classId: string): RunResult {
   return runsOf(classId)[0]
 }
 
+// КЛЮЧИ ОТПЕЧАТКА СТРОЯТСЯ ИЗ КООРДИНАТ ЗАМЕРА — сид, класс, полоса, — а не из
+// имени теста: разбиение циклов на it.each переименует тесты, но не данные.
+/** Сид в ключе: с ведущими нулями, чтобы `seed-0007` сортировался рядом с `seed-4242`. */
+function seedTag(seed: number): string {
+  return `seed-${String(seed).padStart(4, '0')}`
+}
+
+/** Приставка ключа для конкретного прогона: сид RunResult не несёт, берём его по месту в SEEDS. */
+function seedKey(classId: string, r: RunResult): string {
+  return `run/${seedTag(SEEDS[runsOf(classId).indexOf(r)])}/${classId}`
+}
+
+/** Полоса — по границам, а не по подписи: `band-001-009` сортируется сам. */
+function bandKey(band: { from: number; to: number }): string {
+  return `band-${String(band.from).padStart(3, '0')}-${String(band.to).padStart(3, '0')}`
+}
+
 describe('полный путь 1..100', () => {
   it('таблица пути', () => {
     for (const cls of CLASS_SET) {
@@ -118,7 +136,7 @@ describe('полный путь 1..100', () => {
         const seconds = levels.reduce((n, x) => n + x.seconds, 0)
         return {
           полоса: band.label,
-          убийств: kills,
+          убийств: dump(`${seedKey(cls.id, r)}/${bandKey(band)}/kills`, kills),
           часов: Number((seconds / 3600).toFixed(2)),
           'с/убийство': Number((seconds / Math.max(1, kills)).toFixed(1)),
         }
@@ -126,7 +144,8 @@ describe('полный путь 1..100', () => {
       // eslint-disable-next-line no-console
       console.log(
         `${cls.name}: уровень ${r.finalLevel}, убийств ${r.totalKills}, ` +
-          `часов ${r.totalHours.toFixed(2)}, привал ${(r.restShare * 100).toFixed(1)}%, ` +
+          `часов ${dump(`${seedKey(cls.id, r)}/total-hours`, r.totalHours).toFixed(2)}, ` +
+          `привал ${(r.restShare * 100).toFixed(1)}%, ` +
           `смертей/ч ${r.deathsPerHour.toFixed(2)}, ` +
           `решение раз в ${r.decisionIntervalSec?.toFixed(0) ?? '—'} с`,
       )
@@ -157,7 +176,7 @@ describe('полный путь 1..100', () => {
         // свойство, которое можно усреднять.
         for (const r of runsOf(classId)) {
           expect(r.reachedCap, `${classId} застрял на ${r.finalLevel} уровне`).toBe(true)
-          expect(r.finalLevel).toBe(LEVEL_CAP)
+          expect(dump(`${seedKey(classId, r)}/final-level`, r.finalLevel)).toBe(LEVEL_CAP)
         }
       },
       1_800_000,
@@ -171,11 +190,11 @@ describe('полный путь 1..100', () => {
         const classId = cls.id
         // Цена пути задана ТАБЛИЦЕЙ (KILLS_PER_LEVEL), и прогон обязан её
         // подтверждать: разойдутся — значит опыт считается не по таблице.
-        const kills = medianOf(classId, (x) => x.totalKills)
+        const kills = medianOf(classId, (x) => dump(`${seedKey(classId, x)}/total-kills`, x.totalKills))
         // eslint-disable-next-line no-console
         console.log(`${classId}: убийств по сидам ${bySeed(classId, (x) => x.totalKills, 0)}`)
-        expect(kills).toBeGreaterThanOrEqual(KILLS_MIN)
-        expect(kills).toBeLessThanOrEqual(KILLS_MAX)
+        expect(dump(`run/median/${classId}/total-kills`, kills)).toBeGreaterThanOrEqual(KILLS_MIN)
+        expect(dump(`run/median/${classId}/total-kills`, kills)).toBeLessThanOrEqual(KILLS_MAX)
       },
       1_800_000,
     )
@@ -191,8 +210,18 @@ describe('полный путь 1..100', () => {
         // не обязан умирать ни разу.
         // По МЕДИАНЕ: один неудачный сид — это невезение рулетки находок, а
         // не сломанный баланс (см. RUN_SEEDS в data/balance.ts).
-        expect(medianOf(classId, (x) => x.restShare)).toBeLessThanOrEqual(REST_SHARE_MAX)
-        expect(medianOf(classId, (x) => x.deathsPerHour)).toBeLessThan(1)
+        expect(
+          dump(
+            `run/median/${classId}/rest-share`,
+            medianOf(classId, (x) => dump(`${seedKey(classId, x)}/rest-share`, x.restShare)),
+          ),
+        ).toBeLessThanOrEqual(REST_SHARE_MAX)
+        expect(
+          dump(
+            `run/median/${classId}/deaths-per-hour`,
+            medianOf(classId, (x) => dump(`${seedKey(classId, x)}/deaths-per-hour`, x.deathsPerHour)),
+          ),
+        ).toBeLessThan(1)
       },
       1_800_000,
     )
@@ -223,11 +252,11 @@ describe('полный путь 1..100', () => {
         const total = Object.values(r.bandHours).reduce((sum, h) => sum + h, 0)
         const ladder = LEVEL_CAP - 1
         for (const band of RUN_BANDS) {
-          const hours = r.bandHours[band.label] ?? 0
+          const hours = dump(`${seedKey(classId, r)}/${bandKey(band)}/hours`, r.bandHours[band.label] ?? 0)
           const levelShare = (Math.min(band.to, LEVEL_CAP) - band.from + 1) / ladder
           const timeShare = hours / total
           expect(
-            timeShare / levelShare,
+            dump(`${seedKey(classId, r)}/${bandKey(band)}/share-ratio`, timeShare / levelShare),
             `${classId}, полоса ${band.label}: ${(timeShare * 100).toFixed(1)}% времени ` +
               `на ${(levelShare * 100).toFixed(1)}% уровней`,
           ).toBeLessThan(BAND_SHARE_MAX)
@@ -248,10 +277,12 @@ describe('полный путь 1..100', () => {
     // разница в разы — это сломанный класс. Ровно так и выглядел страж до
     // того, как сравнение предметов стало считать темп, а не голый урон:
     // он застревал на шестьдесят четвёртом уровне.
-    const hours = CLASSES.map((c) => run(c.id).totalHours)
+    const hours = CLASSES.map((c) =>
+      dump(`run/${seedTag(SEEDS[0])}/${c.id}/total-hours`, run(c.id).totalHours),
+    )
     const min = Math.min(...hours)
     const max = Math.max(...hours)
     console.log(`Разрыв по времени пути между классами: ${((max - min) / min * 100).toFixed(0)}%`)
-    expect((max - min) / min).toBeLessThan(0.4)
+    expect(dump(`run/${seedTag(SEEDS[0])}/classes/total-hours-gap`, (max - min) / min)).toBeLessThan(0.4)
   }, 1_800_000)
 })

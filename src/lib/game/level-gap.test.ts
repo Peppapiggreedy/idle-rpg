@@ -27,6 +27,7 @@ import {
 import { MONSTER_GROWTH } from '../data/monsters'
 import { ZONES, averageMonsterLevel, zoneForMonsterLevel } from '../data/zones'
 import { classIt, contractClasses } from './__tests__/class-set'
+import { dump } from './__tests__/dump'
 
 const SAMPLE = process.env.BALANCE_SAMPLE === '1'
 /** Готовые классы — контракт, превью — предупреждение (см. class-set.ts). */
@@ -59,22 +60,34 @@ describe('штраф за разрыв уровней', () => {
   it('внутри своей зоны штрафа нет ни у кого', () => {
     // Полоса зоны — пять уровней мобов, и бесплатный разрыв ровно такой же.
     // Иначе штраф попадал бы по герою, который стоит там, где ему и место.
+    // Ключ отпечатка — координаты замера (уровень героя и уровень МОБА), а не
+    // шаг цикла: разбиение на it.each их не переименует.
     for (let gap = -10; gap <= LEVEL_GAP_FREE; gap += 1) {
-      expect(levelGapDamageMult(50, 50 + gap), `разрыв ${gap}`).toBe(1)
+      expect(
+        dump(
+          `gap/damage-mult/hero-050/monster-${String(50 + gap).padStart(3, '0')}`,
+          levelGapDamageMult(50, 50 + gap),
+        ),
+        `разрыв ${gap}`,
+      ).toBe(1)
     }
   })
 
   it('за каждый уровень сверх бесплатных моб бьёт больнее', () => {
-    expect(levelGapDamageMult(50, 50 + LEVEL_GAP_FREE + 1)).toBeCloseTo(
-      1 + LEVEL_GAP_DAMAGE_PER_LEVEL,
-      9,
-    )
-    expect(levelGapDamageMult(50, 50 + LEVEL_GAP_FREE + 10)).toBeCloseTo(
-      1 + LEVEL_GAP_DAMAGE_PER_LEVEL * 10,
-      9,
-    )
+    expect(
+      dump(
+        `gap/damage-mult/hero-050/monster-${String(50 + LEVEL_GAP_FREE + 1).padStart(3, '0')}`,
+        levelGapDamageMult(50, 50 + LEVEL_GAP_FREE + 1),
+      ),
+    ).toBeCloseTo(1 + LEVEL_GAP_DAMAGE_PER_LEVEL, 9)
+    expect(
+      dump(
+        `gap/damage-mult/hero-050/monster-${String(50 + LEVEL_GAP_FREE + 10).padStart(3, '0')}`,
+        levelGapDamageMult(50, 50 + LEVEL_GAP_FREE + 10),
+      ),
+    ).toBeCloseTo(1 + LEVEL_GAP_DAMAGE_PER_LEVEL * 10, 9)
     // Отставший моб бьёт как обычно: штраф односторонний.
-    expect(levelGapDamageMult(50, 20)).toBe(1)
+    expect(dump('gap/damage-mult/hero-050/monster-020', levelGapDamageMult(50, 20))).toBe(1)
   })
 
   it('ЛИНЕЙНАЯ СТАВКА УРОНА РЕЗКОЙ ОТСЕЧКИ НЕ ДАЁТ — ни при каком числе', () => {
@@ -85,11 +98,20 @@ describe('штраф за разрыв уровней', () => {
     // ничего не стоит, сколько ставку ни поднимай.
     const ratio = (r: number, level: number) => (1 + r * (level + 4)) / (1 + r * (level - 1))
     const current = MONSTER_GROWTH.damagePerLevel.toNumber()
+    // Ключ — КРАТНОСТЬ ставке роста из данных (x01/x03/x10), а не позиция в списке.
     for (const r of [current, current * 3, current * 10]) {
-      expect(ratio(r, 50), `ставка ${r}`).toBeLessThan(1.15)
+      expect(
+        dump(
+          `gap/linear-ratio/level-050/growth-x${String(Math.round(r / current)).padStart(2, '0')}`,
+          ratio(r, 50),
+        ),
+        `ставка ${r}`,
+      ).toBeLessThan(1.15)
     }
     // А штраф за разрыв даёт скачок сразу: одна зона глубже — уже другой бой.
-    expect(levelGapDamageMult(50, 60)).toBeGreaterThan(1.5)
+    expect(
+      dump('gap/damage-mult/hero-050/monster-060', levelGapDamageMult(50, 60)),
+    ).toBeGreaterThan(1.5)
   })
 })
 
@@ -115,11 +137,21 @@ describe('обгон зон: до +5 уверенно, до +10 с риском,
     const label = `${row.cls.name} ур.${row.level}`
 
     cit(`${label}: уверенно не глубже +5`, () => {
-      expect(row.solid).toBeLessThanOrEqual(LEVEL_GAP_FREE)
+      expect(
+        dump(
+          `gap/overrun/${row.cls.id}/level-${String(row.level).padStart(3, '0')}/solid`,
+          row.solid,
+        ),
+      ).toBeLessThanOrEqual(LEVEL_GAP_FREE)
     })
 
     cit(`${label}: даже с риском не глубже +10`, () => {
-      expect(row.risky).toBeLessThanOrEqual(LEVEL_GAP_FREE * 2)
+      expect(
+        dump(
+          `gap/overrun/${row.cls.id}/level-${String(row.level).padStart(3, '0')}/risky`,
+          row.risky,
+        ),
+      ).toBeLessThanOrEqual(LEVEL_GAP_FREE * 2)
     })
   }
 
@@ -131,7 +163,10 @@ describe('обгон зон: до +5 уверенно, до +10 с риском,
         const own = zoneForMonsterLevel(level) ?? ZONES[0]
         const state = buildSimState(referenceBuild(level, cls.id), own.id, 1)
         const ttk = estimateZoneTtk(state, own).avg
-        expect(ttk, `${cls.id} ур.${level}`).toBeGreaterThanOrEqual(TTK_TARGET_MIN)
+        expect(
+          dump(`gap/own-zone-ttk/${cls.id}/level-${String(level).padStart(3, '0')}/avg`, ttk),
+          `${cls.id} ур.${level}`,
+        ).toBeGreaterThanOrEqual(TTK_TARGET_MIN)
       }
     })
   }

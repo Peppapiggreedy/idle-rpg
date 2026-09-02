@@ -25,6 +25,7 @@ import { classIt, contractClasses } from './class-set'
 import { LEVEL_CAP } from '../../data/balance'
 import { MONSTER_GROWTH } from '../../data/monsters'
 import { RECIPES, craftToll, goldPerHourAt, recipeLevel } from '../../data/recipes'
+import { dump } from './dump'
 
 const SAMPLE = process.env.BALANCE_SAMPLE === '1'
 /** Готовые классы — контракт, превью — предупреждение (см. class-set.ts). */
@@ -86,7 +87,19 @@ describe('кран золота', () => {
     cit(`${cls.name}: доход растёт на каждой ступени — плато нет нигде`, () => {
       const values = income.get(classId)!
       for (let i = 1; i < values.length; i += 1) {
-        expect(values[i], `ур. ${LEVELS[i]}`).toBeGreaterThan(values[i - 1])
+        // Ключ — координаты замера: класс, своя зона уровня, сам уровень.
+        expect(
+          dump(
+            `gold/income/${classId}/zone-own/level-${String(LEVELS[i]).padStart(3, '0')}`,
+            values[i],
+          ),
+          `ур. ${LEVELS[i]}`,
+        ).toBeGreaterThan(
+          dump(
+            `gold/income/${classId}/zone-own/level-${String(LEVELS[i - 1]).padStart(3, '0')}`,
+            values[i - 1],
+          ),
+        )
       }
     })
 
@@ -97,9 +110,21 @@ describe('кран золота', () => {
       // поехала дальше.
       const values = income.get(classId)!
       const ratios = values.slice(1).map((v, i) => v / values[i])
-      expect(Math.min(...ratios), 'самая пологая ступень').toBeGreaterThan(1.1)
-      expect(Math.max(...ratios), 'самая крутая ступень').toBeLessThan(2.35)
-      expect(Math.max(...ratios) / Math.min(...ratios), 'разброс').toBeLessThan(2)
+      expect(
+        dump(`gold/income-step/${classId}/ratio-min`, Math.min(...ratios)),
+        'самая пологая ступень',
+      ).toBeGreaterThan(1.1)
+      expect(
+        dump(`gold/income-step/${classId}/ratio-max`, Math.max(...ratios)),
+        'самая крутая ступень',
+      ).toBeLessThan(2.35)
+      expect(
+        dump(
+          `gold/income-step/${classId}/ratio-spread`,
+          Math.max(...ratios) / Math.min(...ratios),
+        ),
+        'разброс',
+      ).toBeLessThan(2)
     })
 
     cit(
@@ -107,7 +132,12 @@ describe('кран золота', () => {
       () => {
         const perRung = Math.pow(LADDER_PRICE_GROWTH, 1 / (LADDER_RUNGS - 1))
         const hours = RUNG_LEVELS.map(
-          (level, i) => Math.pow(perRung, i) / goldPerHour(level, classId),
+          (level, i) =>
+            Math.pow(perRung, i) /
+            dump(
+              `gold/income/${classId}/zone-own/level-${String(level).padStart(3, '0')}`,
+              goldPerHour(level, classId),
+            ),
         )
         const relative = hours.map((h) => h / hours[0])
         // eslint-disable-next-line no-console
@@ -115,7 +145,12 @@ describe('кран золота', () => {
           `${classId}: время до покупки по ступеням — ` +
             relative.map((r, i) => `ур.${RUNG_LEVELS[i]}:${r.toFixed(2)}`).join(' '),
         )
-        expect(Math.max(...relative) / Math.min(...relative)).toBeLessThan(3)
+        expect(
+          dump(
+            `gold/ladder/${classId}/hours-spread`,
+            Math.max(...relative) / Math.min(...relative),
+          ),
+        ).toBeLessThan(3)
       },
       900_000,
     )
@@ -154,11 +189,30 @@ describe('кран золота', () => {
     for (let i = 1; i < points.length; i += 1) {
       const flatter = evenness(points[i - 1])
       const steeper = evenness(points[i])
-      expect(flatter.spread, `наклон ${points[i - 1]} против ${points[i]}`).toBeLessThan(
-        steeper.spread,
+      // Координата замера — сам наклон, а не номер пары: 0.05 -> slope-0-05.
+      expect(
+        dump(
+          `gold/reward-slope/slope-${points[i - 1].toFixed(2).replace('.', '-')}/spread`,
+          flatter.spread,
+        ),
+        `наклон ${points[i - 1]} против ${points[i]}`,
+      ).toBeLessThan(
+        dump(
+          `gold/reward-slope/slope-${points[i].toFixed(2).replace('.', '-')}/spread`,
+          steeper.spread,
+        ),
       )
-      expect(flatter.share, `доля стартовой зоны при наклоне ${points[i - 1]}`).toBeGreaterThan(
-        steeper.share,
+      expect(
+        dump(
+          `gold/reward-slope/slope-${points[i - 1].toFixed(2).replace('.', '-')}/start-zone-share`,
+          flatter.share,
+        ),
+        `доля стартовой зоны при наклоне ${points[i - 1]}`,
+      ).toBeGreaterThan(
+        dump(
+          `gold/reward-slope/slope-${points[i].toFixed(2).replace('.', '-')}/start-zone-share`,
+          steeper.share,
+        ),
       )
     }
   })
@@ -176,8 +230,14 @@ describe('дыра отстающей зоны', () => {
   it('печатает обе цифры по уровням', () => {
     const rows = [20, 40, 60, 80, 100].map((level) => {
       const own = zoneForMonsterLevel(level) ?? ZONES[0]
-      const start = goldPerHour(level, DEFAULT_CLASS.id, ZONES[0].id)
-      const mine = goldPerHour(level, DEFAULT_CLASS.id, own.id)
+      const start = dump(
+        `gold/income/${DEFAULT_CLASS.id}/zone-${ZONES[0].id}/level-${String(level).padStart(3, '0')}`,
+        goldPerHour(level, DEFAULT_CLASS.id, ZONES[0].id),
+      )
+      const mine = dump(
+        `gold/income/${DEFAULT_CLASS.id}/zone-own/level-${String(level).padStart(3, '0')}`,
+        goldPerHour(level, DEFAULT_CLASS.id, own.id),
+      )
       return {
         уровень: level,
         'стартовая 1-5, зол/ч': Math.round(start),
@@ -196,8 +256,18 @@ describe('дыра отстающей зоны', () => {
     // примерно равна своей. Это уже плохо — но это ИЗВЕСТНО плохо, и правка
     // формы кривой не имеет права сделать хуже незаметно.
     const own = zoneForMonsterLevel(20) ?? ZONES[0]
-    const share = goldPerHour(20, DEFAULT_CLASS.id, ZONES[0].id) / goldPerHour(20, DEFAULT_CLASS.id, own.id)
-    expect(share).toBeLessThan(1.25)
+    const share =
+      dump(
+        `gold/income/${DEFAULT_CLASS.id}/zone-${ZONES[0].id}/level-020`,
+        goldPerHour(20, DEFAULT_CLASS.id, ZONES[0].id),
+      ) /
+      dump(
+        `gold/income/${DEFAULT_CLASS.id}/zone-own/level-020`,
+        goldPerHour(20, DEFAULT_CLASS.id, own.id),
+      )
+    expect(dump(`gold/lagging-zone/${DEFAULT_CLASS.id}/level-020/start-share`, share)).toBeLessThan(
+      1.25,
+    )
   }, 900_000)
 })
 
@@ -217,9 +287,22 @@ describe('пошлина крафта на настоящих ценах', () =>
     // eslint-disable-next-line no-console
     console.table(rows)
     for (const level of [10, 20, 40, 60, 80, 100]) {
-      const real = goldPerHour(level, DEFAULT_CLASS.id)
-      const model = goldPerHourAt(level).toNumber()
-      expect(Math.abs(model - real) / real, `ур. ${level}`).toBeLessThan(0.3)
+      const real = dump(
+        `gold/income/${DEFAULT_CLASS.id}/zone-own/level-${String(level).padStart(3, '0')}`,
+        goldPerHour(level, DEFAULT_CLASS.id),
+      )
+      // Модель дохода от класса не зависит — класса в ключе нет.
+      const model = dump(
+        `gold/income-model/level-${String(level).padStart(3, '0')}`,
+        goldPerHourAt(level).toNumber(),
+      )
+      expect(
+        dump(
+          `gold/income-model/${DEFAULT_CLASS.id}/level-${String(level).padStart(3, '0')}/rel-error`,
+          Math.abs(model - real) / real,
+        ),
+        `ур. ${level}`,
+      ).toBeLessThan(0.3)
     }
   }, 900_000)
 
@@ -229,7 +312,7 @@ describe('пошлина крафта на настоящих ценах', () =>
       .map((r) => ({
         рецепт: r.name,
         'ур.': recipeLevel(r),
-        пошлина: craftToll(r).toNumber(),
+        пошлина: dump(`gold/craft-toll/${r.id}/gold`, craftToll(r).toNumber()),
         'часов дохода': (
           craftToll(r).div(goldPerHourAt(recipeLevel(r))).toNumber()
         ).toFixed(2),
@@ -248,11 +331,19 @@ describe('пошлина крафта на настоящих ценах', () =>
         r.output.kind === 'item'
           ? (r.output.procId ? 'unique' : 'item') === kind
           : r.output.kind === kind,
-      ).map((r) => craftToll(r).div(goldPerHourAt(recipeLevel(r))).toNumber())
+      ).map((r) =>
+        dump(
+          `gold/craft-toll/${r.id}/hours`,
+          craftToll(r).div(goldPerHourAt(recipeLevel(r))).toNumber(),
+        ),
+      )
     for (const kind of ['food', 'potion', 'item', 'unique'] as const) {
       const values = hours(kind)
       if (values.length === 0) continue
-      expect(Math.max(...values) - Math.min(...values), kind).toBeLessThan(0.01)
+      expect(
+        dump(`gold/craft-toll/kind-${kind}/hours-spread`, Math.max(...values) - Math.min(...values)),
+        kind,
+      ).toBeLessThan(0.01)
     }
   })
 })

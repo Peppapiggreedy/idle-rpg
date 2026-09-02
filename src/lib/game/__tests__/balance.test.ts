@@ -55,6 +55,7 @@ import { ONE_HANDED, WEAPONS } from '../../data/items'
 import { BRANCHES, type BranchDef, type BranchStyle } from '../../data/talents'
 import { DEFAULT_CLASS, classById } from '../../data/classes'
 import { classIt, contractClasses } from './class-set'
+import { dump } from './dump'
 import { ABILITIES, ABILITY_BY_ID } from '../../data/abilities'
 import { monsterFromTemplate, type GameState } from '../state'
 
@@ -162,7 +163,13 @@ describe('прогон баланса: таблица зон', () => {
       // «эталон шестнадцатого уровня ничего не приносит на полосе сотых» —
       // это правильный ответ прибора, а не пустота таблицы.
       if (zone.monsterLevelRange.max <= intendedZone(zoneLevel).monsterLevelRange.max) {
-        expect(result.killsPerHour.gt(0), zone.id).toBe(true)
+        expect(
+          dump(
+            `balance/zone-table/level-${String(zoneLevel).padStart(3, '0')}/zone-${zone.id}/kills-per-hour`,
+            result.killsPerHour,
+          ).gt(0),
+          zone.id,
+        ).toBe(true)
       }
     }
   }, 300_000)
@@ -190,7 +197,18 @@ describe('прогресс монотонный', () => {
     // не трогает, и это ровно то, ради чего он его не трогает — за низкими
     // материалами должно оставаться куда пойти.
     for (let i = 1; i < results.length; i++) {
-      expect(results[i].goldPerHour.gt(results[i - 1].goldPerHour), ZONE_SET[i].id).toBe(true)
+      expect(
+        dump(
+          `balance/monotone/level-${String(LEVEL).padStart(3, '0')}/zone-${ZONE_SET[i].id}/gold-per-hour`,
+          results[i].goldPerHour,
+        ).gt(
+          dump(
+            `balance/monotone/level-${String(LEVEL).padStart(3, '0')}/zone-${ZONE_SET[i - 1].id}/gold-per-hour`,
+            results[i - 1].goldPerHour,
+          ),
+        ),
+        ZONE_SET[i].id,
+      ).toBe(true)
     }
 
     // ОПЫТ монотонен там, где он вообще есть. У замороженного эталона высокого
@@ -203,13 +221,33 @@ describe('прогресс монотонный', () => {
     // зоны тяжелее, дыр в середине лестницы нет), а среди платящих рост
     // строгий. Раньше первого утверждения не было вовсе.
     const paying = results.findIndex((r) => r.xpPerHour.gt(0))
-    expect(paying, 'ни одна зона не платит опыта — штраф съел лестницу целиком').toBeGreaterThanOrEqual(0)
+    expect(
+      dump(`balance/monotone/level-${String(LEVEL).padStart(3, '0')}/first-paying-zone-index`, paying),
+      'ни одна зона не платит опыта — штраф съел лестницу целиком',
+    ).toBeGreaterThanOrEqual(0)
     results.forEach((r, i) => {
       const expected = i >= paying
-      expect(r.xpPerHour.gt(0), `${ZONE_SET[i].id}: дыра в лестнице опыта`).toBe(expected)
+      expect(
+        dump(
+          `balance/monotone/level-${String(LEVEL).padStart(3, '0')}/zone-${ZONE_SET[i].id}/xp-per-hour`,
+          r.xpPerHour,
+        ).gt(0),
+        `${ZONE_SET[i].id}: дыра в лестнице опыта`,
+      ).toBe(expected)
     })
     for (let i = paying + 1; i < results.length; i++) {
-      expect(results[i].xpPerHour.gt(results[i - 1].xpPerHour), ZONE_SET[i].id).toBe(true)
+      expect(
+        dump(
+          `balance/monotone/level-${String(LEVEL).padStart(3, '0')}/zone-${ZONE_SET[i].id}/xp-per-hour`,
+          results[i].xpPerHour,
+        ).gt(
+          dump(
+            `balance/monotone/level-${String(LEVEL).padStart(3, '0')}/zone-${ZONE_SET[i - 1].id}/xp-per-hour`,
+            results[i - 1].xpPerHour,
+          ),
+        ),
+        ZONE_SET[i].id,
+      ).toBe(true)
     }
     // Прогноз по всем зонам и уровням — тысячи оценок боя; оценка идёт двумя
     // проходами (мана с привала, лечение), и на одном ядре тест стоит ~500 с.
@@ -240,18 +278,24 @@ describe('нет доминирующей зоны', () => {
       const gold = ZONE_SET.map((zone) =>
         !isOpen(zone)
           ? new Decimal(0)
-          : simulate({
-              hours: 1,
-              zoneId: zone.id,
-              freezeLevel: true,
-              build: referenceBuild(level),
-            }).goldPerHour,
+          : dump(
+              `balance/no-dominant/level-${String(level).padStart(3, '0')}/zone-${zone.id}/gold-per-hour`,
+              simulate({
+                hours: 1,
+                zoneId: zone.id,
+                freezeLevel: true,
+                build: referenceBuild(level),
+              }).goldPerHour,
+            ),
       )
       let best = 0
       gold.forEach((g, i) => {
         if (isOpen(ZONE_SET[i]) && g.gt(gold[best])) best = i
       })
-      expect(open.length, `на ${level} уровне не открыто ни одной зоны`).toBeGreaterThan(0)
+      expect(
+        dump(`balance/no-dominant/level-${String(level).padStart(3, '0')}/open-zones`, open.length),
+        `на ${level} уровне не открыто ни одной зоны`,
+      ).toBeGreaterThan(0)
       winners.push(ZONE_SET[best].id)
       log(
         `${String(level).padStart(7)}   ${gold.map((g) => num(g, 18)).join(' ')}   ${ZONE_SET[best].name}`,
@@ -259,7 +303,7 @@ describe('нет доминирующей зоны', () => {
     }
     const unique = new Set(winners)
     log(`Лучшая зона меняется ${unique.size} раз(а) за ${LEVELS.length} уровней.`)
-    expect(unique.size).toBeGreaterThan(1)
+    expect(dump('balance/no-dominant/distinct-best-zones', unique.size)).toBeGreaterThan(1)
   }, 300_000)
 })
 
@@ -301,14 +345,31 @@ describe('темп прокачки', () => {
     // полной награде своей полосы. Документированный контракт (20–60 минут)
     // при этом не тронут — двигается только более узкий потолок теста.
     for (const travel of ['stay', 'best'] as const) {
-      expect(results[travel], travel).toBeGreaterThanOrEqual(15 * 60)
-      expect(results[travel], travel).toBeLessThanOrEqual(28 * 60)
+      expect(
+        dump(
+          `balance/levelling-pace/zone-${ZONES[0].id}/travel-${travel}/level-010-at-sec`,
+          results[travel],
+        ),
+        travel,
+      ).toBeGreaterThanOrEqual(15 * 60)
+      expect(
+        dump(
+          `balance/levelling-pace/zone-${ZONES[0].id}/travel-${travel}/level-010-at-sec`,
+          results[travel],
+        ),
+        travel,
+      ).toBeLessThanOrEqual(28 * 60)
     }
     // Разрыв между крайними стилями остаётся МАЛЫМ, и это по-прежнему
     // требование: игра не наказывает ни за осторожность, ни за спешку в
     // первые двадцать минут. Изменилось не это, а то, что стили наконец
     // различаются: едущий заканчивает в другой зоне и на уровень выше.
-    expect(Math.abs(results.stay - results.best)).toBeLessThan(5 * 60)
+    expect(
+      dump(
+        `balance/levelling-pace/zone-${ZONES[0].id}/stay-vs-best-gap-sec`,
+        Math.abs(results.stay - results.best),
+      ),
+    ).toBeLessThan(5 * 60)
   }, 300_000)
 })
 
@@ -339,7 +400,12 @@ describe('смертность в подходящей зоне', () => {
       log(
         `${zone.name.padEnd(20)} ${`${zone.monsterLevelRange.min}-${zone.monsterLevelRange.max}`.padEnd(8)} ${String(level).padStart(13)}   ${result.deathsPerHour.toFixed(1).padStart(9)}`,
       )
-      expect(result.deathsPerHour).toBe(0)
+      expect(
+        dump(
+          `balance/mortality/zone-${zone.id}/level-${String(level).padStart(3, '0')}/deaths-per-hour`,
+          result.deathsPerHour,
+        ),
+      ).toBe(0)
     }
   }, 300_000)
 })
@@ -376,19 +442,39 @@ describe('оценка сходится с прогоном при любом к
       for (const variant of variants(natural)) {
         const build: SimBuild = { ...base, extraMods: [...variant.mods] }
         const state = buildSimState(build, zone.id, CONTRACT_SEED)
-        const estimate = forecastZone(state, zone).killsPerHour.toNumber()
-        const actual = simulate({
-          hours: HOURS,
-          zoneId: zone.id,
-          freezeLevel: true,
-          build,
-          seed: CONTRACT_SEED,
-        }).killsPerHour.toNumber()
+        // Клетку различает ВАРИАНТ КРИТА, а не строка таблицы: natural —
+        // свой крит (модификаторов нет), zero — срезанный, plus25 — с добавкой.
+        const estimate = dump(
+          `balance/model-vs-tick/level-${String(level).padStart(3, '0')}/crit-${
+            variant.mods.length === 0 ? 'natural' : state.stats.critChance > natural ? 'plus25' : 'zero'
+          }/model-kills-per-hour`,
+          forecastZone(state, zone).killsPerHour.toNumber(),
+        )
+        const actual = dump(
+          `balance/model-vs-tick/level-${String(level).padStart(3, '0')}/crit-${
+            variant.mods.length === 0 ? 'natural' : state.stats.critChance > natural ? 'plus25' : 'zero'
+          }/tick-kills-per-hour`,
+          simulate({
+            hours: HOURS,
+            zoneId: zone.id,
+            freezeLevel: true,
+            build,
+            seed: CONTRACT_SEED,
+          }).killsPerHour.toNumber(),
+        )
         const diff = (estimate - actual) / actual
         log(
           `${String(level).padStart(7)}  ${`${variant.name} (${(state.stats.critChance * 100).toFixed(0)}%)`.padEnd(13)} ${estimate.toFixed(1).padStart(12)} ${actual.toFixed(1).padStart(13)}   ${(diff * 100).toFixed(1).padStart(6)}%`,
         )
-        expect(Math.abs(diff), `ур. ${level}, ${variant.name}`).toBeLessThanOrEqual(TOLERANCE)
+        expect(
+          dump(
+            `balance/model-vs-tick/level-${String(level).padStart(3, '0')}/crit-${
+              variant.mods.length === 0 ? 'natural' : state.stats.critChance > natural ? 'plus25' : 'zero'
+            }/rel-diff-abs`,
+            Math.abs(diff),
+          ),
+          `ур. ${level}, ${variant.name}`,
+        ).toBeLessThanOrEqual(TOLERANCE)
       }
     }
   }, 900_000)
@@ -455,7 +541,10 @@ describe('стиль боя', () => {
     const gold = paired.map((r) => meanGold(r.runs).toNumber())
     const mean = gold.reduce((a, b) => a + b, 0) / gold.length
     for (const { style, runs } of results) {
-      const g = meanGold(runs).toNumber()
+      const g = dump(
+        `balance/style/normalisation/zone-${weaponZoneId}/weapon-level-${String(WEAPON_LEVEL).padStart(3, '0')}/style-${style.toLowerCase()}/gold-per-hour`,
+        meanGold(runs).toNumber(),
+      )
       const rests = runs.reduce((sum, r) => sum + r.restsPerHour, 0) / runs.length
       const dev = style === 'shield' ? '' : ((g - mean) / mean >= 0 ? '+' : '') + pct((g - mean) / mean)
       log(
@@ -467,7 +556,12 @@ describe('стиль боя', () => {
     log(
       `Разброс ${pct(spread)} при ${hitsPerKill(zone, weaponBuild, WEAPON_LEVEL).toFixed(1)} замахах двуручника на моба.`,
     )
-    expect(spread).toBeLessThanOrEqual(weaponSpreadLimit)
+    expect(
+      dump(
+        `balance/style/normalisation/zone-${weaponZoneId}/weapon-level-${String(WEAPON_LEVEL).padStart(3, '0')}/paired-gold-spread`,
+        spread,
+      ),
+    ).toBeLessThanOrEqual(weaponSpreadLimit)
   }, 300_000)
 
   it('щит платит уроном за живучесть — и то, и другое видно', () => {
@@ -511,7 +605,17 @@ describe('стиль боя', () => {
     }
     // Привал обязан заметно упасть, а не просто «не вырасти»: щит покупает
     // живучесть, и покупка должна быть видна.
-    expect(idle(shield)).toBeLessThan(idle(dual) * 0.9)
+    expect(
+      dump(
+        `balance/style/shield-cost/zone-${stressZoneId}/weapon-level-${String(BALANCE_PRESET.stressWeaponLevel).padStart(3, '0')}/style-shield/rest-share`,
+        idle(shield),
+      ),
+    ).toBeLessThan(
+      dump(
+        `balance/style/shield-cost/zone-${stressZoneId}/weapon-level-${String(BALANCE_PRESET.stressWeaponLevel).padStart(3, '0')}/style-dual/rest-share`,
+        idle(dual),
+      ) * 0.9,
+    )
     // А вот золото со щитом теперь может оказаться и БОЛЬШЕ, и это не сбой
     // баланса, а следствие шага 35: привал переехал между боями, и в тяжёлой
     // зоне живучесть напрямую превращается во время под мобами. Платит щит
@@ -527,9 +631,26 @@ describe('стиль боя', () => {
           new Decimal(0),
         )
         .div(runs.length)
-    const damageLoss = 1 - autoRate(shield).div(autoRate(dual)).toNumber()
+    const damageLoss =
+      1 -
+      dump(
+        `balance/style/shield-cost/zone-${stressZoneId}/weapon-level-${String(BALANCE_PRESET.stressWeaponLevel).padStart(3, '0')}/style-shield/auto-damage-per-combat-sec`,
+        autoRate(shield),
+      )
+        .div(
+          dump(
+            `balance/style/shield-cost/zone-${stressZoneId}/weapon-level-${String(BALANCE_PRESET.stressWeaponLevel).padStart(3, '0')}/style-dual/auto-damage-per-combat-sec`,
+            autoRate(dual),
+          ),
+        )
+        .toNumber()
     log(`Щит стоит ${pct(damageLoss)} урона автоатаки в секунду боя.`)
-    expect(damageLoss).toBeGreaterThan(0.15)
+    expect(
+      dump(
+        `balance/style/shield-cost/zone-${stressZoneId}/weapon-level-${String(BALANCE_PRESET.stressWeaponLevel).padStart(3, '0')}/auto-damage-loss-share`,
+        damageLoss,
+      ),
+    ).toBeGreaterThan(0.15)
   }, 300_000)
 
   it('перебой: чем короче бой, тем сильнее расходится итог', () => {
@@ -575,7 +696,10 @@ describe('стиль боя', () => {
           ),
         ),
       )
-      const spread = spreadOf(gold)
+      const spread = dump(
+        `balance/style/overkill/zone-${c.zone}/weapon-level-${String(c.weaponLevel).padStart(3, '0')}/paired-gold-spread`,
+        spreadOf(gold),
+      )
       const numbers = gold.map((g) => g.toNumber())
       const best = STYLE_NAMES[paired[numbers.indexOf(Math.max(...numbers))]]
       log(
@@ -615,21 +739,38 @@ describe('стиль боя', () => {
       })
       log(
         `${template.noun.padEnd(20)} ${template.weaponSpeed.toFixed(1).padStart(8)}с ` +
-          `${num(result.abilityDamage, 13)} ${num(result.manaSpent)} ${num(result.damagePerMana!, 14)}`,
+          `${num(result.abilityDamage, 13)} ${num(result.manaSpent)} ${num(
+            dump(
+              `balance/style/damage-per-mana/zone-${weaponZoneId}/weapon-${template.id}/damage-per-mana`,
+              result.damagePerMana!,
+            ),
+            14,
+          )}`,
       )
       return { template, result }
     })
 
     const [fast, slow] = rows
-    const ratio = slow.result.damagePerMana!.div(fast.result.damagePerMana!).toNumber()
-    const speedRatio = slow.template.weaponSpeed.div(fast.template.weaponSpeed).toNumber()
+    const ratio = dump(
+      `balance/style/damage-per-mana/zone-${weaponZoneId}/slow-${slow.template.id}-over-fast-${fast.template.id}/damage-per-mana-ratio`,
+      slow.result.damagePerMana!.div(fast.result.damagePerMana!).toNumber(),
+    )
+    const speedRatio = dump(
+      `balance/style/damage-per-mana/zone-${weaponZoneId}/slow-${slow.template.id}-over-fast-${fast.template.id}/speed-ratio`,
+      slow.template.weaponSpeed.div(fast.template.weaponSpeed).toNumber(),
+    )
     log(`Урон за ману выше в ${ratio.toFixed(2)} раза при разнице скоростей в ${speedRatio.toFixed(2)} раза.`)
     // Медленное оружие обязано выигрывать по урону за ману, и ровно во столько
     // раз, во сколько оно медленнее: доля замаха — это и есть вся формула.
     expect(ratio).toBeGreaterThan(1)
     // В пределах десятой доли: точное равенство ломает перебой добивающего
     // удара, а он к формуле умений отношения не имеет.
-    expect(Math.abs(ratio - speedRatio) / speedRatio).toBeLessThan(0.1)
+    expect(
+      dump(
+        `balance/style/damage-per-mana/zone-${weaponZoneId}/slow-${slow.template.id}-over-fast-${fast.template.id}/ratio-vs-speed-rel-diff`,
+        Math.abs(ratio - speedRatio) / speedRatio,
+      ),
+    ).toBeLessThan(0.1)
   }, 300_000)
 })
 
@@ -710,7 +851,14 @@ describe('ветки талантов', () => {
     )
     const branches = BRANCHES.filter((b) => CLASS_SET.some((c) => c.id === b.classId))
     const rows = branches.map((branch) => ({ branch, ...bestZone(branch) }))
-    const gold = rows.map((r) => mean(r.runs).toNumber())
+    // Зона в ключ не входит намеренно: она ИСХОД замера (какую ветка тянет),
+    // а не его вход — иначе смена лучшей зоны переименовывала бы строку.
+    const gold = rows.map((r) =>
+      dump(
+        `balance/talents/best-zone/level-${String(branchLevel).padStart(3, '0')}/branch-${r.branch.id}/gold-per-hour`,
+        mean(r.runs).toNumber(),
+      ),
+    )
     const average = gold.reduce((a, b) => a + b, 0) / gold.length
     rows.forEach((row, i) => {
       const idle = avg(row.runs, (r) => r.restShare + (1 - r.uptime))
@@ -739,7 +887,13 @@ describe('ветки талантов', () => {
         // Ветка, отставшая сильнее этого, — ловушка: игрок вложил очки и получил
         // меньше, чем если бы вложил куда угодно ещё. Сброс стоит золота, так что
         // ошибка выбора наказывает дважды.
-        expect(spread, cls.id).toBeLessThanOrEqual(branchSpreadLimit)
+        expect(
+          dump(
+            `balance/talents/best-zone/level-${String(branchLevel).padStart(3, '0')}/class-${cls.id}/points-${String(points).padStart(3, '0')}/gold-spread`,
+            spread,
+          ),
+          cls.id,
+        ).toBeLessThanOrEqual(branchSpreadLimit)
       },
       // Три полных билда на эталоне: ~800 с на одном ядре после двухпроходной оценки.
       1_200_000,
@@ -784,11 +938,42 @@ describe('ветки талантов', () => {
             `автономность ${pct(avg(autonomyRuns, (r) => r.restShare))}.`,
         )
         // Ветка урона бьёт сильнее всех — это её обещание.
-        expect(damage(damageRuns), cls.id).toBeGreaterThan(damage(survivalRuns))
-        expect(damage(damageRuns), cls.id).toBeGreaterThan(damage(autonomyRuns))
+        expect(
+          dump(
+            `balance/talents/same-zone/level-${String(branchLevel).padStart(3, '0')}/class-${cls.id}/style-damage/damage-per-combat-hour`,
+            damage(damageRuns),
+          ),
+          cls.id,
+        ).toBeGreaterThan(
+          dump(
+            `balance/talents/same-zone/level-${String(branchLevel).padStart(3, '0')}/class-${cls.id}/style-survival/damage-per-combat-hour`,
+            damage(survivalRuns),
+          ),
+        )
+        expect(
+          dump(
+            `balance/talents/same-zone/level-${String(branchLevel).padStart(3, '0')}/class-${cls.id}/style-damage/damage-per-combat-hour`,
+            damage(damageRuns),
+          ),
+          cls.id,
+        ).toBeGreaterThan(
+          dump(
+            `balance/talents/same-zone/level-${String(branchLevel).padStart(3, '0')}/class-${cls.id}/style-autonomy/damage-per-combat-hour`,
+            damage(autonomyRuns),
+          ),
+        )
         // Ветка живучести меньше всех простаивает — это её обещание.
-        expect(avg(survivalRuns, (r) => r.restShare), cls.id).toBeLessThanOrEqual(
-          avg(damageRuns, (r) => r.restShare) + 1e-9,
+        expect(
+          dump(
+            `balance/talents/same-zone/level-${String(branchLevel).padStart(3, '0')}/class-${cls.id}/style-survival/rest-share`,
+            avg(survivalRuns, (r) => r.restShare),
+          ),
+          cls.id,
+        ).toBeLessThanOrEqual(
+          dump(
+            `balance/talents/same-zone/level-${String(branchLevel).padStart(3, '0')}/class-${cls.id}/style-damage/rest-share`,
+            avg(damageRuns, (r) => r.restShare),
+          ) + 1e-9,
         )
       },
       900_000,
@@ -858,14 +1043,20 @@ describe('интервал решений', () => {
           if (gap !== null && gap >= decisionMinSec && gap <= decisionMaxSec) inWindow += 1
           // ПОТОЛОК ТРЕВОГИ. Реже раза в три минуты — это уже не idle, а пустой
           // экран: игрок открывает вкладку и не находит, что нажать.
-          expect(gap ?? Number.POSITIVE_INFINITY, `${row.hero.id}, ур. ${row.level}`).toBeLessThanOrEqual(
-            decisionAlertSec,
-          )
+          expect(
+            dump(
+              `balance/telemetry/class-${row.hero.id}/level-${String(row.level).padStart(3, '0')}/decision-interval-sec`,
+              gap ?? Number.POSITIVE_INFINITY,
+            ),
+            `${row.hero.id}, ур. ${row.level}`,
+          ).toBeLessThanOrEqual(decisionAlertSec)
         }
         log(`${cls.name}: в окне ${inWindow} из ${own.length} строк (${pct(inWindow / own.length)}).`)
         // «На большей части»: края прогрессии выпадают законно — на первом уровне
         // решений больше обычного, на последнем меньше.
-        expect(inWindow / own.length).toBeGreaterThanOrEqual(0.6)
+        expect(
+          dump(`balance/telemetry/class-${cls.id}/decision-in-window-share`, inWindow / own.length),
+        ).toBeGreaterThanOrEqual(0.6)
       },
       600_000,
     )
@@ -876,9 +1067,13 @@ describe('интервал решений', () => {
         // Привал — пауза, а не занятие. Четверть времени на костре ещё читается
         // как ритм; больше — как налог на то, что герой вообще дерётся.
         for (const row of own) {
-          expect(row.result.restShare, `${row.hero.id}, ур. ${row.level}`).toBeLessThanOrEqual(
-            restShareMax,
-          )
+          expect(
+            dump(
+              `balance/telemetry/class-${row.hero.id}/level-${String(row.level).padStart(3, '0')}/rest-share`,
+              row.result.restShare,
+            ),
+            `${row.hero.id}, ур. ${row.level}`,
+          ).toBeLessThanOrEqual(restShareMax)
         }
       },
       600_000,
@@ -924,13 +1119,27 @@ describe('контракт темпа боя', () => {
       for (const row of classRows) {
         const { ttk: t, zoneId } = currentCell(row)
         const where = `${classId}, ур. ${row.level}, ${zoneId}`
-        expect(t.avg, where).toBeGreaterThanOrEqual(TTK_TARGET_MIN)
-        expect(t.avg, where).toBeLessThanOrEqual(TTK_TARGET_MAX)
+        expect(
+          dump(
+            `balance/pacing/class-${classId}/level-${String(row.level).padStart(3, '0')}/current-zone/ttk-avg`,
+            t.avg,
+          ),
+          where,
+        ).toBeGreaterThanOrEqual(TTK_TARGET_MIN)
+        expect(
+          dump(
+            `balance/pacing/class-${classId}/level-${String(row.level).padStart(3, '0')}/current-zone/ttk-avg`,
+            t.avg,
+          ),
+          where,
+        ).toBeLessThanOrEqual(TTK_TARGET_MAX)
       }
     })
 
     cit(`разброс TTK по уровням ≤ ${pct(TTK_DRIFT_MAX)}`, () => {
-      expect(ttkDrift(classRows)).toBeLessThanOrEqual(TTK_DRIFT_MAX)
+      expect(
+        dump(`balance/pacing/class-${classId}/ttk-drift`, ttkDrift(classRows)),
+      ).toBeLessThanOrEqual(TTK_DRIFT_MAX)
     })
   }, 300_000)
 
@@ -962,16 +1171,30 @@ describe('контракт темпа боя', () => {
     // Строк меньше, чем уровней, и это нормально: ближе к концу опыта за бой
     // хватает на несколько уровней разом, и снимок делается на взятом уровне,
     // а не на каждом по счёту. Важно, что прохождение ДОШЛО до конца лестницы.
-    expect(rows[rows.length - 1].level).toBeGreaterThanOrEqual(PACING_MAX_LEVEL)
-    expect(rows[0].level).toBe(1)
+    expect(
+      dump(`balance/pacing/class-${DEFAULT_CLASS.id}/final-level`, rows[rows.length - 1].level),
+    ).toBeGreaterThanOrEqual(PACING_MAX_LEVEL)
+    expect(dump(`balance/pacing/class-${DEFAULT_CLASS.id}/first-level`, rows[0].level)).toBe(1)
   }, 300_000)
 
   it(`в актуальной зоне моб живёт ${TTK_TARGET_MIN}-${TTK_TARGET_MAX} секунд на ВСЕХ уровнях`, () => {
     for (const row of rows) {
       const { ttk: t, zoneId } = currentCell(row)
       const where = `ур. ${row.level}, ${zoneId}`
-      expect(t.avg, where).toBeGreaterThanOrEqual(TTK_TARGET_MIN)
-      expect(t.avg, where).toBeLessThanOrEqual(TTK_TARGET_MAX)
+      expect(
+        dump(
+          `balance/pacing/class-${DEFAULT_CLASS.id}/level-${String(row.level).padStart(3, '0')}/current-zone/ttk-avg`,
+          t.avg,
+        ),
+        where,
+      ).toBeGreaterThanOrEqual(TTK_TARGET_MIN)
+      expect(
+        dump(
+          `balance/pacing/class-${DEFAULT_CLASS.id}/level-${String(row.level).padStart(3, '0')}/current-zone/ttk-avg`,
+          t.avg,
+        ),
+        where,
+      ).toBeLessThanOrEqual(TTK_TARGET_MAX)
     }
   })
 
@@ -980,14 +1203,26 @@ describe('контракт темпа боя', () => {
     // имя моба, ни нажать умение.
     for (const row of rows) {
       const { ttk: t, zoneId } = currentCell(row)
-      expect(t.min, `ур. ${row.level}, ${zoneId}`).toBeGreaterThanOrEqual(TTK_HARD_FLOOR)
+      expect(
+        dump(
+          `balance/pacing/class-${DEFAULT_CLASS.id}/level-${String(row.level).padStart(3, '0')}/current-zone/ttk-min`,
+          t.min,
+        ),
+        `ур. ${row.level}, ${zoneId}`,
+      ).toBeGreaterThanOrEqual(TTK_HARD_FLOOR)
     }
   })
 
   it(`ни один моб актуальной зоны не живёт дольше ${TTK_HARD_CEILING} секунд`, () => {
     for (const row of rows) {
       const { ttk: t, zoneId } = currentCell(row)
-      expect(t.max, `ур. ${row.level}, ${zoneId}`).toBeLessThanOrEqual(TTK_HARD_CEILING)
+      expect(
+        dump(
+          `balance/pacing/class-${DEFAULT_CLASS.id}/level-${String(row.level).padStart(3, '0')}/current-zone/ttk-max`,
+          t.max,
+        ),
+        `ур. ${row.level}, ${zoneId}`,
+      ).toBeLessThanOrEqual(TTK_HARD_CEILING)
     }
   })
 
@@ -995,17 +1230,35 @@ describe('контракт темпа боя', () => {
     const cells = cellsWith('behind')
     // Пустая проверка — не проверка: если классификация перестала кого-то
     // относить к отстающим, контракт молча выродился бы в ничто.
-    expect(cells.length, 'ни одна зона не оказалась отстающей').toBeGreaterThan(0)
+    expect(
+      dump(`balance/pacing/class-${DEFAULT_CLASS.id}/behind-cells`, cells.length),
+      'ни одна зона не оказалась отстающей',
+    ).toBeGreaterThan(0)
     for (const { row, c } of cells) {
-      expect(c.ttk.avg, `ур. ${row.level}, ${c.zoneId}`).toBeLessThanOrEqual(TTK_BEHIND_MAX)
+      expect(
+        dump(
+          `balance/pacing/class-${DEFAULT_CLASS.id}/level-${String(row.level).padStart(3, '0')}/zone-${c.zoneId}/ttk-avg`,
+          c.ttk.avg,
+        ),
+        `ур. ${row.level}, ${c.zoneId}`,
+      ).toBeLessThanOrEqual(TTK_BEHIND_MAX)
     }
   })
 
   it(`опережающая зона видна сразу: не быстрее ${TTK_AHEAD_MIN} секунд на моба`, () => {
     const cells = cellsWith('ahead')
-    expect(cells.length, 'ни одна зона не оказалась опережающей').toBeGreaterThan(0)
+    expect(
+      dump(`balance/pacing/class-${DEFAULT_CLASS.id}/ahead-cells`, cells.length),
+      'ни одна зона не оказалась опережающей',
+    ).toBeGreaterThan(0)
     for (const { row, c } of cells) {
-      expect(c.ttk.avg, `ур. ${row.level}, ${c.zoneId}`).toBeGreaterThanOrEqual(TTK_AHEAD_MIN)
+      expect(
+        dump(
+          `balance/pacing/class-${DEFAULT_CLASS.id}/level-${String(row.level).padStart(3, '0')}/zone-${c.zoneId}/ttk-avg`,
+          c.ttk.avg,
+        ),
+        `ур. ${row.level}, ${c.zoneId}`,
+      ).toBeGreaterThanOrEqual(TTK_AHEAD_MIN)
     }
   })
 
@@ -1013,7 +1266,9 @@ describe('контракт темпа боя', () => {
     // Главная проверка контракта. Без неё коридор 8-15 выполнялся бы «в
     // среднем»: первый уровень у потолка, последний у пола — и бой к концу
     // игры проходился бы вдвое быстрее, чем в начале.
-    expect(ttkDrift(rows)).toBeLessThanOrEqual(TTK_DRIFT_MAX)
+    expect(
+      dump(`balance/pacing/class-${DEFAULT_CLASS.id}/ttk-drift`, ttkDrift(rows)),
+    ).toBeLessThanOrEqual(TTK_DRIFT_MAX)
   })
 
   it('у каждого уровня есть и «полегче», и «потяжелее» — выбор, а не коридор', () => {
@@ -1037,7 +1292,10 @@ describe('контракт темпа боя', () => {
       ).toBe(true)
       if (has(row, 'behind') && has(row, 'ahead')) both.push(row.level)
     }
-    expect(both.length, 'полного выбора нет ни на одном уровне').toBeGreaterThan(0)
+    expect(
+      dump(`balance/pacing/class-${DEFAULT_CLASS.id}/full-choice-levels`, both.length),
+      'полного выбора нет ни на одном уровне',
+    ).toBeGreaterThan(0)
     const first = both[0]
     const last = both[both.length - 1]
     log(
@@ -1047,10 +1305,14 @@ describe('контракт темпа боя', () => {
     // Кусок сплошной: дырка внутри означала бы, что на каком-то уровне выбор
     // пропал и вернулся — это не край лестницы, это ошибка в числах.
     const inside = rows.filter((r) => r.level >= first && r.level <= last)
-    expect(both.length).toBe(inside.length)
+    expect(dump(`balance/pacing/class-${DEFAULT_CLASS.id}/full-choice-levels`, both.length)).toBe(
+      dump(`balance/pacing/class-${DEFAULT_CLASS.id}/full-choice-span-levels`, inside.length),
+    )
     // И он не крошечный: треть прохождения — минимум, ниже которого «выбор»
     // становится случайным совпадением на паре уровней.
-    expect(both.length / rows.length).toBeGreaterThanOrEqual(0.3)
+    expect(
+      dump(`balance/pacing/class-${DEFAULT_CLASS.id}/full-choice-share`, both.length / rows.length),
+    ).toBeGreaterThanOrEqual(0.3)
   })
 
   it(`привал короче боя: ${REST_DURATION_S} с против медианного TTK актуальной зоны`, () => {
@@ -1064,7 +1326,9 @@ describe('контракт темпа боя', () => {
       `Привал ${REST_DURATION_S} с при медианном TTK ${median.toFixed(1)} с ` +
         `(от ${current[0].toFixed(1)} до ${current[current.length - 1].toFixed(1)}).`,
     )
-    expect(REST_DURATION_S).toBeLessThanOrEqual(median)
+    expect(REST_DURATION_S).toBeLessThanOrEqual(
+      dump(`balance/pacing/class-${DEFAULT_CLASS.id}/current-zone-ttk-median`, median),
+    )
   })
 
   // -------------------------------------------------------------------------
@@ -1157,7 +1421,12 @@ describe('контракт темпа боя', () => {
         const shares = entries.map(({ zone, level }) => ({
           zone: zone.id,
           level,
-          share: lossShare(stateFor(level, classId, 0), zone),
+          // gear-reference/-worse/-better — три состояния снаряжения одной и той
+          // же точки лестницы; уровень здесь — уровень ВХОДА в зону.
+          share: dump(
+            `balance/fight-cost/class-${classId}/zone-${zone.id}/level-${String(level).padStart(3, '0')}/gear-reference/loss-share-gross`,
+            lossShare(stateFor(level, classId, 0), zone),
+          ),
         }))
         log(
           `${classId}: цена боя ${Math.min(...shares.map((r) => r.share)).toFixed(1)}-` +
@@ -1173,14 +1442,17 @@ describe('контракт темпа боя', () => {
           (r) => r.share < TARGET_MIN - TOLERANCE || r.share > TARGET_MAX + TOLERANCE,
         )
         expect(
-          outliers.length,
+          dump(`balance/fight-cost/class-${classId}/outliers`, outliers.length),
           `${classId}: промахи — ${outliers.map((r) => `${r.zone} ${r.share.toFixed(1)}%`).join(', ')}`,
         ).toBeLessThanOrEqual(OUTLIERS_ALLOWED)
         // И СРЕДНЕЕ ПОПАДАЕТ В КОРИДОР БЕЗ ДОПУСКА. Допуск разрешён каждой
         // отдельной точке, но не смещению всей кривой: иначе контракт можно
         // было бы выполнить, стоя на два пункта ниже пола во всех двадцати
         // зонах сразу.
-        const mean = shares.reduce((a, r) => a + r.share, 0) / shares.length
+        const mean = dump(
+          `balance/fight-cost/class-${classId}/loss-share-gross-mean`,
+          shares.reduce((a, r) => a + r.share, 0) / shares.length,
+        )
         expect(mean).toBeGreaterThanOrEqual(TARGET_MIN)
         expect(mean).toBeLessThanOrEqual(TARGET_MAX)
       })
@@ -1198,11 +1470,20 @@ describe('контракт темпа боя', () => {
           return {
             zone: zone.id,
             level,
-            gross: lossShareOf(state, zone, false),
-            net: lossShareOf(state, zone, true),
+            gross: dump(
+              `balance/fight-cost/class-${classId}/zone-${zone.id}/level-${String(level).padStart(3, '0')}/gear-reference/loss-share-gross`,
+              lossShareOf(state, zone, false),
+            ),
+            net: dump(
+              `balance/fight-cost/class-${classId}/zone-${zone.id}/level-${String(level).padStart(3, '0')}/gear-reference/loss-share-net`,
+              lossShareOf(state, zone, true),
+            ),
           }
         })
-        const mean = rows.reduce((a, r) => a + r.net, 0) / rows.length
+        const mean = dump(
+          `balance/fight-cost/class-${classId}/loss-share-net-mean`,
+          rows.reduce((a, r) => a + r.net, 0) / rows.length,
+        )
         log(
           `${classId}: цена боя нетто ${Math.min(...rows.map((r) => r.net)).toFixed(1)}-` +
             `${Math.max(...rows.map((r) => r.net)).toFixed(1)}%, в среднем ${mean.toFixed(1)}% ` +
@@ -1236,9 +1517,18 @@ describe('контракт темпа боя', () => {
         // стороны дают ровно ту же долю, что эталон.
         for (const { zone, level } of entries) {
           const where = `${classId}, ур. ${level}, ${zone.id}`
-          const worse = lossShare(stateFor(level, classId, -1), zone)
-          const reference = lossShare(stateFor(level, classId, 0), zone)
-          const better = lossShare(stateFor(level, classId, 1), zone)
+          const worse = dump(
+            `balance/fight-cost/class-${classId}/zone-${zone.id}/level-${String(level).padStart(3, '0')}/gear-worse/loss-share-gross`,
+            lossShare(stateFor(level, classId, -1), zone),
+          )
+          const reference = dump(
+            `balance/fight-cost/class-${classId}/zone-${zone.id}/level-${String(level).padStart(3, '0')}/gear-reference/loss-share-gross`,
+            lossShare(stateFor(level, classId, 0), zone),
+          )
+          const better = dump(
+            `balance/fight-cost/class-${classId}/zone-${zone.id}/level-${String(level).padStart(3, '0')}/gear-better/loss-share-gross`,
+            lossShare(stateFor(level, classId, 1), zone),
+          )
           expect(worse, `хуже эталона: ${where}`).toBeGreaterThan(reference)
           expect(better, `лучше эталона: ${where}`).toBeLessThan(reference)
         }
@@ -1282,6 +1572,16 @@ describe('контракт темпа боя', () => {
       zone,
     )
     log(`Средняя экипировка ${average.toFixed(1)}с против эпического оружия ${lucky.toFixed(1)}с.`)
-    expect(lucky).toBeLessThan(average)
+    expect(
+      dump(
+        `balance/lucky-drop/level-${String(level).padStart(3, '0')}/weapon-epic/ttk-sec`,
+        lucky,
+      ),
+    ).toBeLessThan(
+      dump(
+        `balance/lucky-drop/level-${String(level).padStart(3, '0')}/weapon-average/ttk-sec`,
+        average,
+      ),
+    )
   })
 })
