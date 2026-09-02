@@ -53,44 +53,28 @@ Idle RPG собрана на чужих плечах. Здесь перечис�
 приглушение фона) живут в `src/lib/audio/mixer.ts` и проверяются числами
 в `mixer.test.ts`, а не на слух.
 
-## Модели
+## Картинки боевой сцены
 
-Персонажи взяты из паков KayKit за авторством Kay Lousberg и распространяются
-под лицензией [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/):
-она не требует указания авторства, но мы его указываем.
+Боевая сцена двумерная: фон полосы уровней, силуэт героя, силуэт моба.
+Все шестнадцать картинок в `public/sprites/` нарисованы для проекта и
+отданы под [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) —
+это цветные силуэты-заглушки, которые предстоит заменить настоящими.
 
-| Модель | Файл | Пак | Автор | Лицензия |
-|---|---|---|---|---|
-| Герой | `public/models/Knight.glb` | [KayKit Character Pack: Adventurers 1.0](https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0) | Kay Lousberg | CC0 1.0 |
-| Моб | `public/models/Skeleton_Minion.glb` | [KayKit Character Pack: Skeletons 1.0](https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Skeletons-1.0) | Kay Lousberg | CC0 1.0 |
-| Пропсы зон (бочка, ящики, обломки, колонна, столб, бочонок, сундук) | `public/models/props/` | [KayKit Dungeon Remastered 1.0](https://github.com/KayKit-Game-Assets/KayKit-Dungeon-Remastered-1.0) | Kay Lousberg | CC0 1.0 |
+| Что | Файлы | Автор | Лицензия |
+|---|---|---|---|
+| Герой | `public/sprites/hero.svg` | Idle RPG | CC0 1.0 |
+| Мобы по ролям, босс и запасной силуэт | `public/sprites/monster-{runt,common,brute,boss,unknown}.svg` | Idle RPG | CC0 1.0 |
+| Фоны десяти полос уровней | `public/sprites/bg-{meadow,furrows,glass,mines,flood,sulfur,pass,salt,rime,dell}.svg` | Idle RPG | CC0 1.0 |
 
-Оригинальные тексты лицензий лежат рядом с моделями:
-`public/models/LICENSE-KayKit-Adventurers.txt` и
-`LICENSE-KayKit-Skeletons.txt`. Файлы взяты без изменений; в игре меняется
-только масштаб и выбор проигрываемого клипа.
+Реестр `src/lib/data/sprites.ts` держит у каждой картинки путь, автора,
+лицензию и источник, а также маппинги «архетип моба → спрайт» и «полоса
+уровней → фон». Сцена имён файлов не знает, поэтому замена заглушки на
+настоящую картинку — правка одной строки реестра, и лицензия новой картинки
+обязана попасть в таблицу выше. Покрытие архетипов и смыкание полос держит
+`npm run content:check`.
 
-Оба пака — от ОДНОГО автора намеренно: единый стиль персонажей важнее
-разнообразия, и мешать источники для героя и мобов нельзя.
-
-### Если модели придётся заменить
-
-Реестр `src/lib/data/assets.ts` описывает каждую модель вместе с маппингом
-игровых состояний на имена клипов ВНУТРИ файла. Имена у разных паков разные,
-поэтому маппинг обязателен, а в коде сцены строковых имён анимаций нет —
-это закреплено тестом. Запасные варианты, если понадобятся:
-
-- **RobotExpressive** из [three.js](https://github.com/mrdoob/three.js)
-  (`examples/models/gltf/RobotExpressive/RobotExpressive.glb`) — CC0 1.0,
-  Tomás Laulhé, правки Don McCurdy. Клипы: `Idle`, `Walking`, `Running`,
-  `Dance`, `Death`, `Sitting`, `Standing`, `Jump`, `Yes`, `No`, `Wave`,
-  `Punch`, `ThumbsUp`.
-- **Fox** из [glTF-Sample-Assets](https://github.com/KhronosGroup/glTF-Sample-Assets)
-  (`Models/Fox/glTF-Binary/Fox.glb`). Внимание: лицензия СОСТАВНАЯ — сама
-  модель CC0 (PixelMannen), а **риг и анимации под CC BY 4.0** (tomkranis),
-  конверсия тоже CC BY 4.0 (AsoboStudio, scurest). То есть при её
-  использовании атрибуция ОБЯЗАТЕЛЬНА, в отличие от CC0-моделей выше,
-  и эту таблицу нужно будет дополнить соответствующей строкой.
+Трёхмерных моделей в игре больше нет: слой удалён вместе с движком и
+ассетами, и ничего из прежних паков в сборку не попадает.
 
 ## Иконки
 

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 200" width="160" height="200" role="img" aria-label="Обычный моб">
+  <g fill="#a0563c" stroke="#4a2417" stroke-width="3" stroke-linejoin="round">
+    <ellipse cx="80" cy="192" rx="42" ry="7" fill="#000" fill-opacity=".35" stroke="none"/>
+    <path d="M80 26 l24 14 v22 l-24 14 l-24 -14 v-22 z"/>
+    <path d="M46 78 h68 l8 66 h-14 l-4 -30 v74 h-18 v-52 h-12 v52 h-18 v-74 l-4 30 h-14 z"/>
+    <path d="M114 84 l30 -20 l-4 18 l-24 14 z"/>
+    <circle cx="72" cy="50" r="3" fill="#ffd27a" stroke="none"/><circle cx="88" cy="50" r="3" fill="#ffd27a" stroke="none"/>
+  </g>
+</svg>

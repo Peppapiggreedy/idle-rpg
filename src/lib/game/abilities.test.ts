@@ -12,6 +12,7 @@ import { applyModifiers, ensureStats } from './stats'
 import {
   abilityStatus,
   advanceCooldowns,
+  queuedAbilityDropReason,
   useAbility,
   ABILITY_BY_ID,
   ABILITIES,
@@ -215,6 +216,23 @@ describe('умение на следующий замах', () => {
     expect(after.queuedAbilityId).toBeNull()
     expect(after.abilityCooldownsMs[BLOW.id]).toBeUndefined() // кулдаун не потрачен
     expect(after.combatLog.some((e) => e.type === 'hit')).toBe(true)
+    // Срыв не молчит: в логе событие с кодом причины, чтобы UI назвал её словами.
+    expect(after.combatLog).toContainEqual({
+      type: 'ability-dropped',
+      abilityId: BLOW.id,
+      reason: 'no-mana',
+    })
+  })
+
+  it('причина срыва очереди — кодом, и без очереди её нет', () => {
+    expect(queuedAbilityDropReason(hero())).toBeNull()
+    const ok = useAbility(hero(), BLOW.id, NO_LUCK, () => {})
+    expect(queuedAbilityDropReason(ok)).toBeNull()
+    const poor = useAbility(hero({ currentMana: new Decimal(1) }), BLOW.id, NO_LUCK, () => {})
+    expect(queuedAbilityDropReason(poor)).toBe('no-mana')
+    // Заряды кончились: кулдаун взведён, а запас нажатий ноль.
+    const spent = { ...ok, abilityCharges: { [BLOW.id]: 0 } }
+    expect(queuedAbilityDropReason(spent)).toBe('no-charges')
   })
 
   it('умение с эффектом накладывает урон по времени', () => {

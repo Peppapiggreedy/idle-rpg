@@ -1,15 +1,19 @@
 import { expect, test, type Page } from '@playwright/test'
 import { openSettings } from './screen.js'
 
-// Бюджеты слоя представления. 3D-сцена, работающая часами, греет телефон
+// Бюджеты слоя представления. Сцена, работающая часами, греет телефон
 // и ест батарею — а заметно это становится через час игры, когда чинить
 // уже дорого. Поэтому пределы закреплены здесь, а не проверяются на глаз.
+//
+// Бой рисует двумерная сцена обычными элементами, поэтому бюджеты здесь —
+// про DOM: узлы не растут, всплывающие числа дотлевают, спрятанная вкладка
+// ничего не рисует. Памяти видеокарты у сцены больше нет — и бюджета на неё.
 
 const SCENE_READY = '[data-scene="ready"]'
 
-async function openLiveGame(page: Page): Promise<void> {
+async function openLiveGame(page: Page, query = ''): Promise<void> {
   // ЖИВАЯ игра, а не пресет: бюджеты меряются на работающем цикле.
-  await page.goto('?debug=1')
+  await page.goto(`?debug=1${query}`)
   await expect(page.locator('html')).toHaveAttribute('data-ready', 'game')
   // Новая игра начинается с выбора класса, и до выбора экран закрыт им же.
   // Берём первый класс: бюджеты слоя представления от класса не зависят,
@@ -20,10 +24,6 @@ async function openLiveGame(page: Page): Promise<void> {
 
 const domNodes = (page: Page) => page.evaluate(() => document.getElementsByTagName('*').length)
 
-async function probe(page: Page, label: string): Promise<number> {
-  const text = await page.locator(`text=/^${label}: /`).innerText()
-  return Number(text.split(': ')[1])
-}
 
 test('за полчаса игрового времени сцена и DOM не разрастаются', async ({ page }) => {
   test.setTimeout(360_000)
@@ -52,24 +52,54 @@ test('за полчаса игрового времени сцена и DOM не
   await expect(bagTab).toContainText(`${limit}/${limit}`, { timeout: 240_000 })
   await page.waitForTimeout(5_000)
   const nodesBefore = await domNodes(page)
-  const geometriesBefore = await probe(page, 'geometries')
 
   await page.waitForTimeout(60_000)
   await page.getByRole('button', { name: '×1', exact: true }).click()
   await page.waitForTimeout(2500)
 
   const nodesAfter = await domNodes(page)
-  const geometriesAfter = await probe(page, 'geometries')
   const playtime = await page.evaluate(() => document.body.innerText.match(/0:\d\d:\d\d/)?.[0])
-  console.log(
-    `узлов DOM: ${nodesBefore} → ${nodesAfter}, геометрий: ${geometriesBefore} → ${geometriesAfter}, игровое время: ${playtime}`,
-  )
+  console.log(`узлов DOM: ${nodesBefore} → ${nodesAfter}, игровое время: ${playtime}`)
 
-  // Требование шага: не больше пяти процентов расхождения.
+  // Требование шага: не больше пяти процентов расхождения. Для двумерной
+  // сцены это и есть весь бюджет памяти: спрайты, эффекты и всплывающие
+  // числа — обычные узлы DOM, и утечка любого из них видна здесь.
   expect(nodesAfter).toBeLessThanOrEqual(Math.ceil(nodesBefore * 1.05))
-  // Геометрия не растёт вовсе: мобы переиспользуют один меш, обстановка
-  // зоны выгружается целиком.
-  expect(geometriesAfter).toBeLessThanOrEqual(geometriesBefore + 1)
+})
+
+test('тяжёлый раздел не роняет кадры против лёгкого', async ({ page }) => {
+  test.setTimeout(300_000)
+  await openLiveGame(page)
+  await page.getByRole('button', { name: '×100', exact: true }).click()
+
+  // ЧТО ЗДЕСЬ ЛОВИТСЯ. Панели считают боевую оценку: прогноз зоны — по
+  // каждому мобу каждой из двадцати зон, сумка — по две оценки на вещь.
+  // Написанные как обычный `$derived($gameState)`, они пересчитывались
+  // ДЕСЯТЬ РАЗ В СЕКУНДУ, и «Мир» шёл на восьми кадрах против восемнадцати
+  // в «Настройках» — игра дёргалась ровно там, где эти панели открыты.
+  // Мемо (ui/memo.ts) считает их только когда меняются входы.
+  //
+  // Меряем ОТНОШЕНИЕ, а не абсолютные кадры: абсолютные зависят от машины,
+  // а разъехавшийся раздел виден отношением на любой.
+  const fps = async (): Promise<number> => {
+    const samples: number[] = []
+    for (let i = 0; i < 4; i += 1) {
+      await page.waitForTimeout(1500)
+      const text = await page.locator('text=/^fps: \\d+ · tps: /').innerText()
+      samples.push(Number(text.split(': ')[1].split(' ')[0]))
+    }
+    return samples.reduce((a, b) => a + b, 0) / samples.length
+  }
+  const openSection = async (name: string): Promise<number> => {
+    await page.locator('nav[aria-label="Разделы"] button', { hasText: name }).click()
+    await page.waitForTimeout(1000)
+    return fps()
+  }
+
+  const light = await openSection('Настройки')
+  const heavy = await openSection('Мир')
+  console.log(`кадров: «Настройки» ${light.toFixed(1)}, «Мир» ${heavy.toFixed(1)}`)
+  expect(heavy).toBeGreaterThan(light * 0.8)
 })
 
 test('при document.hidden сцена не создаёт всплывающих чисел', async ({ page }) => {
@@ -94,30 +124,6 @@ test('при document.hidden сцена не создаёт всплывающи
   expect(rows).toBeLessThanOrEqual(50)
 })
 
-test('десять переключений текстового режима не растят память', async ({ page }) => {
-  await openLiveGame(page)
-  await openSettings(page)
-  const toText = page.getByRole('button', { name: 'Всегда текст' })
-  const toScene = page.getByRole('button', { name: 'Всегда сцена' })
-
-  await toScene.click()
-  await expect(page.locator(SCENE_READY)).toBeAttached({ timeout: 30_000 })
-  await page.waitForTimeout(1500)
-  const before = await probe(page, 'geometries')
-
-  for (let i = 0; i < 10; i += 1) {
-    await toText.click()
-    await expect(page.locator('canvas')).toHaveCount(0)
-    await toScene.click()
-    await expect(page.locator('canvas')).toHaveCount(1)
-  }
-  await expect(page.locator(SCENE_READY)).toBeAttached({ timeout: 30_000 })
-  await page.waitForTimeout(1500)
-  const after = await probe(page, 'geometries')
-  console.log(`текстовый режим туда-обратно: ${before} → ${after}`)
-  expect(after).toBeLessThanOrEqual(before + 1)
-})
-
 test('переключение в текст и обратно не ломает прогресс', async ({ page }) => {
   await openLiveGame(page)
   await page.waitForTimeout(1500)
@@ -126,7 +132,8 @@ test('переключение в текст и обратно не ломает
 
   await openSettings(page)
   await page.getByRole('button', { name: 'Всегда текст' }).click()
-  await expect(page.locator('canvas')).toHaveCount(0)
+  // В текстовом режиме сцена размонтирована, а не спрятана.
+  await expect(page.locator('[data-phase]')).toHaveCount(0)
   // Игра идёт: бой в текстовом режиме продолжается, уровень и золото на месте.
   await expect(page.locator('main')).toContainText('Урон в секунду')
   await page.getByRole('button', { name: 'Всегда сцена' }).click()

@@ -5,6 +5,7 @@
   import { formatNumber } from '../game'
   import { gameState } from '../stores/game'
   import { ABILITY_BY_ID } from '../data/abilities'
+  import { DUNGEON_CLEAR_XP_BONUS, HEROIC_CLEAR_XP_BONUS } from '../data/dungeons'
   import { MATERIAL_BY_ID } from '../data/materials'
   import { RECIPE_BY_ID } from '../data/recipes'
   import { ENCHANT_BY_ID } from '../data/enchants'
@@ -12,6 +13,7 @@
   import { BOSS_ABILITY_BY_ID } from '../data/heroic'
   import { QUEST_BY_ID } from '../data/quests'
   import { rarityName, rarityStyle } from './kit'
+  import { resourceWords } from './resource'
   import { Icon } from './icons'
   import type { IconName } from './icons'
   import {
@@ -38,6 +40,7 @@
     view = untrack(() => pushEvents(view, tail))
   })
   const rows = $derived(filterRows(view.rows, filter))
+  const resource = $derived(resourceWords($gameState.classId))
 
   // Весь текст боевого лога живёт здесь: логика отдаёт только события.
   function eventText(e: CombatEvent): string {
@@ -51,6 +54,12 @@
         return e.isCrit
           ? `КРИТ! ${name}: ${formatNumber(e.damage)} урона`
           : `${name}: ${formatNumber(e.damage)} урона`
+      }
+      case 'ability-dropped': {
+        const name = ABILITY_BY_ID[e.abilityId]?.name ?? 'Умение'
+        return e.reason === 'no-mana'
+          ? `${name} сорвалось: не хватило ${resource.genitive}, ударила автоатака`
+          : `${name} сорвалось: заряды кончились, ударила автоатака`
       }
       case 'material':
         return `Собрано: ${MATERIAL_BY_ID[e.materialId]?.name ?? e.materialId}`
@@ -120,7 +129,7 @@
       case 'block':
         return `Блок! ${e.monsterName} бьёт: −${formatNumber(e.damage)} здоровья (щит снял ${formatNumber(e.blocked)})`
       case 'death':
-        return 'Ты пал в бою! Воскрешение через 30 с…'
+        return `Ты пал в бою! Воскрешение через ${Math.round(e.reviveMs / 1000)} с…`
       case 'revive':
         return 'Ты воскрес — полный запас сил'
       case 'zone':
@@ -133,16 +142,20 @@
         return `Ярость! ${e.bossName} бьёт на ${Math.round((e.multiplier - 1) * 100)}% сильнее`
       case 'dungeon-exit':
         return e.defeated ? 'Тебя вынесли из данжа — цепочка сброшена' : 'Ты вышел из данжа'
-      case 'dungeon-clear':
+      case 'dungeon-clear': {
+        // Число бонуса — из данных, по сложности: героика платит больше.
+        const bonus = e.difficulty === 'heroic' ? HEROIC_CLEAR_XP_BONUS : DUNGEON_CLEAR_XP_BONUS
         return e.firstClear
-          ? `«${e.dungeonName}» пройден впервые! Достижение: +5% опыта навсегда`
+          ? `«${e.dungeonName}» пройден впервые! Достижение: +${Math.round(bonus.toNumber() * 100)}% опыта навсегда`
           : `«${e.dungeonName}» пройден`
+      }
     }
   }
   // Иконка типа события: строку видно боковым зрением ещё до чтения.
   const EVENT_ICON: Record<CombatEvent['type'], IconName> = {
     hit: 'stat-attackPower',
     ability: 'ability-quick-strike',
+    'ability-dropped': 'ability-quick-strike',
     effect: 'ability-rending-wound',
     kill: 'xp',
     levelup: 'xp',
@@ -200,6 +213,7 @@
     if (e.type === 'hit' && e.isCrit) return 'crit'
     if (e.type === 'hurt' || e.type === 'death') return 'hurt'
     if (e.type === 'block') return 'block'
+    if (e.type === 'ability-dropped') return 'warn'
     if (e.type === 'kill') return 'kill'
     if (e.type === 'levelup' || e.type === 'dungeon-clear') return 'good'
     if (e.type === 'loot') return 'loot'
@@ -312,6 +326,10 @@
      урона. Своей семантики у щита нет, и заводить её незачем. */
   .log li.block {
     color: var(--c-text-muted);
+  }
+  /* Сорвавшееся умение — предупреждение: игрок ждал удара умением, а его не было. */
+  .log li.warn {
+    color: var(--c-warning);
   }
   .log li.kill {
     color: var(--c-heal);

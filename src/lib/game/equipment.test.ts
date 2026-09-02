@@ -9,6 +9,7 @@ import {
   isEquipped,
   isUpgrade,
   unequipItem,
+  unequipStatus,
 } from './equipment'
 import { estimateCombatRate } from './combat'
 import {
@@ -23,6 +24,7 @@ import { INVENTORY_SIZE, UNARMED } from '../data/balance'
 import { OFFHAND_PENALTY } from '../data/balance'
 import { ONE_HANDED, SHIELDS, WEAPONS, type ShieldTemplate, type WeaponTemplate } from '../data/items'
 import { SLOT_IDS } from '../data/slots'
+import { ZONE_BY_ID, zoneMonsterVariants } from '../data/zones'
 import type { Item, Rarity } from '../types'
 
 // Голый герой: стартовый комплект снят. Эти тесты про КОНВЕЙЕР и формулы,
@@ -227,9 +229,15 @@ describe('автонадевание', () => {
     const withSlow = estimateCombatRate(equipItem(s, slow.id)).autoDamagePerSecond
     expect(withSlow.toNumber()).toBeCloseTo(withFast.toNumber(), 9)
 
-    // Без умений медленное оружие апгрейдом не считается — урон в секунду тот же.
+    // Без умений медленное оружие НИЧЕГО НЕ МЕНЯЕТ: урон в секунду тот же,
+    // и оценка обязана это видеть. Проверяется ВЕЛИЧИНА, а не булев вердикт:
+    // оценка усредняется по трём ролям зоны, а число схваток до привала
+    // целое, и на равном уроне в секунду вердикт «лучше/хуже» решается
+    // округлением — с равным правом в любую сторону. Величина же обязана
+    // остаться МАЛОЙ — единицы процентов против десятков, которые дал бы
+    // выбор по сумме силы атаки: у медленного клинка удар вдвое крупнее.
     const noAbilities = { ...s, abilitySettings: manualOnlySettings() }
-    expect(isUpgrade(noAbilities, slow)).toBe(false)
+    expect(Math.abs(compareItem(noAbilities, slow).combatDelta ?? 1)).toBeLessThan(0.05)
     // А с включённым автокастом — считается, и это НЕ ошибка сравнения: удар
     // крупнее, значит и умения от него бьют сильнее при той же цене в мане.
     expect(isUpgrade(s, slow)).toBe(true)
@@ -443,6 +451,23 @@ describe('сравнение для UI', () => {
     expect(c.isUpgrade).toBe(true)
   })
 
+  it('оценка НЕ ЗАВИСИТ от того, кто стоит перед героем сейчас', () => {
+    // Значок «Апгрейд» и процент в подсказке обязаны быть свойством ВЕЩИ,
+    // а не мгновенного снимка боя. Пока оценка считалась против живого моба,
+    // одна и та же вещь при неизменной экипировке читалась то как «+12,6 %»,
+    // то как «не апгрейд» — просто потому, что заспавнился другой моб из
+    // пула зоны. Три разных вердикта за полторы минуты стояния на месте.
+    const weapon = bareWeapon(WEAPONS[1])
+    const base = withItems([weapon])
+    const zone = ZONE_BY_ID[base.currentZoneId]
+    const shares = zoneMonsterVariants(zone).map((template) =>
+      compareItem({ ...base, monster: monsterFromTemplate(template) }, weapon).combatDelta,
+    )
+    // Мобов в пуле зоны заведомо несколько, иначе проверка ничего не значит.
+    expect(shares.length).toBeGreaterThan(1)
+    for (const share of shares) expect(share).toBe(shares[0])
+  })
+
   it('после надевания сравнение идёт уже с надетым предметом', () => {
     const first = bareWeapon(WEAPONS[0])
     const second = bareWeapon(WEAPONS[1])
@@ -474,7 +499,11 @@ describe('слоты', () => {
     const filler = Array.from({ length: INVENTORY_SIZE }, (_, i) => armor(`м-${i}`, 'head', 1))
     let s = withItems([weapon])
     s = equipItem(s, weapon.id)
+    expect(unequipStatus(s, 'mainHand')).toEqual({ canUnequip: true, reason: null })
+    expect(unequipStatus(s, 'head').reason).toBe('empty-slot')
     s = { ...s, inventory: filler }
+    // Отказ кодом, и код совпадает с делом: состояние не меняется.
+    expect(unequipStatus(s, 'mainHand').reason).toBe('inventory-full')
     expect(unequipItem(s, 'mainHand')).toBe(s)
   })
 })

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" width="640" height="360" preserveAspectRatio="xMidYMax slice" role="img" aria-label="Борозды">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#8a6a4a"/>
+      <stop offset="1" stop-color="#d9b48a"/>
+    </linearGradient>
+  </defs>
+  <rect width="640" height="360" fill="url(#sky)"/>
+  <path d="M0 230 L80 170 L160 210 L250 150 L340 200 L430 140 L520 190 L640 160 L640 360 L0 360 Z" fill="#7a5a3c"/>
+  <path d="M0 270 L120 240 L260 275 L400 235 L520 265 L640 240 L640 360 L0 360 Z" fill="#5a3f2a"/>
+  <ellipse cx="110" cy="300" rx="70" ry="12" fill="#9c7a4f" fill-opacity=".35"/>
+  <ellipse cx="500" cy="310" rx="90" ry="14" fill="#9c7a4f" fill-opacity=".3"/>
+  <rect x="0" y="336" width="640" height="24" fill="#5a3f2a"/>
+</svg>

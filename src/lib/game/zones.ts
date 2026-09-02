@@ -286,16 +286,46 @@ function enterZone(
   }
 }
 
-/** Путешествие по воле игрока. В закрытую зону не пускаем — состояние как было. */
-export function travelToZone(state: GameState, zoneId: string, rng: Rng): GameState {
+// Почему переезд не состоится. Каждый случай — свой код, текст рендерит UI.
+export type TravelBlockReason =
+  | 'unknown'
+  | 'in-temple'
+  | 'in-dungeon'
+  | 'dead'
+  | 'locked'
+  | 'same-zone'
+
+export interface TravelStatus {
+  canTravel: boolean
+  reason: TravelBlockReason | null
+}
+
+/**
+ * Можно ли переехать в зону. Порядок проверок фиксирован: сперва то, что
+ * не лечится выбором другой зоны.
+ *
+ * Из храма и ДАНЖА выходят выходом, а не переездом: иначе смена зоны
+ * оставила бы забег висеть, а героя — драться с мобами зоны под флагом
+ * забега. Для данжа это была настоящая дыра в воротах: цепочка боссов
+ * двигается по паузе респауна (`advanceDungeon`), и убитый в обычной зоне
+ * моб засчитывался бы как убитый босс.
+ */
+export function travelStatus(state: GameState, zoneId: string): TravelStatus {
+  const blocked = (reason: TravelBlockReason): TravelStatus => ({ canTravel: false, reason })
   const zone = ZONE_BY_ID[zoneId]
-  if (!zone) return state
-  // Из храма выходят выходом, а не переездом: иначе смена зоны оставила бы
-  // забег висеть, а героя — драться с мобами зоны под флагом храма.
-  if (state.templeRun) return state
-  if (!isZoneUnlocked(state, zone)) return state
-  if (zone.id === state.currentZoneId) return state
-  return enterZone(state, zone, rng, 'travel')
+  if (!zone) return blocked('unknown')
+  if (state.templeRun) return blocked('in-temple')
+  if (state.dungeonRun) return blocked('in-dungeon')
+  if (state.heroState === 'dead') return blocked('dead')
+  if (!isZoneUnlocked(state, zone)) return blocked('locked')
+  if (zone.id === state.currentZoneId) return blocked('same-zone')
+  return { canTravel: true, reason: null }
+}
+
+/** Путешествие по воле игрока. Отказ `travelStatus` — состояние как было. */
+export function travelToZone(state: GameState, zoneId: string, rng: Rng): GameState {
+  if (!travelStatus(state, zoneId).canTravel) return state
+  return enterZone(state, ZONE_BY_ID[zoneId], rng, 'travel')
 }
 
 /**

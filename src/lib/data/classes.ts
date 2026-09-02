@@ -62,9 +62,24 @@ export interface StartingItem {
   rarity: Rarity
 }
 
+/**
+ * Готовность класса. ДАННЫЕ, а не список id в тестах: до альфы игра держит
+ * контракты баланса на ОДНОМ классе, и какой это класс — обязано читаться
+ * здесь, а не в `balance.test.ts`.
+ *
+ * - `ready` — основной класс: все контракты (темп, цена боя, убийств на
+ *   уровень, полный путь, golden) считаются по нему и роняют прогон.
+ * - `preview` — выбирается и играется, но нигде не заявляется как
+ *   сбалансированный: его контракты идут некритичными (пишут в лог, а не
+ *   падают), а на экране выбора стоит честная пометка.
+ */
+export type ClassStatus = 'ready' | 'preview'
+
 export interface ClassDef {
   id: string
   name: string
+  /** Готовность: см. `ClassStatus`. Хотя бы один класс обязан быть `ready`. */
+  status: ClassStatus
   /** Иконка. Тип выведен из реестра: опечатка — ошибка проверки типов. */
   icon: IconName
   /** Одна строка о том, как в него играют. Показывается при выборе. */
@@ -83,6 +98,7 @@ export const CLASSES: ClassDef[] = [
   {
     id: 'warden',
     name: 'Страж',
+    status: 'ready',
     icon: 'class-warden',
     tagline: 'Мана копится сама, но не во время траты: паузы между умениями — его ритм.',
     resource: {
@@ -101,6 +117,7 @@ export const CLASSES: ClassDef[] = [
   {
     id: 'reaver',
     name: 'Изувер',
+    status: 'preview',
     icon: 'class-reaver',
     tagline: 'Ярость копится от ударов — своих и чужих — и тает, стоит выйти из боя.',
     resource: {
@@ -160,8 +177,18 @@ export const CLASS_BY_ID: Record<string, ClassDef> = Object.fromEntries(
   CLASSES.map((c) => [c.id, c]),
 )
 
-/** Класс по умолчанию: в него мигрируют старые сейвы, у которых класса не было. */
-export const DEFAULT_CLASS = CLASSES[0]
+/** Классы, готовые к альфе: по ним считаются контракты. Порядок — как в `CLASSES`. */
+export const READY_CLASSES: readonly ClassDef[] = CLASSES.filter((c) => c.status === 'ready')
+
+/** Классы в разработке: играются, но контракты по ним некритичны. */
+export const PREVIEW_CLASSES: readonly ClassDef[] = CLASSES.filter((c) => c.status === 'preview')
+
+/**
+ * Класс по умолчанию: в него мигрируют старые сейвы, у которых класса не было,
+ * по нему идут golden и прогон полного пути. Первый ГОТОВЫЙ класс, а не первый
+ * в списке: превью не может быть точкой отсчёта ни для сейвов, ни для эталона.
+ */
+export const DEFAULT_CLASS = READY_CLASSES[0] ?? CLASSES[0]
 
 export function classById(id: string | undefined | null): ClassDef {
   return (id && CLASS_BY_ID[id]) || DEFAULT_CLASS

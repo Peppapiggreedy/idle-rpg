@@ -1,17 +1,16 @@
 <script lang="ts">
   // Надетые предметы по слотам. Весь текст для игрока — здесь.
-  import { formatNumber, INVENTORY_SIZE } from '../game'
+  import { formatNumber, unequipStatus } from '../game'
   import { OFFHAND_PENALTY, UNARMED } from '../data/balance'
   import { SLOT_ICONS, SLOT_IDS, SLOT_NAMES } from '../data/slots'
   import { gameState, unequipSlot } from '../stores/game'
   import ItemMods from './ItemMods.svelte'
   import EnchantLine from './EnchantLine.svelte'
-  import { GRIP_TEXT } from './itemText'
+  import { GRIP_TEXT, UNEQUIP_BLOCK_TEXT } from './itemText'
   import { RARITY_BY_ID } from '../data/rarity'
   import { Button, IconSlot, Panel, Tag } from './kit'
   import { Icon } from './icons'
 
-  const inventoryFull = $derived($gameState.inventory.length >= INVENTORY_SIZE)
   // Двуручное занимает обе руки: левая не пуста, она ЗАНЯТА — и разницу
   // между «надень что-нибудь» и «сюда нельзя» игрок должен видеть.
   const twoHanded = $derived($gameState.equipment.mainHand?.grip === 'two')
@@ -43,14 +42,15 @@
         {/if}
         {#snippet footer()}
           {#if item}
-            <Button
-              size="sm"
-              disabled={inventoryFull}
-              title={inventoryFull ? 'Инвентарь полон — освободи место' : ''}
-              onclick={() => unequipSlot(slot)}
-            >
+            {@const un = unequipStatus($gameState, slot)}
+            <Button size="sm" disabled={!un.canUnequip} onclick={() => unequipSlot(slot)}>
               Снять
             </Button>
+            <!-- Причина СТРОКОЙ, как в сумке: на телефоне подсказки по
+                 наведению нет, и запертая кнопка без слов читается как поломка. -->
+            {#if un.reason}
+              <span class="deny">{UNEQUIP_BLOCK_TEXT[un.reason]}</span>
+            {/if}
           {/if}
         {/snippet}
       </IconSlot>
@@ -67,14 +67,18 @@
     <p class="unarmed">
       Три стиля примерно равны по урону: два одноручных бьют чаще (левая рука
       наносит {Math.round(OFFHAND_PENALTY * 100)}% своего урона), двуручное бьёт
-      реже, но сильнее, а щит меняет часть урона на блок. Сравнение при
-      автонадевании идёт по итоговому урону в секунду ВСЕЙ связки, а не
+      реже, но сильнее, а щит меняет часть урона на блок. Метка «Апгрейд» в
+      сумке сравнивает по итоговому урону в секунду ВСЕЙ связки, а не
       отдельного предмета.
     </p>
   {/snippet}
 </Panel>
 
 <style>
+  .deny {
+    font-size: var(--text-2xs);
+    color: var(--c-warning);
+  }
   .grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));

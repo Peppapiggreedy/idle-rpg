@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 200" width="160" height="200" role="img" aria-label="Мелкий моб">
+  <g fill="#7a9a3a" stroke="#3b4d1c" stroke-width="3" stroke-linejoin="round">
+    <ellipse cx="80" cy="192" rx="34" ry="6" fill="#000" fill-opacity=".35" stroke="none"/>
+    <ellipse cx="80" cy="150" rx="40" ry="32"/>
+    <circle cx="80" cy="112" r="20"/>
+    <path d="M62 100 l-10 -26 l16 14 z M98 100 l10 -26 l-16 14 z"/>
+    <path d="M52 172 l-18 18 M108 172 l18 18 M66 180 l-6 18 M94 180 l6 18" stroke-width="6" stroke-linecap="round"/>
+    <circle cx="72" cy="110" r="3" fill="#ffe9a8" stroke="none"/><circle cx="88" cy="110" r="3" fill="#ffe9a8" stroke="none"/>
+  </g>
+</svg>

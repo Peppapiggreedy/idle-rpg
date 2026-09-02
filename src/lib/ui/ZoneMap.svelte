@@ -11,6 +11,7 @@
   // отдельного списка нигде не лежит: добавили зону в data/zones.ts, узел
   // появился сам, на своём месте.
   import { forecastAllZones, isZoneUnlocked, type ZoneForecast, type ZoneVerdict } from '../game'
+  import { combatKey, createMemo } from './memo'
   import { ZONES } from '../data/zones'
   import { ALL_DUNGEONS, dungeonOpening } from '../data/dungeons'
   import { TEMPLES } from '../data/temple'
@@ -24,7 +25,16 @@
   }
   let { selectedId, onselect }: Props = $props()
 
-  const forecasts = $derived(new Map(forecastAllZones($gameState).map((f) => [f.zoneId, f])))
+  // ВТОРОЙ полный прогон прогноза на том же экране: карта считала его сама,
+  // рядом с панелью зон. Оба — по всем мобам всех двадцати зон, оба каждый
+  // тик. Мемо (см. ui/memo.ts) оставляет от них по одному пересчёту на
+  // изменение входов.
+  const forecastMemo = createMemo<Map<string, ZoneForecast>>()
+  const forecasts = $derived(
+    forecastMemo(combatKey($gameState), () =>
+      new Map(forecastAllZones($gameState).map((f) => [f.zoneId, f])),
+    ),
+  )
   const heroLevel = $derived($gameState.level.toNumber())
 
   // Порядок пути — по полосе мобов, а не по порядку записи в файле.

@@ -27,14 +27,12 @@ describe('целостность контента', () => {
     // добавь схему и допиши сюда.
     //
     // Файлов data/ больше, чем строк здесь, и это правильно: monsters.ts,
-    // scenery.ts, slots.ts и loot.ts не заводят собственных сущностей с id —
-    // их содержимое приезжает внутрь зон и слотов и проверяется вместе с ними
-    // (роли мобов, конфиг сцены, веса рулетки), а stats.ts и render.ts вообще
-    // не контент.
+    // slots.ts и loot.ts не заводят собственных сущностей с id — их
+    // содержимое приезжает внутрь зон и слотов и проверяется вместе с ними
+    // (роли мобов, веса рулетки), а stats.ts и render.ts вообще не контент.
     const covered = SCHEMAS.map((s) => s.file)
     for (const file of [
       'data/abilities.ts',
-      'data/assets.ts',
       'data/classes.ts',
       'data/materials.ts',
       'data/herbs.ts',
@@ -50,6 +48,7 @@ describe('целостность контента', () => {
       'data/items.ts',
       'data/rarity.ts',
       'data/sounds.ts',
+      'data/sprites.ts',
       'data/talents.ts',
       'data/zones.ts',
     ]) {
@@ -67,7 +66,6 @@ describe('целостность контента', () => {
       'оружие',
       'щит',
       'звук',
-      'пропс',
       'класс',
       'материал',
       'трава',
@@ -80,7 +78,8 @@ describe('целостность контента', () => {
       'реагент',
       'рецепт',
       'редкость',
-      'модель',
+      'спрайт',
+      'фон',
     ]) {
       expect(kinds, `тип «${kind}» без схемы`).toContain(kind)
     }
@@ -131,7 +130,7 @@ describe('проверка ловит битые данные', () => {
     // замечании, либо в имени сущности — иначе чинить придётся поиском.
     for (const broken of cases) {
       const issues = checkContent(broken.content)
-      const withoutPath = issues.filter((i) => !/[\w-]+\/[\w-]+\.(ts|svg)|public\/models/.test(i.message))
+      const withoutPath = issues.filter((i) => !/[\w-]+\/[\w-]+\.(ts|svg)/.test(i.message))
       expect(withoutPath.map((i) => i.message), broken.title).toEqual([])
     }
   })

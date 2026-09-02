@@ -3,14 +3,20 @@
   // меняется никогда, и спрашивать о нём надо до того, как накопился
   // прогресс, а не после.
   //
-  // Весь текст живёт здесь; данные отдают id, имя, иконку и одну строку
-  // о том, как в класс играют.
+  // Весь текст живёт здесь; данные отдают id, имя, иконку, одну строку
+  // о том, как в класс играют, и готовность (`status`). Класс в превью
+  // ВИДЕН и выбирается — но игроку честно сказано, что баланс на нём
+  // не настроен: контракты игры считаются по готовому классу.
   import { CLASSES, type ClassDef } from '../data/classes'
   import { ABILITY_BY_ID } from '../data/abilities'
   import { startNewGame } from '../stores/game'
   import { resourceKindName } from './resource'
-  import { Button, Panel } from './kit'
+  import { Button, Panel, Tag } from './kit'
   import { Icon } from './icons'
+
+  /** Пометка превью-класса: одна строка, без прятанья карточки. */
+  const PREVIEW_LABEL = 'В разработке'
+  const PREVIEW_NOTE = 'Баланс не настроен: темп, цена боя и путь до сотого уровня выверены на другом классе.'
 
   function abilityNames(hero: ClassDef): string {
     return hero.abilityIds.map((id) => ABILITY_BY_ID[id]?.name ?? id).join(', ')
@@ -20,14 +26,23 @@
 <div class="veil">
   <Panel title="С кем ты играешь">
     <p class="hint">
-      Класс выбирается один раз и не меняется. Разница не в силе — оба доходят
-      одинаково далеко, — а в ритме: чем ты платишь за умения и когда.
+      Класс выбирается один раз и не меняется. Разница — в ритме: чем ты
+      платишь за умения и когда. Класс с пометкой «{PREVIEW_LABEL}» играется
+      целиком, но его баланс ещё не выверен.
     </p>
     <div class="grid">
       {#each CLASSES as hero (hero.id)}
-        <section class="card">
-          <h3><Icon name={hero.icon} size="lg" />{hero.name}</h3>
+        <section class="card" data-class-status={hero.status}>
+          <h3>
+            <Icon name={hero.icon} size="lg" />{hero.name}
+            {#if hero.status === 'preview'}
+              <Tag tone="warning" label={PREVIEW_LABEL} />
+            {/if}
+          </h3>
           <p class="tagline">{hero.tagline}</p>
+          {#if hero.status === 'preview'}
+            <p class="preview-note">{PREVIEW_NOTE}</p>
+          {/if}
           <dl>
             <dt>Ресурс</dt>
             <dd>{resourceKindName(hero.resource.kind)}</dd>
@@ -83,6 +98,11 @@
   .tagline {
     margin: 0;
     color: var(--c-text-muted);
+    font-size: var(--text-sm);
+  }
+  .preview-note {
+    margin: 0;
+    color: var(--c-warning);
     font-size: var(--text-sm);
   }
   dl {

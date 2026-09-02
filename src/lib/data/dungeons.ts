@@ -13,7 +13,6 @@
 import type { IconName } from '../ui/icons/manifest'
 import { Decimal } from '../game/numbers'
 import { buildMonster, COMMON, type MonsterRole } from './monsters'
-import { DUNGEON_SCENES, type DungeonSceneKey, type SceneConfig } from './scenery'
 import { ZONES, zoneForMonsterLevel } from './zones'
 import type { SlotId } from './slots'
 import { BOSS_ABILITY_BY_ID, HEROIC } from './heroic'
@@ -73,11 +72,6 @@ export interface DungeonDef {
   opensZoneIds: string[]
   /** Реагент тира: его роняет последний босс цепочки. */
   reagentId: string
-  /** Ключ интерьера. Держится рядом с самим конфигом ради проверки данных:
-   *  «обстановки key нет в DUNGEON_SCENES» читается, а сравнение объектов — нет. */
-  scenery: DungeonSceneKey
-  /** Как выглядит место. Интерьеров четыре на восемь данжей — см. scenery.ts. */
-  scene: SceneConfig
   bosses: BossDef[] // порядок фиксирован: цепочка идёт сверху вниз
 }
 
@@ -157,12 +151,18 @@ interface ChainStep {
 // для своего уровня. Числа подобраны прогоном настоящего тика и держатся
 // тестом; замер по всем восьми данжам и обоим классам — 69-89%, в среднем 79.
 //
+// МНОЖИТЕЛИ ПОДНЯТЫ НА ТЕ ЖЕ ПЯТНАДЦАТЬ ПРОЦЕНТОВ, на которые срезан урон
+// обычного моба (MONSTER_BASE.damage): множитель считается ОТ НЕГО, и без
+// этой поправки схватка с боссом подешевела бы вместе с рядовым боем. Цена
+// боя в зоне и цена схватки с боссом — два РАЗНЫХ контракта, и двигаются они
+// порознь.
+//
 // МЕЖДУ БОССАМИ ЕСТЬ ПРИВАЛ, и без него контракт был бы невозможен: три
 // схватки по восемьдесят процентов на одном запасе не пережил бы никто.
 // Каждая ступень цепочки начинается с полной полоски — значит и мерить её
 // надо схваткой, а не цепочкой целиком.
 //
-// ПОЧЕМУ УРОН ПАДАЕТ ОТ ПЕРВОГО БОССА К ТРЕТЬЕМУ (1.48 -> 0.99 -> 0.76). Это
+// ПОЧЕМУ УРОН ПАДАЕТ ОТ ПЕРВОГО БОССА К ТРЕТЬЕМУ (1.74 -> 1.16 -> 0.89). Это
 // не «третий слабее» — это арифметика равной цены. Запас HP растёт по цепочке
 // (3.6 -> 6.0), то есть схватка становится в 1.7 раза длиннее, а бьёт босс
 // всё это время. Чтобы цена схватки осталась той же, урон в секунду обязан
@@ -176,7 +176,7 @@ interface ChainStep {
 const CHAIN: readonly ChainStep[] = [
   {
     hpMult: 3.6,
-    damageMult: 1.48,
+    damageMult: 1.74,
     goldMult: 12,
     xpMult: 10,
     swingTime: 2.4,
@@ -185,7 +185,7 @@ const CHAIN: readonly ChainStep[] = [
   },
   {
     hpMult: 4.6,
-    damageMult: 0.99,
+    damageMult: 1.16,
     goldMult: 20,
     xpMult: 16,
     swingTime: 2.0,
@@ -194,7 +194,7 @@ const CHAIN: readonly ChainStep[] = [
   },
   {
     hpMult: 6.0,
-    damageMult: 0.76,
+    damageMult: 0.89,
     goldMult: 34,
     xpMult: 27,
     swingTime: 1.8,
@@ -302,7 +302,6 @@ export interface DungeonSpec {
   opensZoneIds: string[]
   lootTier: LootTier
   reagentId: string
-  scenery: DungeonSceneKey
   /** Три босса цепочки: только id и имя — числа приходят из формулы. */
   bosses: readonly { id: string; name: string }[]
 }
@@ -321,7 +320,6 @@ export const DUNGEON_SPECS: readonly DungeonSpec[] = [
     opensZoneIds: ['glasswaste', 'ashen-ridge'],
     lootTier: 1,
     reagentId: 'reagent-silt-clot',
-    scenery: 'cistern',
     bosses: [
       { id: 'barrow-warden', name: 'Страж кургана' },
       { id: 'silt-matron', name: 'Тинная матрона' },
@@ -338,7 +336,6 @@ export const DUNGEON_SPECS: readonly DungeonSpec[] = [
     opensZoneIds: ['mine-collapse', 'root-vaults'],
     lootTier: 1,
     reagentId: 'reagent-drift-sinter',
-    scenery: 'vault',
     bosses: [
       { id: 'collapse-shorer', name: 'Крепильщик обвала' },
       { id: 'foreman-crag', name: 'Штейгер Кряж' },
@@ -355,7 +352,6 @@ export const DUNGEON_SPECS: readonly DungeonSpec[] = [
     opensZoneIds: ['flooded-tier', 'mold-horizon'],
     lootTier: 1,
     reagentId: 'reagent-sediment-core',
-    scenery: 'cistern',
     bosses: [
       { id: 'bottom-keeper', name: 'Донный смотритель' },
       { id: 'sluice-warden', name: 'Ключарь шлюзов' },
@@ -372,7 +368,6 @@ export const DUNGEON_SPECS: readonly DungeonSpec[] = [
     opensZoneIds: ['sulfur-springs', 'ashen-terrace'],
     lootTier: 1,
     reagentId: 'reagent-sulfur-growth',
-    scenery: 'forge',
     bosses: [
       { id: 'steam-scalder', name: 'Парильщик' },
       { id: 'sulfur-bittern', name: 'Серная выпь' },
@@ -389,7 +384,6 @@ export const DUNGEON_SPECS: readonly DungeonSpec[] = [
     opensZoneIds: ['windswept-pass', 'wormwood-rise'],
     lootTier: 2,
     reagentId: 'reagent-wind-glass',
-    scenery: 'rime',
     bosses: [
       { id: 'wall-draught', name: 'Стенной сквозняк' },
       { id: 'pass-whistler', name: 'Свистун перевала' },
@@ -406,7 +400,6 @@ export const DUNGEON_SPECS: readonly DungeonSpec[] = [
     opensZoneIds: ['salt-pit', 'emery-stack'],
     lootTier: 2,
     reagentId: 'reagent-brine-crystal',
-    scenery: 'vault',
     bosses: [
       { id: 'brine-cleg', name: 'Рассольный слепень' },
       { id: 'crust-keyman', name: 'Корковый ключник' },
@@ -425,7 +418,6 @@ export const DUNGEON_SPECS: readonly DungeonSpec[] = [
     opensZoneIds: ['rimeback-ridge', 'frozen-crookwood'],
     lootTier: 2,
     reagentId: 'reagent-rime-vein',
-    scenery: 'rime',
     bosses: [
       { id: 'rime-acolyte', name: 'Изморозный служка' },
       { id: 'brittle-overseer', name: 'Хрусткий надзиратель' },
@@ -443,7 +435,6 @@ export const DUNGEON_SPECS: readonly DungeonSpec[] = [
     opensZoneIds: ['hollow-dell', 'mute-bluff'],
     lootTier: 2,
     reagentId: 'reagent-mute-shard',
-    scenery: 'vault',
     bosses: [
       { id: 'verge-gatekeeper', name: 'Кромочный привратник' },
       { id: 'mute-bellringer', name: 'Немой звонарь' },
@@ -493,8 +484,6 @@ export function buildDungeon(
     // все двадцать зон давно открыты обычными прохождениями.
     opensZoneIds: heroic ? [] : spec.opensZoneIds,
     reagentId,
-    scenery: spec.scenery,
-    scene: DUNGEON_SCENES[spec.scenery],
     bosses: spec.bosses.map((boss, index) => {
       const step = CHAIN[Math.min(index, CHAIN.length - 1)]
       return {

@@ -8,16 +8,19 @@ import { openHeroDrawer, sectionTab } from './screen.js'
 // src/lib/game/__fixtures__/presets, прокрученный на фиксированное число
 // тиков. Игровой цикл при этом не запускается, поэтому кадр не «уезжает».
 //
-// Режимов съёмки ДВА, и разница между ними принципиальная:
+// Режимов съёмки ДВА:
 //
 //   1. ИНТЕРФЕЙС (?scene=off) — весь экран из DOM, боевая сцена заменена
-//      текстовой панелью. Он воспроизводим до пикселя, поэтому сравнивается
-//      с эталонами из tests/screenshots и падает при расхождении.
-//   2. СЦЕНА (без scene=off) — тот же экран, но с боевой сценой на three.
-//      Сцену рисует WebGL, а в headless-браузере он идёт через программный
-//      растеризатор: та же сборка на другой машине даёт другие пиксели.
-//      Сравнивать такое с эталоном — значит держать вечно красный тест,
-//      поэтому эти снимки только сохраняются и уезжают артефактом в PR.
+//      текстовой панелью. Снимки разделов не зависят от сцены.
+//   2. СЦЕНА (без scene=off) — тот же экран с двумерной боевой сценой.
+//      Она рисуется обычными элементами и векторными спрайтами, поэтому
+//      воспроизводима до пикселя и СРАВНИВАЕТСЯ с эталоном так же, как
+//      интерфейс. Растеризатор здесь тот же, что у остальной страницы,
+//      и своих пикселей у сцены нет.
+//
+// Отдельно снимаются ПОЗЫ сцены (?pose=): застывший пик каждого эффекта —
+// покой, замах, попадание, крит, лечение, привал. Это эталоны на сами
+// эффекты, а не только на раскладку.
 //
 // Оба комплекта попадают в test-results/current и, значит, в артефакт.
 
@@ -115,22 +118,35 @@ for (const section of SECTIONS) {
   }
 }
 
-// Режим 2: со сценой — без сравнения, только на посмотреть.
+// Режим 2: со сценой. Ждём готовность сцены — атрибут ставит она сама,
+// когда фон и герой загрузились, — иначе в снимок уехала бы пустая площадка.
 for (const preset of PRESETS) {
   for (const width of SCENE_WIDTHS) {
     test(`сцена: ${preset} @ ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 })
       await openPreset(page, preset, false)
-      // Ждём ПЕРВЫЙ нарисованный кадр: three приезжает отдельным чанком,
-      // и без этого в артефакт уехал бы пустой холст. Атрибут ставит сама
-      // сцена, поэтому ждём факт, а не таймаут.
       await expect(page.locator('[data-scene="ready"]')).toBeAttached({ timeout: 30_000 })
-      // Никакого toMatchSnapshot: снимок только сохраняется в артефакт.
-      // Проверяем ровно одно — что экран со сценой вообще собрался.
-      const shot = await capture(page, `scene-${preset}-${width}`)
-      expect(shot.byteLength).toBeGreaterThan(0)
+      const name = `scene-${preset}-${width}`
+      expect(await capture(page, name)).toMatchSnapshot(`${name}.png`)
     })
   }
+}
+
+// Позы сцены: по одному эталону на эффект. Снимаются на пресете rich —
+// там герой в снаряжении и числа урона не однозначные. Это эталоны на сами
+// эффекты: пока они зелёные, сцена цела.
+const SCENE_POSES = ['idle', 'swing', 'hit', 'crit', 'heal', 'rest'] as const
+for (const pose of SCENE_POSES) {
+  test(`сцена-поза: ${pose}`, async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 })
+    await page.goto(`?debug=1&state=rich&pose=${pose}`)
+    await expect(page.locator('html')).toHaveAttribute('data-ready', 'preset')
+    await expect(page.locator('[data-scene="ready"]')).toBeAttached({ timeout: 30_000 })
+    // Поза действительно применилась: сцена помечает себя ею.
+    await expect(page.locator(`[data-pose="${pose}"]`)).toBeAttached()
+    const name = `scene-pose-${pose}-1280`
+    expect(await capture(page, name)).toMatchSnapshot(`${name}.png`)
+  })
 }
 
 // Требование к мобильному экрану проверяем измерением, а не глазами: на
@@ -202,6 +218,11 @@ test('карточка предмета при наведении не двиг�
   await sectionTab(page, 'Сумка').click()
   const card = page.locator('.slot').filter({ has: page.locator('button', { hasText: 'Продать' }) }).first()
   await expect(card).toBeVisible()
+  // Карточку СНАЧАЛА докручиваем целиком в окно, а уже потом меряем. Иначе
+  // hover() докрутит её сам — и «сдвиг кнопки» окажется прокруткой страницы
+  // на те пиксели, на которые карточка не влезала. Координаты boundingBox
+  // считаются от окна, а не от документа, и меряют не то, что заявлено.
+  await card.scrollIntoViewIfNeeded()
   const sell = card.locator('button', { hasText: 'Продать' })
   const before = await sell.boundingBox()
   const cardBefore = await card.boundingBox()

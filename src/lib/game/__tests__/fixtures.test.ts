@@ -72,7 +72,7 @@ function apSwing(level: number, weaponAvg = 10, weaponSpeed = 2, extraAp = 0, ap
  * поле, которого нет в синтетическом объекте `{ version: N }`, но есть в
  * настоящем сейве, уехала бы ко всем игрокам.
  *
- * Обход папки в проекте уже применяется — render3d.test.ts и kit.test.ts.
+ * Обход папки в проекте уже применяется — render2d.test.ts и kit.test.ts.
  */
 const VERSIONED = /^save-v(\d+)\.json$/
 

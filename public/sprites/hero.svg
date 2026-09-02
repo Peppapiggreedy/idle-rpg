@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 200" width="160" height="200" role="img" aria-label="Герой">
+  <g fill="#3a6fb0" stroke="#1c2f4d" stroke-width="3" stroke-linejoin="round">
+    <ellipse cx="80" cy="192" rx="42" ry="7" fill="#000" fill-opacity=".35" stroke="none"/>
+    <circle cx="80" cy="40" r="22"/>
+    <path d="M52 66 h56 l10 60 h-12 l-6 -34 v96 h-20 v-60 h-8 v60 h-20 v-96 l-6 34 h-12 z"/>
+    <path d="M118 76 l26 -8 l-2 12 l-22 10 z" fill="#c9d4e6"/>
+    <path d="M28 96 c-14 8 -14 40 0 52 c14 -8 14 -40 0 -52 z" fill="#7d8595"/>
+  </g>
+</svg>

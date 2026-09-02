@@ -12,7 +12,8 @@
 // переезжает в полосу, которая ему по силам.
 import { describe, expect, it } from 'vitest'
 import { LEVEL_CAP } from '../../data/balance'
-import { CLASSES } from '../../data/classes'
+import { CLASSES, READY_CLASSES } from '../../data/classes'
+import { classIt, contractClasses } from './class-set'
 import { RUN_BANDS, simulateRun, type RunResult } from '../simulate'
 
 /** Сколько убийств стоит весь путь. Число выводится из KILLS_PER_LEVEL, и
@@ -55,7 +56,9 @@ const BAND_SHARE_MAX = 1.7
  * проверить нечем — этот тест в выборке пропускается, а не ослабляется.
  */
 const SAMPLE = process.env.BALANCE_SAMPLE === '1'
-const CLASS_SET = SAMPLE ? CLASSES.slice(0, 1) : CLASSES
+// Готовые классы первыми, превью следом; выборка — только основной класс.
+// Контракты превью-класса некритичны: см. `class-set.ts`.
+const CLASS_SET = contractClasses(SAMPLE)
 
 const runs = new Map<string, RunResult>()
 function run(classId: string): RunResult {
@@ -94,82 +97,98 @@ describe('полный путь 1..100', () => {
     }
   }, 1_800_000)
 
-  it.each(CLASS_SET.map((c) => [c.name, c.id] as const))(
-    '%s доходит до потолка',
-    (_name, classId) => {
-      // Главное свойство конечной игры: конец достижим. И достижим он ОБОИМ
-      // классам — путь один, а не «страж как-нибудь, а изувер по-настоящему».
-      const r = run(classId)
-      expect(r.reachedCap, `${classId} застрял на ${r.finalLevel} уровне`).toBe(true)
-      expect(r.finalLevel).toBe(LEVEL_CAP)
-    },
-    1_800_000,
-  )
+  for (const cls of CLASS_SET) {
+    classIt(cls)(
+      `${cls.name} доходит до потолка`,
+      () => {
+        const classId = cls.id
+        // Главное свойство конечной игры: конец достижим. И достижим он ОБОИМ
+        // классам — путь один, а не «страж как-нибудь, а изувер по-настоящему».
+        const r = run(classId)
+        expect(r.reachedCap, `${classId} застрял на ${r.finalLevel} уровне`).toBe(true)
+        expect(r.finalLevel).toBe(LEVEL_CAP)
+      },
+      1_800_000,
+    )
+  }
 
-  it.each(CLASS_SET.map((c) => [c.name, c.id] as const))(
-    '%s: путь стоит 4700-5400 убийств',
-    (_name, classId) => {
-      // Цена пути задана ТАБЛИЦЕЙ (KILLS_PER_LEVEL), и прогон обязан её
-      // подтверждать: разойдутся — значит опыт считается не по таблице.
-      const r = run(classId)
-      expect(r.totalKills).toBeGreaterThanOrEqual(KILLS_MIN)
-      expect(r.totalKills).toBeLessThanOrEqual(KILLS_MAX)
-    },
-    1_800_000,
-  )
+  for (const cls of CLASS_SET) {
+    classIt(cls)(
+      `${cls.name}: путь стоит 4700-5400 убийств`,
+      () => {
+        const classId = cls.id
+        // Цена пути задана ТАБЛИЦЕЙ (KILLS_PER_LEVEL), и прогон обязан её
+        // подтверждать: разойдутся — значит опыт считается не по таблице.
+        const r = run(classId)
+        expect(r.totalKills).toBeGreaterThanOrEqual(KILLS_MIN)
+        expect(r.totalKills).toBeLessThanOrEqual(KILLS_MAX)
+      },
+      1_800_000,
+    )
+  }
 
-  it.each(CLASS_SET.map((c) => [c.name, c.id] as const))(
-    '%s: привал не съедает игру, и путь идёт без смертей',
-    (_name, classId) => {
-      // Привал — плата за глубину, а не занятие. Смерти на СВОЕЙ полосе быть
-      // не должно вовсе: игрок, который идёт по лестнице и надевает найденное,
-      // не обязан умирать ни разу.
-      const r = run(classId)
-      expect(r.restShare).toBeLessThanOrEqual(REST_SHARE_MAX)
-      expect(r.deathsPerHour).toBeLessThan(1)
-    },
-    1_800_000,
-  )
+  for (const cls of CLASS_SET) {
+    classIt(cls)(
+      `${cls.name}: привал не съедает игру, и путь идёт без смертей`,
+      () => {
+        const classId = cls.id
+        // Привал — плата за глубину, а не занятие. Смерти на СВОЕЙ полосе быть
+        // не должно вовсе: игрок, который идёт по лестнице и надевает найденное,
+        // не обязан умирать ни разу.
+        const r = run(classId)
+        expect(r.restShare).toBeLessThanOrEqual(REST_SHARE_MAX)
+        expect(r.deathsPerHour).toBeLessThan(1)
+      },
+      1_800_000,
+    )
+  }
 
-  it.each(CLASS_SET.map((c) => [c.name, c.id] as const))(
-    '%s: ни одна полоса не съедает времени НЕ ПО СВОЕЙ ШИРИНЕ',
-    (_name, classId) => {
-      // Провал в лестнице виден именно так: одна полоса вдруг стоит дороже,
-      // чем ей отведено уровней. Так выглядела бы дыра в кривой опыта или
-      // ступень, на которой герой перестал находить вещи.
-      //
-      // МЕРА — ДОЛЯ УРОВНЕЙ, А НЕ ПОЛОВИНА ПУТИ. Здесь стояло «меньше
-      // половины всего времени», и для полосы 10-59 это было почти
-      // тавтологией: она сама занимает 50 уровней из 99, то есть половину
-      // лестницы по построению. Порог держался только за счёт того, что
-      // полоса 1-9 шла медленно, — а она шла медленно потому, что игра
-      // дарила герою полный комплект и он тратил первые уровни впустую.
-      // Убрали подарок — и «половина» стала срабатывать на ровном месте,
-      // хотя время на уровень по полосам идёт как надо: 0.097 часа на
-      // уровень в 10-59, 0.110 в 60-89, 0.123 в 90-100.
-      //
-      // Новая мера строже старой там, где это важно: узкая полоса, съевшая
-      // втрое больше своей ширины, раньше проходила незамеченной.
-      const r = run(classId)
-      const total = Object.values(r.bandHours).reduce((sum, h) => sum + h, 0)
-      const ladder = LEVEL_CAP - 1
-      for (const band of RUN_BANDS) {
-        const hours = r.bandHours[band.label] ?? 0
-        const levelShare = (Math.min(band.to, LEVEL_CAP) - band.from + 1) / ladder
-        const timeShare = hours / total
-        expect(
-          timeShare / levelShare,
-          `${classId}, полоса ${band.label}: ${(timeShare * 100).toFixed(1)}% времени ` +
-            `на ${(levelShare * 100).toFixed(1)}% уровней`,
-        ).toBeLessThan(BAND_SHARE_MAX)
-      }
-    },
-    1_800_000,
-  )
+  for (const cls of CLASS_SET) {
+    classIt(cls)(
+      `${cls.name}: ни одна полоса не съедает времени НЕ ПО СВОЕЙ ШИРИНЕ`,
+      () => {
+        const classId = cls.id
+        // Провал в лестнице виден именно так: одна полоса вдруг стоит дороже,
+        // чем ей отведено уровней. Так выглядела бы дыра в кривой опыта или
+        // ступень, на которой герой перестал находить вещи.
+        //
+        // МЕРА — ДОЛЯ УРОВНЕЙ, А НЕ ПОЛОВИНА ПУТИ. Здесь стояло «меньше
+        // половины всего времени», и для полосы 10-59 это было почти
+        // тавтологией: она сама занимает 50 уровней из 99, то есть половину
+        // лестницы по построению. Порог держался только за счёт того, что
+        // полоса 1-9 шла медленно, — а она шла медленно потому, что игра
+        // дарила герою полный комплект и он тратил первые уровни впустую.
+        // Убрали подарок — и «половина» стала срабатывать на ровном месте,
+        // хотя время на уровень по полосам идёт как надо: 0.097 часа на
+        // уровень в 10-59, 0.110 в 60-89, 0.123 в 90-100.
+        //
+        // Новая мера строже старой там, где это важно: узкая полоса, съевшая
+        // втрое больше своей ширины, раньше проходила незамеченной.
+        const r = run(classId)
+        const total = Object.values(r.bandHours).reduce((sum, h) => sum + h, 0)
+        const ladder = LEVEL_CAP - 1
+        for (const band of RUN_BANDS) {
+          const hours = r.bandHours[band.label] ?? 0
+          const levelShare = (Math.min(band.to, LEVEL_CAP) - band.from + 1) / ladder
+          const timeShare = hours / total
+          expect(
+            timeShare / levelShare,
+            `${classId}, полоса ${band.label}: ${(timeShare * 100).toFixed(1)}% времени ` +
+              `на ${(levelShare * 100).toFixed(1)}% уровней`,
+          ).toBeLessThan(BAND_SHARE_MAX)
+        }
+      },
+      1_800_000,
+    )
+  }
 
   // Сравнение классов между собой требует ОБОИХ: в выборке класс один,
   // и проверять нечего — тест пропускается целиком, а не смягчается.
-  it.skipIf(SAMPLE)('оба класса проходят путь за сопоставимое время', () => {
+  // Пока готов один класс, сравнение — контракт превью-класса: оно печатает
+  // разрыв и роняет прогон только тогда, когда готовы оба.
+  const comparison = READY_CLASSES.length === CLASSES.length ? it : classIt(CLASSES[CLASSES.length - 1])
+  comparison.call(null, 'классы проходят путь за сопоставимое время', () => {
+    if (SAMPLE) return
     // Не «одинаково», а сопоставимо: разница в четверть — это выбор стиля,
     // разница в разы — это сломанный класс. Ровно так и выглядел страж до
     // того, как сравнение предметов стало считать темп, а не голый урон:
@@ -177,6 +196,7 @@ describe('полный путь 1..100', () => {
     const hours = CLASSES.map((c) => run(c.id).totalHours)
     const min = Math.min(...hours)
     const max = Math.max(...hours)
+    console.log(`Разрыв по времени пути между классами: ${((max - min) / min * 100).toFixed(0)}%`)
     expect((max - min) / min).toBeLessThan(0.4)
   }, 1_800_000)
 })

@@ -11,10 +11,8 @@
   } from '../stores/game'
   import {
     FPS_LIMITS,
-    hasWebgl,
     isTextMode,
     setFpsLimit,
-    sceneUnavailable,
     setTextMode,
     setVolume,
     soundUnlocked,
@@ -82,8 +80,7 @@
   // ?scene=off перекрывает настройку: панель должна показывать то, что
   // игрок видит на экране, а не то, что записано в настройках.
   const sceneOff = isSceneDisabled()
-  const webgl = hasWebgl()
-  const textNow = $derived(sceneOff || $sceneUnavailable || isTextMode($uiSettings))
+  const textNow = $derived(sceneOff || isTextMode($uiSettings))
 
   const TEXT_MODE_LABEL: Record<TextModeSetting, string> = {
     auto: 'Как получится',
@@ -145,17 +142,12 @@
     <h3>Отображение</h3>
     <p class="hint">
       Текстовый режим — полноценный: в нём вместо сцены боевая панель, и играть
-      можно целиком без 3D.
+      можно целиком без картинки.
       {#if sceneOff}
         Сейчас сцена выключена параметром адреса <code>?scene=off</code>, и он
         сильнее любой настройки.
-      {:else if $sceneUnavailable}
-        Сцена не запустилась в этом браузере, поэтому идёт текст. Перезагрузка
-        страницы попробует ещё раз.
-      {:else if webgl}
-        WebGL в этом браузере есть.
       {:else}
-        WebGL в этом браузере недоступен — «как получится» означает текст.
+        Сцена рисуется обычными элементами страницы и работает в любом браузере.
       {/if}
     </p>
     <div class="row">

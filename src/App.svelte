@@ -15,7 +15,7 @@
   import { gameStarted, gameState } from './lib/stores/game'
   import { placeTitle } from './lib/ui/placeText'
   import { activeSection } from './lib/stores/ui'
-  import { isTextMode, sceneUnavailable, toggleDrawer, uiSettings } from './lib/stores/ui'
+  import { isTextMode, toggleDrawer, uiSettings } from './lib/stores/ui'
   import { isSceneDisabled } from './lib/ui/route'
 
   import BattleScene from './lib/ui/BattleScene.svelte'
@@ -52,13 +52,10 @@
 
   // ?scene=off убирает сцену и оставляет только DOM — так снимаются
   // стабильные эталоны интерфейса. Текстовый режим приводит к тому же виду,
-  // но по выбору игрока, а не параметра адреса.
-  //
-  // $sceneUnavailable — третья причина, и она не выбор: сцена попробовала
-  // завестись и не смогла. Игра обязана продолжаться текстом, а не чёрным
-  // прямоугольником, поэтому этот случай сильнее настройки «всегда сцена».
+  // но по выбору игрока, а не параметра адреса. Третьей причины нет:
+  // двумерная сцена рисуется обычными элементами и не может не завестись.
   const sceneOff = isSceneDisabled()
-  const textMode = $derived(sceneOff || $sceneUnavailable || isTextMode($uiSettings))
+  const textMode = $derived(sceneOff || isTextMode($uiSettings))
   const points = $derived(availablePoints($gameState))
   const place = $derived(placeTitle($gameState))
   const drawers = $derived($uiSettings.drawers)
@@ -74,7 +71,7 @@
 <!-- Пока класс не выбран, экран игры не спрятан под шторкой — его нет вовсе.
      Разница не косметическая: смонтированный под шторкой экран оставлял
      живыми хоткеи умений (слушатель висит на window, и никакой inert его не
-     гасит), пускал Tab на невидимые кнопки и поднимал контекст WebGL герою,
+     гасит), пускал Tab на невидимые кнопки и рисовал сцену боя герою,
      которого игрок ещё не выбрал. Тик и сейв остановлены той же проверкой —
      см. startGameLoop и persistNow. -->
 {#if $gameStarted}

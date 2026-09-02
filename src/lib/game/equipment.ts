@@ -1,8 +1,17 @@
 // Надеть / снять / оценить экипировку. Чистые операции над состоянием.
 import { estimateCombatRate, swingDamageRange } from './combat'
 import { INVENTORY_SIZE } from '../data/balance'
+import {
+  SAFE_ZONE,
+  ZONE_BY_ID,
+  averageMonsterLevel,
+  representativeMonster,
+  type Zone,
+} from '../data/zones'
+import { buildMonster } from '../data/monsters'
 import { ensureStats, type StatBlock, type StatModifier } from './stats'
-import type { Decimal } from './numbers'
+import { monsterFromTemplate } from './state'
+import { Decimal } from './numbers'
 import type { Equipment, GameState } from './state'
 import type { SlotId } from '../data/slots'
 import type { Item } from '../types'
@@ -129,8 +138,37 @@ export function farmRateWith(state: GameState, item: Item): Decimal {
  * в игре по-прежнему нет.
  */
 function farmRate(state: GameState): Decimal {
-  return estimateCombatRate(state).killsPerSecond
+  // ПРОТИВ ТРЁХ РОЛЕЙ ЗОНЫ на её среднем уровне, а не против того, кто стоит
+  // перед героем сейчас, и не против одного «среднего» моба.
+  //
+  // Против ЖИВОГО моба оценка прыгала сама по себе: пул выдаёт мобов разных
+  // ролей и уровней, и одна и та же вещь при неизменной экипировке читалась
+  // то как «+12,6 %», то как «не апгрейд» — три разных вердикта за полторы
+  // минуты стояния на месте.
+  //
+  // Против ОДНОГО медианного моба она стала устойчивой, но приобрела другую
+  // болезнь: цикл фарма квантуется целыми боями (сколько схваток до привала —
+  // число целое), и на единственном противнике мелкая прибавка к живучести
+  // перекидывает это число с двух на три, давая скачок темпа на треть.
+  // Модель игрока в прогоне гналась за этим скачком и одевала Стража в
+  // живучесть: путь 1..100 растягивался с 13.8 до 19.1 часа при неизменном
+  // числе убийств.
+  //
+  // Три роли — мелочь, обычный, здоровяк — бьют с разной частотой и живут
+  // разное время, поэтому порог целого числа схваток у них лежит в разных
+  // местах, и среднее по ним уже не скачет. Весь пул зоны (пятнадцать мобов,
+  // как в zoneRate) сгладил бы ещё лучше, но это пятнадцать боевых оценок на
+  // КАЖДУЮ примерку: быстрый набор тестов уезжал с полуминуты за десять.
+  const zone = referenceZone(state)
+  const level = Math.round(averageMonsterLevel(zone))
+  let sum = new Decimal(0)
+  for (const archetype of zone.monsterPool) {
+    const monster = monsterFromTemplate(buildMonster(archetype, level, zone.rewardMultiplier))
+    sum = sum.plus(estimateCombatRate({ ...state, monster }).killsPerSecond)
+  }
+  return sum.div(zone.monsterPool.length)
 }
+
 
 /**
  * ПУСТОЙ СЛОТ — ЭТО НОЛЬ, и порог для него другой.
@@ -163,6 +201,16 @@ function changesAnything(mod: { kind: StatModifier['kind']; value: Decimal }): b
   return mod.kind === 'multiplier' ? !mod.value.eq(1) : !mod.value.eq(0)
 }
 
+/** Зона, по которой считается оценка предмета. */
+function referenceZone(state: GameState): Zone {
+  return ZONE_BY_ID[state.currentZoneId] ?? SAFE_ZONE
+}
+
+/** Состояние против медианного моба зоны — для показа урона удара. */
+function facingReference(state: GameState): GameState {
+  return { ...state, monster: monsterFromTemplate(representativeMonster(referenceZone(state))) }
+}
+
 /** Лучше ли предмет надетого — по оценочному темпу убийств. */
 export function isUpgrade(state: GameState, item: Item): boolean {
   const after = farmRateWith(state, item)
@@ -183,11 +231,12 @@ export interface EquipPreview {
 
 function previewOf(state: GameState): EquipPreview {
   const { min, max } = swingDamageRange(state.stats)
+  const facing = facingReference(state)
   return {
     damageMin: min,
     damageMax: max,
     swingTime: state.stats.swingTime,
-    damagePerSecond: estimateCombatRate(state).damagePerSecond,
+    damagePerSecond: estimateCombatRate(facing).damagePerSecond,
     // Темп фарма — то, чем СРАВНИВАЮТСЯ предметы: в нём и урон, и аптайм.
     killsPerSecond: farmRate(state),
   }
@@ -271,11 +320,27 @@ export function equipItem(state: GameState, itemId: string): GameState {
   })
 }
 
-/** Снимает предмет в инвентарь; при полном инвентаре ничего не делает. */
+// Почему предмет не снять. Каждый случай — свой код, текст рендерит UI.
+export type UnequipBlockReason = 'empty-slot' | 'inventory-full'
+
+export interface UnequipStatus {
+  canUnequip: boolean
+  reason: UnequipBlockReason | null
+}
+
+/** Можно ли снять предмет из слота ПРЯМО СЕЙЧАС — ему нужно место в сумке. */
+export function unequipStatus(state: GameState, slot: SlotId): UnequipStatus {
+  if (!state.equipment[slot]) return { canUnequip: false, reason: 'empty-slot' }
+  if (state.inventory.length >= INVENTORY_SIZE) {
+    return { canUnequip: false, reason: 'inventory-full' }
+  }
+  return { canUnequip: true, reason: null }
+}
+
+/** Снимает предмет в инвентарь; отказ `unequipStatus` — состояние как было. */
 export function unequipItem(state: GameState, slot: SlotId): GameState {
   const item = state.equipment[slot]
-  if (!item) return state
-  if (state.inventory.length >= INVENTORY_SIZE) return state
+  if (!item || !unequipStatus(state, slot).canUnequip) return state
   return ensureStats({
     ...state,
     inventory: [...state.inventory, item],

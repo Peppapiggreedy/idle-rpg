@@ -24,8 +24,16 @@ export {
   compareItem,
   farmRateWith,
   equipStatus,
+  unequipStatus,
 } from './equipment'
-export type { EquipPreview, EquipComparison, EquipStatus, EquipBlockReason } from './equipment'
+export type {
+  EquipPreview,
+  EquipComparison,
+  EquipStatus,
+  EquipBlockReason,
+  UnequipStatus,
+  UnequipBlockReason,
+} from './equipment'
 export { createRng, randomSeed, randRange } from './rng'
 export {
   recomputeStats,
@@ -64,6 +72,7 @@ export {
   isZoneUnlocked,
   forecastZone,
   forecastAllZones,
+  travelStatus,
   travelToZone,
   retreatZone,
   reviveInZone,
@@ -71,7 +80,7 @@ export {
   intendedZone,
   zoneStanding,
 } from './zones'
-export type { ZoneForecast, ZoneVerdict, ZoneStanding } from './zones'
+export type { ZoneForecast, ZoneVerdict, ZoneStanding, TravelBlockReason, TravelStatus } from './zones'
 export {
   ABILITIES,
   ABILITY_BY_ID,
@@ -80,6 +89,7 @@ export {
   cooldownLeft,
   useAbility,
   consumeQueuedAbility,
+  queuedAbilityDropReason,
   advanceCooldowns,
   autocastStep,
   autocastCandidates,
@@ -100,13 +110,14 @@ export {
   investTalent,
   resetTalents,
   resetCost,
+  resetStatus,
   canResetTalents,
   talentModifiers,
   talentFlags,
   hasTalentFlag,
   reviveMultiplier,
 } from './talents'
-export type { TalentStatus, TalentBlockReason, TalentRanks } from './talents'
+export type { TalentStatus, TalentBlockReason, TalentRanks, ResetStatus, ResetBlockReason } from './talents'
 export {
   TEMPLES,
   TEMPLE_BY_ID,

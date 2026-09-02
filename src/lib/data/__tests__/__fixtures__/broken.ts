@@ -12,7 +12,7 @@ import { Decimal } from '../../../game/numbers'
 import type { IconName } from '../../../ui/icons/manifest'
 import type { StatId } from '../../../game/stats'
 import type { SlotId } from '../../slots'
-import { CLASS_BY_ID } from '../../classes'
+import { CLASS_BY_ID, type ClassDef } from '../../classes'
 import type { ShieldTemplate, WeaponTemplate } from '../../items'
 import { realContent } from '../content'
 import type { Content } from '../schema'
@@ -118,14 +118,6 @@ export function brokenCases(): BrokenCase[] {
         ),
       },
       expect: ['weaponSpeed', 'haste'],
-    },
-    {
-      title: 'модель ссылается на файл, которого нет в public/models',
-      content: {
-        ...real,
-        models: patch(real.models, first(real.models).id, { path: 'models/Wyvern.glb' }),
-      },
-      expect: [first(real.models).id, 'Wyvern.glb', 'public/models'],
     },
     {
       title: 'иконки нет в реестре',
@@ -439,6 +431,24 @@ export function brokenCases(): BrokenCase[] {
       expect: [first(real.classes).id, 'нет-такого', 'data/abilities.ts'],
     },
     {
+      title: 'все классы в превью: не по кому считать контракты',
+      content: {
+        ...real,
+        classes: real.classes.map((c) => ({ ...c, status: 'preview' as const })),
+      },
+      expect: ['ни одного готового класса'],
+    },
+    {
+      title: 'готовность класса не из ready/preview',
+      content: {
+        ...real,
+        classes: patch(real.classes, first(real.classes).id, {
+          status: 'done' as unknown as ClassDef['status'],
+        }),
+      },
+      expect: [first(real.classes).id, 'не из ready/preview'],
+    },
+    {
       title: 'класс без веток талантов: очки некуда вкладывать',
       content: {
         ...real,
@@ -570,20 +580,50 @@ export function brokenCases(): BrokenCase[] {
       expect: ['reaver', 'не тает вне боя'],
     },
     {
-      title: 'пропс ссылается на модель, которой нет в public/models/props',
+      title: 'спрайт ссылается на файл, которого нет в public/sprites',
       content: {
         ...real,
-        props: patch(real.props, first(real.props).id, { path: 'models/props/нету.glb' }),
+        sprites: patch(real.sprites, first(real.sprites).id, { path: 'sprites/нету.svg' }),
       },
-      expect: [first(real.props).id, 'нету.glb'],
+      expect: [first(real.sprites).id, 'нету.svg', 'data/sprites.ts'],
     },
     {
-      title: 'у пропса не указан автор — это нарушение лицензии',
+      title: 'у фона не указан автор — это нарушение лицензии',
       content: {
         ...real,
-        props: patch(real.props, first(real.props).id, { author: '' }),
+        backgrounds: patch(real.backgrounds, first(real.backgrounds).id, { author: '' }),
       },
-      expect: [first(real.props).id, 'автор'],
+      expect: [first(real.backgrounds).id, 'author', 'data/sprites.ts'],
+    },
+    {
+      title: 'у архетипа моба нет спрайта',
+      content: {
+        ...real,
+        spriteByArchetype: Object.fromEntries(
+          Object.entries(real.spriteByArchetype).filter(
+            ([id]) => id !== first(first(real.zones).monsterPool).id,
+          ),
+        ),
+      },
+      expect: [first(first(real.zones).monsterPool).id, 'нет спрайта', 'data/sprites.ts'],
+    },
+    {
+      title: 'в маппинге спрайтов мёртвый архетип',
+      content: {
+        ...real,
+        spriteByArchetype: { ...real.spriteByArchetype, 'nobody-here': 'common' },
+      },
+      expect: ['nobody-here', 'мёртвая', 'data/sprites.ts'],
+    },
+    {
+      title: 'между полосами фонов дыра',
+      content: {
+        ...real,
+        backgrounds: patch(real.backgrounds, real.backgrounds[1].id, {
+          minLevel: real.backgrounds[1].minLevel + 1,
+        }),
+      },
+      expect: [real.backgrounds[1].id, 'без фона', 'data/sprites.ts'],
     },
     {
       title: 'звук ссылается на файл, которого нет в public/',
@@ -771,16 +811,6 @@ export function brokenCases(): BrokenCase[] {
         }),
       },
       expect: [first(real.dungeons).id, 'своего тира', 'data/reagents.ts'],
-    },
-    {
-      title: 'у данжа нет обстановки: ключ интерьера промахнулся',
-      content: {
-        ...real,
-        dungeons: patch(real.dungeons, first(real.dungeons).id, {
-          scenery: 'подземелье' as never,
-        }),
-      },
-      expect: [first(real.dungeons).id, 'подземелье', 'data/scenery.ts'],
     },
     {
       title: 'лестница данжей с дыркой: тира нет ни у кого',

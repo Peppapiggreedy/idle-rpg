@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 200" width="160" height="200" role="img" aria-label="Неизвестный моб">
+  <g fill="#505868" stroke="#262b36" stroke-width="3" stroke-linejoin="round">
+    <ellipse cx="80" cy="192" rx="40" ry="7" fill="#000" fill-opacity=".3" stroke="none"/>
+    <path d="M80 30 c-30 0 -44 26 -44 60 v100 h88 v-100 c0 -34 -14 -60 -44 -60 z"/>
+    <path d="M70 90 h20 M80 100 v40" stroke="#c0c6d4" stroke-width="6" stroke-linecap="round"/>
+  </g>
+</svg>

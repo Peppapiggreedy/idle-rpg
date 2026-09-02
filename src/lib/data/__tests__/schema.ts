@@ -14,7 +14,7 @@
 // Модуль лежит в __tests__, а не в data/: в data/ живут ДАННЫЕ, а это код.
 import { Decimal } from '../../game/numbers'
 import type { AbilityDef } from '../abilities'
-import type { ModelAsset, PropAsset } from '../assets'
+import type { BackgroundBand, SpriteAsset } from '../sprites'
 import type { DungeonDef } from '../dungeons'
 import { ARMOR_ATTRIBUTES, type AttributeId, type ShieldTemplate, type WeaponTemplate } from '../items'
 import type { ClassDef } from '../classes'
@@ -28,7 +28,6 @@ import type { TempleDef } from '../temple'
 import { QUEST_CHAIN, type QuestDef } from '../quests'
 import { MECHANIC_IDS, type ProgressionStep } from '../progression'
 import type { ReagentDef } from '../reagents'
-import type { DungeonSceneKey } from '../scenery'
 import { craftToll, recipeLevel } from '../recipes'
 import type { ProfessionDef, RecipeDef } from '../recipes'
 import type { RarityDef } from '../rarity'
@@ -76,17 +75,19 @@ export interface Content {
   materials: readonly MaterialDef[]
   progression: readonly ProgressionStep[]
   reagents: readonly ReagentDef[]
-  /** Ключи интерьеров данжей из data/scenery.ts. */
-  dungeonSceneKeys: readonly DungeonSceneKey[]
   recipes: readonly RecipeDef[]
   professions: readonly ProfessionDef[]
-  props: readonly PropAsset[]
-  /** Имена файлов в public/models/props. */
-  propFiles: readonly string[]
   /** Пути звуковых файлов, реально лежащих в public/. */
   audioFiles: readonly string[]
   rarities: readonly RarityDef[]
-  models: readonly ModelAsset[]
+  /** Спрайты двумерной сцены: герой и силуэты мобов (data/sprites.ts). */
+  sprites: readonly SpriteAsset[]
+  /** Фоны по полосам уровней (data/sprites.ts). */
+  backgrounds: readonly BackgroundBand[]
+  /** Архетип моба → id спрайта (MONSTER_SPRITE_BY_ARCHETYPE). */
+  spriteByArchetype: Readonly<Record<string, string>>
+  /** Имена файлов в public/sprites. */
+  spriteFiles: readonly string[]
   /** Уровень, с которого открыта цепочка преквестов (QUEST_CHAIN.unlockLevel). */
   questChainUnlockLevel: number
   slots: readonly SlotId[]
@@ -99,8 +100,6 @@ export interface Content {
   iconNames: readonly string[]
   /** Имена, под которыми symbol реально лежит в sprite.svg. */
   spriteIconNames: readonly string[]
-  /** Имена файлов в public/models. */
-  modelFiles: readonly string[]
   /** Числа баланса, у которых есть допустимый диапазон. */
   balance: BalanceNumbers
 }
@@ -660,49 +659,6 @@ export const ZONE_SCHEMA: EntitySchema<Zone> = {
         report,
       )
     }
-    // Вид зоны — обязательное поле: новая зона без сцены не должна собираться.
-    if (!zone.scene) {
-      report.add(where, 'нет конфигурации сцены — добавь её в data/scenery.ts и сошлись полем scene')
-      return
-    }
-    checkNumber(
-      zone.scene,
-      { field: 'scene.fogDensity', get: (s) => s.fogDensity, min: 0 },
-      where,
-      'data/scenery.ts',
-      report,
-    )
-    checkNumber(
-      zone.scene,
-      { field: 'scene.lightIntensity', get: (s) => s.lightIntensity, min: 0 },
-      where,
-      'data/scenery.ts',
-      report,
-    )
-    checkNumber(
-      zone.scene,
-      { field: 'scene.seed', get: (s) => s.seed, min: 0, integer: true },
-      where,
-      'data/scenery.ts',
-      report,
-    )
-    for (const [index, cluster] of (zone.scene.props ?? []).entries()) {
-      checkNumber(
-        cluster,
-        { field: `scene.props[${index}].count`, get: (p) => p.count, min: 0, integer: true },
-        where,
-        'data/scenery.ts',
-        report,
-      )
-      const [lo, hi] = cluster.scaleRange ?? [Number.NaN, Number.NaN]
-      if (!(lo > 0) || !(hi >= lo)) {
-        report.add(
-          where,
-          `scene.props[${index}].scaleRange = [${lo}, ${hi}] — разброс размера обязан быть ` +
-            'положительным и по возрастанию (data/scenery.ts)',
-        )
-      }
-    }
   },
 }
 
@@ -745,17 +701,6 @@ export const DUNGEON_SCHEMA: EntitySchema<DungeonDef> = {
   ],
   extra: (dungeon, content, report) => {
     const where = `данж ${dungeon.id}`
-    // Интерьер — ключ, а не собственный конфиг: восемь наборов пропсов руками
-    // держать нельзя, а промах по ключу дал бы пустую сцену без ошибки.
-    if (!content.dungeonSceneKeys.includes(dungeon.scenery)) {
-      report.add(
-        where,
-        `ссылается на обстановку «${dungeon.scenery}», которой нет в DUNGEON_SCENES ` +
-          '(data/scenery.ts)',
-      )
-    } else if (!dungeon.scene) {
-      report.add(where, 'ключ обстановки есть, а конфига нет — проверь DUNGEON_SCENES в data/scenery.ts')
-    }
     // Реагент обязан быть СВОЕГО тира: перепутанные реагенты сделали бы
     // два данжа взаимозаменяемыми, и никто бы этого не заметил.
     const reagent = content.reagents.find((r) => r.id === dungeon.reagentId)
@@ -1667,11 +1612,6 @@ export const TEMPLE_SCHEMA: EntitySchema<TempleDef> = {
       where,
       'пул бойцов пуст — волне некого выставить (data/temple.ts)',
     )
-    report.need(
-      content.dungeonSceneKeys.includes(temple.scenery),
-      where,
-      `обстановки «${temple.scenery}» нет в DUNGEON_SCENES (data/scenery.ts)`,
-    )
     // Рубежи строго по возрастанию: иначе «дошёл до пятой» открывало бы
     // награду десятой, и лестница наград перестала бы быть лестницей.
     let previous = 0
@@ -1768,6 +1708,13 @@ export const CLASS_SCHEMA: EntitySchema<ClassDef> = {
   extra: (hero, content, report) => {
     const where = `класс ${hero.id}`
     report.need(!!hero.tagline?.trim(), where, 'нет строки о том, как в него играют (data/classes.ts)')
+    // Готовность — одно из двух значений, и это данные: по ней тесты решают,
+    // роняет ли класс прогон, а экран выбора — ставить ли пометку.
+    report.need(
+      hero.status === 'ready' || hero.status === 'preview',
+      where,
+      `готовность «${String(hero.status)}» не из ready/preview (data/classes.ts)`,
+    )
     // Умения: без них у класса нет ни одной кнопки.
     report.need(
       Array.isArray(hero.abilityIds) && hero.abilityIds.length > 0,
@@ -1892,38 +1839,6 @@ export const CLASS_SCHEMA: EntitySchema<ClassDef> = {
   },
 }
 
-export const PROP_SCHEMA: EntitySchema<PropAsset> = {
-  kind: 'пропс',
-  file: 'data/assets.ts',
-  entities: (c) => c.props,
-  id: (p) => p.id,
-  name: (p) => p.id,
-  numbers: [
-    {
-      field: 'targetHeight',
-      get: (p) => p.targetHeight,
-      min: 0,
-      exclusiveMin: true,
-      max: 20,
-      why: 'высота пропса на площадке в метрах: ноль не видно, двадцать закроет бой',
-    },
-  ],
-  extra: (prop, content, report) => {
-    const where = `пропс ${prop.id}`
-    const file = prop.path?.split('/').pop() ?? ''
-    // Ассет → файл: та же проверка, что у моделей бойцов. Промах даёт не
-    // ошибку, а вечную коробку вместо бочки, и этого никто не заметит.
-    report.need(
-      content.propFiles.includes(file),
-      where,
-      `файла «${prop.path}» нет в public/models/props (data/assets.ts)`,
-    )
-    report.need(!!prop.license?.trim(), where, 'не указана лицензия (data/assets.ts)')
-    report.need(!!prop.author?.trim(), where, 'не указан автор (data/assets.ts)')
-    report.need(!!prop.sourceUrl?.trim(), where, 'не указан источник (data/assets.ts)')
-  },
-}
-
 export const SOUND_SCHEMA: EntitySchema<SoundCue> = {
   kind: 'звук',
   file: 'data/sounds.ts',
@@ -2008,54 +1923,71 @@ export const RARITY_SCHEMA: EntitySchema<RarityDef> = {
   },
 }
 
-export const MODEL_SCHEMA: EntitySchema<ModelAsset> = {
-  kind: 'модель',
-  file: 'data/assets.ts',
-  entities: (c) => c.models,
-  id: (m) => m.id,
-  numbers: [
-    {
-      field: 'scale',
-      get: (m) => m.scale,
-      min: 0,
-      exclusiveMin: true,
-      why: 'это тонкая подстройка около единицы, основной масштаб считается сам',
-    },
-  ],
-  extra: (model, content, report) => {
-    const where = `модель ${model.id}`
-    for (const [field, value] of [
-      ['license', model.license],
-      ['author', model.author],
-      ['sourceUrl', model.sourceUrl],
-    ] as const) {
-      report.need(
-        typeof value === 'string' && value.trim().length > 0,
-        where,
-        `не заполнено поле ${field} — этого требует лицензия, см. CREDITS.md`,
-      )
-    }
-    const path = model.path ?? ''
-    const file = path.split('/').pop() ?? ''
-    if (!path.startsWith('models/')) {
-      report.add(
-        where,
-        `путь «${path}» обязан начинаться с models/ — файлы моделей лежат в public/models`,
-      )
-    } else if (!content.modelFiles.includes(file)) {
-      report.add(
-        where,
-        `ссылается на файл «${file}», которого нет в public/models — ` +
-          'положи файл рядом с остальными или поправь path в data/assets.ts',
-      )
-    }
-    // idle есть у любой модели: это состояние по умолчанию, и без него боец
-    // застынет в T-позе. Остальные состояния деградируют осмысленно.
+/**
+ * Спрайты 2D-сцены: путь ведёт в public/sprites, поля лицензии
+ * заполнены. Промах пути дал бы не ошибку,
+ * а пустое место на сцене, которое никто не заметит.
+ */
+function checkSpriteAsset(
+  where: string,
+  asset: SpriteAsset,
+  content: Content,
+  report: Report,
+): void {
+  for (const [field, value] of [
+    ['license', asset.license],
+    ['author', asset.author],
+    ['sourceUrl', asset.sourceUrl],
+  ] as const) {
     report.need(
-      typeof model.clips?.idle === 'string' && model.clips.idle.length > 0,
+      typeof value === 'string' && value.trim().length > 0,
       where,
-      'не указан клип покоя (clips.idle) — без него боец застынет в T-позе ' +
-        '(data/assets.ts)',
+      `не заполнено поле ${field} — этого требует лицензия, см. CREDITS.md (data/sprites.ts)`,
+    )
+  }
+  const path = asset.path ?? ''
+  const file = path.split('/').pop() ?? ''
+  if (!path.startsWith('sprites/')) {
+    report.add(
+      where,
+      `путь «${path}» обязан начинаться с sprites/ — картинки сцены лежат в public/sprites ` +
+        '(data/sprites.ts)',
+    )
+  } else if (!content.spriteFiles.includes(file)) {
+    report.add(
+      where,
+      `ссылается на файл «${file}», которого нет в public/sprites — ` +
+        'положи файл рядом с остальными или поправь path в data/sprites.ts',
+    )
+  }
+}
+
+export const SPRITE_SCHEMA: EntitySchema<SpriteAsset> = {
+  kind: 'спрайт',
+  file: 'data/sprites.ts',
+  entities: (c) => c.sprites,
+  id: (s) => s.id,
+  extra: (sprite, content, report) => {
+    checkSpriteAsset(`спрайт ${sprite.id}`, sprite, content, report)
+  },
+}
+
+export const BACKGROUND_SCHEMA: EntitySchema<BackgroundBand> = {
+  kind: 'фон',
+  file: 'data/sprites.ts',
+  entities: (c) => c.backgrounds,
+  id: (b) => b.id,
+  numbers: [
+    { field: 'minLevel', get: (b) => b.minLevel, min: 1, integer: true },
+    { field: 'maxLevel', get: (b) => b.maxLevel, min: 1, integer: true },
+  ],
+  extra: (band, content, report) => {
+    const where = `фон ${band.id}`
+    checkSpriteAsset(where, band, content, report)
+    report.need(
+      band.minLevel <= band.maxLevel,
+      where,
+      `полоса ${band.minLevel}-${band.maxLevel} вывернута: minLevel больше maxLevel (data/sprites.ts)`,
     )
   },
 }
@@ -2069,7 +2001,6 @@ export const SCHEMAS = [
   WEAPON_SCHEMA,
   SHIELD_SCHEMA,
   SOUND_SCHEMA,
-  PROP_SCHEMA,
   CLASS_SCHEMA,
   MATERIAL_SCHEMA,
   HERB_SCHEMA,
@@ -2082,7 +2013,8 @@ export const SCHEMAS = [
   PROGRESSION_SCHEMA,
   RECIPE_SCHEMA,
   RARITY_SCHEMA,
-  MODEL_SCHEMA,
+  SPRITE_SCHEMA,
+  BACKGROUND_SCHEMA,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- разные типы сущностей
 ] as unknown as EntitySchema<unknown>[]
 
@@ -2262,6 +2194,14 @@ function checkReachable(content: Content, report: Report): void {
         'здесь быть не может (data/dungeons.ts)',
     )
   }
+  // Хотя бы один класс готов: по нему идут golden, полный путь и миграция
+  // сейвов без класса. Одни превью — точки отсчёта нет ни у чего.
+  report.need(
+    content.classes.some((c) => c.status === 'ready'),
+    'классы',
+    'ни одного готового класса (status: ready) — не по кому считать контракты ' +
+      'и куда мигрировать старые сейвы (data/classes.ts)',
+  )
   const safe = content.zones.filter((z) => z.isSafe)
   report.need(
     safe.length === 1,
@@ -2643,6 +2583,75 @@ function checkUnlockLevels(content: Content, report: Report): void {
   }
 }
 
+/**
+ * Сцена: у каждого моба есть силуэт, у каждого уровня — фон.
+ *
+ * Маппинг «архетип → спрайт» проверяется В ОБЕ СТОРОНЫ: архетип без спрайта
+ * получил бы запасную тень, а мёртвый ключ маппинга пережил бы удаление моба.
+ * Полосы фонов обязаны идти подряд от первого уровня до потолка: дыра — моб
+ * без фона, наложение — два фона спорят за один уровень.
+ */
+function checkScene(content: Content, report: Report): void {
+  const spriteIds = new Set(content.sprites.map((s) => s.id))
+  const archetypeIds = new Set(content.zones.flatMap((z) => z.monsterPool?.map((m) => m.id) ?? []))
+  for (const zone of content.zones) {
+    for (const archetype of zone.monsterPool ?? []) {
+      const spriteId = content.spriteByArchetype[archetype.id]
+      if (spriteId === undefined) {
+        report.add(
+          `моб ${archetype.id}`,
+          `у архетипа из зоны ${zone.id} нет спрайта — добавь строку в ` +
+            'MONSTER_SPRITE_BY_ARCHETYPE (data/sprites.ts), иначе сцена покажет тень',
+        )
+      } else if (!spriteIds.has(spriteId)) {
+        report.add(
+          `моб ${archetype.id}`,
+          `ссылается на спрайт «${spriteId}», которого нет в MONSTER_SPRITES (data/sprites.ts)`,
+        )
+      }
+    }
+  }
+  for (const key of Object.keys(content.spriteByArchetype)) {
+    report.need(
+      archetypeIds.has(key),
+      `спрайт для ${key}`,
+      `в маппинге есть архетип «${key}», которого нет ни в одном пуле зон — ` +
+        'мёртвая строка (data/sprites.ts)',
+    )
+  }
+
+  const bands = [...content.backgrounds]
+    .filter((b) => Number.isFinite(b.minLevel) && Number.isFinite(b.maxLevel))
+    .sort((a, b) => a.minLevel - b.minLevel)
+  if (bands.length === 0) return
+  report.need(
+    bands[0].minLevel === 1,
+    `фон ${bands[0].id}`,
+    `первая полоса фонов начинается с ${bands[0].minLevel}, а мобы бывают с первого уровня ` +
+      '(data/sprites.ts)',
+  )
+  for (let i = 1; i < bands.length; i++) {
+    const prev = bands[i - 1]
+    const band = bands[i]
+    if (band.minLevel === prev.maxLevel + 1) continue
+    report.add(
+      `фон ${band.id}`,
+      band.minLevel > prev.maxLevel + 1
+        ? `полоса ${band.minLevel}-${band.maxLevel} начинается после ${prev.maxLevel} у фона ` +
+            `${prev.id}: уровни ${prev.maxLevel + 1}-${band.minLevel - 1} без фона (data/sprites.ts)`
+        : `полоса ${band.minLevel}-${band.maxLevel} налезает на ${prev.minLevel}-${prev.maxLevel} ` +
+            `у фона ${prev.id}: два фона спорят за одни уровни (data/sprites.ts)`,
+    )
+  }
+  const top = bands[bands.length - 1]
+  report.need(
+    top.maxLevel === content.balance.levelCap,
+    `фон ${top.id}`,
+    `последняя полоса фонов кончается на ${top.maxLevel}, а LEVEL_CAP = ` +
+      `${content.balance.levelCap}: у мобов последних уровней нет фона (data/sprites.ts)`,
+  )
+}
+
 export function checkContent(content: Content): ContentIssue[] {
   const report = new Report()
   for (const schema of SCHEMAS) runSchema(schema, content, report)
@@ -2650,6 +2659,7 @@ export function checkContent(content: Content): ContentIssue[] {
   checkInstanceEntrances(content, report)
   checkBalance(content, report)
   checkUnlockLevels(content, report)
+  checkScene(content, report)
   return report.issues
 }
 

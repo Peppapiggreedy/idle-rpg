@@ -1,3 +1,8 @@
+// ЭТОТ ФАЙЛ — ЧАСТЬ ДОРОГОГО НАБОРА (`npm run test:balance`), а не быстрого.
+// Он строит эталонное прохождение на оба класса и считает прогноз по каждой
+// из двадцати зон на девяти уровнях — это минута с лишним, то есть вдвое
+// больше, чем весь быстрый набор обязан занимать целиком. Быстрый набор
+// ловит опечатки и поломки, дорогой — кривые; этот тест про кривую.
 // ГЕРОЙ НЕ ПЕРЕПРЫГИВАЕТ ЗОНЫ.
 //
 // Замер до правки: эталонный герой ТРИДЦАТОГО уровня выживал в последней зоне
@@ -21,7 +26,11 @@ import {
 } from '../data/balance'
 import { MONSTER_GROWTH } from '../data/monsters'
 import { ZONES, averageMonsterLevel, zoneForMonsterLevel } from '../data/zones'
-import { CLASSES } from '../data/classes'
+import { classIt, contractClasses } from './__tests__/class-set'
+
+const SAMPLE = process.env.BALANCE_SAMPLE === '1'
+/** Готовые классы — контракт, превью — предупреждение (см. class-set.ts). */
+const CLASS_SET = contractClasses(SAMPLE)
 
 /** Уровни таблицы: десятками, как просили в задании. */
 const LEVELS = [10, 20, 30, 40, 50, 60, 70, 80, 90]
@@ -86,45 +95,44 @@ describe('штраф за разрыв уровней', () => {
 
 describe('обгон зон: до +5 уверенно, до +10 с риском, глубже никак', () => {
   // Таблица печатается целиком: контракт нужен глазами не меньше, чем галкой.
-  const rows = CLASSES.flatMap((cls) =>
-    LEVELS.map((level) => ({ cls: cls.name, classId: cls.id, level, ...overrun(level, cls.id) })),
+  const rows = CLASS_SET.flatMap((cls) =>
+    LEVELS.map((level) => ({ cls, level, ...overrun(level, cls.id) })),
   )
 
   it('печатает таблицу обгона', () => {
     const lines = rows.map(
       (r) =>
-        `${r.cls.padEnd(7)} ур.${String(r.level).padStart(3)}  ` +
+        `${r.cls.name.padEnd(7)} ур.${String(r.level).padStart(3)}  ` +
         `уверенно +${r.solid.toFixed(0).padStart(2)}   с риском +${r.risky.toFixed(0).padStart(2)}`,
     )
     // eslint-disable-next-line no-console
     console.log('\nОБГОН ЗОН\n' + lines.join('\n'))
-    expect(rows).toHaveLength(CLASSES.length * LEVELS.length)
+    expect(rows).toHaveLength(CLASS_SET.length * LEVELS.length)
   })
 
-  it.each(rows.map((r) => [`${r.cls} ур.${r.level}`, r] as const))(
-    '%s: уверенно не глубже +5',
-    (_label, row) => {
+  for (const row of rows) {
+    const cit = classIt(row.cls)
+    const label = `${row.cls.name} ур.${row.level}`
+
+    cit(`${label}: уверенно не глубже +5`, () => {
       expect(row.solid).toBeLessThanOrEqual(LEVEL_GAP_FREE)
-    },
-  )
+    })
 
-  it.each(rows.map((r) => [`${r.cls} ур.${r.level}`, r] as const))(
-    '%s: даже с риском не глубже +10',
-    (_label, row) => {
+    cit(`${label}: даже с риском не глубже +10`, () => {
       expect(row.risky).toBeLessThanOrEqual(LEVEL_GAP_FREE * 2)
-    },
-  )
+    })
+  }
 
-  it('своя зона по-прежнему в коридоре темпа', () => {
-    // Штраф не должен задеть тех, кто стоит где положено: внутри своей зоны
-    // разрыв бесплатен, и время убийства обязано остаться прежним.
-    for (const cls of CLASSES) {
+  for (const cls of CLASS_SET) {
+    classIt(cls)(`${cls.name}: своя зона по-прежнему в коридоре темпа`, () => {
+      // Штраф не должен задеть тех, кто стоит где положено: внутри своей зоны
+      // разрыв бесплатен, и время убийства обязано остаться прежним.
       for (const level of LEVELS) {
         const own = zoneForMonsterLevel(level) ?? ZONES[0]
         const state = buildSimState(referenceBuild(level, cls.id), own.id, 1)
         const ttk = estimateZoneTtk(state, own).avg
         expect(ttk, `${cls.id} ур.${level}`).toBeGreaterThanOrEqual(TTK_TARGET_MIN)
       }
-    }
-  })
+    })
+  }
 })
