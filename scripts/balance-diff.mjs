@@ -28,24 +28,34 @@ if (!existsSync(dir)) {
   process.exit(2)
 }
 
-// Слияние кусков. Один и тот же ключ в двух кусках с РАЗНЫМИ значениями —
+// Слияние. Величины пишутся строка за строкой в values.jsonl всеми воркерами
+// сразу (см. game/__tests__/dump.ts): сброс по хуку при снятой изоляции терял
+// почти весь отпечаток молча. Один ключ с ДВУМЯ значениями в одном прогоне —
 // это недетерминированность, и молчать о ней нельзя.
 const fresh = new Map()
 const conflicts = []
-const parts = readdirSync(dir).filter((f) => f.endsWith('.json')).sort()
-for (const part of parts) {
-  const data = JSON.parse(readFileSync(join(dir, part), 'utf8'))
-  for (const [key, val] of Object.entries(data)) {
-    const seen = fresh.get(key)
-    if (seen !== undefined && seen !== val) conflicts.push({ key, a: seen, b: val, part })
-    fresh.set(key, val)
+const lines = []
+const file = join(dir, 'values.jsonl')
+if (existsSync(file)) {
+  for (const line of readFileSync(file, 'utf8').split('\n')) if (line) lines.push(line)
+}
+// Старый формат кусками — чтобы уметь читать дампы, снятые до этой правки.
+for (const part of readdirSync(dir).filter((f) => f.endsWith('.json')).sort()) {
+  for (const [k, v] of Object.entries(JSON.parse(readFileSync(join(dir, part), 'utf8')))) {
+    lines.push(JSON.stringify([k, v]))
   }
 }
+for (const line of lines) {
+  const [key, val] = JSON.parse(line)
+  const seen = fresh.get(key)
+  if (seen !== undefined && seen !== val) conflicts.push({ key, a: seen, b: val })
+  fresh.set(key, val)
+}
 
-console.log(`Дамп: ${parts.length} кусков, ${fresh.size} величин.`)
+console.log(`Дамп: ${lines.length} записей, ${fresh.size} различных величин.`)
 if (conflicts.length > 0) {
   console.error(`\nОДИН КЛЮЧ — ДВА ЗНАЧЕНИЯ В ОДНОМ ПРОГОНЕ (${conflicts.length}):`)
-  for (const c of conflicts.slice(0, 40)) console.error(`  ${c.key}: ${c.a} и ${c.b} (${c.part})`)
+  for (const c of conflicts.slice(0, 40)) console.error(`  ${c.key}: ${c.a} и ${c.b}`)
   process.exit(1)
 }
 

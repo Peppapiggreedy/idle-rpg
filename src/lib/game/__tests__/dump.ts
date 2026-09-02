@@ -9,8 +9,7 @@
 // а не «Страж: цена боя по зонам #7». Иначе разбиение цикла на it.each
 // переименовало бы все ключи разом — и отпечаток перестал бы проверять
 // ровно ту стадию, ради которой он заведён.
-import { afterAll } from 'vitest'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { appendFileSync, mkdirSync } from 'node:fs'
 import { Decimal } from '../numbers'
 
 /**
@@ -26,8 +25,9 @@ export const DUMP_DIGITS = 12
 const target = process.env.BALANCE_DUMP ?? ''
 export const DUMPING = target !== ''
 
+// Карта нужна не для записи, а чтобы поймать один ключ с двумя значениями.
 const values = new Map<string, string>()
-let flushes = 0
+let ready = false
 
 function encode(value: number | Decimal): string {
   if (typeof value === 'number') {
@@ -55,6 +55,7 @@ export function dump<T extends number | Decimal>(key: string, value: T): T {
     throw new Error(`отпечаток: ключ «${key}» записан дважды: ${seen} и ${encoded}`)
   }
   values.set(key, encoded)
+  record(key, encoded)
   return value
 }
 
@@ -65,25 +66,22 @@ export function dumpAll(prefix: string, entries: Record<string, number | Decimal
 }
 
 /**
- * Каждый воркер пишет СВОЙ кусок: раскладка тестов по потокам — не свойство
- * игры, и от неё отпечаток зависеть не должен. Сливает куски скрипт сравнения.
+ * ЗАПИСЬ СРАЗУ, СТРОКА НА ВЕЛИЧИНУ, А НЕ СБРОС В КОНЦЕ.
+ *
+ * Сброс по хуку `afterAll` уже подвёл: при `isolate: false` модуль живёт ОДИН
+ * НА ВОРКЕР, хук регистрируется только от первого собранного файла, а
+ * `process.on('exit')` в рабочем ПОТОКЕ не срабатывает вовсе. Прогон прошёл
+ * зелёным, а в отпечатке оказалось 118 величин из 1853 — и это молчаливая
+ * потеря: сверять было бы не с чем, но выглядело бы как «всё сошлось».
+ *
+ * Дозапись строки в общий файл от хуков не зависит вообще. Все воркеры пишут
+ * в ОДИН файл: строка короче 4 КБ, а `appendFileSync` открывает с O_APPEND,
+ * так что дозапись атомарна и строки не рвут друг друга.
  */
-export function flushDump(): void {
-  if (!DUMPING || values.size === 0) return
-  mkdirSync(target, { recursive: true })
-  const sorted = Object.fromEntries([...values.entries()].sort(([a], [b]) => (a < b ? -1 : 1)))
-  writeFileSync(`${target}/part-${process.pid}-${flushes}.json`, JSON.stringify(sorted, null, 2))
-  flushes += 1
-  values.clear()
+function record(key: string, encoded: string): void {
+  if (!ready) {
+    mkdirSync(target, { recursive: true })
+    ready = true
+  }
+  appendFileSync(`${target}/values.jsonl`, `${JSON.stringify([key, encoded])}\n`)
 }
-
-// ДВА СПОСОБА СБРОСА, и оба нужны. `afterAll` закрывает обычный прогон
-// (isolate: true — модуль свой у каждого файла). При `isolate: false` модуль
-// вычисляется РАЗ НА ВОРКЕР, и хук зарегистрируется только от первого файла —
-// остаток забирает выход процесса. Сброс идемпотентен: карта очищается.
-try {
-  afterAll(flushDump)
-} catch {
-  // Вне фазы сбора тестов хук зарегистрировать нельзя — тогда хватит выхода.
-}
-process.on('exit', flushDump)
