@@ -52,8 +52,10 @@ describe('estimateCombatRate', () => {
 
     // Модель считает ДОЛГОСРОЧНЫЕ СРЕДНИЕ, а не один бой: перебой добивающего
     // удара — половина среднего удара, число ударов дробное (см. farmCycle).
-    const perKill = squelcher.maxHp.plus(avgSwing.div(2))
-    const hits = Math.max(perKill.div(avgSwing).toNumber(), 1)
+    // Удар потока — С КРИТОМ: от него идут и перебой, и длина боя.
+    const swingWithCrit = avgSwing.times(crit)
+    const perKill = squelcher.maxHp.plus(swingWithCrit.div(2))
+    const hits = Math.max(perKill.div(swingWithCrit).toNumber(), 1)
     const fightSec = hits * stats.swingTime
     const cycleSec = fightSec + RESPAWN_DELAY_MS / 1000
     expect(rate.idealKillsPerSecond.toNumber()).toBeCloseTo(1 / cycleSec, 8)
@@ -116,6 +118,34 @@ describe('estimateCombatRate', () => {
   // цикл на треть. Округляет агрегат ВНИЗ, поэтому промах идёт в безопасную
   // сторону — оффлайн беднее живой игры, а не богаче (замер: −16.9% и −14.6%
   // при двух сидах). Что он никогда не богаче, держит соседний тест.
+  it('крит входит в темп убийств: больше крита — больше убийств в секунду', () => {
+    // Два героя с ОДИНАКОВЫМ уроном оружия и разным критом. Раньше оценка
+    // видела крит только в витринном dps, а killsPerSecond — единственная
+    // мера «лучше» в игре — не двигался вовсе: предмет с критом показывал
+    // «без изменений», а при полной сумке продавался (AUDIT.md, 1.1).
+    const base = {
+      ...createInitialState(1),
+      abilitySettings: manualOnlySettings(),
+      monster: monsterFromTemplate(
+        buildMonster({ id: 'test-brute', name: 'Здоровяк', role: COMMON }, 3, new Decimal(1)),
+      ),
+    }
+    const withCrit = (critChance: number) => ({
+      ...base,
+      stats: { ...base.stats, critChance },
+    })
+    const none = estimateCombatRate(withCrit(0))
+    const some = estimateCombatRate(withCrit(0.2))
+    const much = estimateCombatRate(withCrit(0.45))
+    expect(some.killsPerSecond.gt(none.killsPerSecond)).toBe(true)
+    expect(much.killsPerSecond.gt(some.killsPerSecond)).toBe(true)
+    // И идеальный темп тоже: крит укорачивает бой, а не только аптайм.
+    expect(much.idealKillsPerSecond.gt(none.idealKillsPerSecond)).toBe(true)
+    // Урон в секунду с критом растёт ровно матожиданием множителя.
+    const factor = 1 + 0.45 * (base.stats.critMultiplier.toNumber() - 1)
+    expect(much.autoDamagePerSecond.div(none.autoDamagePerSecond).toNumber()).toBeCloseTo(factor, 9)
+  })
+
   it('час оффлайна равен OFFLINE_EFFICIENCY часа живой игры', () => {
     const HOUR_MS = 3_600_000
     for (const seed of [777, 4242]) {

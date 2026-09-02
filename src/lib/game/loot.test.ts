@@ -11,6 +11,7 @@ import {
   sellPrice,
   shieldMods,
   weaponMods,
+  stashLoot,
 } from './loot'
 import { equipItem } from './equipment'
 import { SLOT_IDS } from '../data/slots'
@@ -291,6 +292,38 @@ describe('дроп в бою', () => {
         expect(s.inventory.some((i) => i.id === swap.item.id)).toBe(true)
         expect(s.inventory.some((i) => i.id === swap.dropped.id)).toBe(false)
       }
+    })
+
+    it('крит-находка при полной сумке НЕ продаётся', () => {
+      // Худший путь из аудита: сумка полна, падает вещь только с критом.
+      // Оценка не видела крита, находка читалась как «не апгрейд» и уходила
+      // за медяки — тот самый предмет, что давал +19 % убийств в час.
+      const worn = junk(1, 1)[0]
+      let s: GameState = ensureStats({
+        ...createInitialState(1),
+        equipment: { ...createInitialState(1).equipment, hands: worn },
+        inventory: junk(INVENTORY_SIZE, 1),
+        itemSeq: INVENTORY_SIZE,
+        statsDirty: true,
+      })
+      const talisman: Item = {
+        id: `item-${INVENTORY_SIZE}`,
+        name: 'Талисман Остроты',
+        rarity: 'rare',
+        slot: 'hands',
+        level: 1,
+        mods: [
+          { stat: 'critChance', kind: 'flat', value: new Decimal(0.25), source: 'equipment:hands' },
+        ],
+      }
+      s = stashLoot(s, talisman)
+      // Находка в сумке, вытеснен и продан мусор — а не наоборот.
+      expect(s.inventory.some((i) => i.id === talisman.id)).toBe(true)
+      expect(s.inventory.length).toBe(INVENTORY_SIZE)
+      const swap = s.combatLog.find((e) => e.type === 'loot-swap')
+      expect(swap).toBeDefined()
+      if (swap?.type === 'loot-swap') expect(swap.item.id).toBe(talisman.id)
+      expect(s.combatLog.some((e) => e.type === 'autosell')).toBe(false)
     })
   })
 })

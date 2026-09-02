@@ -87,7 +87,7 @@ const OFFLINE_LOOT_SALT = 0x9e37_79b9
 /** Все хваты одним списком: сейв принимает только их. */
 const GRIPS: Grip[] = ['one', 'two', 'shield']
 
-export const SAVE_VERSION = 22
+export const SAVE_VERSION = 23
 export const AUTOSAVE_INTERVAL_MS = AUTOSAVE_INTERVAL_S * 1000
 // Потолок оффлайн-прогресса: дольше отсутствовать можно, но не оплачивается.
 export const OFFLINE_CAP_MS = OFFLINE_CAP_HOURS * 60 * 60 * 1000
@@ -220,6 +220,8 @@ export interface SavePayloadV21 {
   itemSeq: number
   totalTicks: string
   playtimeMs: string
+  /** Применённых умений за игру — растущий счётчик, поэтому строкой. */
+  abilityCasts: string
 }
 
 export interface SaveStorage {
@@ -373,6 +375,7 @@ export function payloadFromState(state: GameState, lastTimestamp: number): SaveP
     talentResets: Math.max(0, Math.floor(state.talentResets)),
     totalTicks: state.totalTicks.toString(),
     playtimeMs: state.playtimeMs.toString(),
+    abilityCasts: state.abilityCasts.floor().toString(),
   }
 }
 
@@ -753,6 +756,7 @@ export function stateFromPayload(p: SavePayloadV21): GameState {
         : 0,
     totalTicks: parseDec(p.totalTicks, '0'),
     playtimeMs: parseDec(p.playtimeMs, '0'),
+    abilityCasts: parseDec(p.abilityCasts, '0'),
     inventory: Array.isArray(p.inventory) ? p.inventory.map(itemFromSaved) : [],
     materials: materialsFromSaved(p.materials),
     // Порция, потраченная на прерванный привал, не возвращается: перезагрузка
@@ -1269,6 +1273,9 @@ export const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
     }
     return next
   },
+  // Счётчик применённых умений. У старого героя его не было — считаем с
+  // нуля: он нужен отпечатку golden и статистике, прогресса за ним нет.
+  22: (raw) => ({ ...raw, version: 23, abilityCasts: '0' }),
   21: (raw) => {
     // ЗОНЫ ТЕПЕРЬ ОТКРЫВАЮТ ДАНЖИ, а не уровень героя. Поле `unlockRequirement`
     // у зоны исчезло, и «какие зоны открыты» стало ПРОИЗВОДНЫМ от

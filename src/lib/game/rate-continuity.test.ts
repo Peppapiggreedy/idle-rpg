@@ -16,7 +16,7 @@ import { Decimal } from './numbers'
 import { createInitialState, monsterFromTemplate, type GameState } from './state'
 import { ensureStats, type StatBlock } from './stats'
 import { representativeMonster, ZONES, type Zone } from '../data/zones'
-import { RATE_CONTINUITY_GRID, RATE_CONTINUITY_MAX_STEP } from '../data/balance'
+import { RATE_CONTINUITY_DIP_MAX, RATE_CONTINUITY_GRID, RATE_CONTINUITY_MAX_STEP } from '../data/balance'
 import { averageGear } from './simulate'
 
 /** Зона, куда игра приводит героя этого уровня. */
@@ -50,8 +50,13 @@ function withStats(state: GameState, patch: Partial<StatBlock>): GameState {
 /** Ось сетки: t идёт от 1 - halfWidth до 1 + halfWidth. */
 interface Axis {
   id: string
-  /** Растёт ли темп по этой оси у модели уже сейчас (крит войдёт в поток позже). */
-  grows: boolean
+  /**
+   * Оси УРОНА (сила атаки, крит, скорость) строго не убывают. Оси ЖИВУЧЕСТИ
+   * (здоровье, броня) вправе просесть не больше RATE_CONTINUITY_DIP_MAX от
+   * достигнутого максимума: реже привал — меньше дармовой маны — меньше
+   * кастов. Связь настоящая, она есть в тике (см. data/balance.ts).
+   */
+  kind: 'offense' | 'defense'
   at: (stats: StatBlock, t: number) => Partial<StatBlock>
 }
 
@@ -59,11 +64,11 @@ interface Axis {
 const share = (t: number) => (t - (1 - RATE_CONTINUITY_GRID.halfWidth)) / (2 * RATE_CONTINUITY_GRID.halfWidth)
 
 const AXES: Axis[] = [
-  { id: 'сила атаки', grows: true, at: (s, t) => ({ attackPower: s.attackPower.times(t) }) },
-  { id: 'крит', grows: false, at: (_s, t) => ({ critChance: share(t) * 0.6 }) },
+  { id: 'сила атаки', kind: 'offense', at: (s, t) => ({ attackPower: s.attackPower.times(t) }) },
+  { id: 'крит', kind: 'offense', at: (_s, t) => ({ critChance: share(t) * 0.6 }) },
   {
     id: 'скорость (haste)',
-    grows: true,
+    kind: 'offense',
     at: (s, t) => {
       const haste = share(t) * 0.6
       return {
@@ -73,8 +78,8 @@ const AXES: Axis[] = [
       }
     },
   },
-  { id: 'живучесть (maxHp)', grows: true, at: (s, t) => ({ maxHp: s.maxHp.times(t) }) },
-  { id: 'броня', grows: true, at: (_s, t) => ({ damageReduction: share(t) * 0.6 }) },
+  { id: 'живучесть (maxHp)', kind: 'defense', at: (s, t) => ({ maxHp: s.maxHp.times(t) }) },
+  { id: 'броня', kind: 'defense', at: (_s, t) => ({ damageReduction: share(t) * 0.6 }) },
 ]
 
 const SCENARIOS: Array<{ name: string; state: () => GameState }> = [
@@ -109,10 +114,17 @@ describe('killsPerSecond непрерывен и монотонен по ста�
         // любая непрерывная функция дала бы бесконечный процент.
         const scale = Math.max(...kps)
         let maxStep = 0
+        let peak = kps[0]
         for (let i = 1; i < kps.length; i += 1) {
           const where = `${axis.id}, точка ${i}: ${kps[i - 1].toFixed(5)} -> ${kps[i].toFixed(5)}`
-          // Не убывает: прибавка к стату не может ронять темп.
-          expect(kps[i], where).toBeGreaterThanOrEqual(kps[i - 1] * (1 - 1e-9))
+          if (axis.kind === 'offense') {
+            // Не убывает: прибавка к урону не может ронять темп.
+            expect(kps[i], where).toBeGreaterThanOrEqual(kps[i - 1] * (1 - 1e-9))
+          } else {
+            // Живучесть вправе просесть только на объяснённую долю от пика.
+            expect(kps[i], where).toBeGreaterThanOrEqual(peak * (1 - RATE_CONTINUITY_DIP_MAX))
+          }
+          peak = Math.max(peak, kps[i])
           if (scale > 0) {
             const step = (kps[i] - kps[i - 1]) / scale
             maxStep = Math.max(maxStep, step)
@@ -120,8 +132,8 @@ describe('killsPerSecond непрерывен и монотонен по ста�
             expect(step, where).toBeLessThanOrEqual(RATE_CONTINUITY_MAX_STEP)
           }
         }
-        // Ось не пустая: там, где стат уже входит в модель, темп по ней растёт.
-        if (axis.grows) expect(kps[kps.length - 1], axis.id).toBeGreaterThan(kps[0])
+        // Ось урона не пустая: темп по ней растёт от края до края.
+        if (axis.kind === 'offense') expect(kps[kps.length - 1], axis.id).toBeGreaterThan(kps[0])
         rows.push(`${scenario.name} · ${axis.id}: макс. шаг ${(maxStep * 100).toFixed(2)}%`)
       })
     }

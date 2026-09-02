@@ -24,7 +24,14 @@ import {
   RESPAWN_DELAY_MS,
   REVIVE_DELAY_MS,
 } from '../data/balance'
-import { PLAN, rotationRate, type PlayMode, type RotationPlan, type RotationRate } from './rotation'
+import {
+  PLAN,
+  rotationRate,
+  type PlayMode,
+  type RestRefill,
+  type RotationPlan,
+  type RotationRate,
+} from './rotation'
 import type { Monster } from '../types'
 import { SAFE_ZONE, ZONE_BY_ID, zoneMonsterVariants, type Zone } from '../data/zones'
 import { monsterFromTemplate, type AbilitySettings } from './state'
@@ -237,6 +244,31 @@ export interface FarmCycle {
 }
 
 /**
+ * Вероятность гибели в ОДНОМ бою. Цена боя разбросана равномерно на
+ * ±FIGHT_COST_SPREAD вокруг `loss`, запас на входе в бой — равномерно на
+ * [enterLow, enterHigh] (равные границы — точка). Гибель — цена выше запаса.
+ * Единственная формула смерти в модели: и цикл против одного моба, и
+ * смешанный пул зоны считают её здесь.
+ */
+export function fightDeathChance(loss: number, enterLow: number, enterHigh: number): number {
+  if (loss <= 0) return 0
+  const a = loss * (1 - FIGHT_COST_SPREAD)
+  const b = loss * (1 + FIGHT_COST_SPREAD)
+  const low = Math.min(enterLow, enterHigh)
+  const high = Math.max(enterLow, enterHigh)
+  const width = high - low
+  if (b <= a) return width > 0 ? Math.min(1, Math.max(0, (a - low) / width)) : a > high ? 1 : 0
+  if (width <= 0) return Math.min(1, Math.max(0, (b - high) / (b - a)))
+  // Интеграл доли запаса ниже цены по цене: линейный участок между low и
+  // high плюс участок, где цена выше любого запаса.
+  const c1 = Math.max(a, low)
+  const c2 = Math.min(b, high)
+  const ramp = c2 > c1 ? ((c2 - low) ** 2 - (c1 - low) ** 2) / (2 * width) : 0
+  const above = Math.max(0, b - Math.max(a, high))
+  return Math.min(1, Math.max(0, (ramp + above) / (b - a)))
+}
+
+/**
  * Череда боёв между привалами — ДОЛГОСРОЧНОЕ СРЕДНЕЕ, а не один цикл.
  *
  * Привал стоит между боями: герой доводит схватку до конца и уходит отдыхать
@@ -270,8 +302,17 @@ export function farmCycle(params: {
   /** Порог привала, доля запаса. 0 — привалов нет вовсе, цикл кончается смертью. */
   hpThreshold: number
   restSec: number
+  /**
+   * Цены отдельных видов боя в пуле (HP за бой, нетто), когда спавн выдаёт
+   * разных мобов. Средняя цена задаёт длину цикла, а гибель считается по
+   * КАЖДОМУ виду: здоровяк пула убивает с запаса, с которого мелочь и не
+   * думала, — модель по одному «среднему мобу» этого не видела и обещала
+   * ноль смертей там, где тик клал героя четыре раза в час. Не задано —
+   * пул из одного боя.
+   */
+  fightLosses?: number[]
 }): FarmCycle {
-  const { maxHp, lossPerSecond, cycleSec, hpThreshold, restSec } = params
+  const { maxHp, lossPerSecond, cycleSec, hpThreshold, restSec, fightLosses } = params
   const reviveSec = REVIVE_DELAY_MS / 1000
   const endless: FarmCycle = {
     kills: Number.POSITIVE_INFINITY,
@@ -293,14 +334,19 @@ export function farmCycle(params: {
   // Запас на входе в последний бой: порог плюс половина цены (середина фазы),
   // но не больше полного — из привала герой выходит с полным запасом.
   const enterHp = Math.min(hp, threshold + loss / 2)
-  // Гибель — доля разброса цены боя, лежащая выше запаса на входе.
-  const spread = loss * FIGHT_COST_SPREAD
-  const deathChance =
-    spread > 0
-      ? Math.min(1, Math.max(0, (loss + spread - enterHp) / (2 * spread)))
-      : loss > enterHp
-        ? 1
-        : 0
+  // Гибель. Пул из одного боя: гибельным может быть только последний бой
+  // цикла — все прежние начинаются с запасом выше порога плюс цена. Пул из
+  // разных боёв: любой бой цикла может достаться здоровяку, а запас на его
+  // входе лежит где угодно между запасом последнего боя и полным; вероятность
+  // на бой усредняется по пулу и складывается по числу боёв цикла.
+  const mixed = fightLosses && fightLosses.length > 1
+  const deathChance = mixed
+    ? 1 -
+      (1 -
+        fightLosses.reduce((sum, l) => sum + fightDeathChance(l, enterHp, hp), 0) /
+          fightLosses.length) **
+        fights
+    : fightDeathChance(loss, enterHp, enterHp)
   // Погибший бой убийства не приносит, а время его потрачено.
   const kills = fights - deathChance
   const total = fights * cycleSec + (1 - deathChance) * restSec + deathChance * reviveSec
@@ -467,7 +513,9 @@ export function expectedProcHeal(stats: StatBlock, proc: ProcDef): Decimal {
 
 function damagePerKill(state: GameState, plan: RotationPlan, stream: HitStream): Decimal {
   const hp = state.monster.maxHp
-  const swing = expectedSwingDamage(state.stats)
+  // Замах берётся С КРИТОМ — тем же множителем, что и весь поток ударов:
+  // «обычный замах» у героя с критом крупнее, и перебой у него крупнее тоже.
+  const swing = expectedSwingDamage(state.stats).times(critFactor(state.stats))
   // Минимум перебоя — половина обычного замаха: меньше не теряет никто.
   const floor = hp.plus(swing.div(2))
   // Перебой — следствие второго правила: авто не придерживает кулдауны и
@@ -495,7 +543,7 @@ interface HitStream {
   rate: Decimal
   killing: Decimal
   paced: Decimal
-  /** Урон проков в секунду БЕЗ крита — как killing и paced. */
+  /** Урон проков в секунду БЕЗ крита (killing и paced — С критом). */
   procDamage: Decimal
   /** Лечение проков в секунду. */
   procHeal: Decimal
@@ -552,7 +600,19 @@ function hitStream(
     }
     procHeal = procHeal.plus(expectedProcHeal(stats, proc).times(per))
   }
-  return { rate, killing, paced, procDamage, procHeal }
+  // КРИТ ВХОДИТ В УРОН ПОТОКА, а не только в число «урон в секунду».
+  //
+  // От killing и paced идут перебой, ударов на убийство, длина боя и
+  // killsPerSecond — единственная мера «лучше» в игре: сравнение предметов,
+  // значок «Апгрейд», автопродажа при полной сумке, прогноз зоны и оффлайн.
+  // Без крита в потоке предмет с критом показывал «без изменений», а при
+  // полной сумке игра его продавала (AUDIT.md, 1.1). Правка откатывалась
+  // (4a000e4), пока метрика была ступенчатой; теперь она непрерывна.
+  //
+  // procDamage возвращается БЕЗ крита намеренно: rawRate домножает его сам,
+  // и удвоить множитель здесь значило бы посчитать проки дважды.
+  const crit = critFactor(stats)
+  return { rate, killing: killing.times(crit), paced: paced.times(crit), procDamage, procHeal }
 }
 
 /**
@@ -771,18 +831,20 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
   // Двух хватает: второй проход меняет ответ на проценты, третий — на доли.
   const pause = resourcePause(s)
   let rotation = rotationRate(stats, settings, plan, resourceIncome(s), pause)
-  if (classById(s.classId).resource.perSwingDealt.gt(0)) {
-    // Умения «на следующий удар» ЗАМЕНЯЮТ автоатаку и лишнего удара не дают.
-    const extraHits = rotation.casts
-      .filter((c) => c.ability.type === 'instant')
-      .reduce((sum, c) => sum + c.castsPerSecond, 0)
-    rotation = rotationRate(
-      stats,
-      settings,
-      plan,
-      resourceIncome(s, extraHits),
-      pause,
-    )
+  // Ресурс из боя — уравнение с самим собой: удары умений тоже дают ярость,
+  // а число умений зависит от ярости. Решаем ДВУМЯ проходами: сперва доход
+  // от одних автоатак, потом — с учётом посчитанных мгновенных ударов.
+  // Двух хватает: второй проход меняет ответ на проценты, третий — на доли.
+  const planRotation = (refill: RestRefill | null): RotationRate => {
+    let rot = rotationRate(stats, settings, plan, resourceIncome(s), pause, refill)
+    if (classById(s.classId).resource.perSwingDealt.gt(0)) {
+      // Умения «на следующий удар» ЗАМЕНЯЮТ автоатаку и лишнего удара не дают.
+      const extraHits = rot.casts
+        .filter((c) => c.ability.type === 'instant')
+        .reduce((sum, c) => sum + c.castsPerSecond, 0)
+      rot = rotationRate(stats, settings, plan, resourceIncome(s, extraHits), pause, refill)
+    }
+    return rot
   }
   // Урон автоатаки — свойство ОРУЖИЯ и считается как считался: сколько бы
   // умений герой ни жал, «столько бьёт этот меч» не меняется. Этим числом
@@ -791,59 +853,86 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
   const doubleChance = doubleStrikeChance(s.talents)
   const procs = equippedProcs(s)
   const autoDps = autoDamagePerSecond(stats, doubleChance)
-  // Поток ударов считается ОДИН раз и уходит и в перебой, и в длину боя, и в
-  // урон проков: две копии этого расчёта разошлись бы на первой же правке.
-  const stream = hitStream(stats, rotation, doubleChance, procs)
-  // Сложить автоатаку и умения напрямую НЕЛЬЗЯ: умение «на следующий удар»
-  // ЗАМЕНЯЕТ автоатаку, а не добавляется к ней, — эти замахи посчитаны дважды.
-  // Пока бой длился полтора удара, ошибка была незаметной; на длинном бою она
-  // делала оффлайн выгоднее живой игры, то есть ломала железное правило.
-  const replaced = replacedSwingsPerSecond(stats, rotation).times(avgSwing).times(critFactor(stats))
-  // Урон в секунду, реально дошедший до мобов: сырой темп минус перебой.
-  // Урон проков — с критом: внутри потока он лежит без него, как killing и paced.
-  const procDps = stream.procDamage.times(critFactor(stats))
-  const raw = autoDps
-    .plus(rotation.damagePerSecond)
-    .minus(replaced)
-    .plus(procDps)
-    .plus(reflectPerSecond(s, expectedMonsterDamage(s.monster, stats, s.level.toNumber())))
-  const perKill = damagePerKill(s, plan, stream)
-  const damagePerSecond = raw.times(s.monster.maxHp.div(perKill))
-  // Длина боя — СРЕДНЕЕ число ударов потока на убийство, дробное. Перебой
-  // добивающего удара уже сидит в damagePerKill (половина среднего удара —
-  // ровно то, что даёт целое число ударов, усреднённое по фазе), поэтому
-  // округлять здесь второй раз нельзя: получился бы лишний полуудар на
-  // каждый бой. Меньше одного удара бой не длится.
-  const averagePaced = stream.rate.gt(0) ? stream.paced.div(stream.rate) : new Decimal(1)
-  const hitsPerKill = averagePaced.gt(0)
-    ? Decimal.max(perKill.div(averagePaced), new Decimal(1))
-    : new Decimal(1)
-  const fightSec = stream.rate.gt(0)
-    ? hitsPerKill.div(stream.rate)
-    : new Decimal(stats.swingTime)
-  const killCycleSec = fightSec.plus(respawnSec)
-  const idealKillsPerSecond = new Decimal(1).div(killCycleSec)
-
-  // Баланс HP за цикл: ответные удары моба за фазу боя минус реген (в бою
-  // медленный, в паузе респауна быстрый). Ударов моба — СРЕДНЕЕ по боям:
-  // моб бьёт по своему таймеру, и сколько ударов влезет в бой, зависит от
-  // того, где бой кончится; `floor(бой/замах)`, усреднённый по фазе, равен
-  // `бой/замах - 1/2`, а меньше нуля ударов не бывает.
   const avgIncoming = expectedMonsterDamage(s.monster, stats, s.level.toNumber())
-  const monsterHitsPerCycle = avgIncoming.gt(0)
-    ? Decimal.max(fightSec.div(s.monster.swingTime).minus(0.5), new Decimal(0))
-    : new Decimal(0)
-  const incomingPerCycle = monsterHitsPerCycle.times(avgIncoming)
-  // Оберег лечит ТОЛЬКО в бою: он срабатывает от ударов, а в паузе респауна
-  // герой не бьёт. Перелив через максимум модель не считает — она и не может:
-  // в оценке нет текущего HP, а на длинной череде боёв перелив редок.
-  const regenPerCycle = stats.hpRegen
-    .times(fightSec)
-    .plus(stats.hpRegenOutOfCombat.times(respawnSec))
-    .plus(stream.procHeal.times(fightSec))
-  const netLossPerSec = incomingPerCycle.minus(regenPerCycle).div(killCycleSec)
 
-  if (netLossPerSec.lte(0)) {
+  // ОДИН ПРОХОД МОДЕЛИ БОЯ: от ротации до цикла привала.
+  const evaluate = (rot: RotationRate) => {
+    // Поток ударов считается ОДИН раз и уходит и в перебой, и в длину боя, и в
+    // урон проков: две копии этого расчёта разошлись бы на первой же правке.
+    const stream = hitStream(stats, rot, doubleChance, procs)
+    // Сложить автоатаку и умения напрямую НЕЛЬЗЯ: умение «на следующий удар»
+    // ЗАМЕНЯЕТ автоатаку, а не добавляется к ней, — эти замахи посчитаны дважды.
+    // Пока бой длился полтора удара, ошибка была незаметной; на длинном бою она
+    // делала оффлайн выгоднее живой игры, то есть ломала железное правило.
+    const replaced = replacedSwingsPerSecond(stats, rot).times(avgSwing).times(critFactor(stats))
+    // Урон в секунду, реально дошедший до мобов: сырой темп минус перебой.
+    // Урон проков — с критом: внутри потока он лежит без него, как killing и paced.
+    const procDps = stream.procDamage.times(critFactor(stats))
+    const raw = autoDps
+      .plus(rot.damagePerSecond)
+      .minus(replaced)
+      .plus(procDps)
+      .plus(reflectPerSecond(s, avgIncoming))
+    const perKill = damagePerKill(s, plan, stream)
+    const damagePerSecond = raw.times(s.monster.maxHp.div(perKill))
+    // Длина боя — СРЕДНЕЕ число ударов потока на убийство, дробное. Перебой
+    // добивающего удара уже сидит в damagePerKill (половина среднего удара —
+    // ровно то, что даёт целое число ударов, усреднённое по фазе), поэтому
+    // округлять здесь второй раз нельзя: получился бы лишний полуудар на
+    // каждый бой. Меньше одного удара бой не длится.
+    const averagePaced = stream.rate.gt(0) ? stream.paced.div(stream.rate) : new Decimal(1)
+    const hitsPerKill = averagePaced.gt(0)
+      ? Decimal.max(perKill.div(averagePaced), new Decimal(1))
+      : new Decimal(1)
+    const fightSec = stream.rate.gt(0) ? hitsPerKill.div(stream.rate) : new Decimal(stats.swingTime)
+    const killCycleSec = fightSec.plus(respawnSec)
+    const idealKillsPerSecond = new Decimal(1).div(killCycleSec)
+    // Баланс HP за цикл: ответные удары моба за фазу боя минус реген (в бою
+    // медленный, в паузе респауна быстрый). Ударов моба — СРЕДНЕЕ по боям:
+    // моб бьёт по своему таймеру, и сколько ударов влезет в бой, зависит от
+    // того, где бой кончится; `floor(бой/замах)`, усреднённый по фазе, равен
+    // `бой/замах - 1/2`, а меньше нуля ударов не бывает.
+    const monsterHitsPerCycle = avgIncoming.gt(0)
+      ? Decimal.max(fightSec.div(s.monster.swingTime).minus(0.5), new Decimal(0))
+      : new Decimal(0)
+    const incomingPerCycle = monsterHitsPerCycle.times(avgIncoming)
+    // Оберег лечит ТОЛЬКО в бою: он срабатывает от ударов, а в паузе респауна
+    // герой не бьёт. Перелив через максимум модель не считает — она и не может:
+    // в оценке нет текущего HP, а на длинной череде боёв перелив редок.
+    const regenPerCycle = stats.hpRegen
+      .times(fightSec)
+      .plus(stats.hpRegenOutOfCombat.times(respawnSec))
+      .plus(stream.procHeal.times(fightSec))
+    const netLossPerSec = incomingPerCycle.minus(regenPerCycle).div(killCycleSec)
+    // Цикл фарма считается ПО БОЯМ ЦЕЛИКОМ: герой доводит схватку до конца и
+    // уходит на привал только после убийства (см. farmCycle). Порог берётся
+    // из конвейера статов — настройка игрока плюс таланты.
+    const cycle = netLossPerSec.gt(0)
+      ? farmCycle({
+          maxHp: stats.maxHp,
+          lossPerSecond: netLossPerSec,
+          cycleSec: killCycleSec.toNumber(),
+          hpThreshold: stats.restThreshold,
+          restSec: stats.restDuration,
+        })
+      : null
+    return { rot, procDps, damagePerSecond, killCycleSec, idealKillsPerSecond, netLossPerSec, cycle }
+  }
+
+  // Ротация зависит от цикла привала (привал наливает ману), цикл — от
+  // ротации (урон задаёт длину боя). Два прохода: сперва без привалов, затем
+  // с посчитанной длиной цикла; второй проход меняет ответ на проценты.
+  const first = evaluate(rotation)
+  const refill: RestRefill | null =
+    first.cycle && Number.isFinite(first.cycle.kills)
+      ? // Боёв в цикле, включая тот, что кончился привалом или смертью.
+        { fightSec: (first.cycle.kills + first.cycle.deathChance) * first.killCycleSec.toNumber() }
+      : null
+  const pass = refill ? evaluate(planRotation(refill)) : first
+  rotation = pass.rot
+  const { procDps, damagePerSecond, idealKillsPerSecond, netLossPerSec, cycle } = pass
+
+  if (!cycle) {
     return {
       damagePerSecond,
       autoDamagePerSecond: autoDps,
@@ -859,16 +948,6 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
       diesInCycle: false,
     }
   }
-  // Цикл фарма считается ПО БОЯМ ЦЕЛИКОМ: герой доводит схватку до конца и
-  // уходит на привал только после убийства (см. farmCycle). Порог берётся
-  // из конвейера статов — настройка игрока плюс таланты.
-  const cycle = farmCycle({
-    maxHp: stats.maxHp,
-    lossPerSecond: netLossPerSec,
-    cycleSec: killCycleSec.toNumber(),
-    hpThreshold: stats.restThreshold,
-    restSec: stats.restDuration,
-  })
   return {
     damagePerSecond,
     autoDamagePerSecond: autoDps,

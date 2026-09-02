@@ -37,6 +37,12 @@ export interface GameState {
   classId: string
   totalTicks: Decimal
   playtimeMs: Decimal
+  /**
+   * Сколько умений герой применил за всю игру. Счётчик, а не поиск по логу:
+   * лог хранит короткий хвост, и новое событие вытолкнуло бы каст за край —
+   * отпечаток golden поехал бы без изменения игры.
+   */
+  abilityCasts: Decimal
   gold: Decimal
   level: Decimal
   currentXp: Decimal
@@ -305,6 +311,7 @@ export function createInitialState(
     classId: hero.id,
     totalTicks: new Decimal(0),
     playtimeMs: new Decimal(0),
+    abilityCasts: new Decimal(0),
     gold: new Decimal(0),
     level,
     currentXp: new Decimal(0),

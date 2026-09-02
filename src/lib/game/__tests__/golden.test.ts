@@ -39,7 +39,10 @@ function fingerprint(s: GameState) {
     // Автокаст — источник урона: смена задержки реакции, приоритетов или
     // самих умений обязана ронять golden.
     mana: s.currentMana.toFixed(1),
-    abilityCasts: s.combatLog.filter((e) => e.type === 'ability').length,
+    // По СЧЁТЧИКУ, а не по обрезанному логу: лог хранит хвост в COMBAT_LOG_SIZE
+    // событий, и новое событие выталкивало бы каст за край — отпечаток ехал
+    // бы без изменения игры.
+    abilityCasts: s.abilityCasts.toString(),
     totalTicks: s.totalTicks.toString(),
     inventoryCount: s.inventory.length,
     inventorySellTotal: s.inventory

@@ -154,7 +154,11 @@ export function fightLoss(state: GameState, template: MonsterTemplate): Decimal 
   const rate = estimateCombatRate(facing)
   if (rate.idealKillsPerSecond.lte(0)) return state.stats.maxHp.times(2)
   const cycleSec = new Decimal(1).div(rate.idealKillsPerSecond)
-  const hits = Math.max(0, Math.floor(cycleSec.div(template.swingTime).toNumber()))
+  // Ответных ударов за бой — СРЕДНЕЕ по боям, как в самой оценке
+  // (`бой/замах − 1/2`, не меньше нуля): целое одного боя делало цену
+  // худшего боя ступенчатой, и лишний процент крита у героя ронял её на
+  // треть — вместе с вердиктом «безопасно» и порогом привала.
+  const hits = Math.max(0, cycleSec.div(template.swingTime).toNumber() - 0.5)
   if (hits === 0) return new Decimal(0)
   const mean = expectedMonsterDamage(monster, state.stats, state.level.toNumber())
   // Разброс одного удара: равномерное распределение min..max даёт

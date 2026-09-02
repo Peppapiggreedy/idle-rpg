@@ -1,5 +1,5 @@
 {
-  "version": 23,
+  "version": 22,
   "classId": "warden",
   "materials": {},
   "activePotions": [],
@@ -388,6 +388,5 @@
   },
   "talentResets": 2,
   "totalTicks": "0",
-  "playtimeMs": "0",
-  "abilityCasts": "0"
+  "playtimeMs": "0"
 }
