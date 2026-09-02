@@ -159,3 +159,7 @@ vite.config.ts.timestamp-*
 /test-results/
 /playwright-report/
 /blob-report/
+
+# Рабочие каталоги агентов (git worktree). В репозиторий не попадают никогда:
+# один раз уже уехали в коммит стадии и вычищались амендом.
+/.claude/
