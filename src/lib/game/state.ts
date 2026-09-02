@@ -14,7 +14,6 @@ import {
   AUTOCAST_DELAY_MS,
   REGEN_TICK_S,
   REST_HP_THRESHOLD_DEFAULT,
-  REST_RESOURCE_THRESHOLD_DEFAULT,
 } from '../data/balance'
 import { recomputeStats, type StatBlock } from './stats'
 import { SLOT_IDS, type SlotId } from '../data/slots'
@@ -37,6 +36,12 @@ export interface GameState {
   classId: string
   totalTicks: Decimal
   playtimeMs: Decimal
+  /**
+   * Сколько умений герой применил за всю игру. Счётчик, а не поиск по логу:
+   * лог хранит короткий хвост, и новое событие вытолкнуло бы каст за край —
+   * отпечаток golden поехал бы без изменения игры.
+   */
+  abilityCasts: Decimal
   gold: Decimal
   level: Decimal
   currentXp: Decimal
@@ -110,10 +115,9 @@ export interface GameState {
   // Сколько всего должен был длиться ЭТОТ привал: по нему считается доля
   // восстановления, если игрок прервёт его руками.
   restTotalMs: number
-  // Порог ухода на привал: доля HP и доля ресурса. Настройка игрока, часть
-  // сейва. Ноль — не уходить по этой причине вовсе.
+  // Порог ухода на привал: доля HP. Настройка игрока, часть сейва.
+  // Ноль — не уходить на привал вовсе.
   restHpThreshold: number
-  restResourceThreshold: number
   // Что ускоряет привал. Пока всегда null: сюда приедет еда из кулинарии.
   // Поле и место его учёта заведены заранее, чтобы профессии не пришлось
   // втискивать в конвейер тика задним числом.
@@ -305,6 +309,7 @@ export function createInitialState(
     classId: hero.id,
     totalTicks: new Decimal(0),
     playtimeMs: new Decimal(0),
+    abilityCasts: new Decimal(0),
     gold: new Decimal(0),
     level,
     currentXp: new Decimal(0),
@@ -320,7 +325,6 @@ export function createInitialState(
     restMsLeft: 0,
     restTotalMs: 0,
     restHpThreshold: REST_HP_THRESHOLD_DEFAULT,
-    restResourceThreshold: REST_RESOURCE_THRESHOLD_DEFAULT,
     restSpeedupSource: null,
     abilityCooldownsMs: {},
     abilityCharges: {},

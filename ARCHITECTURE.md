@@ -34,7 +34,7 @@
 
 | Файл | Отвечает за | Импортирует |
 |---|---|---|
-| `src/main.ts` | композиционный корень. Четыре ветки: `debugRoute()` даёт `'balance'` / `'ui'` / null, `presetName()` — режим съёмки. На отладочных страницах и в режиме съёмки игровой цикл не запускается и сейв не трогается. Каждая ветка ставит `data-ready` на `<html>` — по нему Playwright понимает, что страница готова Здесь же настройки интерфейса подписываются на цикл (`applyFpsLimit`): ни один из двух сторов не знает о другом | `App.svelte`, `ui/BalancePage.svelte`, `ui/ShowcasePage.svelte`, `ui/route`, `ui/preset`, `stores/game`, `stores/ui` |
+| `src/main.ts` | композиционный корень. Четыре ветки: `debugRoute()` даёт `'balance'` / `'ui'` / null, `presetName()` — режим съёмки. На отладочных страницах и в режиме съёмки игровой цикл не запускается и сейв не трогается. Каждая ветка ставит `data-ready` на `<html>` — по нему Playwright понимает, что страница готова | `App.svelte`, `ui/BalancePage.svelte`, `ui/ShowcasePage.svelte`, `ui/route`, `ui/preset`, `stores/game` |
 | `src/App.svelte` | компоновка экрана вокруг боевой сцены: сцена (или боевая панель в текстовом режиме) видна ВСЕГДА, под ней лог и HUD данжа, ниже вкладки разделов и один активный раздел. На десктопе бой — три колонки (герой / сцена / кнопки умений), на мобильном сцена поднимается наверх через `order`. Никакой логики | все компоненты `ui/`, `stores/ui` |
 | `src/app.css` | глобальная основа: импорт `ui/fonts.css` и `ui/tokens.css`, сброс `box-sizing`, фон/цвет/шрифт `body`, одно кольцо фокуса на всю игру. Собственных чисел не имеет | `ui/fonts.css`, `ui/tokens.css` |
 | `src/vite-env.d.ts` | объявление `__BUILD_TIME__` (подставляется Vite define) | — |
@@ -60,7 +60,7 @@
 | `equipment.ts` | надеть/снять/сравнить: **`equipStatus` — правила ХВАТА с кодом отказа** (`two-handed-needs-both`, `shield-offhand-only`, `occupied-by-two-handed`; текст рендерит UI), `equipItem` (снятое возвращается в сумку; отказ — ничего не делать), `unequipItem` (нужен свободный слот сумки), `isEquipped`, `isUpgrade` и `upgradeShare` (**строго по `estimateCombatRate().killsPerSecond`**, не по сумме статов; автонадевания больше нет — решение принимает игрок), `compareItem` → `EquipComparison` с производными числами для UI | combat, stats, state, data/{balance,slots,items}, types |
 | `combat.ts` | **ЕДИНСТВЕННЫЙ дом боевых формул**: `rollSwing` (бросок урона оружия + вклад силы атаки + крит), `rollMonsterDamage`, `swingDamageRange`/`expectedSwingDamage`/`critFactor`, `estimateCombatRate` (урон/с, убийств/с, uptime, время до смерти; цикл «фарм → смерть → воскрешение»). tick вызывает эти функции, оффлайн-агрегат — только `estimateCombatRate`; своей формулы нет ни у кого | numbers, rng, state, stats, data/balance, types |
 | `formulas.ts` | `xpToNextLevel` — цена уровня из ТАБЛИЦЫ УБИЙСТВ (`killsToNextLevel`) через опыт настоящего моба своей полосы (`zoneForMonsterLevel`), а не из подобранной степени; `applyXp` (перенос остатка, мультиуровень, остановка на `LEVEL_CAP`) | numbers, data/{balance,zones,monsters}, types |
-| `loop.ts` | планировщик: rAF + аккумулятор, фикс. шаг `STEP_MS=100`, максимум 10 шагов/кадр, сброс «долга»; метрики fps/tps; `setSpeed(m)` — дебаг-ускорение игрового времени (лимит шагов за кадр сохраняется); `setFpsLimit(fps)` — потолок частоты кадров: пропущенный кадр НЕ двигает точку отсчёта, поэтому игровое время не теряется (закреплено тестом). Технические константы живут здесь — это не баланс | — |
+| `loop.ts` | планировщик: rAF + аккумулятор, фикс. шаг `STEP_MS=100`, максимум 10 шагов/кадр, сброс «долга»; метрики fps/tps; `setSpeed(m)` — дебаг-ускорение игрового времени (лимит шагов за кадр сохраняется). Лимита кадров нет: он резал только частоту пробуждений, а единственная опция производительности — текстовый режим. Технические константы живут здесь — это не баланс | — |
 | `state.ts` | `GameState`, `createInitialState(seed?)`, `spawnMonster`, `pushEvent`, `COMBAT_LOG_SIZE`. Общая зависимость tick/loot/save — взаимных импортов между ними нет | numbers, formulas, rng, data/{monsters,balance}, types |
 | `tick.ts` | **конвейер тика** из шести чистых шагов `(state, ctx) => state` (см. раздел 3); реэкспорт state-модуля для совместимости | numbers, formulas, loot, rng, state, data/{balance,monsters}, types |
 | `upgrades.ts` | `buyUpgrade`, `ownedCount` | numbers, formulas, state, types |
@@ -119,7 +119,7 @@
 `travelToZone`, `activateAbility`, `setAbilityAutocast`, `moveAbilityPriority`,
 `investTalentPoint`, `resetTalentTree`, `enterDungeonRun(id, difficulty)`,
 `leaveDungeonRun`, `enterTempleRun`, `leaveTempleRun`,
-`setRestThreshold`, `setRestResourceThreshold`, `interruptRest`,
+`setRestThreshold`, `interruptRest`,
 `exportSaveString`, `importSaveString`, `initGame`,
 `persistNow`, `startGameLoop`/`stopGameLoop`. Rng создаётся один раз из
 `state.rngSeed`. Автосейв: счётчик копит шаг конвейера `applyAutosaveCounter`,
@@ -137,14 +137,13 @@
 ### `src/lib/stores/ui.ts` — настройки интерфейса
 
 `writable(UiSettings)` в СВОЁМ ключе localStorage (`idle-rpg:ui`), намеренно
-отдельно от сейва: текстовый режим и лимит кадров — свойства машины, а не
+отдельно от сейва: текстовый режим и громкость — свойства машины, а не
 прогресс, и переезжать вместе с экспортом сейва не должны. Отсюда же
 `isTextMode()` (текстовый режим — только явный выбор `'on'`: автоопределения
 нет, потому что двумерной сцене нечем не завестись), `setTextMode`,
-`setFpsLimit` (лимит держит игровой цикл, а не сцену: сцена рисуется
-состоянием и своего цикла не имеет), `sanitizeUiSettings`
-(лимит кадров принимается только из `FPS_LIMITS` — иначе подправленный руками
-localStorage выставил бы один кадр в секунду) и `activeSection`/`setSection`.
+`sanitizeUiSettings` (мусор из localStorage не должен ни оглушить игрока,
+ни оставить наполовину открытую выдвижку; лишние ключи прежних сборок,
+вроде `fpsLimit`, отбрасываются) и `activeSection`/`setSection`.
 Активный раздел НЕ сохраняется: это «где я сейчас», а не настройка.
 
 ### `src/lib/ui/` — дизайн-система, компоненты и модуль маршрута
@@ -208,7 +207,7 @@ localStorage выставил бы один кадр в секунду) и `acti
 (`EquipmentPanel`) живут не во вкладке, а в выдвижке «Герой». `ZonePanel`
 собирает предупреждение из вердикта и разрыва в уровнях — в данных зоны
 такого текста нет. `ItemMods` — модификаторы предмета человеческим текстом.
-`SettingsPanel` — экспорт/импорт сейва, текстовый режим, лимит кадров,
+`SettingsPanel` — экспорт/импорт сейва, текстовый режим, громкость,
 ссылки на CREDITS и issues. Дальше `OfflineModal`, `NoticeBar` (карта
 `NoticeCode` → текст),
 `DebugOverlay` (`?debug=0` скрывает), `DebugPanel` (рендерится только при
@@ -260,7 +259,7 @@ localStorage выставил бы один кадр в секунду) и `acti
   **dungeonRun** (данж, СЛОЖНОСТЬ, номер босса, время боя) и **dungeonsCleared**
   (ключ — `clearKey(id, difficulty)`), **templeRun**/**templeBestWave**/
   **templeLastRunAtMs**, **questProgress**, **restHpThreshold**/
-  **restResourceThreshold**/**restSpeedupSource**,
+  **restSpeedupSource**,
   **abilitySettings** (галка автокаста, приоритет и резерв по каждому умению),
   **autocastReadyMs** (таймер реакции; в сейв не пишется).
   Источники статов — `level`, `talents`, `equipment` (вместе с зачарованиями)
@@ -617,7 +616,7 @@ WebGL, ни канвы. Слои сверху вниз: фон зоны (одн�
 |---|---|---|---|
 | 1 | Оффлайн-агрегат усредняет темп по пулу зоны и считает смертность по средней потере HP; в бою запас HP переносится между схватками. Расхождение ~6% за час. | Терпит | Тест на 8% ловит уезд формулы; точнее — только проигрывание тиков |
 | 2 | `rng` создаётся в сторе один раз, но позиция потока не сохраняется; реплеи «с середины» невозможны. | Терпит | Для сид-ранов достаточно текущего |
-| 3 | `estimateCombatRate` оценивает удары на моба без критов (консервативно); при высоких крит-шансах погрешность оффлайна вырастет. | Терпит | Тест на 5% поймает, формулу можно уточнить |
+| 3 | ~~`estimateCombatRate` оценивает удары на моба без критов~~ — **закрыто**: крит входит в поток ударов (`hitStream`), девять замеров уровень × крит сходятся с прогоном в 10 % (`balance.test.ts`). Стало возможным после того, как метрика сравнения стала непрерывной (`farmCycle` без floor/ceil, `rate-continuity.test.ts`). | Закрыто | — |
 | 4 | Полный инвентарь глушит дроп целиком: с 12/12 герой перестаёт находить и надевать вещи, пока не продаст. Видно в golden — статы упираются в потолок к 3000-му шагу. | **Мешает** | Лечится либо автопродажей худшего, либо надеванием мимо сумки; и то и другое — отдельная фича |
 | 5 | Оффлайн-агрегат не учитывает лут: за 8 ч герой возвращается с золотом и опытом, но без новых вещей. | Терпит | Осознанное упрощение; лут в оффлайне — отдельная фича |
 

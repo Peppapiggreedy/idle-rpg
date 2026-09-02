@@ -54,6 +54,19 @@ export interface RotationRate {
 }
 
 /**
+ * ПРИВАЛ НАЛИВАЕТ ЗАПАС ДО ПОЛНОГО, и ротация обязана это знать. Модель
+ * маны сама по себе считает только регенерацию с её паузами и обещала
+ * герою три четверти его кастов; настоящий тик жал умения почти по
+ * кулдаунам — потому что каждые несколько боёв герой садится, а встаёт с
+ * полной маной. `fightSec` — сколько секунд боя приходится на один полный
+ * запас, то есть между двумя привалами (из модели цикла в combat.ts);
+ * бесконечность — привалов нет.
+ */
+export interface RestRefill {
+  fightSec: number
+}
+
+/**
  * Умения, отсортированные по приоритету игрока (меньше число — раньше).
  * `onlyAutocast` оставляет только отмеченные галкой — это набор, который герой
  * применяет сам. Ручная игра распоряжается всеми умениями.
@@ -91,14 +104,16 @@ export function rotationRate(
    * у ярости ноль — она приходит с каждым ударом, а не порциями по таймеру.
    */
   pauseSec: number = stats.regenDelay + REGEN_TICK_S / 2,
+  /** Сколько боя приходится на один полный запас с привала; null — без привалов. */
+  refill: RestRefill | null = null,
 ): RotationRate {
-  const rate = castPlan(stats, settings, plan, income, pauseSec)
+  const rate = castPlan(stats, settings, plan, income, pauseSec, refill)
   if (plan.delayed) return rate
   // Игрок в ЛЮБОЙ момент может повторить то, что делает автокаст: подождать
   // и ударить позже. Значит игра руками не бывает хуже авто. Когда мана
   // впритык, реже бить иногда выгоднее — тогда рука повторяет план авто.
   // Это не поблажка руке, а определение: ручная игра — лучшая из доступных.
-  const delayed = castPlan(stats, settings, { ...plan, delayed: true }, income, pauseSec)
+  const delayed = castPlan(stats, settings, { ...plan, delayed: true }, income, pauseSec, refill)
   return rate.damagePerSecond.gte(delayed.damagePerSecond) ? rate : delayed
 }
 
@@ -133,6 +148,7 @@ function dutyCycle(
   desired: RotationRate,
   income: Decimal,
   pauseSec: number,
+  refill: RestRefill | null,
 ): Decimal {
   const spend = desired.manaPerSecond
   if (spend.lte(0)) return new Decimal(1)
@@ -170,8 +186,18 @@ function dutyCycle(
           .plus(spend.times(pause).div(depth))
           .plus(spend.div(regen)),
       )
+  const byRegen = Decimal.min(new Decimal(1), Decimal.max(uniform, burst))
 
-  return Decimal.min(new Decimal(1), Decimal.max(uniform, burst))
+  // ПРИВАЛ. С него герой встаёт с полным запасом, и пока запаса хватает на
+  // все бои до следующего привала, мана ротацию не ограничивает вовсе. Не
+  // хватает — покрытую запасом долю цикла герой жмёт всё, остаток живёт
+  // на регенерации. Без этого модель обещала три четверти кастов там, где
+  // тик жмёт по кулдаунам (замер: 0.48 против 0.64 каста в секунду).
+  if (!refill || !Number.isFinite(refill.fightSec) || refill.fightSec <= 0 || depth.lte(0)) {
+    return byRegen
+  }
+  const covered = Decimal.min(new Decimal(1), depth.div(spend.times(refill.fightSec)))
+  return Decimal.min(new Decimal(1), covered.plus(new Decimal(1).minus(covered).times(byRegen)))
 }
 
 function castPlan(
@@ -180,12 +206,13 @@ function castPlan(
   plan: RotationPlan,
   income: Decimal,
   pauseSec: number,
+  refill: RestRefill | null,
 ): RotationRate {
   // Сперва — чего ротация хочет, если о мане не думать: это упирается в
   // кулдауны, GCD и очередь замаха. Потом — сколько из этого выдерживает
-  // ресурс с правилом задержки.
+  // ресурс с правилом задержки и запасом с привала.
   const desired = fundPlan(stats, settings, plan, UNLIMITED_MANA)
-  const duty = dutyCycle(stats, settings, desired, income, pauseSec)
+  const duty = dutyCycle(stats, settings, desired, income, pauseSec, refill)
   if (duty.gte(1)) return desired
   // Долю применяем ко ВСЕЙ ротации разом, а не отдаём бюджет по приоритету.
   // Так герой и играет: жмёт всё, что доступно, а когда запас кончился —

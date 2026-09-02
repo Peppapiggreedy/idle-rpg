@@ -278,6 +278,28 @@ describe('автонадевание', () => {
     const s = withItems([zero])
     expect(isUpgrade(s, zero)).toBe(false)
   })
+
+  it('предмет с +25 п.п. крита помечается апгрейдом', () => {
+    // Слот ЗАНЯТ вещью с крохой силы атаки, чтобы сравнение шло строгим
+    // «лучше», а не порогом пустого слота. Крит не трогает ни урон удара, ни
+    // аптайм напрямую — только матожидание урона потока; раньше оценка его
+    // не видела, и талисман на крит читался как «без изменений» (AUDIT.md).
+    const worn = armor('шапка', 'head', 1)
+    const talisman: Item = {
+      id: 'талисман',
+      name: 'Талисман',
+      rarity: 'rare',
+      slot: 'head',
+      level: 1,
+      mods: [{ stat: 'critChance', kind: 'flat', value: new Decimal(0.25), source: 'equipment:head' }],
+    }
+    let s = withItems([bareWeapon(WEAPONS[0]), worn, talisman])
+    s = equipItem(s, bareWeapon(WEAPONS[0]).id)
+    s = equipItem(s, worn.id)
+    expect(isUpgrade(s, talisman)).toBe(true)
+    // И доля прироста — не ноль и не «без изменений»: крит крупный.
+    expect(compareItem(s, talisman).combatDelta ?? 0).toBeGreaterThan(0.05)
+  })
 })
 
 describe('две руки: правила связки', () => {

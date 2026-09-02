@@ -51,7 +51,7 @@ function heroAtEntry(level: number): GameState {
     zone.id,
     4242,
   )
-  return { ...state, restHpThreshold: 0, restResourceThreshold: 0 }
+  return { ...state, restHpThreshold: 0 }
 }
 
 /** Герой уровня входа в вещах заданной ДОЛИ от верхнего моба зоны входа. */
@@ -63,7 +63,7 @@ function heroWithGearShare(dungeon: (typeof DUNGEONS)[number], share: number): G
     zone.id,
     4242,
   )
-  return { ...state, restHpThreshold: 0, restResourceThreshold: 0 }
+  return { ...state, restHpThreshold: 0 }
 }
 
 /** Средний множитель ярости за бой длиной sec: считается ТОЙ ЖЕ формулой. */

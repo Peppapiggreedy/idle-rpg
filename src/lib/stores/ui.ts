@@ -1,9 +1,9 @@
-// Настройки интерфейса: раздел, текстовый режим, лимит кадров, громкости.
+// Настройки интерфейса: раздел, текстовый режим, громкости, выдвижки.
 //
 // Живут ОТДЕЛЬНО от игрового сейва и намеренно: это настройки конкретной
 // машины, а не прогресс. Утащить их вместе с экспортом сейва на другой
-// компьютер значило бы принести туда лимит кадров слабого ноутбука и
-// текстовый режим чужого экрана. Поэтому свой ключ в localStorage,
+// компьютер значило бы принести туда текстовый режим чужого экрана и
+// выключенный звук чужих наушников. Поэтому свой ключ в localStorage,
 // своя версия и никакого влияния на формат сейва.
 import { get, readonly, writable } from 'svelte/store'
 import { SOUND_DEFAULT_VOLUMES } from '../data/balance'
@@ -35,16 +35,6 @@ export const DRAWER_IDS: DrawerId[] = ['hero', 'log']
  */
 export type TextModeSetting = 'auto' | 'on' | 'off'
 
-/** Ограничение частоты кадров; null — без ограничения. */
-export type FpsLimit = number | null
-
-// 60 / 30 / 15 и по умолчанию 30. Тридцать — не компромисс, а осознанный
-// выбор: сцена и так рисуется не чаще тридцати кадров (показывать в ней
-// нечего, что требовало бы шестидесяти), а телефон за лишние кадры платит
-// нагревом и батареей. Шестьдесят оставлены для тех, кто хочет плавности,
-// пятнадцать — для слабых машин.
-export const FPS_LIMITS: FpsLimit[] = [60, 30, 15]
-
 /** Громкости: общая и по категориям звука. Доли 0..1. */
 export type VolumeId = 'master' | 'combat' | 'loot' | 'ui'
 
@@ -52,7 +42,6 @@ export const VOLUME_IDS: VolumeId[] = ['master', 'combat', 'loot', 'ui']
 
 export interface UiSettings {
   textMode: TextModeSetting
-  fpsLimit: FpsLimit
   // Громкость — свойство машины и наушников, а не прогресс: место ей здесь,
   // а не в сейве. Экспорт сейва не должен увозить на чужой компьютер
   // выключенный звук.
@@ -64,7 +53,6 @@ export interface UiSettings {
 
 const DEFAULTS: UiSettings = {
   textMode: 'auto',
-  fpsLimit: 30,
   volumes: { ...SOUND_DEFAULT_VOLUMES },
   drawers: { hero: false, log: false },
 }
@@ -72,7 +60,9 @@ const DEFAULTS: UiSettings = {
 // --- Хранилище ---------------------------------------------------------
 
 /** Разбор сохранённых настроек. Экспортируется ради теста: мусор из
- *  localStorage не должен превращаться в один кадр в секунду. */
+ *  localStorage не должен ни оглушить игрока, ни спрятать половину панели.
+ *  Лишние ключи — например `fpsLimit` из настроек прежних сборок — здесь
+ *  же и отбрасываются: собирается новый объект, а не чинится старый. */
 export function sanitizeUiSettings(raw: unknown): UiSettings {
   if (typeof raw !== 'object' || raw === null) return { ...DEFAULTS }
   const data = raw as Partial<UiSettings>
@@ -80,12 +70,6 @@ export function sanitizeUiSettings(raw: unknown): UiSettings {
     data.textMode === 'on' || data.textMode === 'off' || data.textMode === 'auto'
       ? data.textMode
       : DEFAULTS.textMode
-  // Лимит принимаем только из известного списка: мусор из localStorage
-  // не должен превратиться в единицу кадров в секунду.
-  const fpsLimit: FpsLimit =
-    data.fpsLimit === null || FPS_LIMITS.includes(data.fpsLimit ?? null)
-      ? (data.fpsLimit ?? null)
-      : DEFAULTS.fpsLimit
   // Громкость принимаем только числом из 0..1: мусор из localStorage не
   // должен ни оглушить, ни выключить звук навсегда.
   const volumes = { ...DEFAULTS.volumes }
@@ -116,7 +100,7 @@ export function sanitizeUiSettings(raw: unknown): UiSettings {
       }
     }
   }
-  return { textMode, fpsLimit, volumes, drawers }
+  return { textMode, volumes, drawers }
 }
 
 function load(): UiSettings {
@@ -152,14 +136,6 @@ export function isTextMode(value: UiSettings = get(settings)): boolean {
 export function setTextMode(mode: TextModeSetting): void {
   settings.update((s) => {
     const next = { ...s, textMode: mode }
-    persist(next)
-    return next
-  })
-}
-
-export function setFpsLimit(limit: FpsLimit): void {
-  settings.update((s) => {
-    const next = { ...s, fpsLimit: limit }
     persist(next)
     return next
   })

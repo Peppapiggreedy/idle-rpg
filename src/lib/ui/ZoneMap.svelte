@@ -10,7 +10,7 @@
   // линией. Порядок берётся ИЗ ДАННЫХ — по нижнему краю полосы мобов, — и
   // отдельного списка нигде не лежит: добавили зону в data/zones.ts, узел
   // появился сам, на своём месте.
-  import { forecastAllZones, isZoneUnlocked, type ZoneForecast, type ZoneVerdict } from '../game'
+  import { forecastAllZones, isZoneUnlocked, type ZoneForecast } from '../game'
   import { combatKey, createMemo } from './memo'
   import { ZONES } from '../data/zones'
   import { ALL_DUNGEONS, dungeonOpening } from '../data/dungeons'
@@ -69,13 +69,6 @@
     return opener ? `пройди «${opener.name}»` : 'закрыта'
   }
 
-  const VERDICT_SHORT: Record<ZoneVerdict, string> = {
-    safe: 'по силам',
-    risky: 'риск',
-    deadly: 'смерть',
-    hopeless: 'не по зубам',
-  }
-
   /** Доля опыта словами: она решает, есть ли смысл сюда идти. */
   function xpLabel(f: ZoneForecast): string {
     if (f.xpShare >= 1) return 'опыт полный'
@@ -120,7 +113,10 @@
                говорит: это место, куда можно пойти прямо сейчас. -->
           <span class="need">{lockReason(zone.id)}</span>
         {:else if f}
-          <span class="verdict {f.verdict}">{VERDICT_SHORT[f.verdict]}</span>
+          <!-- ВЕРДИКТА («по силам» / «смерть») ЗДЕСЬ НЕТ НАМЕРЕННО: игра
+               называет, что сделать нельзя (замок выше), и молчит о том,
+               чем кончится попытка. На узле — только факты: полоса, доля
+               опыта, золото в час. -->
           <span class="xp" class:none={f.xpShare <= 0}>{xpLabel(f)}</span>
           <span class="gold"><NumberText value={f.goldPerHour} tone="gold" />/ч</span>
         {/if}
@@ -205,15 +201,14 @@
     display: flex;
     align-items: center;
     gap: var(--space-1);
-    font-weight: 600;
+    font-weight: var(--weight-bold);
   }
   .name {
     font-size: var(--text-sm);
   }
   .need,
   .xp,
-  .gold,
-  .verdict {
+  .gold {
     font-size: var(--text-xs);
   }
   .need {
@@ -225,16 +220,6 @@
   .xp.none {
     color: var(--c-text-faint);
   }
-  .verdict.safe {
-    color: var(--c-heal);
-  }
-  .verdict.risky {
-    color: var(--c-warning);
-  }
-  .verdict.deadly,
-  .verdict.hopeless {
-    color: var(--c-damage);
-  }
   .marks {
     display: flex;
     gap: var(--space-1);
@@ -245,6 +230,6 @@
   .you {
     font-size: var(--text-xs);
     color: var(--c-accent);
-    font-weight: 600;
+    font-weight: var(--weight-bold);
   }
 </style>

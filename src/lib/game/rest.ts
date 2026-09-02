@@ -31,15 +31,12 @@ export function restDurationMs(state: GameState): number {
   return Math.max(MIN_REST_DURATION_S * 1000, withFood)
 }
 
-/** Пора ли на привал: HP или ресурс упали ниже своего порога. */
+/** Пора ли на привал: HP упало ниже порога. */
 export function needsRest(state: GameState): boolean {
   // Порог — СТАТ: настройка игрока приходит в конвейер базой, а таланты её
   // сдвигают. Читать здесь сырое поле состояния значило бы обойти таланты.
   if (state.stats.restThreshold > 0) {
     if (state.currentHp.lt(state.stats.maxHp.times(state.stats.restThreshold))) return true
-  }
-  if (state.restResourceThreshold > 0) {
-    if (state.currentMana.lt(state.stats.maxMana.times(state.restResourceThreshold))) return true
   }
   return false
 }
@@ -154,7 +151,11 @@ export function fightLoss(state: GameState, template: MonsterTemplate): Decimal 
   const rate = estimateCombatRate(facing)
   if (rate.idealKillsPerSecond.lte(0)) return state.stats.maxHp.times(2)
   const cycleSec = new Decimal(1).div(rate.idealKillsPerSecond)
-  const hits = Math.max(0, Math.floor(cycleSec.div(template.swingTime).toNumber()))
+  // Ответных ударов за бой — СРЕДНЕЕ по боям, как в самой оценке
+  // (`бой/замах − 1/2`, не меньше нуля): целое одного боя делало цену
+  // худшего боя ступенчатой, и лишний процент крита у героя ронял её на
+  // треть — вместе с вердиктом «безопасно» и порогом привала.
+  const hits = Math.max(0, cycleSec.div(template.swingTime).toNumber() - 0.5)
   if (hits === 0) return new Decimal(0)
   const mean = expectedMonsterDamage(monster, state.stats, state.level.toNumber())
   // Разброс одного удара: равномерное распределение min..max даёт

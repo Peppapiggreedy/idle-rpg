@@ -21,7 +21,7 @@ import {
   type Equipment,
   type GameState,
 } from './state'
-import { ensureStats } from './stats'
+import { ensureStats, type StatModifier } from './stats'
 import { tick } from './tick'
 import { averageArmorMods, sellItem, sellPrice, shieldMods, weaponMods } from './loot'
 import { zoneSafety } from './rest'
@@ -37,7 +37,7 @@ import {
   zoneStanding,
   type ZoneStanding,
 } from './zones'
-import { INVENTORY_SIZE, LEVEL_CAP, xpGapShare } from '../data/balance'
+import { INVENTORY_SIZE, LEVEL_CAP, xpGapShare, RUN_PLAYER_DEATH_TOLERANCE_PER_HOUR } from '../data/balance'
 import { ABILITIES, ABILITY_BY_ID } from '../data/abilities'
 import { RARITY_BY_ID, TYPICAL_RARITY } from '../data/rarity'
 import { ARMOR_NOUNS, ONE_HANDED, SHIELDS, WEAPONS, WEAPON_BY_ID } from '../data/items'
@@ -115,6 +115,13 @@ export interface SimBuild {
   // Какие умения жмёт автокаст: 'all' — все, 'none' — ни одного (только
   // автоатака), список id — только они, в порядке приоритета.
   autocast?: 'all' | 'none' | string[]
+  /**
+   * Дополнительные модификаторы статов, надетые на оружие в правой руке —
+   * ИСТОЧНИКОМ, как в игре, а не правкой чисел в блоке. Так замеры «тот же
+   * герой, но с +25 п.п. крита» и «тот же герой без крита вовсе» идут через
+   * конвейер статов, и тик с оценкой видят одно и то же.
+   */
+  extraMods?: StatModifier[]
 }
 
 export interface SimOptions {
@@ -671,6 +678,14 @@ function buildEquipment(build: SimBuild, weapon: Item | null): Equipment {
   // Двуручное в правой руке несовместимо со второй: правило одно и то же
   // и для игры, и для прогона.
   if (equipment.mainHand?.grip === 'two') equipment.offHand = null
+  if (build.extraMods?.length) {
+    // Ошибка прибора, а не текст для игрока: билд без оружия просит невозможного.
+    if (!equipment.mainHand) throw new Error('extraMods without mainHand')
+    equipment.mainHand = {
+      ...equipment.mainHand,
+      mods: [...equipment.mainHand.mods, ...build.extraMods],
+    }
+  }
   return equipment
 }
 
@@ -764,13 +779,17 @@ function killObserved(prev: GameState, next: GameState): boolean {
  * Модель делает ровно это: берёт САМУЮ ГЛУБОКУЮ открытую зону не глубже
  * своей, в которой прогноз не находит смерти. Если таких нет — безопасную.
  */
+
 function playerZoneId(state: GameState, level: number): string {
   const own = zoneForMonsterLevel(level)
   const reachable = ZONES.filter(
     (zone) =>
       isZoneUnlocked(state, zone) && zone.monsterLevelRange.max <= own.monsterLevelRange.max,
   )
-  const alive = reachable.filter((zone) => !zoneRate(state, zone).dies)
+  const alive = reachable.filter((zone) => {
+    const rate = zoneRate(state, zone)
+    return !rate.dies && rate.deathsPerHour < RUN_PLAYER_DEATH_TOLERANCE_PER_HOUR
+  })
   // ДВА УСЛОВИЯ, и второе — запас на невезение. Модель не находит смерти по
   // СРЕДНЕЙ потере HP и потому оптимистична: с одним этим условием прогон
   // ложился полтора раза в час при контракте «путь идёт без смертей».

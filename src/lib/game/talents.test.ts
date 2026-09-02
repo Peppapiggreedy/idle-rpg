@@ -360,7 +360,6 @@ describe('эффекты талантов', () => {
     const dying: GameState = ensureStats({
       ...swift,
       restHpThreshold: 0,
-      restResourceThreshold: 0,
       statsDirty: true,
       currentHp: new Decimal(0.01),
       monster: { ...swift.monster, damageMin: new Decimal(1e9), damageMax: new Decimal(1e9) },

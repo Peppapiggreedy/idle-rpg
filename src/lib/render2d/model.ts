@@ -8,7 +8,7 @@
 // Файл нарочно не знает про Svelte и DOM: он проверяется в node.
 
 import { backgroundForLevel, monsterSpriteFor, type BackgroundBand, type SpriteAsset } from '../data/sprites'
-import { activeDungeon, currentBoss, enrageMultiplier } from '../game'
+import { activeDungeon, currentBoss, enrageMultiplier, formatNumber } from '../game'
 import type { GameState } from '../game/state'
 
 /** Что сейчас на площадке — от этого зависит поза сцены целиком. */
@@ -30,6 +30,13 @@ export interface MonsterView {
   name: string
   level: number
   health: number
+  /**
+   * Здоровье числом — «текущее / максимум» — для подписи внутри полоски над
+   * головой. Полоска у моба ОДНА, в сцене; второй, в раме, больше нет,
+   * поэтому число обязано читаться здесь. Тот же formatNumber, что и у
+   * остальных чисел интерфейса.
+   */
+  hpLabel: string
   swing: number
   isBoss: boolean
   /** Ярость босса вошла в силу: моб подсвечивается. */
@@ -91,6 +98,7 @@ export function sceneModel(state: GameState): SceneModel {
           name: state.monster.name,
           level: state.monster.level,
           health: fraction(state.monster.currentHp.toNumber(), state.monster.maxHp.toNumber()),
+          hpLabel: `${formatNumber(state.monster.currentHp)} / ${formatNumber(state.monster.maxHp)}`,
           swing: fraction(state.monster.swingProgress, 1),
           isBoss,
           enraged,

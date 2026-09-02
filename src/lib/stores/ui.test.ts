@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import {
-  FPS_LIMITS,
   SECTION_IDS,
   isTextMode,
   sanitizeUiSettings,
@@ -13,7 +12,6 @@ describe('настройки интерфейса: разбор сохранён
     for (const raw of [null, undefined, 42, 'строка', [], {}]) {
       expect(sanitizeUiSettings(raw)).toEqual({
         textMode: 'auto',
-        fpsLimit: 30,
         volumes: SOUND_DEFAULT_VOLUMES,
         drawers: { hero: false, log: false },
       })
@@ -21,32 +19,25 @@ describe('настройки интерфейса: разбор сохранён
   })
 
   it('известные значения проходят как есть', () => {
-    expect(sanitizeUiSettings({ textMode: 'on', fpsLimit: 30 })).toEqual({
+    expect(sanitizeUiSettings({ textMode: 'on' })).toEqual({
       textMode: 'on',
-      fpsLimit: 30,
       volumes: SOUND_DEFAULT_VOLUMES,
       drawers: { hero: false, log: false },
     })
-    expect(sanitizeUiSettings({ textMode: 'off', fpsLimit: 60 })).toEqual({
+    expect(sanitizeUiSettings({ textMode: 'off' })).toEqual({
       textMode: 'off',
-      fpsLimit: 60,
       volumes: SOUND_DEFAULT_VOLUMES,
       drawers: { hero: false, log: false },
     })
-    // null допустим: так записаны настройки, сохранённые до появления
-    // значения по умолчанию 30. Терять их из-за смены списка нельзя.
-    expect(sanitizeUiSettings({ textMode: 'auto', fpsLimit: null }).fpsLimit).toBeNull()
   })
 
-  it('лимит кадров принимается ТОЛЬКО из известного списка', () => {
-    // Иначе подправленный руками localStorage мог бы выставить один кадр
-    // в секунду — и игра выглядела бы сломанной без единой ошибки.
-    for (const bad of [1, 0, -30, 9999, '60', Number.NaN, Infinity]) {
-      expect(sanitizeUiSettings({ fpsLimit: bad }).fpsLimit).toBe(30)
-    }
-    for (const good of FPS_LIMITS) {
-      expect(sanitizeUiSettings({ fpsLimit: good }).fpsLimit).toBe(good)
-    }
+  it('лимит кадров из настроек прежних сборок выбрасывается, остальное читается', () => {
+    // Лимита кадров больше нет: после удаления трёхмерного слоя он резал
+    // только игровой цикл. В localStorage у старых игроков он ещё лежит —
+    // запись обязана читаться, а лишний ключ не должен прорасти в настройки.
+    const settings = sanitizeUiSettings({ textMode: 'on', fpsLimit: 30 })
+    expect(settings.textMode).toBe('on')
+    expect('fpsLimit' in settings).toBe(false)
   })
 
   it('неизвестный режим отображения откатывается к автоопределению', () => {
@@ -66,7 +57,6 @@ describe('настройки интерфейса: разбор сохранён
 describe('текстовый режим', () => {
   const settings = (textMode: UiSettings['textMode']): UiSettings => ({
     textMode,
-    fpsLimit: null,
     volumes: { ...SOUND_DEFAULT_VOLUMES },
     drawers: { hero: false, log: false },
   })

@@ -5,6 +5,9 @@ import { rarityName, rarityStyle } from './rarity'
 
 const UI_DIR = new URL('../', import.meta.url)
 const KIT_DIR = new URL('./', import.meta.url)
+// Корень приложения: App.svelte — тоже компонент со стилями, и правила
+// дизайн-системы на него распространяются так же.
+const APP_DIR = new URL('../../../', import.meta.url)
 
 function read(dir: URL, file: string): string {
   return readFileSync(new URL(file, dir), 'utf8')
@@ -32,13 +35,18 @@ describe('мост к цветам редкостей', () => {
 
 describe('дизайн-система: компоненты живут на токенах', () => {
   // Правило PR: в компонентах не осталось ни hex-литералов, ни магических
-  // отступов. Тест держит его на будущее — иначе первый же новый компонент
-  // принесёт свой цвет, и единственный источник перестанет быть единственным.
+  // отступов, ни числовых начертаний. Тест держит его на будущее — иначе
+  // первый же новый компонент принесёт свой цвет, и единственный источник
+  // перестанет быть единственным.
   const HEX = /#[0-9a-fA-F]{3,8}\b/
   const RGB = /rgba?\(/
   const SPACING = /(?:^|[\s;{])(?:margin|padding|gap|row-gap|column-gap)[a-z-]*:\s*[^;]*\d/
+  // Начертание — величина той же шкалы: 400/500/600 живут в --weight-*.
+  // Числом в компоненте оно завело бы второй источник рядом с токенами.
+  const FONT_WEIGHT = /font-weight\s*:\s*\d/
 
   const files = [
+    ['App.svelte', read(APP_DIR, 'App.svelte')] as const,
     ...svelteFiles(UI_DIR).map((f) => [`ui/${f}`, read(UI_DIR, f)] as const),
     ...svelteFiles(KIT_DIR).map((f) => [`ui/kit/${f}`, read(KIT_DIR, f)] as const),
   ]
@@ -71,6 +79,14 @@ describe('дизайн-система: компоненты живут на то
         // var(--space-N) содержит пробелы только между частями значения.
         return !value.split(/\s+/).every((part) => ALLOWED.test(part))
       })
+    expect(offenders).toEqual([])
+  })
+
+  it.each(files)('%s: начертание только из токенов', (_name, source) => {
+    const offenders = styleOf(source)
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => FONT_WEIGHT.test(line))
     expect(offenders).toEqual([])
   })
 })

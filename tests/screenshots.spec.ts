@@ -2,6 +2,8 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 import { openHeroDrawer, sectionTab } from './screen.js'
+import { NUMERIC_ELEMENTS, NUMERIC_MATCH } from './numeric-elements.js'
+import { SCENE_POSES } from '../src/lib/ui/route.js'
 
 // Снимки трёх заранее заданных состояний игры в трёх ширинах плюс витрина.
 // Состояние приходит из ?state=<пресет> — это обычный сейв из
@@ -19,10 +21,14 @@ import { openHeroDrawer, sectionTab } from './screen.js'
 //      и своих пикселей у сцены нет.
 //
 // Отдельно снимаются ПОЗЫ сцены (?pose=): застывший пик каждого эффекта —
-// покой, замах, попадание, крит, лечение, привал. Это эталоны на сами
-// эффекты, а не только на раскладку.
+// покой, замах, попадание, крит, лечение, привал, новый уровень. Это эталоны
+// на сами эффекты, а не только на раскладку.
 //
-// Оба комплекта попадают в test-results/current и, значит, в артефакт.
+// Отдельно и БЕЗ ДОПУСКА снимаются элементы с числами состояния: порог
+// полной страницы пропускает смену цифры в полоске, а отдельный кадр
+// элемента — нет (список — tests/numeric-elements.ts).
+//
+// Все комплекты попадают в test-results/current и, значит, в артефакт.
 
 const PRESETS = ['fresh', 'mid', 'rich'] as const
 // Телефон, планшет, десктоп. 720px — единственный брейкпоинт игры, поэтому
@@ -68,6 +74,22 @@ async function capture(page: Page, name: string): Promise<Buffer> {
   }
   const shot = await page.screenshot({ fullPage: true, animations: 'disabled', caret: 'hide' })
   if (size) await page.setViewportSize(size)
+  const file = join(CURRENT_DIR, `${name}.png`)
+  mkdirSync(dirname(file), { recursive: true })
+  writeFileSync(file, shot)
+  return shot
+}
+
+/**
+ * Снимок ОДНОГО элемента, а не страницы. Тот же уход курсора и та же папка
+ * артефакта, но без растягивания окна: элемент и так в кадре целиком.
+ */
+async function captureElement(page: Page, selector: string, name: string): Promise<Buffer> {
+  await page.evaluate(() => document.fonts.ready)
+  await page.mouse.move(0, 0)
+  const target = page.locator(selector).first()
+  await expect(target).toBeVisible()
+  const shot = await target.screenshot({ animations: 'disabled', caret: 'hide' })
   const file = join(CURRENT_DIR, `${name}.png`)
   mkdirSync(dirname(file), { recursive: true })
   writeFileSync(file, shot)
@@ -134,8 +156,9 @@ for (const preset of PRESETS) {
 
 // Позы сцены: по одному эталону на эффект. Снимаются на пресете rich —
 // там герой в снаряжении и числа урона не однозначные. Это эталоны на сами
-// эффекты: пока они зелёные, сцена цела.
-const SCENE_POSES = ['idle', 'swing', 'hit', 'crit', 'heal', 'rest'] as const
+// эффекты: пока они зелёные, сцена цела. Список поз — тот же SCENE_POSES,
+// который читает `?pose=`: новая поза попадает в эталоны сама, а своей
+// копии списка у спеки нет — она уже однажды могла разъехаться с игрой.
 for (const pose of SCENE_POSES) {
   test(`сцена-поза: ${pose}`, async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 })
@@ -147,6 +170,27 @@ for (const pose of SCENE_POSES) {
     const name = `scene-pose-${pose}-1280`
     expect(await capture(page, name)).toMatchSnapshot(`${name}.png`)
   })
+}
+
+// ЧИСЛА СОСТОЯНИЯ — ОТДЕЛЬНЫМИ СНИМКАМИ И БЕЗ ДОПУСКА. Порог полной страницы
+// (0.001 доли пикселей) пропускает смену цифры в полоске здоровья: цифры —
+// сотые доли процента пикселей, и два PR подряд эталоны молча врали.
+// Поэтому каждый элемент с числами снимается сам по себе, и там любой
+// отличный пиксель — падение. Режим — интерфейс без сцены, как у разделов.
+const NUMERIC_PRESETS = ['fresh', 'rich'] as const
+for (const element of NUMERIC_ELEMENTS) {
+  for (const preset of NUMERIC_PRESETS) {
+    const name = `numeric-${element.name}-${preset}-1280`
+    test(`числа: ${element.name} @ ${preset}`, async ({ page }) => {
+      await page.setViewportSize({ width: 1280, height: 900 })
+      await openPreset(page, preset, true)
+      if (element.section) await sectionTab(page, element.section).click()
+      expect(await captureElement(page, element.selector, name)).toMatchSnapshot(
+        `${name}.png`,
+        NUMERIC_MATCH,
+      )
+    })
+  }
 }
 
 // Требование к мобильному экрану проверяем измерением, а не глазами: на

@@ -1,0 +1,324 @@
+{
+  "version": 23,
+  "classId": "warden",
+  "materials": {},
+  "activePotions": [],
+  "enchantDust": "0",
+  "saveId": 3904983578,
+  "templeRun": {
+    "templeId": "trial-temple",
+    "wave": 3,
+    "seed": 12345,
+    "level": 70,
+    "cleared": 0
+  },
+  "templeBestWave": 7,
+  "procCooldownsMs": {},
+  "restSpeedupSource": null,
+  "lastTimestamp": 0,
+  "inventory": [
+    {
+      "id": "item-3",
+      "name": "Верный Полуторник",
+      "rarity": "rare",
+      "slot": "mainHand",
+      "level": 25,
+      "mods": [
+        {
+          "stat": "weaponSpeed",
+          "kind": "base",
+          "value": "2.2",
+          "source": "equipment:mainHand"
+        },
+        {
+          "stat": "weaponDamageMin",
+          "kind": "base",
+          "value": "82.522",
+          "source": "equipment:mainHand"
+        },
+        {
+          "stat": "weaponDamageMax",
+          "kind": "base",
+          "value": "165.044",
+          "source": "equipment:mainHand"
+        },
+        {
+          "stat": "strength",
+          "kind": "flat",
+          "value": "52.513999999999996",
+          "source": "equipment:mainHand"
+        }
+      ],
+      "hands": 1
+    },
+    {
+      "id": "item-4",
+      "name": "Щербатый Заслон",
+      "rarity": "epic",
+      "slot": "offHand",
+      "level": 26,
+      "mods": [
+        {
+          "stat": "blockChance",
+          "kind": "base",
+          "value": "0.25",
+          "source": "equipment:offHand"
+        },
+        {
+          "stat": "blockValue",
+          "kind": "base",
+          "value": "114",
+          "source": "equipment:offHand"
+        },
+        {
+          "stat": "vitality",
+          "kind": "flat",
+          "value": "38",
+          "source": "equipment:offHand"
+        }
+      ]
+    },
+    {
+      "id": "item-5",
+      "name": "Звёздный Кафтан",
+      "rarity": "common",
+      "slot": "chest",
+      "level": 24,
+      "mods": [
+        {
+          "stat": "agility",
+          "kind": "flat",
+          "value": "18.72",
+          "source": "equipment:chest"
+        },
+        {
+          "stat": "vitality",
+          "kind": "flat",
+          "value": "9.36",
+          "source": "equipment:chest"
+        }
+      ]
+    }
+  ],
+  "equipment": {
+    "mainHand": {
+      "id": "item-1",
+      "name": "Верный Крушитель",
+      "rarity": "rare",
+      "slot": "mainHand",
+      "level": 26,
+      "mods": [
+        {
+          "stat": "weaponSpeed",
+          "kind": "base",
+          "value": "3.4",
+          "source": "equipment:mainHand"
+        },
+        {
+          "stat": "weaponDamageMin",
+          "kind": "base",
+          "value": "197.62499999999997",
+          "source": "equipment:mainHand"
+        },
+        {
+          "stat": "weaponDamageMax",
+          "kind": "base",
+          "value": "395.24999999999994",
+          "source": "equipment:mainHand"
+        },
+        {
+          "stat": "strength",
+          "kind": "percent",
+          "value": "0.1",
+          "source": "equipment:mainHand"
+        }
+      ],
+      "hands": 2
+    },
+    "offHand": {
+      "id": "item-2",
+      "name": "Верный Змеезуб",
+      "rarity": "rare",
+      "slot": "offHand",
+      "level": 24,
+      "mods": [
+        {
+          "stat": "offhandSpeed",
+          "kind": "base",
+          "value": "1.4",
+          "source": "equipment:offHand"
+        },
+        {
+          "stat": "offhandDamageMin",
+          "kind": "base",
+          "value": "50.778",
+          "source": "equipment:offHand"
+        },
+        {
+          "stat": "offhandDamageMax",
+          "kind": "base",
+          "value": "101.55599999999998",
+          "source": "equipment:offHand"
+        },
+        {
+          "stat": "agility",
+          "kind": "flat",
+          "value": "108.81",
+          "source": "equipment:offHand"
+        }
+      ],
+      "hands": 1
+    },
+    "head": {
+      "id": "start-head",
+      "name": "Шлем",
+      "rarity": "rare",
+      "slot": "head",
+      "level": 1,
+      "mods": [
+        {
+          "stat": "intellect",
+          "kind": "flat",
+          "value": "6.2",
+          "source": "equipment:head"
+        },
+        {
+          "stat": "vitality",
+          "kind": "flat",
+          "value": "3.1",
+          "source": "equipment:head"
+        }
+      ]
+    },
+    "chest": {
+      "id": "start-chest",
+      "name": "Панцирь",
+      "rarity": "rare",
+      "slot": "chest",
+      "level": 1,
+      "mods": [
+        {
+          "stat": "vitality",
+          "kind": "flat",
+          "value": "9.3",
+          "source": "equipment:chest"
+        }
+      ]
+    },
+    "hands": {
+      "id": "start-hands",
+      "name": "Наруч",
+      "rarity": "rare",
+      "slot": "hands",
+      "level": 1,
+      "mods": [
+        {
+          "stat": "agility",
+          "kind": "flat",
+          "value": "6.2",
+          "source": "equipment:hands"
+        },
+        {
+          "stat": "vitality",
+          "kind": "flat",
+          "value": "3.1",
+          "source": "equipment:hands"
+        }
+      ]
+    },
+    "legs": {
+      "id": "start-legs",
+      "name": "Наголенник",
+      "rarity": "rare",
+      "slot": "legs",
+      "level": 1,
+      "mods": [
+        {
+          "stat": "strength",
+          "kind": "flat",
+          "value": "6.2",
+          "source": "equipment:legs"
+        },
+        {
+          "stat": "vitality",
+          "kind": "flat",
+          "value": "3.1",
+          "source": "equipment:legs"
+        }
+      ]
+    },
+    "trinket": {
+      "id": "start-trinket",
+      "name": "Амулет",
+      "rarity": "rare",
+      "slot": "trinket",
+      "level": 1,
+      "mods": [
+        {
+          "stat": "strength",
+          "kind": "flat",
+          "value": "6.2",
+          "source": "equipment:trinket"
+        },
+        {
+          "stat": "vitality",
+          "kind": "flat",
+          "value": "3.1",
+          "source": "equipment:trinket"
+        }
+      ]
+    }
+  },
+  "currentZoneId": "mirefen-hollows",
+  "lastSurvivedZoneId": "mirefen-hollows",
+  "dungeonRun": null,
+  "dungeonsCleared": {},
+  "questProgress": {
+    "done": {},
+    "counter": 0
+  },
+  "gcdMsLeft": 0,
+  "abilityCooldownsMs": {},
+  "regenDelayMsLeft": 0,
+  "restHpThreshold": 0.4,
+  "restResourceThreshold": 0.2,
+  "abilitySettings": {
+    "quick-strike": {
+      "autocast": true,
+      "priority": 0,
+      "reserve": 0
+    },
+    "rending-wound": {
+      "autocast": true,
+      "priority": 1,
+      "reserve": 0
+    },
+    "shattering-blow": {
+      "autocast": true,
+      "priority": 2,
+      "reserve": 0
+    }
+  },
+  "itemSeq": 6,
+  "gold": "760000",
+  "level": "28",
+  "currentXp": "1200",
+  "currentHp": "295.3",
+  "currentMana": "81",
+  "heroState": "alive",
+  "reviveMsLeft": 0,
+  "talents": {},
+  "talentResets": 0,
+  "totalTicks": "520000",
+  "playtimeMs": "52000000",
+  "templeCleared": false,
+  "unlockedZoneIds": {
+    "glasswaste": true,
+    "ashen-ridge": true,
+    "mine-collapse": true,
+    "root-vaults": true,
+    "flooded-tier": true,
+    "mold-horizon": true
+  },
+  "abilityCasts": "0"
+}

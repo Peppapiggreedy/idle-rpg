@@ -194,6 +194,28 @@ describe('фикстуры сейвов', () => {
     expect(migrateSave(raw)!.templeCleared).toBe(true)
   })
 
+  it('save-v23 -> v24: порог привала по ресурсу выброшен, остальное цело', () => {
+    // Поле не имело интерфейса и у всех стояло в нуле; фикстура несёт
+    // ненулевое значение нарочно — иначе тест не отличил бы «выброшено»
+    // от «сброшено в ноль по умолчанию».
+    const raw = JSON.parse(fixture('save-v23.json'))
+    expect(raw.restResourceThreshold).toBe(0.2)
+    const payload = migrateSave(raw)!
+    expect(payload.version).toBe(SAVE_VERSION)
+    expect('restResourceThreshold' in payload).toBe(false)
+    // Порог по HP — настройка игрока, и она на месте.
+    expect(payload.restHpThreshold).toBe(0.4)
+
+    const state = loadFixture('save-v23.json')
+    expect(state.restHpThreshold).toBe(0.4)
+    // Прогресс не тронут: миграция — про одно мёртвое поле, а не про героя.
+    expect(state.level.toNumber()).toBe(28)
+    expect(state.gold.toString()).toBe('760000')
+    // Забег по храму расформирован общим правилом, рекорд цел.
+    expect(state.templeRun).toBeNull()
+    expect(state.templeBestWave).toBe(7)
+  })
+
   it('save-v19 -> v20: незаконная связка рук расформирована', () => {
     // В 19-й версии хвата не было: оружие несло hands, а щит не был отмечен
     // никак. Формат просто не умел сказать «так нельзя» — и сейв мог нести
@@ -462,10 +484,11 @@ describe('фикстуры сейвов', () => {
     expect(s.gold.toNumber()).toBeGreaterThan(0)
   })
 
-  it('save-v14: пороги привала переживают загрузку, а сам привал — нет', () => {
+  it('save-v14: порог привала переживает загрузку, а сам привал — нет', () => {
     const s = loadFixture('save-v14.json')
     expect(s.restHpThreshold).toBe(0.6)
-    expect(s.restResourceThreshold).toBe(0.2)
+    // Порог по ресурсу выброшен миграцией 22 -> 23: в состоянии его нет.
+    expect('restResourceThreshold' in s).toBe(false)
     // Привал не досиживается через перезагрузку: герой просыпается на ногах.
     expect(s.restMsLeft).toBe(0)
   })

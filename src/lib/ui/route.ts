@@ -59,10 +59,10 @@ export function isSceneDisabled(location: Location = window.location): boolean {
 
 /**
  * Позы сцены для съёмки эталонов: покой, замах, попадание, крит, лечение,
- * привал. Каждая — застывший пик соответствующего эффекта, чтобы эталон
- * держал не только раскладку, но и сам эффект.
+ * привал, новый уровень. Каждая — застывший пик соответствующего эффекта,
+ * чтобы эталон держал не только раскладку, но и сам эффект.
  */
-export const SCENE_POSES = ['idle', 'swing', 'hit', 'crit', 'heal', 'rest'] as const
+export const SCENE_POSES = ['idle', 'swing', 'hit', 'crit', 'heal', 'rest', 'levelup'] as const
 export type ScenePose = (typeof SCENE_POSES)[number]
 
 /**

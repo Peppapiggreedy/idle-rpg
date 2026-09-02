@@ -190,7 +190,6 @@ describe('щит блокирует', () => {
       abilitySettings: manualOnlySettings(),
       equipment: { ...equipment, offHand: shield() },
       restHpThreshold: 0,
-      restResourceThreshold: 0,
       monster: {
         ...base.monster,
         maxHp: new Decimal('1e12'),

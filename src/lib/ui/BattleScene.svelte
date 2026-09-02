@@ -1,15 +1,18 @@
 <script lang="ts">
   // Рама боевой сцены: держит пропорции (16:9 на десктопе, 4:3 на мобильном)
-  // и накрывает картинку читаемой подписью — имя моба и его здоровье игрок
-  // должен видеть, а по силуэту уровень не прочитать.
+  // и накрывает картинку читаемой подписью — имя и уровень моба: по силуэту
+  // их не прочитать.
+  //
+  // Здоровья моба в раме НЕТ: его показывает ОДНА полоска над головой моба
+  // в самой сцене, с числом внутри. Вторая полоска здесь дублировала её и
+  // заставляла глаз выбирать, на какую смотреть. В текстовом режиме сцены
+  // нет, и здоровье моба показывает текстовая панель своей полоской.
   //
   // Сама картинка — render2d/Scene2D.svelte: фон, спрайты, эффекты и
   // всплывающие числа обычными элементами. Рама про рендер не знает вовсе:
   // в текстовом режиме App ставит на это место текстовую панель.
-  import { formatNumber } from '../game'
   import { gameState } from '../stores/game'
   import Scene2D from '../render2d/Scene2D.svelte'
-  import { StatBar } from './kit'
 </script>
 
 <div class="scene" role="img" aria-label="Боевая сцена: {$gameState.monster.name}">
@@ -19,15 +22,6 @@
       <span class="name">{$gameState.monster.name}</span>
       <span class="level">{$gameState.monster.level} ур.</span>
     </div>
-    <StatBar
-      value={$gameState.monster.currentHp.toNumber()}
-      max={$gameState.monster.maxHp.toNumber()}
-      tone="damage"
-      size="lg"
-      valueLabel="{formatNumber($gameState.monster.currentHp)} / {formatNumber(
-        $gameState.monster.maxHp,
-      )}"
-    />
   </div>
 </div>
 

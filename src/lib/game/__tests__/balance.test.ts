@@ -29,8 +29,9 @@ import {
   type SimResult,
   type SimStyle,
 } from '../simulate'
-import { intendedZone, type ZoneStanding } from '../zones'
+import { forecastZone, intendedZone, type ZoneStanding } from '../zones'
 import {
+  FIGHT_COST_TARGET,
   RESPAWN_DELAY_MS,
   REST_DURATION_S,
   TTK_AHEAD_MIN,
@@ -209,7 +210,9 @@ describe('прогресс монотонный', () => {
     for (let i = paying + 1; i < results.length; i++) {
       expect(results[i].xpPerHour.gt(results[i - 1].xpPerHour), ZONE_SET[i].id).toBe(true)
     }
-  }, 300_000)
+    // Прогноз по всем зонам и уровням — тысячи оценок боя; оценка идёт двумя
+    // проходами (мана с привала, лечение), и на одном ядре тест стоит ~500 с.
+  }, 900_000)
 })
 
 describe('нет доминирующей зоны', () => {
@@ -338,6 +341,56 @@ describe('смертность в подходящей зоне', () => {
       expect(result.deathsPerHour).toBe(0)
     }
   }, 300_000)
+})
+
+describe('оценка сходится с прогоном при любом крите', () => {
+  // ДЕВЯТЬ ЗАМЕРОВ: три уровня × три крита. Модель обязана сходиться с
+  // настоящим прогоном тика не только на природном крите эталонного героя
+  // (там она была откалибрована и сходилась в 5 %), но и без крита вовсе, и
+  // с +25 п.п. сверху: до стадии «крит в потоке» три строки одного уровня
+  // давали ОДИН прогноз при разнице настоящего темпа в 29 % (AUDIT.md, 1.1).
+  // Сравнивается ровно то, что видит игрок: `forecastZone` по пулу зоны против
+  // `simulate` с замороженным уровнем в той же зоне, тем же билдом.
+  const LEVELS = SAMPLE ? [55] : [25, 55, 85]
+  const TOLERANCE = 0.1
+  const HOURS = sampleHours(4)
+  const variants = (natural: number) =>
+    [
+      { name: 'без крита', mods: [critMod(-natural)] },
+      { name: 'свой', mods: [] },
+      { name: '+25 п.п.', mods: [critMod(0.25)] },
+    ] as const
+  const critMod = (value: number) =>
+    ({ stat: 'critChance', kind: 'flat', value: new Decimal(value), source: 'equipment:mainHand' }) as const
+
+  it(`девять замеров уровень × крит расходятся не больше чем на ${TOLERANCE * 100} %`, () => {
+    header(
+      `Оценка против прогона, ${HOURS} ч на клетку, уровень заморожен.`,
+      'уровень  крит          оценка уб/ч   прогон уб/ч   расхождение',
+    )
+    for (const level of LEVELS) {
+      const zone = intendedZone(level)
+      const base = referenceBuild(level)
+      const natural = buildSimState(base, zone.id, CONTRACT_SEED).stats.critChance
+      for (const variant of variants(natural)) {
+        const build: SimBuild = { ...base, extraMods: [...variant.mods] }
+        const state = buildSimState(build, zone.id, CONTRACT_SEED)
+        const estimate = forecastZone(state, zone).killsPerHour.toNumber()
+        const actual = simulate({
+          hours: HOURS,
+          zoneId: zone.id,
+          freezeLevel: true,
+          build,
+          seed: CONTRACT_SEED,
+        }).killsPerHour.toNumber()
+        const diff = (estimate - actual) / actual
+        log(
+          `${String(level).padStart(7)}  ${`${variant.name} (${(state.stats.critChance * 100).toFixed(0)}%)`.padEnd(13)} ${estimate.toFixed(1).padStart(12)} ${actual.toFixed(1).padStart(13)}   ${(diff * 100).toFixed(1).padStart(6)}%`,
+        )
+        expect(Math.abs(diff), `ур. ${level}, ${variant.name}`).toBeLessThanOrEqual(TOLERANCE)
+      }
+    }
+  }, 900_000)
 })
 
 describe('стиль боя', () => {
@@ -687,7 +740,8 @@ describe('ветки талантов', () => {
         // ошибка выбора наказывает дважды.
         expect(spread, cls.id).toBeLessThanOrEqual(branchSpreadLimit)
       },
-      600_000,
+      // Три полных билда на эталоне: ~800 с на одном ядре после двухпроходной оценки.
+      1_200_000,
     )
   }
 
@@ -1028,8 +1082,8 @@ describe('контракт темпа боя', () => {
   // реализацию от подмены.
   // -------------------------------------------------------------------------
   describe('контракт цены боя', () => {
-    const TARGET_MIN = 13
-    const TARGET_MAX = 20
+    const TARGET_MIN = FIGHT_COST_TARGET.min
+    const TARGET_MAX = FIGHT_COST_TARGET.max
     // Допуск ±2 пункта — не послабление, а разрешение измерения. Цена боя это
     // `урон × ЦЕЛОЕ число ударов ÷ запас`: один лишний удар из шести-восьми
     // двигает долю на два-три пункта, а какой именно выпадет — решает длина

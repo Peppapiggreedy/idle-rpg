@@ -191,7 +191,7 @@
   }
   .cost.short {
     color: var(--c-warning);
-    font-weight: 600;
+    font-weight: var(--weight-bold);
   }
   .reason {
     font-size: var(--text-xs);

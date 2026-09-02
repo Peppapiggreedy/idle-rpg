@@ -31,7 +31,6 @@ import {
   REGEN_DELAY_S,
   REGEN_TICK_S,
   REST_HP_THRESHOLD_DEFAULT,
-  REST_RESOURCE_THRESHOLD_DEFAULT,
   LEGACY_V3_SWING_TIME_S,
   OFFLINE_CAP_HOURS,
   OFFLINE_CHUNK_MIN,
@@ -87,7 +86,7 @@ const OFFLINE_LOOT_SALT = 0x9e37_79b9
 /** Все хваты одним списком: сейв принимает только их. */
 const GRIPS: Grip[] = ['one', 'two', 'shield']
 
-export const SAVE_VERSION = 22
+export const SAVE_VERSION = 24
 export const AUTOSAVE_INTERVAL_MS = AUTOSAVE_INTERVAL_S * 1000
 // Потолок оффлайн-прогресса: дольше отсутствовать можно, но не оплачивается.
 export const OFFLINE_CAP_MS = OFFLINE_CAP_HOURS * 60 * 60 * 1000
@@ -190,7 +189,6 @@ export interface SavePayloadV21 {
   // отдохнувшим — это честнее обеих альтернатив.
   heroState: 'alive' | 'dead' | 'resting'
   restHpThreshold: number
-  restResourceThreshold: number
   reviveMsLeft: number
   // Таланты: id -> ранг (обычные числа, не Decimal — рангов единицы).
   talents: Record<string, number>
@@ -220,6 +218,8 @@ export interface SavePayloadV21 {
   itemSeq: number
   totalTicks: string
   playtimeMs: string
+  /** Применённых умений за игру — растущий счётчик, поэтому строкой. */
+  abilityCasts: string
 }
 
 export interface SaveStorage {
@@ -359,7 +359,6 @@ export function payloadFromState(state: GameState, lastTimestamp: number): SaveP
     abilityCooldownsMs,
     regenDelayMsLeft: Math.max(0, state.regenDelayMsLeft),
     restHpThreshold: state.restHpThreshold,
-    restResourceThreshold: state.restResourceThreshold,
     abilitySettings,
     itemSeq: state.itemSeq,
     gold: state.gold.toString(),
@@ -373,6 +372,7 @@ export function payloadFromState(state: GameState, lastTimestamp: number): SaveP
     talentResets: Math.max(0, Math.floor(state.talentResets)),
     totalTicks: state.totalTicks.toString(),
     playtimeMs: state.playtimeMs.toString(),
+    abilityCasts: state.abilityCasts.floor().toString(),
   }
 }
 
@@ -753,6 +753,7 @@ export function stateFromPayload(p: SavePayloadV21): GameState {
         : 0,
     totalTicks: parseDec(p.totalTicks, '0'),
     playtimeMs: parseDec(p.playtimeMs, '0'),
+    abilityCasts: parseDec(p.abilityCasts, '0'),
     inventory: Array.isArray(p.inventory) ? p.inventory.map(itemFromSaved) : [],
     materials: materialsFromSaved(p.materials),
     // Порция, потраченная на прерванный привал, не возвращается: перезагрузка
@@ -809,7 +810,6 @@ export function stateFromPayload(p: SavePayloadV21): GameState {
     restMsLeft: 0,
     restTotalMs: 0,
     restHpThreshold: share(p.restHpThreshold, REST_HP_THRESHOLD_DEFAULT),
-    restResourceThreshold: share(p.restResourceThreshold, REST_RESOURCE_THRESHOLD_DEFAULT),
     restSpeedupSource: null,
   }
   // Поток случайности берём от сида состояния — загрузка детерминированна.
@@ -1144,7 +1144,8 @@ export const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
     ...raw,
     version: 14,
     restHpThreshold: REST_HP_THRESHOLD_DEFAULT,
-    restResourceThreshold: REST_RESOURCE_THRESHOLD_DEFAULT,
+    // Порог по ресурсу здесь больше не заводится: 22 -> 23 его выбрасывает,
+    // а между этими версиями его никто не читает.
   }),
   // 12 -> 13: правило задержки регенерации. У каждого умения появился резерв
   // маны, а у героя — пауза до старта восстановления. Старый герой просыпается
@@ -1269,6 +1270,9 @@ export const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
     }
     return next
   },
+  // Счётчик применённых умений. У старого героя его не было — считаем с
+  // нуля: он нужен отпечатку golden и статистике, прогресса за ним нет.
+  22: (raw) => ({ ...raw, version: 23, abilityCasts: '0' }),
   21: (raw) => {
     // ЗОНЫ ТЕПЕРЬ ОТКРЫВАЮТ ДАНЖИ, а не уровень героя. Поле `unlockRequirement`
     // у зоны исчезло, и «какие зоны открыты» стало ПРОИЗВОДНЫМ от
@@ -1301,6 +1305,15 @@ export const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
       }
     }
     next.unlockedZoneIds = unlocked
+    return next
+  },
+  // 23 -> 24: ПОРОГ ПРИВАЛА ПО РЕСУРСУ СНЕСЁН. Интерфейса у него не было
+  // никогда, значение по умолчанию — ноль, и ни один игрок его не менял:
+  // поле лежало в сейве мёртвым, а экшен в сторе — без кнопки. Выбрасывается
+  // без замены; порог по HP и весь остальной прогресс не трогаются.
+  23: (raw) => {
+    const next: RawSave = { ...raw, version: 24 }
+    delete next.restResourceThreshold
     return next
   },
   0: (raw) => ({

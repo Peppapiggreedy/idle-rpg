@@ -197,6 +197,7 @@ export function strikeWithAbility(
   return {
     ...state,
     monster,
+    abilityCasts: state.abilityCasts.plus(1),
     activeEffects: effect
       ? // Повторное наложение обновляет эффект, а не копит второй такой же.
         [...state.activeEffects.filter((e) => e.abilityId !== ability.id), effect]

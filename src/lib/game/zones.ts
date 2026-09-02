@@ -113,12 +113,15 @@ export interface ZoneRate {
    * смерть с воскрешением. Различает их поле `dies` рядом — из одного только
    * аптайма понять, отдыхает герой или гибнет, нельзя.
    *
-   * Смешанного случая не бывает по построению: цикл упирается либо в порог
-   * привала, либо в смерть, смотря что наступает раньше (см. farmCycle).
+   * Цикл — среднее по сотням боёв: последняя схватка кончается привалом или
+   * смертью с некоторой вероятностью (см. farmCycle), и простой складывается
+   * из обоих. `dies` говорит, что из двух вероятнее.
    */
   uptime: number
-  /** Гибнет ли герой в цикле. Если нет — весь простой аптайма это привалы. */
+  /** Смерть в цикле вероятнее привала. Если нет — простой в основном привалы. */
   dies: boolean
+  /** Смертей в час по модели пула: вероятность гибели цикла на его длину. */
+  deathsPerHour: number
 }
 
 /**
@@ -132,30 +135,41 @@ export interface ZoneRate {
  */
 export function zoneRate(state: GameState, zone: Zone, mode: PlayMode = 'auto'): ZoneRate {
   const variants = zoneMonsterVariants(zone)
-  const n = new Decimal(variants.length)
-  let kills = new Decimal(0)
+  // ТЕМП ЗОНЫ — ЭТО N УБИЙСТВ ЗА СУММУ ЦИКЛОВ, поэтому усредняются ВРЕМЕНА
+  // боёв, а не темпы: спавн выдаёт мобов пула по очереди, и час игры — это
+  // сумма их циклов. Среднее темпов (E[1/c]) выше настоящего 1/E[c] тем
+  // сильнее, чем разнороднее пул; замер против тика: +8 % убийств в час на
+  // стартовых зонах, где мелочь и здоровяк различаются вдвое.
+  let totalCycleSec = new Decimal(0)
+  let killable = 0
   let gold = new Decimal(0)
   let xp = new Decimal(0)
-  let hpLoss = new Decimal(0)
-  let cycleSec = 0
+  // Потеря HP — по времени: сколько герой теряет за секунду боя в среднем по
+  // всей череде, а не по «среднему мобу».
+  let hpLossTime = new Decimal(0)
+  // Цена каждого вида боя отдельно — для смертности смешанного пула.
+  const fightLosses: number[] = []
   for (const template of variants) {
     const rate = estimateCombatRate(facing(state, template), mode)
-    kills = kills.plus(rate.idealKillsPerSecond)
-    gold = gold.plus(rate.idealKillsPerSecond.times(template.goldReward))
+    // Моб, которого герой не пробивает, тянет цикл в бесконечность: убийств
+    // в такой зоне нет вовсе — это и есть «безнадёжно».
+    if (rate.idealKillsPerSecond.lte(0)) {
+      return { killsPerSecond: new Decimal(0), goldPerSecond: new Decimal(0), xpPerSecond: new Decimal(0), uptime: 0, dies: true, deathsPerHour: 0 }
+    }
+    const cycleSec = new Decimal(1).div(rate.idealKillsPerSecond)
+    totalCycleSec = totalCycleSec.plus(cycleSec)
+    killable += 1
+    gold = gold.plus(template.goldReward)
     // Штраф за отставание — ПО КАЖДОМУ мобу отдельно, а не по зоне целиком:
     // внутри одной зоны пять уровней мобов, и на границе штрафа половина пула
     // может считаться полным опытом, а половина — половинным. Золото рядом
     // идёт без штрафа: он бьёт только по опыту.
-    xp = xp.plus(
-      rate.idealKillsPerSecond
-        .times(template.xpReward)
-        .times(xpGapShare(state.level.toNumber(), template.level)),
-    )
-    hpLoss = hpLoss.plus(rate.hpLossPerSecond)
-    cycleSec += rate.idealKillsPerSecond.gt(0)
-      ? new Decimal(1).div(rate.idealKillsPerSecond).toNumber()
-      : 0
+    xp = xp.plus(template.xpReward.times(xpGapShare(state.level.toNumber(), template.level)))
+    hpLossTime = hpLossTime.plus(rate.hpLossPerSecond.times(cycleSec))
+    fightLosses.push(rate.hpLossPerSecond.times(cycleSec).toNumber())
   }
+  const meanCycleSec = totalCycleSec.div(killable)
+  const idealKills = new Decimal(1).div(meanCycleSec)
   // Привал — часть цикла зоны: герой не умирает, а отдыхает, и это время
   // тоже не приносит золота. Модель обязана его вычесть, иначе оффлайн
   // пообещает больше живой игры.
@@ -165,18 +179,20 @@ export function zoneRate(state: GameState, zone: Zone, mode: PlayMode = 'auto'):
   // Порог берётся из конвейера (настройка плюс таланты), а не сырым полем.
   const cycle = farmCycle({
     maxHp: state.stats.maxHp,
-    lossPerSecond: hpLoss.div(n),
-    cycleSec: cycleSec / variants.length,
+    lossPerSecond: hpLossTime.div(totalCycleSec),
+    cycleSec: meanCycleSec.toNumber(),
     hpThreshold: state.stats.restThreshold,
     restSec: restDurationMs(state) / 1000,
+    fightLosses,
   })
   const uptime = cycle.uptime
   return {
-    killsPerSecond: kills.div(n).times(uptime),
-    goldPerSecond: gold.div(n).times(uptime),
-    xpPerSecond: xp.div(n).times(uptime),
+    killsPerSecond: idealKills.times(uptime),
+    goldPerSecond: gold.div(totalCycleSec).times(uptime),
+    xpPerSecond: xp.div(totalCycleSec).times(uptime),
     uptime,
     dies: cycle.dies,
+    deathsPerHour: cycle.cycleSec > 0 ? (cycle.deathChance * 3600) / cycle.cycleSec : 0,
   }
 }
 
