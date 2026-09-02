@@ -28,10 +28,11 @@ jobs:
       - name: Типы
         run: npm run check
 
-      # Исключения те же, что у `npm run test`: обгон зон и кран золота
-      # идут ниже, в полной матрице, — здесь они шли бы второй раз.
+      # Список исключений один на всех — в `npm run test:unit`. Выписанный
+      # руками, он разъезжался: обгон зон, кран золота и бюджет силы идут
+      # ниже, в полной матрице, и здесь шли бы второй раз.
       - name: Юниты и golden
-        run: npx vitest run --exclude "src/lib/game/__tests__/balance.test.ts" --exclude "src/lib/game/__tests__/run.test.ts" --exclude "src/lib/game/level-gap.test.ts" --exclude "src/lib/game/__tests__/gold.test.ts"
+        run: npm run test:unit
 
       # ПОЛНАЯ матрица: двадцать зон, пять уровней, оба класса. И ПОЛНЫЙ ПУТЬ
       # ПО ТРЁМ СИДАМ (RUN_ALL_SEEDS): путь зависит от ранней рулетки находок,
