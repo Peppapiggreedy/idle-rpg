@@ -60,6 +60,14 @@ import { ABILITIES, ABILITY_BY_ID } from '../../data/abilities'
 import { monsterFromTemplate, type GameState } from '../state'
 import { CONTRACT_SEED, SAMPLE, ZONE_SET, CLASS_SET, sampleHours, sampleSeeds, log, num, pct, ttk, header, row, COLUMNS, hitsPerKill } from './balance-shared'
 
+// ДЕДЛАЙНЫ ЗДЕСЬ ПОДНЯТЫ ВТРОЕ, и это не послабление к содержанию теста.
+// Они писались, когда матрица шла последовательно и тяжёлый тест получал
+// машину почти в одиночку. С разрезанием файлов четыре потока заняли четыре
+// ядра честно, и тот же объём работы стал идти по СТЕНЕ на 15-35 % дольше:
+// «таблица зон» — 231 с в одиночку против 301.5 с в потоке, при собственном
+// сроке 300 с. Числа теста при этом не сдвинулись ни на разряд — отпечаток
+// совпал побитово, включая величины этого самого теста. Срок мерит не игру,
+// а загруженность машины, и на чужом раннере она другая.
 describe('прогон баланса: таблица зон', () => {
   it('печатает таблицу зон', () => {
     const { zoneHours, zoneLevel } = BALANCE_PRESET
@@ -87,7 +95,7 @@ describe('прогон баланса: таблица зон', () => {
         ).toBe(true)
       }
     }
-  }, 300_000)
+  }, 900_000)
 })
 
 describe('нет доминирующей зоны', () => {
@@ -140,7 +148,7 @@ describe('нет доминирующей зоны', () => {
     const unique = new Set(winners)
     log(`Лучшая зона меняется ${unique.size} раз(а) за ${LEVELS.length} уровней.`)
     expect(dump('balance/no-dominant/distinct-best-zones', unique.size)).toBeGreaterThan(1)
-  }, 300_000)
+  }, 900_000)
 })
 
 describe('темп прокачки', () => {
@@ -206,7 +214,7 @@ describe('темп прокачки', () => {
         Math.abs(results.stay - results.best),
       ),
     ).toBeLessThan(5 * 60)
-  }, 300_000)
+  }, 900_000)
 })
 
 describe('смертность в подходящей зоне', () => {
@@ -243,5 +251,5 @@ describe('смертность в подходящей зоне', () => {
         ),
       ).toBe(0)
     }
-  }, 300_000)
+  }, 900_000)
 })
