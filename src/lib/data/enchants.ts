@@ -75,6 +75,15 @@ export const ENCHANT_FLAT_STATS: readonly StatId[] = [
   'restThreshold',
 ]
 
+// СИЛА ЗАЧАРОВАНИЙ ПОДНЯТА В ПОЛТОРА РАЗА (третья ночь, стадия 4: бюджет
+// силы). Все восемь чисел умножены на 1.5 разом — это одна ручка одной
+// системы, а не восемь отдельных решений. Замер эталонным Стражем сотого
+// уровня: зачарования на всех слотах давали ×1.107 темпа убийств при
+// коридоре бюджета 1.15-1.35, то есть система стоила дешевле, чем ей
+// отведено. После правки — ×1.16 (таблица в power-budget.test.ts).
+//
+// Пыль на зачарования при этом не подорожала: цена — про то, сколько их
+// успеваешь наложить, а коридор — про то, сколько они дают.
 export const ENCHANTS: EnchantDef[] = [
   // --- Руки ---
   {
@@ -84,7 +93,7 @@ export const ENCHANTS: EnchantDef[] = [
     tagline: 'Оружие бьёт тяжелее: сила атаки растёт вместе с героем.',
     slots: ['mainHand'],
     dustCost: 120,
-    mods: [{ stat: 'attackPower', kind: 'percent', value: new Decimal(0.08) }],
+    mods: [{ stat: 'attackPower', kind: 'percent', value: new Decimal(0.12) }],
   },
   {
     id: 'wind-notch',
@@ -96,7 +105,7 @@ export const ENCHANTS: EnchantDef[] = [
     tagline: 'Замах короче: +5% скорости обеим рукам.',
     slots: ['mainHand', 'offHand'],
     dustCost: 120,
-    mods: [{ stat: 'haste', kind: 'flat', value: new Decimal(0.05) }],
+    mods: [{ stat: 'haste', kind: 'flat', value: new Decimal(0.075) }],
   },
   {
     id: 'wall-oath',
@@ -106,8 +115,8 @@ export const ENCHANTS: EnchantDef[] = [
     slots: ['offHand'],
     dustCost: 90,
     mods: [
-      { stat: 'blockValue', kind: 'percent', value: new Decimal(0.3) },
-      { stat: 'blockChance', kind: 'flat', value: new Decimal(0.03) },
+      { stat: 'blockValue', kind: 'percent', value: new Decimal(0.45) },
+      { stat: 'blockChance', kind: 'flat', value: new Decimal(0.045) },
     ],
   },
 
@@ -120,7 +129,7 @@ export const ENCHANTS: EnchantDef[] = [
     tagline: '+6% силы: прямая прибавка к удару.',
     slots: ['head', 'chest', 'hands', 'legs', 'trinket'],
     dustCost: 70,
-    mods: [{ stat: 'strength', kind: 'percent', value: new Decimal(0.06) }],
+    mods: [{ stat: 'strength', kind: 'percent', value: new Decimal(0.09) }],
   },
   {
     id: 'light-tread',
@@ -129,7 +138,7 @@ export const ENCHANTS: EnchantDef[] = [
     tagline: '+6% ловкости: скорость и криты.',
     slots: ['head', 'chest', 'hands', 'legs', 'trinket'],
     dustCost: 70,
-    mods: [{ stat: 'agility', kind: 'percent', value: new Decimal(0.06) }],
+    mods: [{ stat: 'agility', kind: 'percent', value: new Decimal(0.09) }],
   },
   {
     id: 'clear-sight',
@@ -138,7 +147,7 @@ export const ENCHANTS: EnchantDef[] = [
     tagline: '+6% интеллекта: запас ресурса и его восстановление.',
     slots: ['head', 'chest', 'hands', 'legs', 'trinket'],
     dustCost: 70,
-    mods: [{ stat: 'intellect', kind: 'percent', value: new Decimal(0.06) }],
+    mods: [{ stat: 'intellect', kind: 'percent', value: new Decimal(0.09) }],
   },
   {
     id: 'stone-core',
@@ -147,7 +156,7 @@ export const ENCHANTS: EnchantDef[] = [
     tagline: '+6% живучести: запас здоровья и его восстановление.',
     slots: ['head', 'chest', 'hands', 'legs', 'trinket'],
     dustCost: 70,
-    mods: [{ stat: 'vitality', kind: 'percent', value: new Decimal(0.06) }],
+    mods: [{ stat: 'vitality', kind: 'percent', value: new Decimal(0.09) }],
   },
 ]
 

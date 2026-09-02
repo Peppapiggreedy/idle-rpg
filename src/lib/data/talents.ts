@@ -210,10 +210,14 @@ const BLEED: AbilityEffect = {
 // платит не ими, а тремя концептуальными талантами на 21-м, 41-м и 61-м очке.
 const WARDEN_WRATH = branch('warden-wrath', [
   {
+    // 0.027 ВМЕСТО 0.02 (третья ночь, стадия 4: бюджет силы) — здесь и у
+    // 'wrath-heavy-swing', двух процентных талантов силы атаки в ветке.
+    // 91 очко в лучшей ветке давало ×1.433 темпа при коридоре бюджета
+    // 1.45-1.75: ветка стоила дешевле, чем ей отведено. После правки ×1.46.
     id: 'wrath-honed-edge',
     name: 'Отточенный клинок',
     icon: 'talent-honed-edge',
-    effect: mods(m('attackPower', 'percent', 0.02)),
+    effect: mods(m('attackPower', 'percent', 0.027)),
   },
   {
     id: 'wrath-keen-eye',
@@ -283,7 +287,7 @@ const WARDEN_WRATH = branch('warden-wrath', [
     id: 'wrath-heavy-swing',
     name: 'Мощь замаха',
     icon: 'talent-honed-edge',
-    effect: mods(m('attackPower', 'percent', 0.02)),
+    effect: mods(m('attackPower', 'percent', 0.027)),
   },
   {
     id: 'wrath-light-blade',
