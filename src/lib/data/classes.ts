@@ -109,7 +109,7 @@ export const CLASSES: ClassDef[] = [
       decayShare: new Decimal(0),
     },
     baseMods: [],
-    abilityIds: ['quick-strike', 'rending-wound', 'shattering-blow'],
+    abilityIds: ['quick-strike', 'rending-wound', 'mend-wounds', 'shattering-blow'],
     branchIds: ['warden-wrath', 'warden-bulwark', 'warden-vigil'],
     // ОДНА БЕЛАЯ ВЕЩЬ И БОЛЬШЕ НИЧЕГО — см. комментарий у изувера ниже.
     startingEquipment: [{ slot: 'mainHand', templateId: 'bastard', kind: 'weapon', rarity: 'common' }],

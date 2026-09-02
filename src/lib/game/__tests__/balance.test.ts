@@ -31,6 +31,7 @@ import {
 } from '../simulate'
 import { forecastZone, intendedZone, type ZoneStanding } from '../zones'
 import {
+  FIGHT_COST_NET_TARGET,
   FIGHT_COST_TARGET,
   RESPAWN_DELAY_MS,
   REST_DURATION_S,
@@ -52,9 +53,9 @@ import {
 } from '../../data/zones'
 import { ONE_HANDED, WEAPONS } from '../../data/items'
 import { BRANCHES, type BranchDef, type BranchStyle } from '../../data/talents'
-import { DEFAULT_CLASS } from '../../data/classes'
+import { DEFAULT_CLASS, classById } from '../../data/classes'
 import { classIt, contractClasses } from './class-set'
-import { ABILITY_BY_ID } from '../../data/abilities'
+import { ABILITIES, ABILITY_BY_ID } from '../../data/abilities'
 import { monsterFromTemplate, type GameState } from '../state'
 
 /** Сид контракта цены боя: контракт обязан быть воспроизводимым до числа. */
@@ -1099,19 +1100,27 @@ describe('контракт темпа боя', () => {
     // Появится второй промах — тест упадёт, и это правильно.
     const OUTLIERS_ALLOWED = 1
 
-    /** Доля запаса, теряемая за ОДИН бой (без паузы респауна), в процентах. */
-    const lossShare = (state: GameState, zone: Zone): number => {
+    /**
+     * Доля запаса, теряемая за ОДИН бой (без паузы респауна), в процентах.
+     * `net` — после лечения умением, иначе валовая: счёт моба до того, как
+     * герой оплатил его маной.
+     */
+    const lossShareOf = (state: GameState, zone: Zone, net: boolean): number => {
       const facing = { ...state, monster: monsterFromTemplate(representativeMonster(zone)) }
       const rate = estimateCombatRate(facing)
       if (rate.idealKillsPerSecond.lte(0)) return Number.POSITIVE_INFINITY
       const cycleSec = new Decimal(1).div(rate.idealKillsPerSecond)
-      return rate.hpLossPerSecond
+      return (net ? rate.hpLossPerSecond : rate.grossHpLossPerSecond)
         .times(cycleSec)
         // Пауза респауна к бою не относится: за неё платит не схватка.
         .plus(facing.stats.hpRegenOutOfCombat.times(RESPAWN_DELAY_MS / 1000))
         .div(facing.stats.maxHp)
         .toNumber() * 100
     }
+    // ВАЛОВАЯ цена — то, что снимает моб, до лечения умением: лечение
+    // оплачивается маной и меняет не счёт, а то, чем он покрыт. На ней и
+    // стоит контракт.
+    const lossShare = (state: GameState, zone: Zone): number => lossShareOf(state, zone, false)
 
     // Меряется ВХОД в зону: уровень, с которого игра в неё приводит. Внутри
     // зоны доля падает сама — герой растёт пять уровней, мобы стоят на месте.
@@ -1174,6 +1183,51 @@ describe('контракт темпа боя', () => {
         const mean = shares.reduce((a, r) => a + r.share, 0) / shares.length
         expect(mean).toBeGreaterThanOrEqual(TARGET_MIN)
         expect(mean).toBeLessThanOrEqual(TARGET_MAX)
+      })
+
+      // ВТОРОЕ ЧИСЛО ТОЙ ЖЕ СХВАТКИ — цена НЕТТО, после лечения умением.
+      // Проверяется здесь только то, что и должно быть железным: лечение
+      // цену не поднимает. Коридор нетто (FIGHT_COST_NET_TARGET) — мягкий,
+      // он зависит от запаса маны и настроек автокаста, то есть от решений
+      // игрока; выход за него ПЕЧАТАЕТСЯ предупреждением и попадает в отчёт
+      // ночи, но прогон не роняет — иначе данные мобов пришлось бы крутить
+      // ради чужой ручки.
+      cit('цена боя нетто: лечение не поднимает счёт, коридор — предупреждением', () => {
+        const rows = entries.map(({ zone, level }) => {
+          const state = stateFor(level, classId, 0)
+          return {
+            zone: zone.id,
+            level,
+            gross: lossShareOf(state, zone, false),
+            net: lossShareOf(state, zone, true),
+          }
+        })
+        const mean = rows.reduce((a, r) => a + r.net, 0) / rows.length
+        log(
+          `${classId}: цена боя нетто ${Math.min(...rows.map((r) => r.net)).toFixed(1)}-` +
+            `${Math.max(...rows.map((r) => r.net)).toFixed(1)}%, в среднем ${mean.toFixed(1)}% ` +
+            `(валовая в среднем ${(rows.reduce((a, r) => a + r.gross, 0) / rows.length).toFixed(1)}%).`,
+        )
+        for (const row of rows) {
+          expect(row.net, `${classId}, ур. ${row.level}, ${row.zone}`).toBeLessThanOrEqual(
+            row.gross + 1e-9,
+          )
+        }
+        // У КЛАССА БЕЗ ЛЕЧЕНИЯ нетто равно валовой по построению, и мягкий
+        // коридор к нему не относится: его цену держит контракт выше. Иначе
+        // предупреждение висело бы вечно и перестало значить что-либо.
+        const healer = ABILITIES.some(
+          (a) => a.heal && classById(classId).abilityIds.includes(a.id),
+        )
+        if (!healer) {
+          log(`${classId}: лечения у класса нет — нетто равно валовой, коридор не применяется.`)
+        } else if (mean < FIGHT_COST_NET_TARGET.min || mean > FIGHT_COST_NET_TARGET.max) {
+          // eslint-disable-next-line no-console
+          console.warn(
+            `[предупреждение] ${classId}: средняя цена боя нетто ${mean.toFixed(1)}% вне ` +
+              `мягкого коридора ${FIGHT_COST_NET_TARGET.min}-${FIGHT_COST_NET_TARGET.max}%.`,
+          )
+        }
       })
 
       cit('снаряжение ЛУЧШЕ эталона теряет меньше, ХУЖЕ эталона — больше', () => {

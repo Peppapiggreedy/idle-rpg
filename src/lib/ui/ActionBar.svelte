@@ -81,7 +81,9 @@
     const parts = [
       `${ability.name} (${hotkey(index)})`,
       `${formatNumber(ability.manaCost)} ${resource.genitive} · кулдаун ${ability.cooldownSec}с`,
-      `Урон: ${Math.round(ability.weaponDamagePercent.toNumber() * 100)}% удара оружия ≈ ${formatNumber(expectedAbilityDamage($gameState.stats, ability.weaponDamagePercent))}`,
+      ability.heal
+        ? `Лечит: ${Math.round(ability.heal.maxHpShare.toNumber() * 100)}% запаса ≈ ${formatNumber($gameState.stats.maxHp.times(ability.heal.maxHpShare))} здоровья. Автокаст жмёт при здоровье ниже ${Math.round(ability.heal.autocastBelowHpShare * 100)}%.`
+        : `Урон: ${Math.round(ability.weaponDamagePercent.toNumber() * 100)}% удара оружия ≈ ${formatNumber(expectedAbilityDamage($gameState.stats, ability.weaponDamagePercent))}`,
       ability.type === 'onNextSwing'
         ? `Заменяет следующую автоатаку; ${resource.genitive} спишется в момент удара. Нажми ещё раз — снимется.`
         : 'Бьёт сразу, тратит общую задержку. Замах автоатаки не сбивает.',

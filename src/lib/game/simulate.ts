@@ -42,7 +42,13 @@ import { ABILITIES, ABILITY_BY_ID } from '../data/abilities'
 import { RARITY_BY_ID, TYPICAL_RARITY } from '../data/rarity'
 import { ARMOR_NOUNS, ONE_HANDED, SHIELDS, WEAPONS, WEAPON_BY_ID } from '../data/items'
 import { SLOT_IDS, type SlotId } from '../data/slots'
-import { SAFE_ZONE, ZONES, averageMonsterLevel, zoneForMonsterLevel } from '../data/zones'
+import {
+  SAFE_ZONE,
+  ZONES,
+  averageMonsterLevel,
+  zoneForMonsterLevel,
+  type Zone,
+} from '../data/zones'
 import { BRANCHES, talentsInBranch, type BranchId } from '../data/talents'
 import { DUNGEONS } from '../data/dungeons'
 import { DEFAULT_CLASS, classById } from '../data/classes'
@@ -780,12 +786,47 @@ function killObserved(prev: GameState, next: GameState): boolean {
  * своей, в которой прогноз не находит смерти. Если таких нет — безопасную.
  */
 
-function playerZoneId(state: GameState, level: number): string {
+/**
+ * Лестница, по которой идёт модель игрока: открытые зоны не глубже своей
+ * полосы, от мелкой к глубокой. ОДИН список на два решения — куда переезжать
+ * и подо что одеваться. Разъедься они, и герой одевался бы под одну зону,
+ * а шёл в другую.
+ */
+export function reachableZones(state: GameState, level: number): Zone[] {
   const own = zoneForMonsterLevel(level)
-  const reachable = ZONES.filter(
+  return ZONES.filter(
     (zone) =>
       isZoneUnlocked(state, zone) && zone.monsterLevelRange.max <= own.monsterLevelRange.max,
   )
+}
+
+/**
+ * ЗОНА, КУДА ГЕРОЙ СОБИРАЕТСЯ, — следующая ступень лестницы за той, где он
+ * стоит; стоит на последней — она же и есть.
+ *
+ * Ради неё вся стадия. `equipUpgrades` оценивал находку по темпу В ТЕКУЩЕЙ
+ * зоне, а текущая — это та, куда `playerZoneId` пустил героя, то есть
+ * заведомо безопасная. Там живучесть не стоит НИЧЕГО: герой не гибнет и без
+ * неё, аптайм единица, и нагрудник с живучестью проигрывает любой тряпке с
+ * силой атаки. Итог замкнутый: слабые вещи → глубже нельзя → находки
+ * отстают → вещи ещё слабее. На сиде 4242 герой приходил на десятый уровень
+ * с 309 HP в семи вещах без единой живучести и досиживал на лугу до
+ * двенадцатого.
+ *
+ * Живой игрок так не делает: он надевает панцирь, потому что «пригодится
+ * дальше». «Дальше» — это ровно следующая ступень, и оценка идёт по ней.
+ * Второй метрики при этом не заводится: та же `estimateCombatRate`, другой
+ * аргумент зоны.
+ */
+export function aimZoneId(state: GameState, level: number): string {
+  const ladder = reachableZones(state, level)
+  const here = ladder.findIndex((zone) => zone.id === state.currentZoneId)
+  if (here < 0) return ladder.length > 0 ? ladder[ladder.length - 1].id : state.currentZoneId
+  return ladder[here + 1]?.id ?? state.currentZoneId
+}
+
+export function playerZoneId(state: GameState, level: number): string {
+  const reachable = reachableZones(state, level)
   const alive = reachable.filter((zone) => {
     const rate = zoneRate(state, zone)
     return !rate.dies && rate.deathsPerHour < RUN_PLAYER_DEATH_TOLERANCE_PER_HOUR
@@ -1027,13 +1068,21 @@ export function simulate(options: SimOptions): SimResult {
  * вещи: в игре решение принимает человек, и отнимать его — значит вернуть
  * автонадевание через заднюю дверь.
  */
-export function equipUpgrades(state: GameState): GameState {
+export function equipUpgrades(state: GameState, aimZone?: string): GameState {
   let next = state
   // По одному предмету за проход: надевание меняет статы, и следующая вещь
   // сравнивается уже с новым набором.
   for (let guard = 0; guard < SLOT_IDS.length + 1; guard += 1) {
+    // ОЦЕНКА ИДЁТ ПРОТИВ ЗОНЫ, КУДА ГЕРОЙ СОБИРАЕТСЯ (aimZoneId), а не той, где
+    // он стоит: подробности у самой aimZoneId. Подменяется РОВНО зона —
+    // `upgradeShare` берёт из состояния `currentZoneId` и по нему выбирает
+    // моба; всё остальное (статы, сумка, уровень) то же самое. Не задана —
+    // текущая, как было: так эту функцию зовут пресеты и тесты стартового
+    // комплекта, и им нужна оценка «здесь и сейчас».
+    const facing =
+      aimZone && aimZone !== next.currentZoneId ? { ...next, currentZoneId: aimZone } : next
     const candidates = next.inventory
-      .map((item) => ({ item, share: upgradeShare(next, item) }))
+      .map((item) => ({ item, share: upgradeShare(facing, item) }))
       .filter((c): c is { item: Item; share: number } => c.share !== null)
       .sort((a, b) => b.share - a.share)
     // ОТКАЗ ПО ОДНОЙ ВЕЩИ — НЕ КОНЕЦ РАЗБОРА. Раньше проход брал ровно
@@ -1168,7 +1217,9 @@ export function simulateRun(options: RunOptions = {}): RunResult {
     // он туда, только когда в ней ЧТО-ТО ИЗМЕНИЛОСЬ: разбирать неизменившуюся
     // сумку каждый тик — это не только не про игру, но и минуты машинного
     // времени на прогон, потому что каждая примерка гоняет оценку боя.
-    if (state.inventory !== prev.inventory) state = equipUpgrades(state)
+    if (state.inventory !== prev.inventory) {
+      state = equipUpgrades(state, aimZoneId(state, state.level.toNumber()))
+    }
 
     if (state.level.gt(prev.level)) {
       const reached = state.level.toNumber()

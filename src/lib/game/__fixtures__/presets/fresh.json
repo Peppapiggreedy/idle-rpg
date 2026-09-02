@@ -1,5 +1,5 @@
 {
-  "version": 24,
+  "version": 25,
   "classId": "warden",
   "materials": {},
   "activePotions": [],
@@ -67,6 +67,7 @@
   "abilityCooldownsMs": {},
   "regenDelayMsLeft": 0,
   "restHpThreshold": 0.6,
+  "holdManaForHeal": true,
   "abilitySettings": {
     "quick-strike": {
       "autocast": true,
@@ -78,9 +79,14 @@
       "priority": 1,
       "reserve": 0
     },
-    "shattering-blow": {
+    "mend-wounds": {
       "autocast": true,
       "priority": 2,
+      "reserve": 0
+    },
+    "shattering-blow": {
+      "autocast": true,
+      "priority": 3,
       "reserve": 0
     }
   },

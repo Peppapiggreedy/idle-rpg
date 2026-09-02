@@ -54,6 +54,19 @@ export interface RotationRate {
 }
 
 /**
+ * Каст, темп которого задан СНАРУЖИ, а не кулдауном: лечение жмётся не «как
+ * только откатилось», а когда здоровье просело, и сколько раз за цикл — знает
+ * модель цикла в combat.ts. Ротация только оплачивает его маной: первым, до
+ * боевых умений, — выжить стоит выше урона.
+ */
+export interface FixedCast {
+  ability: AbilityDef
+  castsPerSecond: number
+}
+
+const NO_MANA = new Decimal(0)
+
+/**
  * ПРИВАЛ НАЛИВАЕТ ЗАПАС ДО ПОЛНОГО, и ротация обязана это знать. Модель
  * маны сама по себе считает только регенерацию с её паузами и обещала
  * герою три четверти его кастов; настоящий тик жал умения почти по
@@ -106,14 +119,27 @@ export function rotationRate(
   pauseSec: number = stats.regenDelay + REGEN_TICK_S / 2,
   /** Сколько боя приходится на один полный запас с привала; null — без привалов. */
   refill: RestRefill | null = null,
+  /** Касты с заданным снаружи темпом (лечение) — оплачиваются первыми. */
+  fixed: FixedCast[] = [],
+  /** Сколько маны боевые умения оставляют нетронутой («беречь на лечение»). */
+  reserveMana: Decimal = NO_MANA,
 ): RotationRate {
-  const rate = castPlan(stats, settings, plan, income, pauseSec, refill)
+  const rate = castPlan(stats, settings, plan, income, pauseSec, refill, fixed, reserveMana)
   if (plan.delayed) return rate
   // Игрок в ЛЮБОЙ момент может повторить то, что делает автокаст: подождать
   // и ударить позже. Значит игра руками не бывает хуже авто. Когда мана
   // впритык, реже бить иногда выгоднее — тогда рука повторяет план авто.
   // Это не поблажка руке, а определение: ручная игра — лучшая из доступных.
-  const delayed = castPlan(stats, settings, { ...plan, delayed: true }, income, pauseSec, refill)
+  const delayed = castPlan(
+    stats,
+    settings,
+    { ...plan, delayed: true },
+    income,
+    pauseSec,
+    refill,
+    fixed,
+    reserveMana,
+  )
   return rate.damagePerSecond.gte(delayed.damagePerSecond) ? rate : delayed
 }
 
@@ -149,6 +175,7 @@ function dutyCycle(
   income: Decimal,
   pauseSec: number,
   refill: RestRefill | null,
+  reserveMana: Decimal,
 ): Decimal {
   const spend = desired.manaPerSecond
   if (spend.lte(0)) return new Decimal(1)
@@ -175,8 +202,10 @@ function dutyCycle(
   const cheapest = desired.casts
     .filter((c) => c.ability.manaCost.gt(0))
     .reduce((min, c) => Decimal.min(min, c.ability.manaCost), stats.maxMana)
+  // Резерв под лечение тоже отрезает глубину всплеска: до него боевые умения
+  // запас не выжигают.
   const depth = Decimal.max(
-    stats.maxMana.times(Math.max(0, 1 - floor)).minus(cheapest),
+    stats.maxMana.times(Math.max(0, 1 - floor)).minus(cheapest).minus(reserveMana),
     new Decimal(0),
   )
   const burst = depth.lte(0)
@@ -207,12 +236,14 @@ function castPlan(
   income: Decimal,
   pauseSec: number,
   refill: RestRefill | null,
+  fixed: FixedCast[],
+  reserveMana: Decimal,
 ): RotationRate {
   // Сперва — чего ротация хочет, если о мане не думать: это упирается в
   // кулдауны, GCD и очередь замаха. Потом — сколько из этого выдерживает
   // ресурс с правилом задержки и запасом с привала.
-  const desired = fundPlan(stats, settings, plan, UNLIMITED_MANA)
-  const duty = dutyCycle(stats, settings, desired, income, pauseSec, refill)
+  const desired = fundPlan(stats, settings, plan, UNLIMITED_MANA, fixed)
+  const duty = dutyCycle(stats, settings, desired, income, pauseSec, refill, reserveMana)
   if (duty.gte(1)) return desired
   // Долю применяем ко ВСЕЙ ротации разом, а не отдаём бюджет по приоритету.
   // Так герой и играет: жмёт всё, что доступно, а когда запас кончился —
@@ -241,6 +272,7 @@ function fundPlan(
   settings: AbilitySettings,
   plan: RotationPlan,
   budget: Decimal,
+  fixed: FixedCast[],
 ): RotationRate {
   const delaySec = plan.delayed ? AUTOCAST_DELAY_MS / 1000 : 0
   let manaBudget = budget
@@ -253,7 +285,30 @@ function fundPlan(
   let damage = new Decimal(0)
   let manaSpent = new Decimal(0)
 
+  // Касты с заданным темпом оплачиваются ПЕРВЫМИ: лечение — это «выжить»,
+  // и боевые умения получают то, что осталось. Урона у них нет, зато каждая
+  // трата взводит паузу регенерации, как и у боевых.
+  for (const { ability, castsPerSecond } of fixed) {
+    if (castsPerSecond <= 0) continue
+    const manaWanted = ability.manaCost.times(castsPerSecond)
+    const share = manaWanted.lte(manaBudget)
+      ? new Decimal(1)
+      : Decimal.max(manaBudget, new Decimal(0)).div(manaWanted)
+    if (share.lte(0)) continue
+    manaBudget = manaBudget.minus(manaWanted.times(share))
+    manaSpent = manaSpent.plus(manaWanted.times(share))
+    casts.push({
+      ability,
+      castsPerSecond: share.times(castsPerSecond).toNumber(),
+      hitDamage: new Decimal(0),
+      totalDamage: new Decimal(0),
+    })
+  }
+
   for (const ability of abilitiesByPriority(settings, plan.onlyAutocast)) {
+    // Лечение жмётся не по кулдауну, а по здоровью — его темп приходит
+    // снаружи (fixed), здесь оно пропускается.
+    if (ability.heal) continue
     // Цикл каста: кулдаун плюс задержка реакции. У руки задержки нет.
     // Умение «на следующий удар» вдобавок ЖДЁТ замаха: нажатие ставит его в
     // очередь, а бьёт оно, когда дойдёт черёд. В среднем это ползамаха

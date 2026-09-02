@@ -21,6 +21,7 @@ export const ICONS = {
   'ability-quick-strike': { file: 'delapouite/sword-brandish.svg', author: 'Delapouite' },
   'ability-rending-wound': { file: 'lorc/bleeding-wound.svg', author: 'Lorc' },
   'ability-shattering-blow': { file: 'lorc/hammer-drop.svg', author: 'Lorc' },
+  'ability-mend-wounds': { file: 'delapouite/first-aid-kit.svg', author: 'Delapouite' },
   'ability-gut-rip': { file: 'delapouite/cleaver.svg', author: 'Delapouite' },
   'ability-blood-frenzy': { file: 'lorc/fire-punch.svg', author: 'Lorc' },
   'ability-skull-splitter': { file: 'lorc/battle-axe.svg', author: 'Lorc' },

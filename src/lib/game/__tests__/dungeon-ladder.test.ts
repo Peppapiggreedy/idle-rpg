@@ -10,7 +10,8 @@
 // входящий урон — из expectedMonsterDamage, ярость — из enrageMultiplier.
 // Иначе тест мерил бы не ту игру, в которую играют.
 import { describe, expect, it } from 'vitest'
-import { RESPAWN_DELAY_MS } from '../../data/balance'
+import { AUTOCAST_DELAY_MS, GCD_MS, RESPAWN_DELAY_MS } from '../../data/balance'
+import { autocastHeal } from '../abilities'
 import {
   ALL_DUNGEONS,
   DUNGEONS,
@@ -106,6 +107,7 @@ function runChain(state: GameState, bosses: BossDef[], dpsShare = 1): ChainResul
   const regen = state.stats.hpRegen.toNumber()
   let seconds = 0
   let worstEnrageRatio = 0
+  let lowest = 1
   const costShares: number[] = []
   for (const boss of bosses) {
     const monster = monsterFromTemplate(buildBoss(boss))
@@ -115,11 +117,64 @@ function runChain(state: GameState, bosses: BossDef[], dpsShare = 1): ChainResul
     const fight = Math.max(0, cycle - RESPAWN_DELAY_MS / 1000) / dpsShare
     const incoming = expectedMonsterDamage(monster, state.stats, state.level.toNumber()).toNumber() / boss.swingTime
     const loss = incoming * averageEnrage(boss, fight) - regen
-    costShares.push((Math.max(0, loss) * fight) / maxHp)
+    // ЛЕЧЕНИЕ ЗА СХВАТКУ — ПО ВРЕМЕННОЙ ЛИНИИ, а не суммой. Босса губит не
+    // сумма потерь, а ПРОВАЛ: лечение приходит с задержкой реакции и после
+    // глобального кулдауна, и между лечениями запас успевает уйти в ноль, хотя
+    // суммарно вылечено больше, чем снято. Схватка начинается с полного
+    // запаса (между боссами привал); порог пересекается по ходу, лечение
+    // повторяется через откат, когда запас снова ниже порога. Сверка с тиком
+    // (первый босс первого тира): тик 73 %, линия 72 %.
+    const heal = autocastHeal(state)
+    const grossShare = (Math.max(0, loss) * fight) / maxHp
+    const line = healLine({
+      fightSec: fight,
+      lossShare: grossShare,
+      heal: heal?.heal ? { share: heal.heal.maxHpShare.toNumber(), below: heal.heal.autocastBelowHpShare, cooldownSec: heal.cooldownSec } : null,
+    })
+    costShares.push(line.cost)
+    lowest = Math.min(lowest, line.lowest)
     seconds += fight
     worstEnrageRatio = Math.max(worstEnrageRatio, fight / boss.enrageAfterSec)
   }
-  return { hpLeftShare: 1 - Math.max(...costShares), costShares, worstEnrageRatio, seconds }
+  // Запас — по САМОМУ ГЛУБОКОМУ провалу цепочки, а не по итогу схватки:
+  // умирают в провале.
+  return { hpLeftShare: lowest, costShares, worstEnrageRatio, seconds }
+}
+
+/**
+ * Линия запаса за одну схватку с лечением. Запас тает равномерно; лечение
+ * срабатывает, когда запас ниже порога и откат вышел, и приходит с задержкой
+ * реакции автокаста плюс половиной глобального кулдауна (умение ждёт своей
+ * очереди за боевым). Возвращает цену схватки (1 − запас в конце) и самую
+ * низкую точку линии: ниже нуля — смерть.
+ */
+function healLine(params: {
+  fightSec: number
+  lossShare: number
+  heal: { share: number; below: number; cooldownSec: number } | null
+}): { cost: number; lowest: number } {
+  const { fightSec, lossShare, heal } = params
+  if (fightSec <= 0 || lossShare <= 0) return { cost: Math.max(0, lossShare), lowest: 1 - Math.max(0, lossShare) }
+  const rate = lossShare / fightSec
+  const delay = AUTOCAST_DELAY_MS / 1000 + GCD_MS / 2000
+  let hp = 1
+  let t = 0
+  let lowest = 1
+  let readyAt = 0
+  while (heal && t < fightSec) {
+    // Когда запас окажется ниже порога — и лечение при этом откатилось.
+    const crossAt = hp > heal.below ? t + (hp - heal.below) / rate : t
+    const fireAt = Math.max(crossAt, readyAt) + delay
+    if (fireAt >= fightSec) break
+    hp -= rate * (fireAt - t)
+    lowest = Math.min(lowest, hp)
+    hp = Math.min(1, hp + heal.share)
+    readyAt = fireAt - delay + heal.cooldownSec
+    t = fireAt
+  }
+  hp -= rate * (fightSec - t)
+  lowest = Math.min(lowest, hp)
+  return { cost: 1 - hp, lowest }
 }
 
 describe('лестница данжей', () => {

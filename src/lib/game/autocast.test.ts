@@ -10,7 +10,7 @@ import {
   type GameState,
 } from './tick'
 import { ensureStats } from './stats'
-import { autocastCandidates, autocastStep } from './abilities'
+import { autocastCandidates, autocastStep, passesReserve } from './abilities'
 import { estimateCombatRate } from './combat'
 import { abilitiesByPriority, rotationRate, PLAN } from './rotation'
 import { applyOfflineProgress } from './save'
@@ -31,13 +31,22 @@ const WOUND = ABILITY_BY_ID['rending-wound']
 const BLOW = ABILITY_BY_ID['shattering-blow']
 
 function hero(level: number, gearLevel = 1, patch: Partial<GameState> = {}): GameState {
-  return ensureStats({
+  const base = ensureStats({
     ...createInitialState(1),
     level: new Decimal(level),
     equipment: averageGear(gearLevel),
     statsDirty: true,
     ...patch,
   })
+  // Герой ПОЛНЫЙ, если тест не сказал иначе: с шестого уровня у Стража есть
+  // лечение, и на просевшем здоровье автокаст сперва лечится, а на тонкой
+  // мане бережёт цену лечения — эти правила проверяет heal.test.ts, а здесь
+  // они бы подменяли собой выбор умения.
+  return {
+    ...base,
+    currentHp: patch.currentHp ?? base.stats.maxHp,
+    currentMana: patch.currentMana ?? base.stats.maxMana,
+  }
 }
 
 function run(state: GameState, ms: number, rng = NO_LUCK): GameState {
@@ -149,7 +158,11 @@ describe('автокаст в бою', () => {
       // «Доступно» — это ВСЕ условия применения сразу: мана, свой кулдаун,
       // глобальный кулдаун и живой герой не на привале. Без глобального
       // кулдауна тест мерил бы очередь умений, а не выдержку автокаста.
+      // Мана — с учётом резерва под лечение: «беречь ману на лечение»
+      // включено по умолчанию, и автокаст по правилу не жмёт удар, после
+      // которого не останется на одно лечение. Это не выдержка, а правило.
       const affordable =
+        passesReserve(s, QUICK) &&
         s.currentMana.gte(QUICK.manaCost) &&
         (s.abilityCooldownsMs[QUICK.id] ?? 0) <= 0 &&
         s.gcdMsLeft <= 0 &&
