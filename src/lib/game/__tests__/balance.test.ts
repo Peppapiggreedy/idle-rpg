@@ -53,9 +53,9 @@ import {
 } from '../../data/zones'
 import { ONE_HANDED, WEAPONS } from '../../data/items'
 import { BRANCHES, type BranchDef, type BranchStyle } from '../../data/talents'
-import { DEFAULT_CLASS } from '../../data/classes'
+import { DEFAULT_CLASS, classById } from '../../data/classes'
 import { classIt, contractClasses } from './class-set'
-import { ABILITY_BY_ID } from '../../data/abilities'
+import { ABILITIES, ABILITY_BY_ID } from '../../data/abilities'
 import { monsterFromTemplate, type GameState } from '../state'
 
 /** Сид контракта цены боя: контракт обязан быть воспроизводимым до числа. */
@@ -1213,7 +1213,15 @@ describe('контракт темпа боя', () => {
             row.gross + 1e-9,
           )
         }
-        if (mean < FIGHT_COST_NET_TARGET.min || mean > FIGHT_COST_NET_TARGET.max) {
+        // У КЛАССА БЕЗ ЛЕЧЕНИЯ нетто равно валовой по построению, и мягкий
+        // коридор к нему не относится: его цену держит контракт выше. Иначе
+        // предупреждение висело бы вечно и перестало значить что-либо.
+        const healer = ABILITIES.some(
+          (a) => a.heal && classById(classId).abilityIds.includes(a.id),
+        )
+        if (!healer) {
+          log(`${classId}: лечения у класса нет — нетто равно валовой, коридор не применяется.`)
+        } else if (mean < FIGHT_COST_NET_TARGET.min || mean > FIGHT_COST_NET_TARGET.max) {
           // eslint-disable-next-line no-console
           console.warn(
             `[предупреждение] ${classId}: средняя цена боя нетто ${mean.toFixed(1)}% вне ` +

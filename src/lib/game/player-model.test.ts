@@ -8,10 +8,12 @@
 // и застревал.
 import { describe, expect, it } from 'vitest'
 import { Decimal } from './numbers'
-import { createInitialState, type GameState } from './state'
+import { createInitialState, monsterFromTemplate, type GameState } from './state'
 import type { Item } from '../types'
 import { ensureStats } from './stats'
-import { ZONES, zoneForMonsterLevel } from '../data/zones'
+import { compareItem } from './equipment'
+import { estimateCombatRate } from './combat'
+import { ZONES, ZONE_BY_ID, representativeMonster, zoneForMonsterLevel } from '../data/zones'
 import {
   aimZoneId,
   averageGear,
@@ -22,7 +24,7 @@ import {
 } from './simulate'
 
 /** Панцирь с одной живучестью — вещь, которая в мелкой зоне не стоит ничего. */
-function vitalityChest(): Item {
+function vitalityChest(vitality: number): Item {
   return {
     id: 'test-vitality-chest',
     templateId: 'plate-chest',
@@ -31,34 +33,49 @@ function vitalityChest(): Item {
     slot: 'chest',
     rarity: 'common',
     level: 25,
-    mods: [{ stat: 'vitality', kind: 'flat', value: new Decimal(200), source: 'test' }],
+    mods: [{ stat: 'vitality', kind: 'flat', value: new Decimal(vitality), source: 'test' }],
   } as unknown as Item
 }
 
 /**
- * Герой 25 уровня в вещах 9 уровня: отстал по снаряжению ровно настолько,
- * чтобы в своей полосе терять аптайм, а в мелкой не терять почти ничего.
- * Числа подобраны замером и держатся вместе: слабее вещи — и мелкая зона
- * тоже начнёт бить, сильнее — и своя перестанет.
+ * Герой 25 уровня, отставший по снаряжению: в своей полосе теряет аптайм,
+ * в мелкой не теряет почти ничего. Ровно тот, у кого «живучесть здесь не
+ * нужна, а там нужна».
  */
 function laggard(zoneId: string): GameState {
-  const state = ensureStats({
+  return ensureStats({
     ...createInitialState(1, 'warden'),
     level: new Decimal(25),
-    equipment: averageGear(9),
+    equipment: averageGear(17),
     currentZoneId: zoneId,
     unlockedZoneIds: unlockedByLevel(25),
     statsDirty: true,
   })
-  return { ...state, inventory: [vitalityChest()] }
 }
 
 const SHALLOW = zoneForMonsterLevel(13)
 const OWN = zoneForMonsterLevel(25)
 
+/**
+ * Сколько живучести нужно, чтобы панцирь стал апгрейдом в ЦЕЛЕВОЙ зоне и
+ * остался не-апгрейдом в мелкой. Число НЕ ЗАШИТО: любая правка баланса его
+ * двигает, а свойство остаётся. Нет такого числа вовсе — свойство пропало,
+ * и тест обязан упасть, а не молча проверять пустоту.
+ */
+function flippingVitality(): number {
+  const shallow = laggard(SHALLOW.id)
+  const own = laggard(OWN.id)
+  for (const v of [25, 50, 100, 200, 400, 800]) {
+    const item = vitalityChest(v)
+    if (compareItem(own, item).isUpgrade && !compareItem(shallow, item).isUpgrade) return v
+  }
+  throw new Error('нет живучести, которая решает в целевой зоне и не решает в мелкой')
+}
+
 describe('модель игрока одевается под зону, куда идёт', () => {
   it('в мелкой зоне живучесть не апгрейд, в целевой — апгрейд', () => {
-    const state = laggard(SHALLOW.id)
+    const vitality = flippingVitality()
+    const state = { ...laggard(SHALLOW.id), inventory: [vitalityChest(vitality)] }
     // Оценка «здесь и сейчас»: в мелкой зоне герой не гибнет и без панциря,
     // а слот занят вещью с атрибутами — значит живучесть проигрывает.
     const here = equipUpgrades(state)
@@ -70,6 +87,16 @@ describe('модель игрока одевается под зону, куда
     expect(ahead.equipment.chest?.id, 'целевая зона: панцирь надет').toBe('test-vitality-chest')
     expect(ahead.stats.maxHp.gt(state.stats.maxHp)).toBe(true)
   })
+
+  // ЗДЕСЬ СТОЯЛ ТРЕТИЙ ТЕСТ — «прибавка запаса в глубокой зоне стоит дороже,
+  // чем в мелкой» — и он оказался НЕПРАВДОЙ на мелких прибавках. Замер: запас
+  // ×1.05 в своей полосе даёт 0.999 темпа, в мелкой 1.001. Причина известна и
+  // измерена ещё второй ночью: привал наливает ману досуха, поэтому лишний
+  // запас РЕЖЕ отправляет героя на привал и оставляет его с меньшим числом
+  // кастов. На больших прибавках выигрыш аптайма перекрывает эту потерю, на
+  // мелких — нет. Значит правка стадии не про «живучесть всегда дороже
+  // глубже», а про то, что РЕШЕНИЕ переворачивается — это и проверяет тест
+  // выше. Ложное свойство в наборе хуже отсутствующего.
 
   it('вещи и переезд смотрят в ОДНУ лестницу', () => {
     // Разъедься эти два решения, и герой одевался бы под одну зону, а шёл
