@@ -43,7 +43,7 @@ const NO_LUCK = () => 1
 
 // Герой, которому данж по плечу: в нужной зоне, нужного уровня.
 function adventurer(patch: Partial<GameState> = {}): GameState {
-  return ensureStats({
+  const ready = ensureStats({
     ...createInitialState(1),
     level: new Decimal(DUNGEON.unlockRequirement),
     currentZoneId: DUNGEON.zoneId,
@@ -54,6 +54,15 @@ function adventurer(patch: Partial<GameState> = {}): GameState {
     statsDirty: true,
     ...patch,
   })
+  // ЗАПАС — ПОЛНЫЙ. createInitialState оставляет базовую сотню HP, а после
+  // уровня и вещей максимум за тысячу: с десятой частью запаса герой падал бы
+  // с первого удара любого босса, и тест мерил бы заготовку, а не босса.
+  // Боссы бьют на треть сильнее с тех пор, как у Стража есть лечение.
+  return {
+    ...ready,
+    currentHp: patch.currentHp ?? ready.stats.maxHp,
+    currentMana: patch.currentMana ?? ready.stats.maxMana,
+  }
 }
 
 // Герой, способный убить кого угодно с одного удара — чтобы гонять цепочку.

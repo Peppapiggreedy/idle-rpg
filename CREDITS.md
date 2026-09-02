@@ -91,7 +91,7 @@ Idle RPG собрана на чужих плечах. Здесь перечис�
 | Автор | Иконок |
 |---|---|
 | DarkZaitzev | 1 |
-| Delapouite | 32 |
+| Delapouite | 33 |
 | FaithToken | 1 |
 | GeneralAce135 | 1 |
 | Lorc | 41 |

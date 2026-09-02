@@ -216,6 +216,18 @@ describe('фикстуры сейвов', () => {
     expect(state.templeBestWave).toBe(7)
   })
 
+  it('save-v24 -> v25: резерв маны под лечение включён, остальное цело', () => {
+    const payload = migrateSave(JSON.parse(fixture('save-v24.json')))!
+    expect(payload.version).toBe(SAVE_VERSION)
+    expect(payload.holdManaForHeal).toBe(true)
+    const state = loadFixture('save-v24.json')
+    expect(state.holdManaForHeal).toBe(true)
+    // Прогресс не тронут: уровень и золото те же, что лежали в файле.
+    const raw = JSON.parse(fixture('save-v24.json'))
+    expect(state.level.toString()).toBe(String(raw.level))
+    expect(state.gold.toString()).toBe(String(raw.gold))
+  })
+
   it('save-v19 -> v20: незаконная связка рук расформирована', () => {
     // В 19-й версии хвата не было: оружие несло hands, а щит не был отмечен
     // никак. Формат просто не умел сказать «так нельзя» — и сейв мог нести

@@ -416,6 +416,12 @@ export function setAbilityReserve(abilityId: string, reserve: number): void {
   })
 }
 
+/** Беречь ли ману под лечение: боевые умения автокаста оставляют цену одного лечения. */
+export function setHoldManaForHeal(value: boolean): void {
+  recordDecision('autocast')
+  state.update((s) => ({ ...s, holdManaForHeal: value }))
+}
+
 export function setAbilityAutocast(abilityId: string, autocast: boolean): void {
   recordDecision('autocast')
   state.update((s) => {

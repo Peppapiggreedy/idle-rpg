@@ -136,15 +136,60 @@ function payFor(state: GameState, ability: AbilityDef): GameState {
 }
 
 /**
+ * Лечащее умение, которое автокаст вообще жмёт: открыто уровнем и отмечено
+ * галкой. Нет такого — нечего и беречь.
+ */
+export function autocastHeal(state: GameState): AbilityDef | null {
+  for (const ability of abilitiesOf(state.classId)) {
+    if (!ability.heal) continue
+    if (state.level.lt(ability.unlockLevel)) continue
+    if (!state.abilitySettings[ability.id]?.autocast) continue
+    return ability
+  }
+  return null
+}
+
+/** Пора ли лечиться: здоровье ниже порога автокаста из данных умения. */
+export function healWanted(state: GameState, ability: AbilityDef): boolean {
+  if (!ability.heal) return false
+  return state.currentHp.lt(state.stats.maxHp.times(ability.heal.autocastBelowHpShare))
+}
+
+/**
  * Хватает ли маны с учётом РЕЗЕРВА этого умения: после траты должно остаться
- * не меньше настроенной доли запаса. Резерв — настройка автокаста, поэтому
- * ручное нажатие им не ограничено: игрок вправе потратить всё.
+ * не меньше настроенной доли запаса — и не меньше цены одного лечения, если
+ * включено «беречь ману под лечение» (само лечение этим не ограничено).
+ * Резерв — настройка автокаста, поэтому ручное нажатие им не ограничено:
+ * игрок вправе потратить всё.
  */
 export function passesReserve(state: GameState, ability: AbilityDef): boolean {
+  const left = state.currentMana.minus(ability.manaCost)
   const reserve = state.abilitySettings[ability.id]?.reserve ?? 0
-  if (reserve <= 0) return true
-  const floor = state.stats.maxMana.times(reserve)
-  return state.currentMana.minus(ability.manaCost).gte(floor)
+  if (reserve > 0 && left.lt(state.stats.maxMana.times(reserve))) return false
+  if (state.holdManaForHeal && !ability.heal) {
+    const heal = autocastHeal(state)
+    if (heal && left.lt(heal.manaCost)) return false
+  }
+  return true
+}
+
+/**
+ * Лечение умением: возвращает долю максимального запаса, перелив режется.
+ * Моба не трогает; событие несёт РЕАЛЬНУЮ прибавку, а не номинал.
+ */
+export function healWithAbility(state: GameState, ability: AbilityDef): GameState {
+  const share = ability.heal?.maxHpShare ?? new Decimal(0)
+  const healed = Decimal.min(state.currentHp.plus(state.stats.maxHp.times(share)), state.stats.maxHp)
+  return {
+    ...state,
+    currentHp: healed,
+    abilityCasts: state.abilityCasts.plus(1),
+    combatLog: pushEvent(state.combatLog, {
+      type: 'ability-heal',
+      abilityId: ability.id,
+      amount: healed.minus(state.currentHp),
+    }),
+  }
 }
 
 // Эффект удара умения: свой из данных умения либо тот, которому научил талант
@@ -236,6 +281,8 @@ export function useAbility(
 
   // Мгновенное: платим и бьём здесь же. Прогресс замаха не трогаем —
   // автоатака идёт своим чередом, умение её не сбивает и не ускоряет.
+  // Лечение — тем же путём оплаты, только вместо удара возвращает здоровье.
+  if (ability.heal) return healWithAbility(payFor(state, ability), ability)
   return strikeWithAbility(payFor(state, ability), ability, rng, emitAttack)
 }
 
@@ -278,6 +325,8 @@ export function autocastCandidates(state: GameState): AbilityDef[] {
   return abilitiesByPriority(state.abilitySettings, true).filter((ability) => {
     if (state.currentMana.lt(ability.manaCost)) return false
     if (!passesReserve(state, ability)) return false
+    // Лечение автокаст жмёт только когда оно нужно: порог — из данных умения.
+    if (ability.heal && !healWanted(state, ability)) return false
     // Очередь одна: пока в ней кто-то стоит, второе умение туда не ставим,
     // а повторное нажатие на стоящее в очереди её бы просто сняло.
     if (ability.type === 'onNextSwing' && state.queuedAbilityId !== null) return false
@@ -306,7 +355,15 @@ export function autocastStep(
   let cast: AbilityDef | null = null
   // Таймер ведётся ПО КАЖДОМУ умению: недоступное держит его взведённым,
   // доступное — тикает. Применяем первое по приоритету, у кого таймер вышел.
-  for (const ability of abilitiesByPriority(state.abilitySettings, true)) {
+  // ЛЕЧЕНИЕ ВПЕРЕДИ ЛЮБОГО УРОНА, когда оно нужно (см. healWanted): порядок
+  // приоритетов игрока решает, что бить, а «выжить» стоит выше. Флаг из
+  // данных, а не id: любое лечащее умение любого класса встанет так же.
+  const byPriority = abilitiesByPriority(state.abilitySettings, true)
+  const order = [
+    ...byPriority.filter((a) => a.heal && ready.has(a.id)),
+    ...byPriority.filter((a) => !(a.heal && ready.has(a.id))),
+  ]
+  for (const ability of order) {
     if (!ready.has(ability.id)) {
       autocastReadyMs[ability.id] = AUTOCAST_DELAY_MS
       continue

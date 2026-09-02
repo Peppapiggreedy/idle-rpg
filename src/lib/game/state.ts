@@ -118,6 +118,13 @@ export interface GameState {
   // Порог ухода на привал: доля HP. Настройка игрока, часть сейва.
   // Ноль — не уходить на привал вовсе.
   restHpThreshold: number
+  /**
+   * Беречь ману под лечение: автокаст не жмёт боевое умение, если после него
+   * не останется на одно лечение. Настройка автокаста, по умолчанию включена;
+   * руками игрок волен потратить всё. Без лечащего умения в классе — ничего
+   * не делает.
+   */
+  holdManaForHeal: boolean
   // Что ускоряет привал. Пока всегда null: сюда приедет еда из кулинарии.
   // Поле и место его учёта заведены заранее, чтобы профессии не пришлось
   // втискивать в конвейер тика задним числом.
@@ -325,6 +332,7 @@ export function createInitialState(
     restMsLeft: 0,
     restTotalMs: 0,
     restHpThreshold: REST_HP_THRESHOLD_DEFAULT,
+    holdManaForHeal: true,
     restSpeedupSource: null,
     abilityCooldownsMs: {},
     abilityCharges: {},

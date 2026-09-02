@@ -146,6 +146,32 @@ export function brokenCases(): BrokenCase[] {
       expect: [first(real.abilities).id, 'дважды', 'уникальными'],
     },
     {
+      title: 'лечение больше полного запаса',
+      content: {
+        ...real,
+        abilities: patch(real.abilities, 'mend-wounds', {
+          heal: { maxHpShare: new Decimal(1.5), autocastBelowHpShare: 0.5 },
+        }),
+      },
+      expect: ['mend-wounds', 'heal.maxHpShare'],
+    },
+    {
+      title: 'лечение «на следующий удар»',
+      content: {
+        ...real,
+        abilities: patch(real.abilities, 'mend-wounds', { type: 'onNextSwing' }),
+      },
+      expect: ['mend-wounds', 'мгновенным'],
+    },
+    {
+      title: 'боевое умение с нулевым уроном',
+      content: {
+        ...real,
+        abilities: patch(real.abilities, 'quick-strike', { weaponDamagePercent: new Decimal(0) }),
+      },
+      expect: ['quick-strike', 'weaponDamagePercent'],
+    },
+    {
       title: 'у зоны нет имени для игрока',
       content: {
         ...real,

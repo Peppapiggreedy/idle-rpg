@@ -31,19 +31,21 @@ function vitalityChest(): Item {
     slot: 'chest',
     rarity: 'common',
     level: 25,
-    mods: [{ stat: 'vitality', kind: 'flat', value: new Decimal(100), source: 'test' }],
+    mods: [{ stat: 'vitality', kind: 'flat', value: new Decimal(200), source: 'test' }],
   } as unknown as Item
 }
 
 /**
- * Герой 25 уровня в вещах 13 уровня: отстал по снаряжению ровно настолько,
- * чтобы в своей полосе терять аптайм, а в мелкой не терять ничего.
+ * Герой 25 уровня в вещах 9 уровня: отстал по снаряжению ровно настолько,
+ * чтобы в своей полосе терять аптайм, а в мелкой не терять почти ничего.
+ * Числа подобраны замером и держатся вместе: слабее вещи — и мелкая зона
+ * тоже начнёт бить, сильнее — и своя перестанет.
  */
 function laggard(zoneId: string): GameState {
   const state = ensureStats({
     ...createInitialState(1, 'warden'),
     level: new Decimal(25),
-    equipment: averageGear(13),
+    equipment: averageGear(9),
     currentZoneId: zoneId,
     unlockedZoneIds: unlockedByLevel(25),
     statsDirty: true,

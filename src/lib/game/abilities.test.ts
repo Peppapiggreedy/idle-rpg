@@ -83,9 +83,10 @@ function run(state: GameState, ms: number, rng = NO_LUCK): GameState {
 }
 
 describe('данные умений', () => {
-  it('у каждого класса свои три умения, у каждого цена, кулдаун и доля удара', () => {
+  it('у каждого класса свои умения, у каждого цена, кулдаун и доля удара', () => {
     for (const hero of CLASSES) {
-      expect(abilitiesOf(hero.id), hero.id).toHaveLength(3)
+      expect(abilitiesOf(hero.id), hero.id).toHaveLength(hero.abilityIds.length)
+      expect(abilitiesOf(hero.id).length, hero.id).toBeGreaterThanOrEqual(3)
     }
     // Наборы классов не пересекаются: иначе «своё умение» было бы формальностью.
     const ids = CLASSES.flatMap((c) => c.abilityIds)
@@ -93,7 +94,8 @@ describe('данные умений', () => {
     for (const a of ABILITIES) {
       expect(a.manaCost.gt(0)).toBe(true)
       expect(a.cooldownSec).toBeGreaterThan(0)
-      expect(a.weaponDamagePercent.gt(0)).toBe(true)
+      // Лечение бьёт нулём, боевое умение — положительной долей удара.
+      expect(a.weaponDamagePercent.gt(0), a.id).toBe(!a.heal)
     }
   })
 

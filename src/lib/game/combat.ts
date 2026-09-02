@@ -25,8 +25,10 @@ import {
   REVIVE_DELAY_MS,
 } from '../data/balance'
 import {
+  abilitiesByPriority,
   PLAN,
   rotationRate,
+  type FixedCast,
   type PlayMode,
   type RestRefill,
   type RotationPlan,
@@ -227,6 +229,130 @@ export interface CombatRate {
   deathChancePerCycle: number
   // Смерть вероятнее привала (deathChancePerCycle >= 0.5).
   diesInCycle: boolean
+  /** Применений лечащего умения за один цикл привала (матожидание); 0 — лечения нет. */
+  healsPerCycle: number
+  /**
+   * Потеря HP в секунду ДО лечения умением — то, что моб снимает сам (за
+   * вычетом регенерации). На этом числе стоит контракт цены боя: цена — это
+   * счёт, который выставляет моб, а лечение — то, чем герой его оплачивает
+   * из маны. `hpLossPerSecond` рядом — нетто, с лечением.
+   */
+  grossHpLossPerSecond: Decimal
+}
+
+/** Что лечение делает с циклом привала — см. healCycle. */
+export interface HealCycle {
+  /** Сколько раз за цикл лечение спасло его от привала (матожидание). */
+  saves: number
+  /** Всех применений за цикл, включая те, что цикл не спасли. */
+  casts: number
+  /** Боёв в цикле с учётом лечения. */
+  fights: number
+  /** Чистая потеря за бой с учётом лечения, HP; ноль и ниже — герой не тает. */
+  netLossPerFight: number
+}
+
+/**
+ * Сколько раз лечение сработает ЗА ОДИН БОЙ, начатый с запаса enterShare
+ * (доля), если бой снимает lossShare запаса за fightSec секунд. Порог
+ * пересекается на доле боя crossAt; дальше лечение повторяется через откат —
+ * или через время, за которое вылеченное снова сгорает, если оно длиннее.
+ * В бою короче отката повторов нет — это обычный бой зоны; у босса (25–65 с)
+ * их два-три. Одна формула на модель цикла (healCycle) и на лестницу данжей.
+ */
+export function healsInFight(params: {
+  fightSec: number
+  lossShare: number
+  enterShare: number
+  healShare: number
+  belowShare: number
+  cooldownSec: number
+}): number {
+  const { fightSec, lossShare, enterShare, healShare, belowShare, cooldownSec } = params
+  if (lossShare <= 0 || fightSec <= 0 || healShare <= 0) return 0
+  const crossAt = Math.min(1, Math.max(0, (enterShare - belowShare) / lossShare))
+  if (crossAt >= 1) return 0
+  const repeatSec = Math.max(cooldownSec, (healShare * fightSec) / lossShare)
+  return 1 + (fightSec * (1 - crossAt)) / repeatSec
+}
+
+/**
+ * Лечение в цикле привала — тем же языком долгосрочных средних, что и
+ * farmCycle. Правило тика: автокаст лечит, когда здоровье ниже H (порог из
+ * данных умения), а на привал герой уходит, когда после убийства здоровье
+ * ниже T. Значит лечение срабатывает В ПОСЛЕДНЕМ бою цикла и только если тот
+ * пересекает H: вход в него равномерен по фазе на [T, T+μ), где μ — цена боя,
+ * пересечение есть у доли (μ − max(0, T−H))/μ входов. Сработав, лечение
+ * спасает цикл, если запас снова выше T; тогда всё повторяется с той же
+ * вероятностью — число спасений геометрическое, q/(1−q). Каждое спасение
+ * добавляет циклу h запаса, и число боёв N решается из fights = B/loss' + ½
+ * при loss' = L − E/N (квадратное уравнение): та же формула, что у цикла без
+ * лечения, только с уменьшенной ценой боя.
+ */
+export function healCycle(params: {
+  maxHp: number
+  /** Порог привала, доля; 0 — привалов нет, цикл кончается смертью. */
+  restThreshold: number
+  /** Цена боя до лечения, HP. */
+  lossPerFight: number
+  /** Доля запаса за одно лечение. */
+  healShare: number
+  /** Порог автокаста лечения, доля запаса. */
+  belowShare: number
+  /** Вероятность, что лечение откатилось к нужному моменту, 0..1. */
+  readiness: number
+  /** Вероятность, что на него есть мана, 0..1. */
+  manaShare: number
+  /**
+   * Длина боя и откат лечения, секунд. В бою длиннее отката (босс: 25–65 с
+   * против 12) лечение успевает не раз: после первого срабатывания оно
+   * повторяется, как только откатится и запас снова просядет ниже порога.
+   */
+  fightSec: number
+  cooldownSec: number
+}): HealCycle {
+  const { maxHp: hp, restThreshold: T, lossPerFight: L, healShare: h, belowShare: H } = params
+  const budget = hp * (T > 0 ? 1 - T : 1)
+  const noHeal = (): HealCycle => ({
+    saves: 0,
+    casts: 0,
+    fights: L > 0 ? budget / L + 0.5 : Number.POSITIVE_INFINITY,
+    netLossPerFight: L,
+  })
+  if (L <= 0 || hp <= 0 || h <= 0) return noHeal()
+  const mu = L / hp
+  // Порог лечения ниже порога привала на gap: столько запаса бой должен
+  // пройти сверх привального порога, чтобы лечение вообще сработало.
+  const gap = Math.max(0, T - H)
+  const width = mu - gap
+  if (width <= 0) return noHeal()
+  const clamp = (x: number) => Math.min(1, Math.max(0, x))
+  const pCross = width / mu
+  // Спасает, если после лечения запас снова выше порога привала.
+  const pUseful = clamp((Math.min(mu, h) - gap) / width)
+  const fire = clamp(pCross * params.readiness * params.manaShare)
+  const q = Math.min(0.99, fire * pUseful)
+  const saves = q / (1 - q)
+  // Повторные лечения ВНУТРИ того же боя. Порог пересекается на доле боя
+  // crossAt (вход в бой — середина фазы, но не выше полного); дальше лечение
+  // повторяется через откат — или через время, за которое вылеченное снова
+  // сгорает, если оно длиннее. В бою короче отката повторов нет: это и есть
+  // обычный бой зоны; у босса их два-три, и без них модель клала бы героя,
+  // которого тик проводит через схватку с запасом.
+  const inFight = healsInFight({
+    fightSec: params.fightSec,
+    lossShare: mu,
+    enterShare: Math.min(1, T + mu / 2),
+    healShare: h,
+    belowShare: H,
+    cooldownSec: params.cooldownSec,
+  })
+  const repeats = Math.max(0, inFight - 1) * params.manaShare
+  const casts = (1 + saves) * fire * (1 + repeats)
+  const extra = (saves + fire * repeats) * h * hp
+  const a = extra + L / 2 + budget
+  const fights = (a + Math.sqrt(Math.max(0, a * a - 2 * L * extra))) / (2 * L)
+  return { saves, casts, fights, netLossPerFight: L - extra / fights }
 }
 
 /** Что выходит из череды боёв между двумя привалами (или до смерти) — В СРЕДНЕМ. */
@@ -576,6 +702,8 @@ function hitStream(
   )
   let paced = killing
   for (const cast of rotation.casts) {
+    // Лечение — не удар: моба не квантует и не добивает.
+    if (cast.ability.heal) continue
     const castRate = new Decimal(cast.castsPerSecond)
     if (cast.ability.type === 'instant') rate = rate.plus(castRate)
     killing = killing.plus(cast.hitDamage.times(castRate))
@@ -830,19 +958,24 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
   // от одних автоатак, потом — с учётом посчитанных мгновенных ударов.
   // Двух хватает: второй проход меняет ответ на проценты, третий — на доли.
   const pause = resourcePause(s)
-  let rotation = rotationRate(stats, settings, plan, resourceIncome(s), pause)
+  // Лечащее умение этого плана: открытое уровнем и — у автокаста — отмеченное
+  // галкой. Флаг из данных, не id: любое лечение любого класса ляжет сюда же.
+  const heal = abilitiesByPriority(settings, plan.onlyAutocast).find((a) => a.heal) ?? null
+  const holdMana = heal && s.holdManaForHeal ? heal.manaCost : new Decimal(0)
   // Ресурс из боя — уравнение с самим собой: удары умений тоже дают ярость,
   // а число умений зависит от ярости. Решаем ДВУМЯ проходами: сперва доход
   // от одних автоатак, потом — с учётом посчитанных мгновенных ударов.
   // Двух хватает: второй проход меняет ответ на проценты, третий — на доли.
-  const planRotation = (refill: RestRefill | null): RotationRate => {
-    let rot = rotationRate(stats, settings, plan, resourceIncome(s), pause, refill)
+  const planRotation = (refill: RestRefill | null, fixed: FixedCast[]): RotationRate => {
+    const income = (extraHits = 0) => resourceIncome(s, extraHits)
+    let rot = rotationRate(stats, settings, plan, income(), pause, refill, fixed, holdMana)
     if (classById(s.classId).resource.perSwingDealt.gt(0)) {
-      // Умения «на следующий удар» ЗАМЕНЯЮТ автоатаку и лишнего удара не дают.
+      // Умения «на следующий удар» ЗАМЕНЯЮТ автоатаку и лишнего удара не дают;
+      // лечение удара не наносит вовсе.
       const extraHits = rot.casts
-        .filter((c) => c.ability.type === 'instant')
+        .filter((c) => c.ability.type === 'instant' && !c.ability.heal)
         .reduce((sum, c) => sum + c.castsPerSecond, 0)
-      rot = rotationRate(stats, settings, plan, resourceIncome(s, extraHits), pause, refill)
+      rot = rotationRate(stats, settings, plan, income(extraHits), pause, refill, fixed, holdMana)
     }
     return rot
   }
@@ -855,7 +988,7 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
   const autoDps = autoDamagePerSecond(stats, doubleChance)
   const avgIncoming = expectedMonsterDamage(s.monster, stats, s.level.toNumber())
 
-  // ОДИН ПРОХОД МОДЕЛИ БОЯ: от ротации до цикла привала.
+  // ОДИН ПРОХОД МОДЕЛИ БОЯ: от ротации до валовой потери за бой.
   const evaluate = (rot: RotationRate) => {
     // Поток ударов считается ОДИН раз и уходит и в перебой, и в длину боя, и в
     // урон проков: две копии этого расчёта разошлись бы на первой же правке.
@@ -903,34 +1036,87 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
       .times(fightSec)
       .plus(stats.hpRegenOutOfCombat.times(respawnSec))
       .plus(stream.procHeal.times(fightSec))
-    const netLossPerSec = incomingPerCycle.minus(regenPerCycle).div(killCycleSec)
-    // Цикл фарма считается ПО БОЯМ ЦЕЛИКОМ: герой доводит схватку до конца и
-    // уходит на привал только после убийства (см. farmCycle). Порог берётся
-    // из конвейера статов — настройка игрока плюс таланты.
+    // Валовая потеря за бой — до лечения умением.
+    const grossLossPerFight = incomingPerCycle.minus(regenPerCycle)
+    return { rot, procDps, damagePerSecond, killCycleSec, fightSec, idealKillsPerSecond, grossLossPerFight }
+  }
+  type Pass = ReturnType<typeof evaluate>
+
+  // Лечение умением зависит от цены боя, а цена боя (через ману и паузы
+  // регенерации) — от лечения; см. healCycle.
+  const healFor = (pass: Pass): HealCycle | null => {
+    if (!heal?.heal || pass.grossLossPerFight.lte(0)) return null
+    const killCycle = pass.killCycleSec.toNumber()
+    // Мана: при включённом резерве она отложена всегда; без него лечению
+    // достаётся то, что боевые умения не успели сжечь до паузы регенерации.
+    const affordable = stats.maxMana.gte(heal.manaCost) ? 1 : 0
+    const manaShare = s.holdManaForHeal
+      ? affordable
+      : affordable *
+        Math.min(
+          1,
+          Math.max(0, 1 - pass.rot.manaPerSecond.times(pause).div(stats.maxMana).toNumber()),
+        )
+    return healCycle({
+      maxHp: stats.maxHp.toNumber(),
+      restThreshold: stats.restThreshold,
+      lossPerFight: pass.grossLossPerFight.toNumber(),
+      healShare: heal.heal.maxHpShare.toNumber(),
+      belowShare: heal.heal.autocastBelowHpShare,
+      // Откат против цикла убийства: первое лечение не чаще раза за бой.
+      readiness: Math.min(1, killCycle / Math.max(heal.cooldownSec, 1e-9)),
+      manaShare,
+      fightSec: pass.fightSec.toNumber(),
+      cooldownSec: heal.cooldownSec,
+    })
+  }
+  const healCastsPerSecond = (healing: HealCycle | null, killCycleSec: number): number => {
+    if (!healing || !Number.isFinite(healing.fights) || healing.fights <= 0) return 0
+    return healing.casts / (healing.fights * killCycleSec + stats.restDuration)
+  }
+  // Цикл фарма считается ПО БОЯМ ЦЕЛИКОМ: герой доводит схватку до конца и
+  // уходит на привал только после убийства (см. farmCycle). Порог берётся
+  // из конвейера статов — настройка игрока плюс таланты. Чистая потеря за
+  // бой — уже с лечением умением.
+  const cycleFor = (pass: Pass, healing: HealCycle | null) => {
+    const netLossPerFight = healing ? new Decimal(healing.netLossPerFight) : pass.grossLossPerFight
+    const netLossPerSec = netLossPerFight.div(pass.killCycleSec)
     const cycle = netLossPerSec.gt(0)
       ? farmCycle({
           maxHp: stats.maxHp,
           lossPerSecond: netLossPerSec,
-          cycleSec: killCycleSec.toNumber(),
+          cycleSec: pass.killCycleSec.toNumber(),
           hpThreshold: stats.restThreshold,
           restSec: stats.restDuration,
         })
       : null
-    return { rot, procDps, damagePerSecond, killCycleSec, idealKillsPerSecond, netLossPerSec, cycle }
+    return { netLossPerSec, cycle }
   }
 
-  // Ротация зависит от цикла привала (привал наливает ману), цикл — от
-  // ротации (урон задаёт длину боя). Два прохода: сперва без привалов, затем
-  // с посчитанной длиной цикла; второй проход меняет ответ на проценты.
-  const first = evaluate(rotation)
+  // Ротация зависит от цикла привала (привал наливает ману, лечение стоит
+  // маны), цикл — от ротации (урон задаёт длину боя). Два прохода: сперва
+  // без привалов и лечения, затем с посчитанной длиной цикла и темпом
+  // лечения; второй проход меняет ответ на проценты, третий — на доли.
+  let pass = evaluate(planRotation(null, []))
+  let healing = healFor(pass)
+  let { netLossPerSec, cycle } = cycleFor(pass, healing)
   const refill: RestRefill | null =
-    first.cycle && Number.isFinite(first.cycle.kills)
+    cycle && Number.isFinite(cycle.kills)
       ? // Боёв в цикле, включая тот, что кончился привалом или смертью.
-        { fightSec: (first.cycle.kills + first.cycle.deathChance) * first.killCycleSec.toNumber() }
+        { fightSec: (cycle.kills + cycle.deathChance) * pass.killCycleSec.toNumber() }
       : null
-  const pass = refill ? evaluate(planRotation(refill)) : first
-  rotation = pass.rot
-  const { procDps, damagePerSecond, idealKillsPerSecond, netLossPerSec, cycle } = pass
+  const fixed: FixedCast[] =
+    healing && heal
+      ? [{ ability: heal, castsPerSecond: healCastsPerSecond(healing, pass.killCycleSec.toNumber()) }]
+      : []
+  if (refill || fixed.length > 0) {
+    pass = evaluate(planRotation(refill, fixed))
+    healing = healFor(pass)
+    ;({ netLossPerSec, cycle } = cycleFor(pass, healing))
+  }
+  const { rot: rotation, procDps, damagePerSecond, idealKillsPerSecond } = pass
+  const healsPerCycle = healing?.casts ?? 0
+  const grossHpLossPerSecond = Decimal.max(pass.grossLossPerFight.div(pass.killCycleSec), new Decimal(0))
 
   if (!cycle) {
     return {
@@ -946,6 +1132,8 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
       killsPerCycle: Number.POSITIVE_INFINITY,
       deathChancePerCycle: 0,
       diesInCycle: false,
+      healsPerCycle,
+      grossHpLossPerSecond,
     }
   }
   return {
@@ -963,5 +1151,7 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
     killsPerCycle: cycle.kills,
     deathChancePerCycle: cycle.deathChance,
     diesInCycle: cycle.dies,
+    healsPerCycle,
+    grossHpLossPerSecond,
   }
 }

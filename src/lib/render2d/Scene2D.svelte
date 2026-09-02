@@ -224,13 +224,15 @@
     })
   })
 
-  // Лечение и новый уровень идут не ударом, а событием лога: прок с
-  // эффектом heal, зелье и `levelup` из applyLevelUps.
+  // Лечение и новый уровень идут не ударом, а событием лога: лечащее умение,
+  // прок с эффектом heal, зелье и `levelup` из applyLevelUps.
   const unsubscribeLog = subscribeLog((events) => {
     const now = performance.now()
     levelUps.push(events, now)
     for (const event of events) {
-      if (event.type === 'proc' && event.effect === 'heal') {
+      const healed =
+        event.type === 'ability-heal' || (event.type === 'proc' && event.effect === 'heal')
+      if (healed) {
         healAt = now
         if (document.hidden || speed > FLOATER_MAX_SPEED) continue
         floaters.push({

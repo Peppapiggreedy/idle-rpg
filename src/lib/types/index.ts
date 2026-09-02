@@ -65,6 +65,8 @@ export type CombatEvent =
   | { type: 'ability-dropped'; abilityId: string; reason: 'no-mana' | 'no-charges' }
   // Тик эффекта (урон по времени) от умения abilityId.
   | { type: 'effect'; abilityId: string; damage: Decimal }
+  // Лечащее умение вернуло здоровья: сколько реально прибавилось (без перелива).
+  | { type: 'ability-heal'; abilityId: string; amount: Decimal }
   // Убийство несёт и ID моба с зоной: по ним считается прогресс заданий,
   // а имя остаётся для лога. Раньше id тут не было — и это было исключением
   // из общего правила «событие несёт id, а текст рендерит UI».

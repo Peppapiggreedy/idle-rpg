@@ -351,8 +351,7 @@ export const ABILITY_SCHEMA: EntitySchema<AbilityDef> = {
       field: 'weaponDamagePercent',
       get: (a) => a.weaponDamagePercent,
       min: 0,
-      exclusiveMin: true,
-      why: 'урон умения — доля удара оружия, и она обязана быть положительной',
+      why: 'урон умения — доля удара оружия; ноль — только у лечения (см. heal)',
     },
     {
       field: 'unlockLevel',
@@ -364,6 +363,55 @@ export const ABILITY_SCHEMA: EntitySchema<AbilityDef> = {
   ],
   extra: (ability, _content, report) => {
     const where = `умение ${ability.id}`
+    // ЛЕЧЕНИЕ — флаг с payload'ом: бьёт нулём, лечит долей запаса, только
+    // мгновенное (в очередь на замах лечение не встаёт), порог автокаста —
+    // доля запаса. Боевое умение без флага обязано бить.
+    if (ability.heal) {
+      report.need(
+        ability.type === 'instant',
+        where,
+        'лечащее умение обязано быть мгновенным — в очередь на замах оно не встаёт (data/abilities.ts)',
+      )
+      report.need(
+        toNumber(ability.weaponDamagePercent) === 0,
+        where,
+        'лечащее умение не бьёт: weaponDamagePercent обязан быть нулём (data/abilities.ts)',
+      )
+      checkNumber(
+        ability.heal,
+        {
+          field: 'heal.maxHpShare',
+          get: (h) => h.maxHpShare,
+          min: 0,
+          exclusiveMin: true,
+          max: 1,
+          why: 'доля максимального здоровья за применение',
+        },
+        where,
+        'data/abilities.ts',
+        report,
+      )
+      checkNumber(
+        ability.heal,
+        {
+          field: 'heal.autocastBelowHpShare',
+          get: (h) => h.autocastBelowHpShare,
+          min: 0,
+          exclusiveMin: true,
+          max: 1,
+          why: 'порог автокаста — доля запаса, ниже которой лечение жмётся',
+        },
+        where,
+        'data/abilities.ts',
+        report,
+      )
+    } else {
+      report.need(
+        toNumber(ability.weaponDamagePercent) > 0,
+        where,
+        'урон умения — доля удара оружия (weaponDamagePercent), и она обязана быть положительной (data/abilities.ts)',
+      )
+    }
     if (!ability.effect) return
     const effect = ability.effect
     checkNumber(

@@ -55,6 +55,10 @@
           ? `КРИТ! ${name}: ${formatNumber(e.damage)} урона`
           : `${name}: ${formatNumber(e.damage)} урона`
       }
+      case 'ability-heal': {
+        const name = ABILITY_BY_ID[e.abilityId]?.name ?? 'Умение'
+        return `${name}: +${formatNumber(e.amount)} здоровья`
+      }
       case 'ability-dropped': {
         const name = ABILITY_BY_ID[e.abilityId]?.name ?? 'Умение'
         return e.reason === 'no-mana'
@@ -156,6 +160,7 @@
     hit: 'stat-attackPower',
     ability: 'ability-quick-strike',
     'ability-dropped': 'ability-quick-strike',
+    'ability-heal': 'ability-mend-wounds',
     effect: 'ability-rending-wound',
     kill: 'xp',
     levelup: 'xp',

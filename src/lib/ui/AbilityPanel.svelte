@@ -14,6 +14,7 @@
     moveAbilityPriority,
     setAbilityAutocast,
     setAbilityReserve,
+    setHoldManaForHeal,
   } from '../stores/game'
   import { abilityReasonText } from './abilityText'
   import { resourceWords } from './resource'
@@ -25,6 +26,8 @@
   // Порядок в списке = порядок приоритета: сверху то, что автокаст жмёт первым.
   const ordered = $derived(abilitiesByPriority($gameState.abilitySettings, false))
   const statuses = $derived(ordered.map((a) => abilityStatus($gameState, a)))
+  // Есть ли у класса лечение — от этого зависит, показывать ли резерв под него.
+  const healAbility = $derived(ordered.find((a) => a.heal) ?? null)
 </script>
 
 <Panel title="Умения" subtitle="порядок в списке — это и есть приоритет автокаста">
@@ -57,14 +60,21 @@
           </span>
         </div>
         <p class="effect">
-          {Math.round(ability.weaponDamagePercent.toNumber() * 100)}% удара оружия ≈
-          <NumberText
-            value={expectedAbilityDamage($gameState.stats, ability.weaponDamagePercent)}
-          />
-          {#if ability.effect}
-            · затем {ability.effect.ticks} раз по
-            {Math.round(ability.effect.weaponDamagePercent.toNumber() * 100)}% каждые
-            {ability.effect.tickIntervalSec}с
+          {#if ability.heal}
+            Лечит {Math.round(ability.heal.maxHpShare.toNumber() * 100)}% запаса ≈
+            <NumberText value={$gameState.stats.maxHp.times(ability.heal.maxHpShare)} />
+            · автокаст жмёт при здоровье ниже
+            {Math.round(ability.heal.autocastBelowHpShare * 100)}%, раньше любого урона
+          {:else}
+            {Math.round(ability.weaponDamagePercent.toNumber() * 100)}% удара оружия ≈
+            <NumberText
+              value={expectedAbilityDamage($gameState.stats, ability.weaponDamagePercent)}
+            />
+            {#if ability.effect}
+              · затем {ability.effect.ticks} раз по
+              {Math.round(ability.effect.weaponDamagePercent.toNumber() * 100)}% каждые
+              {ability.effect.tickIntervalSec}с
+            {/if}
           {/if}
         </p>
         <p class="kind">
@@ -105,6 +115,17 @@
   </ul>
 
   {#snippet footer()}
+    {#if healAbility}
+      <label class="auto hold">
+        <input
+          type="checkbox"
+          checked={$gameState.holdManaForHeal}
+          onchange={(e) => setHoldManaForHeal(e.currentTarget.checked)}
+        />
+        Беречь {resource.accusative} на «{healAbility.name}»: боевые умения автокаста
+        оставляют {formatNumber(healAbility.manaCost)} {resource.genitive} про запас
+      </label>
+    {/if}
     <p class="hint">
       Автокаст жмёт первое доступное сверху вниз, но реагирует на
       {(AUTOCAST_DELAY_MS / 1000).toFixed(1)}с медленнее тебя и не придерживает кулдауны.

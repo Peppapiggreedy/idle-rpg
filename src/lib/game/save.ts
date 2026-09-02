@@ -86,7 +86,7 @@ const OFFLINE_LOOT_SALT = 0x9e37_79b9
 /** Все хваты одним списком: сейв принимает только их. */
 const GRIPS: Grip[] = ['one', 'two', 'shield']
 
-export const SAVE_VERSION = 24
+export const SAVE_VERSION = 25
 export const AUTOSAVE_INTERVAL_MS = AUTOSAVE_INTERVAL_S * 1000
 // Потолок оффлайн-прогресса: дольше отсутствовать можно, но не оплачивается.
 export const OFFLINE_CAP_MS = OFFLINE_CAP_HOURS * 60 * 60 * 1000
@@ -189,6 +189,8 @@ export interface SavePayloadV21 {
   // отдохнувшим — это честнее обеих альтернатив.
   heroState: 'alive' | 'dead' | 'resting'
   restHpThreshold: number
+  /** Беречь ману под лечение — настройка автокаста. */
+  holdManaForHeal: boolean
   reviveMsLeft: number
   // Таланты: id -> ранг (обычные числа, не Decimal — рангов единицы).
   talents: Record<string, number>
@@ -359,6 +361,7 @@ export function payloadFromState(state: GameState, lastTimestamp: number): SaveP
     abilityCooldownsMs,
     regenDelayMsLeft: Math.max(0, state.regenDelayMsLeft),
     restHpThreshold: state.restHpThreshold,
+    holdManaForHeal: state.holdManaForHeal !== false,
     abilitySettings,
     itemSeq: state.itemSeq,
     gold: state.gold.toString(),
@@ -810,6 +813,9 @@ export function stateFromPayload(p: SavePayloadV21): GameState {
     restMsLeft: 0,
     restTotalMs: 0,
     restHpThreshold: share(p.restHpThreshold, REST_HP_THRESHOLD_DEFAULT),
+    // Отсутствие поля (старый сейв) читается как «включено» — так же, как
+    // у нового героя.
+    holdManaForHeal: p.holdManaForHeal !== false,
     restSpeedupSource: null,
   }
   // Поток случайности берём от сида состояния — загрузка детерминированна.
@@ -1270,6 +1276,11 @@ export const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
     }
     return next
   },
+  // 24 -> 25. Резерв маны под лечение: у старого героя настройки не было —
+  // включаем, как у нового. Само лечение он получит уровнем, как и все умения.
+  // (В ветке второй ночи эта миграция стояла на 23; на main номер занял снос
+  // порога привала по ресурсу, поэтому лечение переехало на ступень выше.)
+  24: (raw) => ({ ...raw, version: 25, holdManaForHeal: true }),
   // Счётчик применённых умений. У старого героя его не было — считаем с
   // нуля: он нужен отпечатку golden и статистике, прогресса за ним нет.
   22: (raw) => ({ ...raw, version: 23, abilityCasts: '0' }),
