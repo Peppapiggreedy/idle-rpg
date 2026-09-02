@@ -1,8 +1,9 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { Decimal } from '../game/numbers'
+import { Decimal, formatNumber } from '../game/numbers'
 import { createInitialState } from '../game/state'
-import { FLOATER_LIMIT, FLOATER_LIFE_MS } from '../data/render'
+import type { CombatEvent } from '../types'
+import { FLOATER_LIMIT, FLOATER_LIFE_MS, LEVEL_UP_MS } from '../data/render'
 import {
   BACKGROUND_BANDS,
   BOSS_SPRITE_ID,
@@ -12,6 +13,7 @@ import {
   monsterSpriteFor,
 } from '../data/sprites'
 import { createFloaterQueue, floaterKind, floaterProgress } from './floaters'
+import { createLevelUpTracker, levelUpProgress } from './levelup'
 import { fraction, sceneModel } from './model'
 
 const RENDER2D_DIR = new URL('./', import.meta.url)
@@ -74,6 +76,18 @@ describe('модель сцены', () => {
     expect(model.monster!.isBoss).toBe(false)
     expect(model.monster!.sprite.path).toMatch(/^sprites\//)
     expect(model.background).toBe(backgroundForLevel(state.monster.level))
+  })
+
+  it('здоровье моба несёт число «текущее / максимум» тем же formatNumber', () => {
+    // Полоска у моба одна — над головой, — и без числа игрок остался бы
+    // с одной лишь долей: раньше цифры показывала рама.
+    const state = createInitialState()
+    state.monster.maxHp = new Decimal(12_400)
+    state.monster.currentHp = new Decimal(6_800)
+    const model = sceneModel(state)
+    expect(model.monster!.hpLabel).toBe(`${formatNumber(new Decimal(6_800))} / ${formatNumber(new Decimal(12_400))}`)
+    expect(model.monster!.hpLabel).toBe('6.80K / 12.40K')
+    expect(model.monster!.health).toBeCloseTo(6_800 / 12_400)
   })
 
   it('мёртвый моб со сцены исчезает, фаза — респаун', () => {
@@ -193,6 +207,83 @@ describe('всплывающие числа', () => {
     expect(floaterKind(false, true, 'strike')).toBe('crit')
     expect(floaterKind(false, false, 'strike')).toBe('ability')
     expect(floaterKind(false, false, null)).toBe('damage')
+  })
+})
+
+describe('новый уровень', () => {
+  const levelup = (level: number): CombatEvent => ({ type: 'levelup', level: new Decimal(level) })
+  const other: CombatEvent[] = [
+    { type: 'hit', damage: new Decimal(10), isCrit: false },
+    { type: 'spawn', monsterName: 'Кто-то' },
+  ]
+
+  it('эффект появляется на смене уровня и несёт номер нового уровня', () => {
+    const tracker = createLevelUpTracker(1000)
+    expect(tracker.alive(0)).toBeNull()
+    expect(tracker.push([...other, levelup(12)], 500)).toBe(true)
+    expect(tracker.alive(500)).toEqual({ level: '12', life: 0 })
+    expect(tracker.alive(1000)?.life).toBeCloseTo(0.5)
+  })
+
+  it('снимается по истечении длительности', () => {
+    const tracker = createLevelUpTracker(1000)
+    tracker.push([levelup(3)], 100)
+    expect(tracker.alive(1099)).not.toBeNull()
+    expect(tracker.alive(1100)).toBeNull()
+    // И не воскресает: срок вышел — слот пуст.
+    expect(tracker.alive(1050)).toBeNull()
+  })
+
+  it('пачка без нового уровня эффекта не даёт', () => {
+    const tracker = createLevelUpTracker(1000)
+    expect(tracker.push(other, 0)).toBe(false)
+    expect(tracker.push([], 0)).toBe(false)
+    expect(tracker.alive(0)).toBeNull()
+  })
+
+  it('несколько уровней за пачку — виден итоговый, а не стопка', () => {
+    const tracker = createLevelUpTracker(1000)
+    tracker.push([levelup(4), levelup(5), levelup(6)], 0)
+    expect(tracker.alive(0)).toEqual({ level: '6', life: 0 })
+  })
+
+  it('новый уровень взводит эффект заново, clear снимает', () => {
+    const tracker = createLevelUpTracker(1000)
+    tracker.push([levelup(7)], 0)
+    tracker.push([levelup(8)], 900)
+    expect(tracker.alive(1500)).toEqual({ level: '8', life: 0.6 })
+    tracker.clear()
+    expect(tracker.alive(1500)).toBeNull()
+  })
+
+  it('по умолчанию срок — LEVEL_UP_MS из данных, номер — через formatNumber', () => {
+    const tracker = createLevelUpTracker()
+    tracker.push([levelup(1500)], 0)
+    expect(tracker.alive(0)).toEqual({ level: formatNumber(new Decimal(1500)), life: 0 })
+    expect(tracker.alive(LEVEL_UP_MS - 1)).not.toBeNull()
+    expect(tracker.alive(LEVEL_UP_MS)).toBeNull()
+  })
+
+  it('доля прожитого 0..1, нулевой срок — сразу прожито', () => {
+    const burst = { level: '2', bornAt: 100 }
+    expect(levelUpProgress(burst, 100, 1000)).toBe(0)
+    expect(levelUpProgress(burst, 600, 1000)).toBeCloseTo(0.5)
+    expect(levelUpProgress(burst, 5000, 1000)).toBe(1)
+    expect(levelUpProgress(burst, 50, 1000)).toBe(0)
+    expect(levelUpProgress(burst, 100, 0)).toBe(1)
+  })
+
+  it('сцена рисует эффект классом состояния, снимаемым в кадре, а не анимацией', () => {
+    // Длительность — из данных, класс — из состояния levelUp; в стилях
+    // никаких @keyframes: под prefers-reduced-motion они были бы обрезаны.
+    const scene = readFileSync(new URL('Scene2D.svelte', RENDER2D_DIR), 'utf8')
+    expect(scene).toMatch(/class="levelup"/)
+    expect(scene).toContain("from './levelup'")
+    expect(scene).not.toMatch(/@keyframes|animation:/)
+    // Цвет прокачки — токен опыта, без второго набора цветов.
+    const block = scene.slice(scene.indexOf('.levelup {'), scene.indexOf('.rest {'))
+    expect(block).toContain('var(--c-xp)')
+    expect(block).not.toMatch(/#[0-9a-f]{3,8}\b/i)
   })
 })
 

@@ -9,8 +9,9 @@
   // ВЕСЬ БЮДЖЕТ ДВИЖЕНИЯ — НА УДАР, НЕ НА ПОКОЙ. В покое бойцы стоят; видно
   // обязано быть замах (кто сейчас бьёт), попадание (вспышка, сдвиг, число),
   // крит (крупнее и другим цветом), умение (отличается от автоатаки),
-  // лечение (своё кольцо и цвет), смерть моба (затухание) и привал
-  // (отдельное состояние, не пустой экран).
+  // лечение (своё кольцо и цвет), смерть моба (затухание), привал
+  // (отдельное состояние, не пустой экран) и новый уровень (вспышка и номер
+  // над героем — иначе момент виден только сменой цифры в строке уровня).
   //
   // Эффекты держатся НЕ ключевыми кадрами, а состоянием: удар ставит метку
   // времени, каждый тик состояния решает, жив ли ещё эффект, и вешает класс.
@@ -36,6 +37,7 @@
   import { gameState, offlineReport, simSpeed } from '../stores/game'
   import { screenshotPose } from '../ui/route'
   import { createFloaterQueue, floaterKind, floaterProgress, type Floater } from './floaters'
+  import { createLevelUpTracker, type LevelUpView } from './levelup'
   import { sceneModel, type MonsterView, type SceneModel } from './model'
 
   type HitState = 'none' | 'hit' | 'crit'
@@ -68,6 +70,11 @@
   // На телефоне чисел меньше: экран уже, каждое — перекладка.
   const mobile = globalThis.innerWidth < MOBILE_BREAKPOINT
   const floaters = createFloaterQueue(mobile ? FLOATER_LIMIT_MOBILE : FLOATER_LIMIT)
+  // Новый уровень: один слот с меткой времени, гаснет на тике, как всё здесь.
+  const levelUps = createLevelUpTracker()
+  // Пик эффекта для позы: уже поднялось, ещё не начало таять — та же доля,
+  // на которой застывает число в seedPoseFloater.
+  const POSE_LIFE = 0.3
 
   let host: HTMLDivElement
   let bgImg = $state<HTMLImageElement | null>(null)
@@ -79,6 +86,8 @@
   let painted = $state<{ f: Floater; life: number }[]>([])
   // Убитый моб ещё виден, пока тает; прогресс 0..1 считает тик, не CSS.
   let dying = $state<{ view: MonsterView; progress: number } | null>(null)
+  // Вспышка и номер нового уровня над героем; null — эффекта нет.
+  let levelUp = $state<LevelUpView | null>(null)
 
   let speed = 1
   let offlineOpen = false
@@ -162,6 +171,14 @@
     effects = pose === null ? liveEffects(now) : posedEffects()
     // В позе число застыло (см. seedPoseFloater) и по часам не тает.
     if (pose === null) painted = floaters.alive(now).map((f) => ({ f, life: floaterProgress(f, now) }))
+    // Поза нового уровня показывает уровень героя из состояния, а не константу:
+    // эталон обязан показывать те же числа, что игра.
+    levelUp =
+      pose === null
+        ? levelUps.alive(now)
+        : pose === 'levelup'
+          ? { level: formatNumber(s.level), life: POSE_LIFE }
+          : null
   }
 
   const unsubscribeState = gameState.subscribe(() => paint(performance.now()))
@@ -174,6 +191,7 @@
     offlineOpen = r !== null
     if (offlineOpen) {
       floaters.clear()
+      levelUps.clear()
       dying = null
     }
   })
@@ -206,9 +224,11 @@
     })
   })
 
-  // Лечение идёт не ударом, а событием лога: прок с эффектом heal и зелье.
+  // Лечение и новый уровень идут не ударом, а событием лога: прок с
+  // эффектом heal, зелье и `levelup` из applyLevelUps.
   const unsubscribeLog = subscribeLog((events) => {
     const now = performance.now()
+    levelUps.push(events, now)
     for (const event of events) {
       if (event.type === 'proc' && event.effect === 'heal') {
         healAt = now
@@ -256,7 +276,9 @@
     // Спрятанная вкладка: числа никому не нужны, и копиться им незачем.
     if (document.hidden) {
       floaters.clear()
+      levelUps.clear()
       painted = []
+      levelUp = null
     }
   }
 
@@ -275,6 +297,7 @@
     unsubscribeAttacks()
     unsubscribeLog()
     floaters.clear()
+    levelUps.clear()
   })
 </script>
 
@@ -361,7 +384,18 @@
     {/if}
   </div>
 
-  <!-- Полоски здоровья над головами: ширина — доля здоровья. -->
+  <!-- Новый уровень: вспышка и номер над героем. Всё ведёт --life (доля
+       прожитого), как у всплывающих чисел; в позе застывает на пике. -->
+  {#if levelUp}
+    <div class="levelup" style="--life: {levelUp.life.toFixed(3)}">
+      <i class="burst"></i>
+      <span class="caption">уровень</span>
+      <span class="number">{levelUp.level}</span>
+    </div>
+  {/if}
+
+  <!-- Полоски здоровья над головами: ширина — доля здоровья. У моба она
+       ЕДИНСТВЕННАЯ на экране (в раме второй нет), поэтому несёт число. -->
   <div class="bars">
     <div class="bar hero">
       <i style="width: {Math.round(view.hero.health * 100)}%"></i>
@@ -369,6 +403,7 @@
     {#if view.monster}
       <div class="bar monster" class:boss={view.monster.isBoss}>
         <i style="width: {Math.round(view.monster.health * 100)}%"></i>
+        <span class="hp">{view.monster.hpLabel}</span>
       </div>
     {/if}
   </div>
@@ -403,7 +438,7 @@
     /* Раскладка площадки: где стоят бойцы и насколько они высоки. */
     --hero-x: 30%;
     --monster-x: 70%;
-    /* Земля поднята над подписью рамы (имя и здоровье моба внизу сцены):
+    /* Земля поднята над подписью рамы (имя и уровень моба внизу сцены):
        ноги, кольцо лечения и тень не должны уходить под неё. */
     --ground: 19%;
     --figure-h: 42%;
@@ -595,13 +630,32 @@
   }
   .bar.monster {
     left: var(--monster-x);
+    /* Число внутри: полоска выше и шире хвостовой, иначе цифры не влезут. */
+    width: 7rem;
+    height: var(--bar-lg);
   }
   .bar.monster.boss {
     bottom: calc(var(--ground) + var(--figure-h) * 1.25 + 0.4rem);
-    width: 4rem;
+    width: 8rem;
   }
   .bar.monster i {
     background: var(--c-damage);
+  }
+  /* «Текущее / максимум» поверх заливки: тень держит читаемость и на
+     красной половине, и на тёмной. */
+  .bar .hp {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: var(--text-2xs);
+    font-weight: var(--weight-bold);
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    color: var(--c-text);
+    text-shadow: var(--shadow-sm);
+    white-space: nowrap;
   }
 
   .floaters {
@@ -644,6 +698,60 @@
   }
   .floater.heal {
     color: var(--c-heal);
+  }
+
+  /* Новый уровень: вспышка цвета опыта расходится от головы героя, над ней
+     поднимается номер. Всё ведёт --life; рост и подъём вынесены в свои
+     переменные, чтобы prefers-reduced-motion обнулял их, оставляя вспышку
+     и номер на месте. */
+  .levelup {
+    position: absolute;
+    left: var(--hero-x);
+    --rise: 1.4rem;
+    --grow: 0.8;
+    bottom: calc(var(--head) + 2.2rem + var(--life) * var(--rise));
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    transform: translateX(-50%);
+    pointer-events: none;
+    color: var(--c-xp);
+    text-shadow: var(--shadow-md);
+    line-height: 1;
+    white-space: nowrap;
+    opacity: calc(1 - var(--life) * var(--life));
+  }
+  .levelup .burst {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 5.5rem;
+    aspect-ratio: 1;
+    border-radius: 50%;
+    background: radial-gradient(
+      circle,
+      color-mix(in srgb, var(--c-xp) 55%, transparent) 0%,
+      transparent 70%
+    );
+    box-shadow: 0 0 1.2rem var(--c-xp);
+    transform: translate(-50%, -50%) scale(calc(0.7 + var(--life) * var(--grow)));
+    opacity: calc(1 - var(--life));
+  }
+  /* Текст позиционирован, чтобы лечь ПОВЕРХ вспышки: статичный элемент
+     рисовался бы под абсолютно позиционированным соседом. */
+  .levelup .caption,
+  .levelup .number {
+    position: relative;
+    font-weight: var(--weight-bold);
+  }
+  .levelup .caption {
+    font-size: var(--text-2xs);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+  }
+  .levelup .number {
+    font-size: var(--text-2xl);
+    font-variant-numeric: tabular-nums;
   }
 
   .rest {
@@ -692,6 +800,10 @@
     }
     .floater {
       bottom: calc(var(--head) + 1.8rem);
+    }
+    .levelup {
+      --rise: 0rem;
+      --grow: 0;
     }
   }
 </style>

@@ -19,8 +19,8 @@ import { openHeroDrawer, sectionTab } from './screen.js'
 //      и своих пикселей у сцены нет.
 //
 // Отдельно снимаются ПОЗЫ сцены (?pose=): застывший пик каждого эффекта —
-// покой, замах, попадание, крит, лечение, привал. Это эталоны на сами
-// эффекты, а не только на раскладку.
+// покой, замах, попадание, крит, лечение, привал, новый уровень. Это эталоны
+// на сами эффекты, а не только на раскладку.
 //
 // Оба комплекта попадают в test-results/current и, значит, в артефакт.
 
@@ -135,7 +135,7 @@ for (const preset of PRESETS) {
 // Позы сцены: по одному эталону на эффект. Снимаются на пресете rich —
 // там герой в снаряжении и числа урона не однозначные. Это эталоны на сами
 // эффекты: пока они зелёные, сцена цела.
-const SCENE_POSES = ['idle', 'swing', 'hit', 'crit', 'heal', 'rest'] as const
+const SCENE_POSES = ['idle', 'swing', 'hit', 'crit', 'heal', 'rest', 'levelup'] as const
 for (const pose of SCENE_POSES) {
   test(`сцена-поза: ${pose}`, async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 })

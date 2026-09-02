@@ -92,7 +92,7 @@ describe('поза сцены для снимка', () => {
   })
 
   it('с пресетом отдаёт одну из известных поз', () => {
-    for (const pose of ['idle', 'swing', 'hit', 'crit', 'heal', 'rest']) {
+    for (const pose of ['idle', 'swing', 'hit', 'crit', 'heal', 'rest', 'levelup']) {
       expect(screenshotPose(loc(`https://x.dev/idle-rpg/?debug=1&state=rich&pose=${pose}`))).toBe(pose)
     }
   })
