@@ -1,12 +1,14 @@
 <script lang="ts">
-  // Экран выбора зоны. Весь текст — здесь; логика отдаёт только числа и вердикт.
+  // Экран выбора зоны. Весь текст — здесь; логика отдаёт только числа.
+  // ВЕРДИКТ ЗОНЫ («по силам» / «смертельно») НЕ ПОКАЗЫВАЕТСЯ: игра называет,
+  // что сделать нельзя, и молчит о том, чем кончится попытка. Показываются
+  // факты — полоса уровней, доля опыта, золото и опыт в час.
   import {
     formatNumber,
     forecastAllZones,
     travelStatus,
     type TravelBlockReason,
     type ZoneForecast,
-    type ZoneVerdict,
   } from '../game'
   import { ZONES, ZONE_BY_ID } from '../data/zones'
   import { REST_HP_PRESETS } from '../data/balance'
@@ -32,31 +34,6 @@
   // Сырое поле состояния соврало бы всем, кто вложил очки в «Походную перевязку».
   const restShare = $derived(Math.round($gameState.stats.restThreshold * 100))
 
-  const VERDICT_LABEL: Record<ZoneVerdict, string> = {
-    safe: 'по силам',
-    risky: 'рискованно',
-    deadly: 'смертельно',
-    hopeless: 'не по зубам',
-  }
-
-  // Честное предупреждение: собирается из расчёта, а не лежит текстом в данных.
-  function warning(f: ZoneForecast): string {
-    const gap = Math.round(f.levelGap)
-    const above = gap > 0 ? `мобы здесь на ${gap} ${levels(gap)} выше тебя` : null
-    switch (f.verdict) {
-      case 'safe':
-        return above
-          ? `${capitalize(above)}, но ты держишь удар — умирать не будешь`
-          : 'Мобы тебе по зубам — умирать не будешь'
-      case 'risky':
-        return `${capitalize(above ?? 'Мобы здесь под стать тебе')} — будешь изредка умирать (${percent(f.uptime)} времени на ногах)`
-      case 'deadly':
-        return `${capitalize(above ?? 'Мобы здесь опасны')} — ты будешь умирать, живым остаёшься ${percent(f.uptime)} времени`
-      case 'hopeless':
-        return `${capitalize(above ?? 'Мобы здесь сильнее тебя')} — ты будешь умирать почти без остановки, фарма тут нет`
-    }
-  }
-
   function levels(n: number): string {
     const tail = n % 10
     const teen = n % 100 >= 11 && n % 100 <= 14
@@ -65,7 +42,6 @@
     return 'уровней'
   }
 
-  const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
   const percent = (v: number) => `${Math.round(v * 100)}%`
 
   // Штраф опыта за отставание. Долю считает логика (forecast.xpShare),
@@ -76,12 +52,6 @@
     const behind = gap < 0 ? `Ты обогнал эту полосу на ${-gap} ${levels(-gap)}` : 'Ты перерос эту полосу'
     if (f.xpShare <= 0) return `${behind}: опыта здесь больше нет. Золото и материалы — полные.`
     return `${behind}: опыта здесь ${percent(f.xpShare)} от полного. Золото и материалы — полные.`
-  }
-
-  // Сколько ударов держит герой — бесконечность у мирных мобов не показываем.
-  function toughness(f: ZoneForecast): string {
-    if (!Number.isFinite(f.hitsSurvived)) return 'урона не получаешь'
-    return `держишь ${f.hitsSurvived.toFixed(1)} ударов`
   }
 
   // Выбранный узел карты. По умолчанию — тот, где герой стоит сейчас:
@@ -137,10 +107,9 @@
   <ZoneMap {selectedId} onselect={(id) => (picked = id)} />
 
   {#if f && safety}
-    <div class="detail {f.verdict}">
+    <div class="detail">
       <div class="head">
         <span class="title"><Icon name={zone.icon} /><span class="name">{zone.name}</span></span>
-        <span class="verdict">{VERDICT_LABEL[f.verdict]}</span>
       </div>
       <div class="facts">
         Мобы {zone.monsterLevelRange.min}–{zone.monsterLevelRange.max} ур. · награда ×{zone.rewardMultiplier.toFixed(
@@ -154,9 +123,10 @@
              сказать это вслух — иначе просевший опыт прочтётся как баг. -->
         <div class="xp-gap" class:none={f.xpShare <= 0}>{xpGapText(f)}</div>
       {/if}
-      <div class="warning">{warning(f)}, {toughness(f)}.</div>
-      <!-- Основание метки поменялось вместе с привалом: он теперь между
-           боями, поэтому пережить надо ВСЮ схватку, а не один удар. -->
+      <!-- Прогноз худшего боя ОСТАЁТСЯ: это настройка собственного правила
+           игрока (порог привала ниже), а не ворота в контент. Основание
+           метки поменялось вместе с привалом: он теперь между боями,
+           поэтому пережить надо ВСЮ схватку, а не один удар. -->
       <div class="safety" class:safe={safety.safe}>
         {#if safety.safe}
           Безопасно при пороге {restShare}%: тяжёлый бой здесь снимает
@@ -274,19 +244,8 @@
     gap: var(--space-1);
     padding: var(--space-3);
     border: 1px solid var(--c-border);
-    border-left: var(--space-1) solid var(--verdict-color, var(--c-border));
     border-radius: var(--radius-md);
     margin-bottom: var(--space-3);
-  }
-  .detail.safe {
-    --verdict-color: var(--c-heal);
-  }
-  .detail.risky {
-    --verdict-color: var(--c-warning);
-  }
-  .detail.deadly,
-  .detail.hopeless {
-    --verdict-color: var(--c-damage);
   }
   .entry {
     display: flex;
@@ -338,41 +297,6 @@
     font-size: var(--text-sm);
     color: var(--c-text-muted);
   }
-  /* Цвет вердикта — семантика: «по силам» зелёное, «смертельно» красное.
-     Полоска слева красится им же, чтобы список читался одним взглядом. */
-  .zone {
-    border: 1px solid var(--c-border);
-    border-left: var(--space-1) solid var(--verdict-color);
-    border-radius: var(--radius-md);
-    padding: var(--space-2) var(--space-3);
-    font-size: var(--text-sm);
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: var(--space-1);
-  }
-  .zone.safe {
-    --verdict-color: var(--c-heal);
-  }
-  .zone.risky {
-    --verdict-color: var(--c-warning);
-  }
-  .zone.deadly {
-    --verdict-color: var(--c-damage);
-  }
-  /* «Не по зубам» — тот же красный, что и «смертельно»: затемнённый красный
-     на тёмном фоне просто не читается. Разница передаётся заливкой всей
-     карточки — зона плохая целиком, а не только её вердикт. */
-  .zone.hopeless {
-    --verdict-color: var(--c-damage);
-    background: color-mix(in srgb, var(--c-damage) var(--tint-weak), transparent);
-  }
-  .zone.current {
-    background: color-mix(in srgb, var(--verdict-color) var(--tint), transparent);
-  }
-  .zone.locked {
-    opacity: 0.55;
-  }
   .head {
     display: flex;
     justify-content: space-between;
@@ -397,18 +321,9 @@
   .xp-gap.none {
     color: var(--c-warning);
   }
-  .verdict {
-    color: var(--verdict-color);
-    font-size: var(--text-2xs);
-    text-transform: uppercase;
-    letter-spacing: var(--tracking-wide);
-  }
   .facts {
     color: var(--c-text-muted);
     font-size: var(--text-xs);
-  }
-  .warning {
-    font-size: var(--text-sm);
   }
   .lock {
     font-size: var(--text-xs);
