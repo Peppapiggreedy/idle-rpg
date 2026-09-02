@@ -111,6 +111,21 @@ describe('стирание сейва', () => {
 // Ни один тест этого не замечал: проверялась версия только у РЕЗУЛЬТАТА
 // миграции, где она уже 21 по определению.
 describe('версия сейва', () => {
+  it('23 -> 24: порог привала по ресурсу выброшен, версия поднята на одну', () => {
+    // Поле не имело интерфейса и лежало в сейве мёртвым; миграция убирает
+    // его, ничего не трогая рядом.
+    const next = MIGRATIONS[23]({
+      version: 23,
+      restHpThreshold: 0.6,
+      restResourceThreshold: 0.2,
+      gold: '5',
+    })
+    expect(next.version).toBe(24)
+    expect('restResourceThreshold' in next).toBe(false)
+    expect(next.restHpThreshold).toBe(0.6)
+    expect(next.gold).toBe('5')
+  })
+
   it('игра пишет сейв ТЕКУЩЕЙ версии', () => {
     // Одна строка, которой не было. Она и есть весь тест на эту поломку.
     expect(payloadFromState(richState(), 0).version).toBe(SAVE_VERSION)

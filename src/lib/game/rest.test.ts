@@ -129,16 +129,10 @@ describe('уход на привал', () => {
   })
 
   it('с нулевым порогом привала нет вовсе — остаётся только смерть', () => {
-    const s = hero({ restHpThreshold: 0, restResourceThreshold: 0 })
+    const s = hero({ restHpThreshold: 0 })
     const low = { ...s, currentHp: s.stats.maxHp.times(0.05) }
     expect(needsRest(low)).toBe(false)
     expect(tick(low, STEP_MS, NO_LUCK, () => {}).heroState).toBe('alive')
-  })
-
-  it('порог по ресурсу работает так же, как по HP', () => {
-    const s = hero({ restHpThreshold: 0, restResourceThreshold: 0.4 })
-    const dry = { ...s, currentMana: s.stats.maxMana.times(0.1) }
-    expect(needsRest(dry)).toBe(true)
   })
 
   it('на привале герой не бьёт и по нему не бьют', () => {
@@ -275,7 +269,6 @@ describe('оффлайн знает про привалы', () => {
     const greedy = ensureStats({
       ...idle,
       restHpThreshold: 0.2,
-      restResourceThreshold: 0,
       statsDirty: true,
     })
     const resting = applyOfflineProgress(idle, HOURS8).report
@@ -297,7 +290,6 @@ describe('оффлайн знает про привалы', () => {
         const reckless = ensureStats({
           ...dressedHero({ currentZoneId: z.id }),
           restHpThreshold: 0,
-          restResourceThreshold: 0,
           statsDirty: true,
         })
         const share = zoneRate(reckless, z).uptime
@@ -307,7 +299,6 @@ describe('оффлайн знает про привалы', () => {
     const reckless = ensureStats({
       ...careful,
       restHpThreshold: 0,
-      restResourceThreshold: 0,
       statsDirty: true,
     })
     const withRest = applyOfflineProgress(careful, HOURS8).report

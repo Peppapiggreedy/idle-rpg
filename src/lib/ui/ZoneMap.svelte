@@ -201,7 +201,7 @@
     display: flex;
     align-items: center;
     gap: var(--space-1);
-    font-weight: 600;
+    font-weight: var(--weight-bold);
   }
   .name {
     font-size: var(--text-sm);
@@ -230,6 +230,6 @@
   .you {
     font-size: var(--text-xs);
     color: var(--c-accent);
-    font-weight: 600;
+    font-weight: var(--weight-bold);
   }
 </style>

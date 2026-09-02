@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Настройки: сейв, режим отображения, кадры и ссылки наружу.
+  // Настройки: сейв, режим отображения, звук и ссылки наружу.
   // Настройки экрана НЕ лежат в сейве — это свойства машины, а не прогресс
   // (подробнее в stores/ui.ts).
   import {
@@ -10,15 +10,12 @@
     type SavePreview,
   } from '../stores/game'
   import {
-    FPS_LIMITS,
     isTextMode,
-    setFpsLimit,
     setTextMode,
     setVolume,
     soundUnlocked,
     uiSettings,
     VOLUME_IDS,
-    type FpsLimit,
     type TextModeSetting,
     type VolumeId,
   } from '../stores/ui'
@@ -89,8 +86,6 @@
   }
   const TEXT_MODES: TextModeSetting[] = ['auto', 'off', 'on']
 
-  const fpsLabel = (limit: FpsLimit) => (limit === null ? 'Без лимита' : `${limit} кадров`)
-
   // Весь текст про звук живёт здесь: реестр отдаёт только id категорий.
   const VOLUME_LABEL: Record<VolumeId, string> = {
     master: 'Общая',
@@ -105,7 +100,7 @@
     <h3>Сохранение</h3>
     <p class="hint">
       Строка сейва — весь прогресс целиком. Настройки с этого экрана в неё
-      НЕ попадают: лимит кадров и текстовый режим у каждой машины свои.
+      НЕ попадают: текстовый режим и громкость у каждой машины свои.
     </p>
     <div class="row">
       <Button loading={copying} onclick={onExport}>
@@ -142,7 +137,8 @@
     <h3>Отображение</h3>
     <p class="hint">
       Текстовый режим — полноценный: в нём вместо сцены боевая панель, и играть
-      можно целиком без картинки.
+      можно целиком без картинки. Другой настройки производительности нет:
+      слабой машине хватает его.
       {#if sceneOff}
         Сейчас сцена выключена параметром адреса <code>?scene=off</code>, и он
         сильнее любой настройки.
@@ -160,25 +156,6 @@
         </Button>
       {/each}
       <Tag tone={textNow ? 'warning' : 'accent'} size="md" label={textNow ? 'сейчас: текст' : 'сейчас: сцена'} />
-    </div>
-  </section>
-
-  <section class="group">
-    <h3>Кадры</h3>
-    <p class="hint">
-      Лимит бережёт батарею и слабые машины. На скорость игры он не влияет:
-      игровое время идёт фиксированным шагом и от частоты кадров не зависит.
-      По умолчанию 30 — боевой сцене больше и не нужно.
-    </p>
-    <div class="row">
-      {#each FPS_LIMITS as limit (String(limit))}
-        <Button
-          variant={$uiSettings.fpsLimit === limit ? 'primary' : 'ghost'}
-          onclick={() => setFpsLimit(limit)}
-        >
-          {fpsLabel(limit)}
-        </Button>
-      {/each}
     </div>
   </section>
 

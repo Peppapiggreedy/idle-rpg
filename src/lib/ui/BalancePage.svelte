@@ -21,7 +21,7 @@
     TTK_TARGET_MIN,
   } from '../data/balance'
   import { ZONES } from '../data/zones'
-  import { CLASSES } from '../data/classes'
+  import { READY_CLASSES } from '../data/classes'
   import { intendedZone } from '../game/zones'
   import {
     DECISION_ALERT_SEC,
@@ -132,7 +132,7 @@
       await yieldFrame()
     }
 
-    for (const hero of CLASSES) {
+    for (const hero of READY_CLASSES) {
       for (const level of BALANCE_PRESET.telemetryLevels) {
         const zone = intendedZone(level)
         const result = simulate({

@@ -264,7 +264,6 @@ export function startGameLoop(): void {
     onMetrics: (m) => metrics.set(m),
   })
   loop.setSpeed(get(simSpeedStore))
-  loop.setFpsLimit(fpsLimit)
   loop.start()
 }
 
@@ -272,19 +271,6 @@ export function startGameLoop(): void {
 export function setSimulationSpeed(multiplier: number): void {
   simSpeedStore.set(multiplier)
   loop?.setSpeed(multiplier)
-}
-
-/**
- * Потолок частоты кадров из настроек. Игровое время не трогает: цикл
- * пропускает кадр, не сдвигая точку отсчёта, и накопленное приходит
- * следующим кадром (см. loop.ts). Запоминаем и на случай, если цикл ещё
- * не запущен, — применим при старте.
- */
-let fpsLimit: number | null = null
-
-export function applyFpsLimit(limit: number | null): void {
-  fpsLimit = limit
-  loop?.setFpsLimit(limit)
 }
 
 export function stopGameLoop(): void {
@@ -401,12 +387,6 @@ export function enchantInventoryItem(itemId: string, enchantId: string): void {
 export function drinkPotion(outputId: string): void {
   recordDecision('potion')
   state.update((s) => drinkPotionAction(s, outputId))
-}
-
-/** Порог ухода на привал по ресурсу. */
-export function setRestResourceThreshold(share: number): void {
-  recordDecision('rest-threshold')
-  state.update((s) => ({ ...s, restResourceThreshold: Math.min(1, Math.max(0, share)) }))
 }
 
 /**

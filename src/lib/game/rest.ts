@@ -31,15 +31,12 @@ export function restDurationMs(state: GameState): number {
   return Math.max(MIN_REST_DURATION_S * 1000, withFood)
 }
 
-/** Пора ли на привал: HP или ресурс упали ниже своего порога. */
+/** Пора ли на привал: HP упало ниже порога. */
 export function needsRest(state: GameState): boolean {
   // Порог — СТАТ: настройка игрока приходит в конвейер базой, а таланты её
   // сдвигают. Читать здесь сырое поле состояния значило бы обойти таланты.
   if (state.stats.restThreshold > 0) {
     if (state.currentHp.lt(state.stats.maxHp.times(state.stats.restThreshold))) return true
-  }
-  if (state.restResourceThreshold > 0) {
-    if (state.currentMana.lt(state.stats.maxMana.times(state.restResourceThreshold))) return true
   }
   return false
 }

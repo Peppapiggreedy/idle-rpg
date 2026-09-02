@@ -44,7 +44,7 @@
     border-top: 1px solid var(--c-border);
   }
   .name {
-    font-weight: 600;
+    font-weight: var(--weight-bold);
   }
   .effect {
     color: var(--c-text-muted);

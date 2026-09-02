@@ -154,14 +154,14 @@
   }
   .name {
     color: var(--rarity-color);
-    font-weight: 600;
+    font-weight: var(--weight-bold);
     font-size: var(--text-sm);
   }
   .tier {
     color: var(--c-text-faint);
   }
   .combat {
-    font-weight: 600;
+    font-weight: var(--weight-bold);
     color: var(--c-text-muted);
   }
   .combat.up,

@@ -284,7 +284,7 @@
   }
   .effective {
     color: var(--c-text-dim);
-    font-weight: 400;
+    font-weight: var(--weight-regular);
   }
   .rest {
     display: flex;

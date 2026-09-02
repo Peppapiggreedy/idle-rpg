@@ -23,7 +23,6 @@ function heroAt(level: number, zoneId: string, gearLevel = level): GameState {
     abilitySettings: manualOnlySettings(),
     // Порог привала снят: тест про опыт, а не про отдых.
     restHpThreshold: 0,
-    restResourceThreshold: 0,
     statsDirty: true,
   })
 }

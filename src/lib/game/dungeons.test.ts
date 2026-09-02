@@ -51,7 +51,6 @@ function adventurer(patch: Partial<GameState> = {}): GameState {
     // Порог привала снят: тесты данжа про боссов и ярость, а с порогом герой
     // уходил бы отдыхать посреди замера и мерил бы привал, а не босса.
     restHpThreshold: 0,
-    restResourceThreshold: 0,
     statsDirty: true,
     ...patch,
   })

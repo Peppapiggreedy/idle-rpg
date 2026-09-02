@@ -255,7 +255,7 @@
     margin: 0;
     min-width: 0;
     font-size: var(--text-md);
-    font-weight: 600;
+    font-weight: var(--weight-bold);
     line-height: var(--leading-tight);
   }
   .place-name {
@@ -267,7 +267,7 @@
     flex: 0 0 auto;
     color: var(--c-text-muted);
     font-size: var(--text-sm);
-    font-weight: 400;
+    font-weight: var(--weight-regular);
   }
   .handles {
     display: flex;

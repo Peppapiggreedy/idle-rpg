@@ -1,5 +1,5 @@
 {
-  "version": 23,
+  "version": 24,
   "classId": "warden",
   "materials": {},
   "activePotions": [],
@@ -235,7 +235,6 @@
   },
   "regenDelayMsLeft": 0,
   "restHpThreshold": 0.6,
-  "restResourceThreshold": 0,
   "abilitySettings": {
     "quick-strike": {
       "autocast": true,
