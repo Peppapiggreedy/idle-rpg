@@ -103,6 +103,8 @@ export const TECHNICAL_CONSTANTS: Record<string, string> = {
     'то же самое: подставить сюда сегодняшний баланс значит испортить старый сейв',
   'tick.ts:MAX_REGEN_TICKS_PER_STEP':
     'предохранитель от зависания на огромном dt — свойство цикла, а не баланса',
+  'combat.ts:RATE_CACHE_LIMIT':
+    'потолок кеша оценки боя: сколько ЗАПИСЕЙ держать в памяти, а не сколько чего в игре',
 }
 
 export function findBalanceNumbers(file: string, source: string): string[] {
