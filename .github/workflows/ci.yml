@@ -135,14 +135,16 @@ jobs:
             exit 1
           fi
 
-  # Юниты и golden. Матрицы прогонов здесь нет — она в balance.
+  # Юниты и golden. Матрицы прогонов здесь нет — она в balance. Список
+  # исключений ТОТ ЖЕ, что у `npm run test` в package.json: обгон зон и кран
+  # золота строят эталонное прохождение и идут в balance, а не здесь.
   unit:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup
       - name: Юниты и golden
-        run: npx vitest run --exclude "src/lib/game/__tests__/balance.test.ts" --exclude "src/lib/game/__tests__/run.test.ts"
+        run: npx vitest run --exclude "src/lib/game/__tests__/balance.test.ts" --exclude "src/lib/game/__tests__/run.test.ts" --exclude "src/lib/game/level-gap.test.ts" --exclude "src/lib/game/__tests__/gold.test.ts"
 
   # Отдельным джобом ради ИМЕНИ: сломанная ссылка в data/ видна по названию
   # проверки, а не поиском по логу тестов.
