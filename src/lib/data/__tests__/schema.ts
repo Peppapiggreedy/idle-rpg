@@ -123,6 +123,8 @@ export interface BalanceNumbers {
   ttkBehindMax: number
   ttkAheadMin: number
   ttkDriftMax: number
+  goldFromMonsters: number
+  goldFromLoot: number
   /** Ступени штрафа опыта за отставание: gap <= maxGap -> share. */
   xpGapPenalty: ReadonlyArray<{ maxGap: number; share: number }>
 }
@@ -2562,8 +2564,22 @@ function checkBalance(content: Content, report: Report): void {
     { field: 'POTION_UNLOCK_LEVEL', get: (x) => x.potionUnlockLevel, min: 1, integer: true },
     { field: 'CRAFT_UNLOCK_LEVEL', get: (x) => x.craftUnlockLevel, min: 1, integer: true },
     { field: 'TTK_DRIFT_MAX', get: (x) => x.ttkDriftMax, min: 0, exclusiveMin: true, max: 1, why: 'это доля разброса' },
+    { field: 'GOLD_SOURCE_SHARE.monsters', get: (x) => x.goldFromMonsters, min: 0, exclusiveMin: true, max: 1, why: 'это доля крана золота' },
+    { field: 'GOLD_SOURCE_SHARE.loot', get: (x) => x.goldFromLoot, min: 0, exclusiveMin: true, max: 1, why: 'это доля крана золота' },
   ]
   for (const rule of rules) checkNumber(b, rule, where, 'data/balance.ts', report)
+  // ДОЛИ КРАНА ЗОЛОТА ОБЯЗАНЫ ДАВАТЬ ЕДИНИЦУ. Они делят одно и то же число
+  // (MONSTER_BASE.goldReward): сумма меньше единицы молча урезала бы весь
+  // доход игры, больше — раздувала, и обе правки выглядели бы как невинная
+  // подстройка «сколько платят находки».
+  const goldSum = b.goldFromMonsters + b.goldFromLoot
+  if (Math.abs(goldSum - 1) > 1e-9) {
+    report.add(
+      where,
+      `GOLD_SOURCE_SHARE: доли дают ${goldSum}, а обязаны единицу — ` +
+        'иначе общий кран золота уедет вместе с правкой (data/balance.ts)',
+    )
+  }
   // Механика, которая открывается выше потолка, не откроется никогда.
   for (const [field, level] of [
     ['TALENT_FIRST_LEVEL', b.talentFirstLevel],

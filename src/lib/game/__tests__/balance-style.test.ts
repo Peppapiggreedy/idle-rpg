@@ -78,8 +78,18 @@ describe('стиль боя', () => {
 
   // Средний итог по нескольким сидам. Один сид меряет не нормализацию, а
   // удачу спавна: разброс скачет до шести процентов, не меняя ни строчки кода.
-  function meanGold(runs: SimResult[]): Decimal {
-    return runs.reduce((sum, r) => sum.plus(r.goldPerHour), new Decimal(0)).div(runs.length)
+  //
+  // ИТОГ МЕРЯЕТСЯ УБИЙСТВАМИ, А НЕ ЗОЛОТОМ, и это пришлось поменять вместе с
+  // переносом семидесяти процентов дохода на продажу находок. Пока золото
+  // платил моб, оно было ровно пропорционально убийствам — идеальный
+  // наблюдаемый итог. Теперь его основная часть разыгрывается тяжелохвостой
+  // рулеткой тиров (разброс ОДНОЙ находки — 143 % от среднего), и сравнение
+  // связок начало мерить, кому выпала легендарка: разброс подскочил до
+  // 12.3 % при потолке 5. Убийства от рулетки не зависят вовсе, а вопрос
+  // теста — «равный урон оружия в секунду даёт равный итог» — про них и есть:
+  // золото за моба у всех связок одинаковое, зона и мобы те же.
+  function meanKills(runs: SimResult[]): Decimal {
+    return runs.reduce((sum, r) => sum.plus(r.killsPerHour), new Decimal(0)).div(runs.length)
   }
 
   /** Средний урон АВТОАТАКИ: им щит и платит за живучесть. */
@@ -112,18 +122,18 @@ describe('стиль боя', () => {
     header(
       `Голые связки ${WEAPON_LEVEL} уровня, герой ${LEVEL} уровня, ${zone.name}, ` +
         `${weaponHours} ч, только автоатака.`,
-      'стиль                 золота/ч   отклонение   привалов/ч',
+      'стиль                 убийств/ч  отклонение   привалов/ч',
     )
     const results = SIM_STYLES.map((style) => ({ style, runs: runStyle(style) }))
     // Равными обязаны быть только связки, ЗАНИМАЮЩИЕ ОБЕ РУКИ. Щит в этот
     // набор не входит намеренно: у него меньше урона по построению.
     const paired = results.filter((r) => r.style !== 'shield')
-    const gold = paired.map((r) => meanGold(r.runs).toNumber())
-    const mean = gold.reduce((a, b) => a + b, 0) / gold.length
+    const kills = paired.map((r) => meanKills(r.runs).toNumber())
+    const mean = kills.reduce((a, b) => a + b, 0) / kills.length
     for (const { style, runs } of results) {
       const g = dump(
-        `balance/style/normalisation/zone-${weaponZoneId}/weapon-level-${String(WEAPON_LEVEL).padStart(3, '0')}/style-${style.toLowerCase()}/gold-per-hour`,
-        meanGold(runs).toNumber(),
+        `balance/style/normalisation/zone-${weaponZoneId}/weapon-level-${String(WEAPON_LEVEL).padStart(3, '0')}/style-${style.toLowerCase()}/kills-per-hour`,
+        meanKills(runs).toNumber(),
       )
       const rests = runs.reduce((sum, r) => sum + r.restsPerHour, 0) / runs.length
       const dev = style === 'shield' ? '' : ((g - mean) / mean >= 0 ? '+' : '') + pct((g - mean) / mean)
@@ -132,13 +142,13 @@ describe('стиль боя', () => {
           `${rests.toFixed(1).padStart(10)}`,
       )
     }
-    const spread = spreadOf(paired.map((r) => meanGold(r.runs)))
+    const spread = spreadOf(paired.map((r) => meanKills(r.runs)))
     log(
       `Разброс ${pct(spread)} при ${hitsPerKill(zone, weaponBuild, WEAPON_LEVEL).toFixed(1)} замахах двуручника на моба.`,
     )
     expect(
       dump(
-        `balance/style/normalisation/zone-${weaponZoneId}/weapon-level-${String(WEAPON_LEVEL).padStart(3, '0')}/paired-gold-spread`,
+        `balance/style/normalisation/zone-${weaponZoneId}/weapon-level-${String(WEAPON_LEVEL).padStart(3, '0')}/paired-kills-spread`,
         spread,
       ),
     ).toBeLessThanOrEqual(weaponSpreadLimit)
@@ -175,13 +185,13 @@ describe('стиль боя', () => {
     header(
       `Герой ${stressBuild.level} уровня со связкой ${BALANCE_PRESET.stressWeaponLevel} уровня в зоне ` +
         `${ZONES.find((z) => z.id === stressZoneId)!.name} — не по себе. ${weaponHours} ч.`,
-      'стиль                 золота/ч    привал   смерти',
+      'стиль                убийств/ч    привал   смерти',
     )
     for (const [style, runs] of [
       ['dual', dual],
       ['shield', shield],
     ] as const) {
-      log(`${STYLE_NAMES[style].padEnd(21)} ${meanGold(runs).toFixed(0).padStart(9)}   ${pct(idle(runs)).padStart(7)}   ${pct(runs.reduce((a, r) => a + 1 - r.uptime, 0) / runs.length).padStart(7)}`)
+      log(`${STYLE_NAMES[style].padEnd(21)} ${meanKills(runs).toFixed(0).padStart(9)}   ${pct(idle(runs)).padStart(7)}   ${pct(runs.reduce((a, r) => a + 1 - r.uptime, 0) / runs.length).padStart(7)}`)
     }
     // Привал обязан заметно упасть, а не просто «не вырасти»: щит покупает
     // живучесть, и покупка должна быть видна.
@@ -263,8 +273,8 @@ describe('стиль боя', () => {
     const paired = SIM_STYLES.filter((style) => style !== 'shield')
     for (const c of cases) {
       const zone = ZONES.find((z) => z.id === c.zone)!
-      const gold = paired.map((style) =>
-        meanGold(
+      const kills = paired.map((style) =>
+        meanKills(
           weaponSeeds.map((seed) =>
             simulate({
               hours: 1,
@@ -277,10 +287,10 @@ describe('стиль боя', () => {
         ),
       )
       const spread = dump(
-        `balance/style/overkill/zone-${c.zone}/weapon-level-${String(c.weaponLevel).padStart(3, '0')}/paired-gold-spread`,
-        spreadOf(gold),
+        `balance/style/overkill/zone-${c.zone}/weapon-level-${String(c.weaponLevel).padStart(3, '0')}/paired-kills-spread`,
+        spreadOf(kills),
       )
-      const numbers = gold.map((g) => g.toNumber())
+      const numbers = kills.map((k) => k.toNumber())
       const best = STYLE_NAMES[paired[numbers.indexOf(Math.max(...numbers))]]
       log(
         `${zone.name.padEnd(20)} ${String(c.weaponLevel).padStart(10)} ` +

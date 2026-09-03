@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { Decimal } from './numbers'
 import { createRng } from './rng'
+import { GOLD_SOURCE_SHARE } from '../data/balance'
 import { createInitialState, spawnMonster, type GameState } from './state'
 import { ensureStats } from './stats'
 import {
@@ -87,7 +88,12 @@ describe('масштаб мобов от уровня', () => {
     // и одно белое оружие при шести пустых слотах.
     expect(m.maxHp.eq(MONSTER_BASE.maxHp.times(EARLY_HP_DISCOUNT[0].mult))).toBe(true)
     expect(m.damageMin.eq(MONSTER_BASE.damage.times(EARLY_HP_DISCOUNT[0].damageMult))).toBe(true)
-    expect(m.goldReward.eq(MONSTER_BASE.goldReward)).toBe(true)
+    // ЗОЛОТО — ТОЛЬКО СВОЯ ДОЛЯ КРАНА: вторую забирает цена находки, упавшей
+    // с этого же моба (ITEM_SELL_BASE в data/loot.ts). Опыт делить не с кем,
+    // он равен базе целиком.
+    expect(
+      m.goldReward.eq(MONSTER_BASE.goldReward.times(GOLD_SOURCE_SHARE.monsters)),
+    ).toBe(true)
     expect(m.xpReward.eq(MONSTER_BASE.xpReward)).toBe(true)
   })
 

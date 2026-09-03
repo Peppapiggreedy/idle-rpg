@@ -18,6 +18,7 @@ import {
   TTK_AHEAD_MIN,
   TTK_BEHIND_MAX,
   TTK_DRIFT_MAX,
+  GOLD_SOURCE_SHARE,
   XP_GAP_PENALTY,
   TTK_HARD_CEILING,
   TTK_HARD_FLOOR,
@@ -138,6 +139,8 @@ export function realContent(): Content {
       ttkBehindMax: TTK_BEHIND_MAX,
       ttkAheadMin: TTK_AHEAD_MIN,
       ttkDriftMax: TTK_DRIFT_MAX,
+      goldFromMonsters: GOLD_SOURCE_SHARE.monsters,
+      goldFromLoot: GOLD_SOURCE_SHARE.loot,
       xpGapPenalty: XP_GAP_PENALTY,
     },
   }

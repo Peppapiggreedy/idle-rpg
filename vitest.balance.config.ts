@@ -17,13 +17,18 @@ import { BaseSequencer, type TestSpecification } from 'vitest/node'
  * станет чуть длиннее; неизвестный файл идёт первым, потому что о новом файле
  * безопаснее думать как о дорогом.
  */
+// gold.test.ts подорожал втрое (197 → 543 с) вместе с переносом дохода на
+// продажу находок: цена находки разыгрывается тяжелохвостой рулеткой тиров, и
+// окно замера пришлось поднять с часа до четырёх — за час отношение соседних
+// ступеней кривой гуляло вдвое. Число здесь только для очереди раннера;
+// довод — в самом тесте, рядом с INCOME_HOURS.
 const COST_SECONDS: Record<string, number> = {
   'balance-talents.test.ts': 867,
   'balance-progress.test.ts': 577,
   'balance-talents-style.test.ts': 486,
   'balance-zones.test.ts': 483,
   'run.test.ts': 204,
-  'gold.test.ts': 197,
+  'gold.test.ts': 543,
   'balance-pacing.test.ts': 182,
   'balance-model.test.ts': 160,
   'balance-style.test.ts': 113,

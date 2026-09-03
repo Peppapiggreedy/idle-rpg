@@ -1,6 +1,7 @@
 // Архетипы мобов и ФОРМУЛА МАСШТАБА от уровня. Формула живёт здесь, в данных:
 // логика её только вызывает и не знает, как растут числа.
 import { Decimal } from '../game/numbers'
+import { GOLD_SOURCE_SHARE } from './balance'
 import type { MonsterTemplate } from '../types'
 
 // Роль моба в бою — множители относительно обычного моба своего уровня.
@@ -47,6 +48,20 @@ export const BRUTE: MonsterRole = {
   xpMult: new Decimal(1.3),
   swingTime: 2.6,
 }
+
+/**
+ * Средний множитель золота по ролям. Пул зоны — это все три роли по одной
+ * (`content:check` держит это), поэтому «типичный убитый моб» несёт именно
+ * такой множитель.
+ *
+ * Вынесено ради цены находки: доля крана, отданная находкам, задаётся на
+ * ТИПИЧНОЕ убийство, а типичное убийство — не COMMON, а среднее по трём
+ * ролям. Впиши сюда единицу — и общий кран золота уедет на десятую часть,
+ * при формально верной формуле.
+ */
+export const AVERAGE_ROLE_GOLD_MULT: Decimal = [RUNT, COMMON, BRUTE]
+  .reduce((sum, role) => sum.plus(role.goldMult), new Decimal(0))
+  .div(3)
 
 export interface MonsterArchetype {
   id: string
@@ -274,7 +289,13 @@ export function buildMonster(
     name: archetype.name,
     level,
     maxHp: MONSTER_BASE.maxHp.times(role.hpMult).times(hpScale(level)),
-    goldReward: MONSTER_BASE.goldReward.times(role.goldMult).times(reward),
+    // ДОЛЯ, А НЕ ВСЁ ЧИСЛО: вторую забирает цена находки (ITEM_SELL_BASE в
+    // data/loot.ts). Обе доли делят одно и то же MONSTER_BASE.goldReward,
+    // поэтому общий кран золота от переноса не меняется.
+    goldReward: MONSTER_BASE.goldReward
+      .times(GOLD_SOURCE_SHARE.monsters)
+      .times(role.goldMult)
+      .times(reward),
     xpReward: MONSTER_BASE.xpReward
       .times(role.xpMult)
       .times(xpScale(level))

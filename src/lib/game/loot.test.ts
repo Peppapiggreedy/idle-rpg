@@ -19,8 +19,12 @@ import { createInitialState, emptyEquipment, tick, type GameState } from './tick
 import { createRng } from './rng'
 import { ensureStats } from './stats'
 import { STEP_MS } from './loop'
-import { DROP_CHANCE } from '../data/loot'
+import { DROP_CHANCE, averageItemSellPrice, itemSellPrice } from '../data/loot'
 import { RARITIES, RARITY_BY_ID } from '../data/rarity'
+import { GOLD_SOURCE_SHARE, LEVEL_CAP } from '../data/balance'
+import { ZONES, representativeMonster, zoneForMonsterLevel } from '../data/zones'
+import { DUST_BY_RARITY, ENCHANTS } from '../data/enchants'
+import { CRAFT_TOLL_HOURS, goldPerHourAt } from '../data/recipes'
 import {
   ARMOR_ATTRIBUTES,
   ARMOR_BASE_PRIMARY,
@@ -346,13 +350,15 @@ describe('продажа', () => {
     ],
   }
 
-  it('превращает предмет в золото по цене тира', () => {
+  it('превращает предмет в золото по цене уровня и тира', () => {
     const s: GameState = { ...createInitialState(1), inventory: [item] }
     const after = sellItem(s, 'item-1')
     expect(after.inventory.length).toBe(0)
-    // база 5 * sellMult(rare) 5 = 25 золота
-    expect(after.gold.minus(s.gold).toNumber()).toBe(25)
-    expect(sellPrice(item).toNumber()).toBe(25)
+    // Число не выписано руками: цена — формула из данных, и продажа обязана
+    // отдать ровно её, а не «примерно столько же».
+    const expected = itemSellPrice(item.level, item.rarity)
+    expect(after.gold.minus(s.gold).eq(expected)).toBe(true)
+    expect(sellPrice(item).eq(expected)).toBe(true)
   })
 
   it('надетый предмет продать нельзя — сперва снять', () => {
@@ -377,6 +383,100 @@ describe('продажа', () => {
 // довесок на другой стат — броня начала бы выдавать ДВЕ записи об одном
 // стате, и в карточке предмета игрок читал бы «+12 живучести, +4 живучести»
 // двумя строками.
+describe('цена находки растёт от уровня и тира', () => {
+  it('на одном тире цена строго растёт с уровнем вещи', () => {
+    for (const rarity of RARITIES) {
+      let prev = new Decimal(0)
+      for (let l = 1; l <= LEVEL_CAP; l += 1) {
+        const price = itemSellPrice(l, rarity.id)
+        expect(price.gt(prev), `${rarity.id}, ур. ${l}`).toBe(true)
+        prev = price
+      }
+    }
+  })
+
+  it('на одном уровне цена строго растёт с тиром', () => {
+    for (const l of [1, 25, 55, 85, LEVEL_CAP]) {
+      let prev = new Decimal(0)
+      for (const rarity of RARITIES) {
+        const price = itemSellPrice(l, rarity.id)
+        expect(price.gt(prev), `ур. ${l}, ${rarity.id}`).toBe(true)
+        prev = price
+      }
+    }
+  })
+
+  // ЧИСЛО, РАДИ КОТОРОГО ВСЁ И ДЕЛАЛОСЬ. Раньше цена не зависела от уровня
+  // ВООБЩЕ: сотый уровень продавался по цене первого, и находки давали 0-1 %
+  // золота. Разрыв «сотый против первого» и есть та самая починка.
+  it('сотый уровень продаётся много дороже первого', () => {
+    const first = itemSellPrice(1, 'common')
+    const last = itemSellPrice(LEVEL_CAP, 'common')
+    expect(last.div(first).toNumber()).toBeGreaterThan(20)
+  })
+
+  it('кран золота делится в заданной пропорции на каждом уровне', () => {
+    // ДОЛИ СЧИТАЮТСЯ ПО ТИПИЧНОМУ УБИЙСТВУ, а не по одной находке: моб платит
+    // всегда, находка — с вероятностью DROP_CHANCE и со случайным тиром.
+    for (const zone of ZONES) {
+      const typical = representativeMonster(zone)
+      const fromMonster = typical.goldReward
+      const fromLoot = averageItemSellPrice(typical.level).times(DROP_CHANCE)
+      const share = fromLoot.div(fromMonster.plus(fromLoot)).toNumber()
+      expect(share, zone.name).toBeCloseTo(GOLD_SOURCE_SHARE.loot, 6)
+    }
+  })
+
+  it('цена вещи вне лестницы уровней не ломается', () => {
+    // Уровень за потолком лестницы зон не должен ронять формулу: зоны для
+    // него нет, и множитель зоны берётся единицей.
+    expect(itemSellPrice(LEVEL_CAP + 50, 'common').gt(0)).toBe(true)
+  })
+})
+
+// ВТОРАЯ ЖИЗНЬ НАХОДКИ: ПРОДАТЬ ИЛИ РАСПЫЛИТЬ. Это настоящий выбор игрока
+// (лестница покупок даёт «продавать лишнее» и «распылять лишнее» отдельными
+// покупками), и он обязан оставаться выбором. Мера — сколько находок нужно
+// на ОДНО улучшение снаряжения по каждому пути: кованая вещь стоит час
+// дохода золотом, зачарование — свою цену пылью.
+//
+// ДО ПЕРЕНОСА ДОХОДА НА НАХОДКИ ВЫБОРА НЕ БЫЛО ВОВСЕ. Цена продажи не знала
+// об уровне, поэтому разрыв рос вместе с ним: ×60 на десятом уровне и ×1597
+// на сотом — распылять было выгоднее в полторы тысячи раз. Теперь цена растёт
+// по той же кривой, что и доход, и разрыв не зависит от уровня СТРУКТУРНО:
+// в числителе и знаменателе стоит одна и та же кривая.
+describe('продать или распылить — выбор, а не формальность', () => {
+  const totalWeight = RARITIES.reduce((s, r) => s + r.weight, 0)
+  const avgDust = RARITIES.reduce((s, r) => s + r.weight * DUST_BY_RARITY[r.id], 0) / totalWeight
+  const dearestEnchant = Math.max(...ENCHANTS.map((e) => e.dustCost))
+
+  /** Сколько находок нужно на одно улучшение каждым путём. */
+  const paths = (level: number) => {
+    const typical = representativeMonster(zoneForMonsterLevel(level) ?? ZONES[0])
+    return {
+      sell: goldPerHourAt(level).times(CRAFT_TOLL_HOURS.item)
+        .div(averageItemSellPrice(typical.level)).toNumber(),
+      dust: dearestEnchant / avgDust,
+    }
+  }
+
+  it('разрыв между путями меньше трёх раз на всей лестнице', () => {
+    for (let level = 1; level <= LEVEL_CAP; level += 1) {
+      const { sell, dust } = paths(level)
+      const gap = Math.max(sell, dust) / Math.min(sell, dust)
+      expect(gap, `ур. ${level}`).toBeLessThan(3)
+    }
+  })
+
+  it('разрыв не растёт с уровнем', () => {
+    // Односторонней проверки мало: разрыв, ползущий вверх, до сотого уровня
+    // в потолок не упрётся, а к рейду упрётся — и заметить это будет негде.
+    const first = paths(1)
+    const last = paths(LEVEL_CAP)
+    expect(last.sell / last.dust).toBeCloseTo(first.sell / first.dust, 6)
+  })
+})
+
 describe('модификаторы брони', () => {
   const rarity = RARITY_BY_ID.common
 

@@ -5,7 +5,7 @@ import type { Rng } from './rng'
 import { pushEvent, type GameState } from './state'
 import type { Item } from '../types'
 import { RARITIES, RARITY_BY_ID, type RarityDef } from '../data/rarity'
-import { DROP_CHANCE, ITEM_BASE_SELL_PRICE, LOOT_ADJECTIVES, SHIELD_SHARE } from '../data/loot'
+import { DROP_CHANCE, LOOT_ADJECTIVES, SHIELD_SHARE, itemSellPrice } from '../data/loot'
 import { SLOT_DROP_WEIGHTS, SLOT_IDS, type SlotId } from '../data/slots'
 import {
   ARMOR_ATTRIBUTES,
@@ -293,8 +293,10 @@ export function rollBossLoot(loot: BossLoot, rng: Rng, itemSeq: number, level = 
   })
 }
 
+// Цена продажи — формула ИЗ ДАННЫХ, по уровню вещи и тиру. Своей арифметики
+// здесь нет: разбор добычи, автопродажа и кнопка в сумке зовут одно и то же.
 export function sellPrice(item: Item): Decimal {
-  return ITEM_BASE_SELL_PRICE.times(RARITY_BY_ID[item.rarity].sellMult)
+  return itemSellPrice(item.level, item.rarity)
 }
 
 /**

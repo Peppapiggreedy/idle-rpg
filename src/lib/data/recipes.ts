@@ -15,6 +15,7 @@ import type { IconName } from '../ui/icons/manifest'
 import type { SlotId } from './slots'
 import { ARMOR_ATTRIBUTES, type AttributeId } from './items'
 import { DUNGEONS } from './dungeons'
+import { DROP_CHANCE, averageItemSellPrice } from './loot'
 import { procIdOf, relicTier } from './procs'
 import { CRAFT_UNLOCK_LEVEL, LEVEL_CAP, POTION_UNLOCK_LEVEL, UNIQUE_RECIPE_LEVEL } from './balance'
 import type { Rarity } from '../types'
@@ -126,9 +127,24 @@ function materialZoneIds(materialId: string): readonly string[] {
   return MATERIAL_BY_ID[materialId]?.zoneIds ?? HERB_BY_ID[materialId]?.zoneIds ?? []
 }
 
-/** Часовой доход золота на этом уровне — по награде типичного моба своей зоны. */
+/**
+ * Часовой доход золота на этом уровне. ДВА СЛАГАЕМЫХ, а не одно: то, что
+ * платит типичный моб своей зоны, и то, что приносит продажа упавшего с него.
+ *
+ * Второе слагаемое появилось вместе с ценой находки по уровню
+ * (`ITEM_SELL_BASE`). Без него модель считала бы лишь `GOLD_SOURCE_SHARE.monsters`
+ * от настоящего дохода — то есть пошлина крафта и лестница покупок разом
+ * подешевели бы втрое, а тесты этого не заметили бы: они сравнивают модель с
+ * прогоном, и прогон упал бы вместе с ней.
+ */
 export function goldPerHourAt(level: number): Decimal {
-  return representativeMonster(zoneForMonsterLevel(level)).goldReward.times(KILLS_PER_HOUR)
+  // ОДИН И ТОТ ЖЕ МОБ В ОБОИХ СЛАГАЕМЫХ. Находка падает С НЕГО и несёт ЕГО
+  // уровень, а не уровень героя: считать мобу середину полосы, а находке
+  // край, значило бы складывать двух разных мобов. На глубине разница
+  // копеечная, у первой зоны — четверть дохода.
+  const typical = representativeMonster(zoneForMonsterLevel(level))
+  const fromLoot = averageItemSellPrice(typical.level).times(DROP_CHANCE)
+  return typical.goldReward.plus(fromLoot).times(KILLS_PER_HOUR)
 }
 
 /** Сколько золота стоит собрать рецепт. Ноль не бывает: бесплатный слив — не слив. */

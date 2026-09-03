@@ -56,7 +56,7 @@ import { leaveDungeon } from './dungeons'
 import { QUEST_CHAIN } from '../data/quests'
 import type { DungeonRun, QuestProgress, TempleRun } from '../types'
 import { rankOf } from './talents'
-import { FALLBACK_ITEM_NAME, ITEM_BASE_SELL_PRICE } from '../data/loot'
+import { FALLBACK_ITEM_NAME, itemSellPrice } from '../data/loot'
 import { SAFE_ZONE, ZONES, ZONE_BY_ID } from '../data/zones'
 import { currentZone, offlineZone, zoneRate } from './zones'
 import { isUpgradeValue, lootValue, rollLoot, stashLoot, type LootValueCache } from './loot'
@@ -1008,11 +1008,19 @@ function gripV19toV20(raw: unknown): Grip | undefined {
   return undefined
 }
 
-/** Цена продажи по сохранённым полям: до состояния игры ещё далеко. */
+/**
+ * Цена продажи по сохранённым полям: до состояния игры ещё далеко.
+ *
+ * Формула ТА ЖЕ, что в игре (`itemSellPrice`): миграция, продавая лишнее из
+ * переполненной сумки, обязана считать вещь ровно во столько же, во сколько
+ * её оценит игра секундой позже. Битые поля — самый дешёвый исход: тир
+ * обычный, уровень первый.
+ */
 function savedSellPrice(raw: unknown): number {
   const item = (raw ?? {}) as RawSave
   const rarity = RARITY_BY_ID[item.rarity as Rarity] as RarityDef | undefined
-  return ITEM_BASE_SELL_PRICE.times(rarity ? rarity.sellMult : 1).toNumber()
+  const level = typeof item.level === 'number' && item.level >= 1 ? item.level : 1
+  return itemSellPrice(level, rarity ? rarity.id : 'common').toNumber()
 }
 
 export const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
