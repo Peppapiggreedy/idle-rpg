@@ -12,6 +12,8 @@ import { Decimal } from '../game/numbers'
 import { applyOfflineProgress } from '../game/save'
 import { sellItem } from '../game/loot'
 import type { UpgradePriority } from '../data/upgrade'
+import type { LootPolicy } from '../data/upgrades'
+import { buyUpgrade } from '../game/upgrades'
 import { craft as craftAction } from '../game/crafting'
 import { recordDecision, resetTelemetry } from './telemetry'
 import { equipItem, unequipItem } from '../game/equipment'
@@ -427,6 +429,18 @@ export function setUpgradePriority(value: UpgradePriority): void {
   // улучшением, и от этого меняется, во что герой оденется дальше.
   recordDecision('equip')
   state.update((s) => ({ ...s, upgradePriority: value }))
+}
+
+/** Покупка за золото. Нельзя — состояние не меняется, причину скажет кнопка. */
+export function buyGoldUpgrade(id: string): void {
+  recordDecision('craft')
+  state.update((s) => buyUpgrade(s, id))
+}
+
+/** Что делать с лишней находкой: не трогать, продавать, распылять. */
+export function setLootPolicy(value: LootPolicy): void {
+  recordDecision('inventory-policy')
+  state.update((s) => ({ ...s, lootPolicy: value }))
 }
 
 /** Беречь ли ману под лечение: боевые умения автокаста оставляют цену одного лечения. */

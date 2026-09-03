@@ -8,7 +8,6 @@
     formatNumber,
     sellPrice,
     upgradeShare,
-    INVENTORY_SIZE,
     type DisenchantBlockReason,
   } from '../game'
   import { EQUIP_BLOCK_TEXT, GRIP_TEXT } from './itemText'
@@ -20,17 +19,25 @@
     gameState,
     sellInventoryItem,
     setUpgradePriority,
+    buyGoldUpgrade,
+    setLootPolicy,
   } from '../stores/game'
   import ItemMods from './ItemMods.svelte'
   import EnchantLine from './EnchantLine.svelte'
   import ItemCompare from './ItemCompare.svelte'
   import { RARITY_BY_ID } from '../data/rarity'
   import { UPGRADE_PRIORITIES, type UpgradePriority } from '../data/upgrade'
+  import type { LootPolicy } from '../data/upgrades'
+  import { availableLootPolicies, availableUpgrades, inventorySize, lootPolicyOf } from '../game/upgrades'
+  import type { UpgradeBlockReason } from '../game/upgrades'
   import { Button, IconSlot, NumberText, Panel, Tag } from './kit'
   import { combatKey, createMemo } from './memo'
   import { Icon } from './icons'
 
-  const emptySlots = $derived(Math.max(0, INVENTORY_SIZE - $gameState.inventory.length))
+  // РАЗМЕР СУМКИ ПРОИЗВОДЕН от покупок: константа осталась базой, а сколько
+  // мест у ЭТОГО героя, считает game/upgrades.ts.
+  const bagSize = $derived(inventorySize($gameState))
+  const emptySlots = $derived(Math.max(0, bagSize - $gameState.inventory.length))
 
   // МЕТКА АПГРЕЙДА — то, ради чего снесено автонадевание. Видно не только
   // «лучше», но и НА СКОЛЬКО: доля прироста урона в секунду. Считается тем
@@ -68,6 +75,27 @@
     survival: 'Выживание',
     balance: 'Баланс',
   }
+  // ПОКУПКИ И РАЗБОР. Названия положений и причины отказов — текст для
+  // игрока, поэтому здесь; сама лестница и её числа лежат в data/upgrades.ts.
+  const upgrades = $derived(availableUpgrades($gameState))
+  const policies = $derived(availableLootPolicies($gameState))
+  const policy = $derived(lootPolicyOf($gameState))
+  const POLICY_NAME: Record<LootPolicy, string> = {
+    keep: 'Не трогать',
+    sell: 'Продавать',
+    dust: 'Распылять',
+  }
+  const POLICY_HINT: Record<LootPolicy, string> = {
+    keep: 'Всё падает в сумку — разбираешь сам.',
+    sell: 'Лишнее уходит в золото сразу. Лучшее хоть по одной оси остаётся.',
+    dust: 'Лишнее уходит в пыль сразу. Лучшее хоть по одной оси остаётся.',
+  }
+  const UPGRADE_REASON: Record<UpgradeBlockReason, string> = {
+    owned: 'Уже куплено',
+    level: 'Откроется позже',
+    gold: 'Не хватает золота',
+  }
+
   const PRIORITY_HINT: Record<UpgradePriority, string> = {
     damage: 'Апгрейд — то, что поднимает убийства в секунду. Остальное разбирается.',
     survival: 'Апгрейд — то, что удешевляет бой. Остальное разбирается.',
@@ -160,7 +188,7 @@
 
 <Panel
   title="Инвентарь"
-  subtitle="{$gameState.inventory.length} из {INVENTORY_SIZE} слотов{$gameState.enchantDust.gt(0)
+  subtitle="{$gameState.inventory.length} из {bagSize} слотов{$gameState.enchantDust.gt(0)
     ? ` · ${formatNumber($gameState.enchantDust)} пыли`
     : ''}"
 >
@@ -193,6 +221,54 @@
     </div>
     <p class="priority-hint">{PRIORITY_HINT[$gameState.upgradePriority]}</p>
   </div>
+
+  <!-- ЧТО ДЕЛАТЬ С ЛИШНИМ. Положения открываются покупками: пока ничего не
+       куплено, ряда нет вовсе — закрытое не показывается, как и везде. -->
+  {#if policies.length > 1}
+    <div class="priority">
+      <span class="priority-label" id="loot-policy-label">С лишним</span>
+      <div class="priority-row" role="group" aria-labelledby="loot-policy-label">
+        {#each policies as p (p)}
+          <Button
+            size="sm"
+            variant={policy === p ? 'primary' : 'ghost'}
+            onclick={() => setLootPolicy(p)}
+          >
+            {POLICY_NAME[p]}
+          </Button>
+        {/each}
+      </div>
+      <p class="priority-hint">{POLICY_HINT[policy]}</p>
+    </div>
+  {/if}
+
+  <!-- ЛЕСТНИЦА ПОКУПОК. Показываются только доступные и ещё не купленные:
+       закрытая ступень — та же запертая кнопка с ценой, до которой сорок
+       уровней, а купленная в списке «что можно взять» уже не нужна. -->
+  {#if upgrades.length > 0}
+    <section class="shop">
+      <h3>Купить за золото</h3>
+      <ul class="shop-list">
+        {#each upgrades as row (row.def.id)}
+          <li class="shop-row" class:blocked={!row.canBuy}>
+            <Icon name={row.def.icon} />
+            <div class="shop-text">
+              <b>{row.def.name}</b>
+              <span class="shop-desc">{row.def.description}</span>
+            </div>
+            <Button
+              size="sm"
+              variant={row.canBuy ? 'primary' : 'ghost'}
+              disabled={!row.canBuy}
+              onclick={() => buyGoldUpgrade(row.def.id)}
+            >
+              {row.canBuy ? `${formatNumber(row.cost)} золота` : UPGRADE_REASON[row.reason!]}
+            </Button>
+          </li>
+        {/each}
+      </ul>
+    </section>
+  {/if}
 
   <div class="grid" data-item-card>
     {#each sorted as item (item.id)}
@@ -305,6 +381,40 @@
   .priority-row {
     display: flex;
     gap: var(--space-2);
+  }
+  .shop {
+    margin-bottom: var(--space-3);
+  }
+  .shop h3 {
+    margin: 0 0 var(--space-2);
+    font-size: var(--text-sm);
+    color: var(--c-text-dim);
+  }
+  .shop-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .shop-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+  }
+  .shop-row.blocked {
+    opacity: 0.6;
+  }
+  .shop-text {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    font-size: var(--text-sm);
+  }
+  .shop-desc {
+    font-size: var(--text-xs);
+    color: var(--c-text-dim);
   }
   .priority-hint {
     flex-basis: 100%;

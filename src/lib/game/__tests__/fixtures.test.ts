@@ -33,6 +33,8 @@ import {
 import { CLASS_BY_ID, DEFAULT_CLASS, classById } from '../../data/classes'
 import { TEMPLE, recipeUnlocked } from '../../data/temple'
 import { materialCount } from '../crafting'
+import { availableLootPolicies, inventorySize } from '../upgrades'
+import { GOLD_UPGRADES } from '../../data/upgrades'
 
 function fixture(name: string): string {
   return readFileSync(new URL(`../__fixtures__/${name}`, import.meta.url), 'utf8')
@@ -251,6 +253,38 @@ describe('фикстуры сейвов', () => {
     const raw = { ...JSON.parse(fixture('save-v25.json')), version: 26, upgradePriority: 'ерунда' }
     const state = stateFromPayload(migrateSave(raw)!)
     expect(state.upgradePriority).toBe('balance')
+  })
+
+  it('save-v26 -> v27: лестница покупок пуста, разбор на «не трогать»', () => {
+    const raw = JSON.parse(fixture('save-v26.json'))
+    expect('purchasedUpgradeIds' in raw, 'в 26-й версии поля не было').toBe(false)
+    const payload = migrateSave(raw)!
+    expect(payload.version).toBe(SAVE_VERSION)
+    expect(payload.purchasedUpgradeIds).toEqual([])
+    expect(payload.lootPolicy).toBe('keep')
+
+    const state = loadFixture('save-v26.json')
+    // Сумка у ветерана прежнего размера: покупок он не делал, и внезапно
+    // выросшая сумка была бы подарком, которого он не просил.
+    expect(inventorySize(state)).toBe(INVENTORY_SIZE)
+    expect(availableLootPolicies(state)).toEqual(['keep'])
+    // Прогресс не тронут: покупки — новая трата золота, а не пересчёт старого.
+    expect(state.level.toString()).toBe(String(raw.level))
+    expect(state.gold.toString()).toBe(String(raw.gold))
+  })
+
+  it('незнакомая покупка в сейве отбрасывается, а не роняет загрузку', () => {
+    // Ступень могли переименовать или убрать: держать ссылку в никуда
+    // незачем, а размер сумки считается ИЗ этого списка.
+    const raw = {
+      ...JSON.parse(fixture('save-v26.json')),
+      version: 27,
+      purchasedUpgradeIds: ['такой-покупки-нет', GOLD_UPGRADES[0].id],
+      lootPolicy: 'ерунда',
+    }
+    const state = stateFromPayload(migrateSave(raw)!)
+    expect(state.purchasedUpgradeIds).toEqual([GOLD_UPGRADES[0].id])
+    expect(state.lootPolicy).toBe('keep')
   })
 
   it('save-v19 -> v20: незаконная связка рук расформирована', () => {

@@ -124,6 +124,10 @@
       case 'autosell':
         // Игрок этого не выбирал — значит, обязан об этом узнать.
         return `Сумка полна: ${e.item.name} продан сам за ${formatNumber(e.gold)}`
+      case 'autodust':
+        // Разбор на лету: игрок сам поставил переключатель, но строка нужна —
+        // иначе находка исчезает молча и читается как потеря.
+        return `${e.item.name} распылён на месте: +${formatNumber(e.dust)} пыли`
       case 'loot-swap':
         return `${e.item.name} лучше надетого — освободил место, продав ${e.dropped.name} за ${formatNumber(e.gold)}`
       case 'spawn':
@@ -166,6 +170,7 @@
     levelup: 'xp',
     loot: 'slot-trinket',
     autosell: 'gold',
+    autodust: 'material-shard',
     'loot-swap': 'slot-trinket',
     spawn: 'zone-mirefen-hollows',
     hurt: 'stat-maxHp',

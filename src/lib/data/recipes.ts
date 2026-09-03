@@ -16,7 +16,7 @@ import type { SlotId } from './slots'
 import { ARMOR_ATTRIBUTES, type AttributeId } from './items'
 import { DUNGEONS } from './dungeons'
 import { procIdOf, relicTier } from './procs'
-import { LEVEL_CAP, UNIQUE_RECIPE_LEVEL } from './balance'
+import { CRAFT_UNLOCK_LEVEL, LEVEL_CAP, POTION_UNLOCK_LEVEL, UNIQUE_RECIPE_LEVEL } from './balance'
 import type { Rarity } from '../types'
 
 export type ProfessionId = 'cooking' | 'smithing' | 'herbalism' | 'relics'
@@ -609,8 +609,31 @@ export const RECIPE_BY_ID: Record<string, RecipeDef> = Object.fromEntries(
 )
 
 /** Уровень открытия рецепта. Одно место, где живёт умолчание. */
+/**
+ * УРОВЕНЬ ПРОФЕССИИ — ПОЛ ДЛЯ ВСЕХ ЕЁ РЕЦЕПТОВ. Раньше рецепт без своего
+ * `unlockLevel` был открыт с первого уровня, и вся кузня с кулинарией
+ * работали у героя, которому лестница открытий обещает ремёсла на
+ * тридцатом. Обещание, которое игрок уже видел, — не обещание.
+ *
+ * Живёт таблицей в данных, а не условием в коде: новая профессия получает
+ * свой порог строкой, и `Record<ProfessionId, …>` заставит про неё решить.
+ */
+export const PROFESSION_UNLOCK_LEVEL: Record<ProfessionId, number> = {
+  cooking: CRAFT_UNLOCK_LEVEL,
+  smithing: CRAFT_UNLOCK_LEVEL,
+  // Реликварий — уникальные рецепты, у них свой порог и он выше.
+  relics: UNIQUE_RECIPE_LEVEL,
+  herbalism: POTION_UNLOCK_LEVEL,
+}
+
+/** Уровень доступа к рецепту: свой, если задан, иначе порог его профессии. */
 export function recipeUnlockLevel(recipe: RecipeDef): number {
-  return recipe.unlockLevel ?? 1
+  return Math.max(recipe.unlockLevel ?? 1, PROFESSION_UNLOCK_LEVEL[recipe.profession])
+}
+
+/** Открыта ли профессия герою этого уровня. */
+export function professionUnlocked(profession: ProfessionId, level: number): boolean {
+  return level >= PROFESSION_UNLOCK_LEVEL[profession]
 }
 
 export function recipesOf(profession: ProfessionId): RecipeDef[] {

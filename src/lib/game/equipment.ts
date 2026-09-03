@@ -1,6 +1,7 @@
 // Надеть / снять / оценить экипировку. Чистые операции над состоянием.
 import { estimateCombatRate, swingDamageRange, type CombatRate } from './combat'
 import { INVENTORY_SIZE, RESPAWN_DELAY_MS } from '../data/balance'
+import { inventorySize } from './upgrades'
 import {
   SAFE_ZONE,
   ZONE_BY_ID,
@@ -106,7 +107,7 @@ export function equipStatus(state: GameState, item: Item): EquipStatus {
   // Место под сам предмет есть всегда: он покидает сумку. А вот СНЯТОЕ может
   // и не поместиться — тогда надевать нельзя, иначе предмет пропал бы молча.
   const freed = state.inventory.filter((i) => i.id !== item.id).length
-  if (freed + removed.length > INVENTORY_SIZE) return blocked('two-handed-needs-both')
+  if (freed + removed.length > inventorySize(state)) return blocked('two-handed-needs-both')
   return { canEquip: true, reason: null, removed }
 }
 
@@ -480,7 +481,7 @@ export interface UnequipStatus {
 /** Можно ли снять предмет из слота ПРЯМО СЕЙЧАС — ему нужно место в сумке. */
 export function unequipStatus(state: GameState, slot: SlotId): UnequipStatus {
   if (!state.equipment[slot]) return { canUnequip: false, reason: 'empty-slot' }
-  if (state.inventory.length >= INVENTORY_SIZE) {
+  if (state.inventory.length >= inventorySize(state)) {
     return { canUnequip: false, reason: 'inventory-full' }
   }
   return { canUnequip: true, reason: null }

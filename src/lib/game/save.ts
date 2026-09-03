@@ -64,6 +64,12 @@ import {
   UPGRADE_PRIORITIES,
   type UpgradePriority,
 } from '../data/upgrade'
+import {
+  DEFAULT_LOOT_POLICY,
+  GOLD_UPGRADE_BY_ID,
+  LOOT_POLICIES,
+  type LootPolicy,
+} from '../data/upgrades'
 import { averageMonsterLevel } from '../data/zones'
 import { leaveTemple } from './temple'
 import type { Rng } from './rng'
@@ -91,7 +97,7 @@ const OFFLINE_LOOT_SALT = 0x9e37_79b9
 /** Все хваты одним списком: сейв принимает только их. */
 const GRIPS: Grip[] = ['one', 'two', 'shield']
 
-export const SAVE_VERSION = 26
+export const SAVE_VERSION = 27
 export const AUTOSAVE_INTERVAL_MS = AUTOSAVE_INTERVAL_S * 1000
 // Потолок оффлайн-прогресса: дольше отсутствовать можно, но не оплачивается.
 export const OFFLINE_CAP_MS = OFFLINE_CAP_HOURS * 60 * 60 * 1000
@@ -198,6 +204,10 @@ export interface SavePayloadV21 {
   holdManaForHeal: boolean
   /** Что игрок считает апгрейдом: урон, выживание или баланс. */
   upgradePriority: UpgradePriority
+  /** Что куплено за золото: id ступеней лестницы покупок. */
+  purchasedUpgradeIds: string[]
+  /** Что делать с лишней находкой: не трогать, продавать, распылять. */
+  lootPolicy: LootPolicy
   reviveMsLeft: number
   // Таланты: id -> ранг (обычные числа, не Decimal — рангов единицы).
   talents: Record<string, number>
@@ -370,6 +380,8 @@ export function payloadFromState(state: GameState, lastTimestamp: number): SaveP
     restHpThreshold: state.restHpThreshold,
     holdManaForHeal: state.holdManaForHeal !== false,
     upgradePriority: state.upgradePriority,
+    purchasedUpgradeIds: [...state.purchasedUpgradeIds],
+    lootPolicy: state.lootPolicy,
     abilitySettings,
     itemSeq: state.itemSeq,
     gold: state.gold.toString(),
@@ -829,6 +841,13 @@ export function stateFromPayload(p: SavePayloadV21): GameState {
     upgradePriority: UPGRADE_PRIORITIES.includes(p.upgradePriority)
       ? p.upgradePriority
       : DEFAULT_UPGRADE_PRIORITY,
+    // Незнакомые id покупок отбрасываются: ступень могли переименовать или
+    // убрать, и держать в сейве ссылку в никуда незачем — размер сумки и
+    // открытые положения переключателя считаются ИЗ ЭТОГО списка.
+    purchasedUpgradeIds: (Array.isArray(p.purchasedUpgradeIds) ? p.purchasedUpgradeIds : []).filter(
+      (id) => GOLD_UPGRADE_BY_ID[id] !== undefined,
+    ),
+    lootPolicy: LOOT_POLICIES.includes(p.lootPolicy) ? p.lootPolicy : DEFAULT_LOOT_POLICY,
     restSpeedupSource: null,
   }
   // Поток случайности берём от сида состояния — загрузка детерминированна.
@@ -1022,6 +1041,9 @@ export const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
 
     let gold = new Decimal(String(raw.gold ?? '0'))
     for (const item of removed) {
+      // ЗДЕСЬ ИМЕННО БАЗОВЫЙ РАЗМЕР, а не производный от покупок: миграция
+      // 19-й версии работает с СЫРЫМ сейвом, покупок в нём быть не может —
+      // лестница покупок появилась семью версиями позже.
       if (inventory.length < INVENTORY_SIZE) {
         inventory.push(item)
         continue
@@ -1289,6 +1311,15 @@ export const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
     }
     return next
   },
+  // 26 -> 27. Лестница покупок: у старого героя куплено ничего, разбор
+  // добычи стоит на «не трогать». Прогресс не трогается вовсе — покупки
+  // это новая трата золота, а не пересчёт старого.
+  26: (raw) => ({
+    ...raw,
+    version: 27,
+    purchasedUpgradeIds: [],
+    lootPolicy: DEFAULT_LOOT_POLICY,
+  }),
   // 25 -> 26. Приоритет апгрейда. У старого героя настройки не было, и
   // «лучше» считалось одной осью — уроном. Ставим БАЛАНС, а не «урон»:
   // одноосная мера и была дефектом, ради которого приоритет заведён, и

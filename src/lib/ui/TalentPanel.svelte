@@ -120,12 +120,15 @@
   }
 </script>
 
+<!-- ЗАКРЫТО ЗНАЧИТ НЕ ВИДНО: до первого очка дерева нет в разметке вовсе.
+     Пустое дерево с подписью «первое очко на десятом уровне» показывало
+     игроку всю будущую прокачку заранее — то есть ровно то, что лестница
+     открытий держит закрытым. -->
+{#if $gameState.level.gte(TALENT_FIRST_LEVEL)}
 <Panel title="Таланты">
   {#snippet header()}
     {#if points > 0}
       <Tag tone="xp" size="md" label="свободных очков: {points}" />
-    {:else if $gameState.level.lt(TALENT_FIRST_LEVEL)}
-      <Tag size="md" label="первое очко — на {TALENT_FIRST_LEVEL} уровне" />
     {:else if $gameState.level.gte(LEVEL_CAP)}
       <!--
         НА ПОТОЛКЕ ОБЕЩАТЬ НЕЧЕГО. «Следующее с уровнем» — правда ровно до
@@ -191,6 +194,7 @@
     </span>
   {/snippet}
 </Panel>
+{/if}
 
 <style>
   h3 {

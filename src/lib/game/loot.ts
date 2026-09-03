@@ -25,6 +25,8 @@ import {
 import { INVENTORY_SIZE, itemLevelScale } from '../data/balance'
 import type { StatModifier } from './stats'
 import { betterOnAnyAxis, isEquipped, upgradeShare } from './equipment'
+import { dustValue } from './enchanting'
+import { inventorySize, lootPolicyOf } from './upgrades'
 import type { BossLoot } from '../data/dungeons'
 
 // Реэкспорт для обратной совместимости импортов.
@@ -361,7 +363,29 @@ export function isUpgradeValue(value: number): boolean {
  */
 export function stashLoot(state: GameState, item: Item, cache?: LootValueCache): GameState {
   const withSeq = { ...state, itemSeq: Math.max(state.itemSeq, Number(item.id.split('-')[1]) + 1) }
-  if (state.inventory.length < INVENTORY_SIZE) {
+  // РАЗБОР НА ЛЕТУ — покупка, а не умолчание. Пока переключатель стоит на
+  // «не трогать» (и пока положения не куплены), поведение ровно прежнее:
+  // всё падает в сумку. Купленные положения убирают из неё МУСОР — вещь,
+  // не лучшую ни по одной оси, — и никогда находку: железное правило сумки
+  // проверяется первым и здесь.
+  const policy = lootPolicyOf(state)
+  if (policy !== 'keep' && !betterOnAnyAxis(state, item)) {
+    if (policy === 'sell') {
+      const gold = sellPrice(item)
+      return {
+        ...withSeq,
+        gold: state.gold.plus(gold),
+        combatLog: pushEvent(state.combatLog, { type: 'autosell', item, gold }),
+      }
+    }
+    const dust = dustValue(item)
+    return {
+      ...withSeq,
+      enchantDust: state.enchantDust.plus(dust),
+      combatLog: pushEvent(state.combatLog, { type: 'autodust', item, dust }),
+    }
+  }
+  if (state.inventory.length < inventorySize(state)) {
     return {
       ...withSeq,
       inventory: [...state.inventory, item],

@@ -2,6 +2,7 @@
 // зависели от него, а не друг от друга.
 import { Decimal } from './numbers'
 import { DEFAULT_UPGRADE_PRIORITY, type UpgradePriority } from '../data/upgrade'
+import { DEFAULT_LOOT_POLICY, type LootPolicy } from '../data/upgrades'
 import { xpToNextLevel } from './formulas'
 import { randomSeed } from './rng'
 import { buildMonster } from '../data/monsters'
@@ -134,6 +135,19 @@ export interface GameState {
    * добычи. Правила положений — данными в `data/upgrade.ts`.
    */
   upgradePriority: UpgradePriority
+  /**
+   * ЧТО КУПЛЕНО ЗА ЗОЛОТО. Список id, а не набор флагов и не счётчик мест:
+   * из него ПРОИЗВОДНЫ и размер сумки, и открытые положения переключателя
+   * разбора (`game/upgrades.ts`). Отдельные поля пришлось бы чинить
+   * миграцией при каждой правке лестницы и разъезжались бы они молча.
+   */
+  purchasedUpgradeIds: string[]
+  /**
+   * ЧТО ДЕЛАТЬ С ЛИШНЕЙ НАХОДКОЙ: не трогать, продавать, распылять.
+   * Настройка игрока; положения открываются покупками. Что считать
+   * «лишним», решает приоритет апгрейда — здесь только судьба лишнего.
+   */
+  lootPolicy: LootPolicy
   // Что ускоряет привал. Пока всегда null: сюда приедет еда из кулинарии.
   // Поле и место его учёта заведены заранее, чтобы профессии не пришлось
   // втискивать в конвейер тика задним числом.
@@ -343,6 +357,8 @@ export function createInitialState(
     restHpThreshold: REST_HP_THRESHOLD_DEFAULT,
     holdManaForHeal: true,
     upgradePriority: DEFAULT_UPGRADE_PRIORITY,
+    purchasedUpgradeIds: [],
+    lootPolicy: DEFAULT_LOOT_POLICY,
     restSpeedupSource: null,
     abilityCooldownsMs: {},
     abilityCharges: {},

@@ -12,6 +12,9 @@ import { createInitialState, monsterFromTemplate, type GameState } from './state
 import { ensureStats } from './stats'
 import { betterOnAnyAxis, compareItem, isUpgrade, upgradeShare } from './equipment'
 import { stashLoot, sellPrice } from './loot'
+import { dustValue } from './enchanting'
+import { buyUpgrade } from './upgrades'
+import { GOLD_UPGRADES } from '../data/upgrades'
 import { INVENTORY_SIZE } from '../data/balance'
 import { zoneForMonsterLevel, representativeMonster } from '../data/zones'
 import { averageGear, unlockedByLevel } from './simulate'
@@ -177,5 +180,56 @@ describe('приоритет — настройка игрока', () => {
     expect(isUpgrade({ ...state, upgradePriority: 'damage' }, armor)).toBe(
       isUpgrade(state, armor, 'damage'),
     )
+  })
+})
+
+
+describe('разбор на лету (покупка «что делать с лишним»)', () => {
+  /** Герой, которому по силам купить любую ступень лестницы. */
+  const rich = (): GameState => ({ ...hero(100, 60), gold: new Decimal('1e12'), inventory: [] })
+  const sellId = GOLD_UPGRADES.find((u) => u.effect.kind === 'policy' && u.effect.policy === 'sell')!.id
+  const dustId = GOLD_UPGRADES.find((u) => u.effect.kind === 'policy' && u.effect.policy === 'dust')!.id
+
+  it('пока положение не куплено, всё падает в сумку как раньше', () => {
+    const base = hero()
+    const junk = oneStat('chest', 'vitality', 0.0001, 'test-junk')
+    // Даже с выставленным в сейве положением: право на него не куплено.
+    const state: GameState = { ...base, lootPolicy: 'sell', inventory: [] }
+    expect(stashLoot(state, junk).inventory.map((i) => i.id)).toContain('test-junk')
+  })
+
+  it('«продавать»: лишнее уходит в золото, место в сумке не тратится', () => {
+    const base = buyUpgrade(rich(), sellId)
+    const state: GameState = { ...base, lootPolicy: 'sell' }
+    const junk = oneStat('chest', 'vitality', 0.0001, 'test-junk')
+    const next = stashLoot(state, junk)
+    expect(next.inventory).toHaveLength(0)
+    expect(next.gold.minus(state.gold).eq(sellPrice(junk))).toBe(true)
+  })
+
+  it('«распылять»: лишнее уходит в пыль', () => {
+    const base = buyUpgrade(rich(), dustId)
+    const state: GameState = { ...base, lootPolicy: 'dust' }
+    const junk = oneStat('chest', 'vitality', 0.0001, 'test-junk')
+    const next = stashLoot(state, junk)
+    expect(next.inventory).toHaveLength(0)
+    expect(next.enchantDust.minus(state.enchantDust).eq(dustValue(junk))).toBe(true)
+    expect(next.gold.eq(state.gold)).toBe(true)
+  })
+
+  it('ЖЕЛЕЗНОЕ ПРАВИЛО: находка не продаётся и не распыляется автоматикой', () => {
+    // Автоматика убирает мусор, а не находки. Это то же правило, что держит
+    // полную сумку, и покупка его не отменяет.
+    const armor = oneStat('chest', 'vitality', 400, 'test-armor')
+    for (const [id, policy] of [
+      [sellId, 'sell'],
+      [dustId, 'dust'],
+    ] as const) {
+      const base = buyUpgrade(rich(), id)
+      const state: GameState = { ...base, lootPolicy: policy }
+      expect(betterOnAnyAxis(state, armor), 'предпосылка').toBe(true)
+      const next = stashLoot(state, armor)
+      expect(next.inventory.map((i) => i.id), policy).toContain('test-armor')
+    }
   })
 })

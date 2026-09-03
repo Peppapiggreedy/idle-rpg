@@ -89,7 +89,7 @@ export function isAggregated(row: LogRow): boolean {
 export const LOG_FILTERS = {
   all: { label: 'Всё', types: null },
   damage: { label: 'Урон', types: ['hit', 'ability', 'ability-dropped', 'ability-heal', 'effect', 'hurt', 'block'] },
-  loot: { label: 'Добыча', types: ['kill', 'loot', 'autosell', 'loot-swap', 'levelup'] },
+  loot: { label: 'Добыча', types: ['kill', 'loot', 'autosell', 'autodust', 'loot-swap', 'levelup'] },
   events: {
     label: 'События',
     types: ['spawn', 'death', 'revive', 'zone', 'boss', 'dungeon-exit', 'dungeon-clear', 'enrage'],
