@@ -14,7 +14,7 @@
   import { INVENTORY_SIZE, availablePoints, upgradeShare } from './lib/game'
   import { gameStarted, gameState } from './lib/stores/game'
   import { placeTitle } from './lib/ui/placeText'
-  import { closeMenu, openMenu } from './lib/stores/ui'
+  import { carriedItem, closeMenu, openMenu, releaseItem } from './lib/stores/ui'
   import { isTextMode, uiSettings } from './lib/stores/ui'
   import { isSceneDisabled } from './lib/ui/route'
   import {
@@ -85,11 +85,21 @@
   const summary = $derived(menuOpen && narrow)
   // Ширина угла: доля окна, зажатая между минимумом и потолком из данных.
   const miniWidth = `clamp(${SCENE_MINI_MIN_PX}px, ${Math.round(SCENE_MINI_SHARE * 100)}vw, ${SCENE_MINI_MAX_PX}px)`
-  // Esc закрывает открытое меню. Слушатель один и висит здесь: у меню нет
-  // своего корня, который мог бы поймать клавишу, а плодить по слушателю
-  // на каждое меню значило бы семь подписок вместо одной.
+  // Esc СНИМАЕТ БЛИЖАЙШЕЕ, а не всё разом: сперва вещь из руки, и только
+  // если рук пусты — меню. Иначе одно нажатие и роняло бы находку, и
+  // закрывало экран, на котором игрок её выбирал, — а вернуть её оттуда
+  // нечем, кроме как открыть меню заново и найти вещь среди двух десятков.
+  //
+  // Слушатель один и висит здесь: у меню нет своего корня, который мог бы
+  // поймать клавишу, а плодить по подписке на каждое из семи меню значило
+  // бы семь слушателей вместо одного.
   function onKeydown(event: KeyboardEvent): void {
-    if (event.key === 'Escape' && $openMenu !== null) closeMenu()
+    if (event.key !== 'Escape') return
+    if ($carriedItem !== null) {
+      releaseItem()
+      return
+    }
+    if ($openMenu !== null) closeMenu()
   }
   const place = $derived(placeTitle($gameState))
   // Апгрейд в сумке видно из любого раздела: точка на вкладке.

@@ -7,6 +7,7 @@
 // своя версия и никакого влияния на формат сейва.
 import { get, readonly, writable } from 'svelte/store'
 import { SOUND_DEFAULT_VOLUMES } from '../data/balance'
+import type { SlotId } from '../data/slots'
 
 export const UI_SETTINGS_KEY = 'idle-rpg:ui'
 
@@ -176,4 +177,37 @@ export function toggleMenu(id: MenuId): void {
 
 export function closeMenu(): void {
   menu.set(null)
+}
+
+// --- Что игрок сейчас несёт --------------------------------------------
+
+// ПЕРЕТАСКИВАНИЕ — ЭТО СОСТОЯНИЕ ЭКРАНА, А НЕ ИГРЫ. В сейве ему делать
+// нечего: «я держу клинок над курткой» переживать перезагрузку не должно.
+// Поэтому оно живёт здесь, рядом с открытым меню, и по тем же правилам.
+//
+// Источников ровно два: находка в сумке и надетая вещь. Третьего быть не
+// может — предметы больше нигде не лежат.
+export type Carry = { from: 'bag'; itemId: string } | { from: 'slot'; slot: SlotId }
+
+export const sameCarry = (a: Carry | null, b: Carry | null): boolean => {
+  if (a === null || b === null) return a === b
+  if (a.from === 'bag' && b.from === 'bag') return a.itemId === b.itemId
+  if (a.from === 'slot' && b.from === 'slot') return a.slot === b.slot
+  return false
+}
+
+const carried = writable<Carry | null>(null)
+export const carriedItem = readonly(carried)
+
+export function takeItem(next: Carry): void {
+  carried.set(next)
+}
+
+/** Повторное нажатие по той же вещи кладёт её обратно. */
+export function toggleCarried(next: Carry): void {
+  carried.update((current) => (sameCarry(current, next) ? null : next))
+}
+
+export function releaseItem(): void {
+  carried.set(null)
 }

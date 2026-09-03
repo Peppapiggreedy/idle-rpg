@@ -9,7 +9,7 @@
   // pointer-events: none — обязательное свойство, а не украшение: окно висит
   // над карточкой, и без него оно перехватывало бы нажатия кнопок под собой.
   import { Decimal, compareItem, type StatId } from '../game'
-  import { UPGRADE_AXES, type UpgradeAxis } from '../data/upgrade'
+  import { axisRows } from './axisText'
   import { gameState } from '../stores/game'
   import { formatStatDelta, isImprovement, SHOWN_STAT_IDS, statNames } from './statFormat'
   import { RARITY_BY_ID } from '../data/rarity'
@@ -66,29 +66,10 @@
   // что находка вдвое дешевле по цене боя, — иначе ось выживания не помогла
   // бы ему ни разу.
   //
-  // Знак у обеих осей означает одно и то же: плюс — лучше. У выживания это
-  // СНИЖЕНИЕ цены боя, и переворот знака сделан в логике (`compareAxes`), а
-  // не здесь: подсказка не должна знать, какая ось считается наоборот.
-  const AXIS_NAME: Record<UpgradeAxis, string> = {
-    damage: 'Урон',
-    survival: 'Выживание',
-  }
-  const share = (v: number | null): string => {
-    if (v === null) return '—'
-    if (!Number.isFinite(v)) return 'с нуля'
-    if (Math.abs(v) < 0.0005) return 'без изменений'
-    return `${v > 0 ? '+' : '−'}${(Math.abs(v) * 100).toFixed(1).replace('.', ',')} %`
-  }
-  const axisRows = $derived(
-    UPGRADE_AXES.map((axis) => ({
-      axis,
-      name: AXIS_NAME[axis],
-      text: share(cmp.axes[axis]),
-      value: cmp.axes[axis],
-      // Ось, по которой ставится метка при текущем приоритете, — жирнее.
-      marked: cmp.markedAxes.includes(axis),
-    })),
-  )
+  // Строки собирает ОБЩИЙ `axisText.ts`: те же две оси показывает кукла при
+  // перетаскивании, и числа там обязаны совпадать до знака. Своей копии
+  // форматирования здесь быть не должно.
+  const rows = $derived(axisRows(cmp.axes, cmp.markedAxes))
 
   // Границы экрана: не хватает места справа — открываемся слева, не хватает
   // снизу — выше курсора. Проверка идёт по РЕАЛЬНОМУ размеру окна после
@@ -126,7 +107,7 @@
        выживание — цена схватки долей запаса. По голой формуле урона броня
        никогда не была бы апгрейдом — за этим ось выживания и заведена. -->
   <ul class="axes">
-    {#each axisRows as row (row.axis)}
+    {#each rows as row (row.axis)}
       <li class:marked={row.marked}>
         <span class="axis">{row.name}</span>
         <b class:up={(row.value ?? 0) > 0} class:down={(row.value ?? 0) < 0}>{row.text}</b>

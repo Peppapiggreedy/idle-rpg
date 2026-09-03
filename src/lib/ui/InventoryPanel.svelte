@@ -10,8 +10,11 @@
     upgradeShare,
     type DisenchantBlockReason,
   } from '../game'
-  import { EQUIP_BLOCK_TEXT, GRIP_TEXT } from './itemText'
+  import { EQUIP_BLOCK_TEXT, GRIP_TEXT, UNEQUIP_BLOCK_TEXT } from './itemText'
   import { ENCHANT_UNLOCK_LEVEL } from '../data/balance'
+  import { LONG_PRESS_MS } from '../data/render'
+  import { carriedItem, releaseItem, takeItem, toggleCarried } from '../stores/ui'
+  import { bagOutcome } from './dropTarget'
   import { itemSlotLabel } from './itemText'
   import {
     disenchantInventoryItem,
@@ -21,6 +24,7 @@
     setUpgradePriority,
     buyGoldUpgrade,
     setLootPolicy,
+    unequipSlot,
   } from '../stores/game'
   import ItemMods from './ItemMods.svelte'
   import EnchantLine from './EnchantLine.svelte'
@@ -141,19 +145,73 @@
     if (pinned) return
     if (compare?.id === id) compare = null
   }
-  /** Нажатие по иконке: на тач-экране это единственный способ открыть окно. */
+  /**
+   * Нажатие по иконке ДЕЛАЕТ ДВА ДЕЛА СРАЗУ, и это не совмещение ради
+   * экономии: игрок, выбирающий вещь для слота, обязан в этот же момент
+   * видеть, что она даёт. Поэтому нажатие и берёт вещь в руку, и открывает
+   * окно сравнения — на тач-экране это вообще единственный способ его
+   * открыть. Повторное нажатие по той же вещи отменяет и то, и другое.
+   */
   function toggle(event: MouseEvent, id: string) {
+    if (longFired) {
+      longFired = false
+      return
+    }
     if (pinned && compare?.id === id) {
       pinned = false
       compare = null
+      releaseItem()
       return
     }
     pinned = true
     compare = { id, x: event.clientX, y: event.clientY }
+    toggleCarried({ from: 'bag', itemId: id })
   }
-  function dismiss() {
+  /** Только окно сравнения: вещь из руки Esc роняет НЕ ЗДЕСЬ, а в App —
+   *  порядок «сперва вещь, потом меню» держится в одном месте. */
+  function unpinCompare() {
     pinned = false
     compare = null
+  }
+
+  function dismiss() {
+    unpinCompare()
+    releaseItem()
+  }
+
+  // --- ТРИ ПУТИ НАДЕТЬ НАХОДКУ ------------------------------------------
+  //
+  // Сумка — начало каждого из них: отсюда вещь берут перетаскиванием, отсюда
+  // же её выбирают нажатием и отсюда надевают долгим нажатием. Куда её можно
+  // положить, решает `ui/dropTarget.ts` — та же функция, что и у куклы.
+
+  /** Сумка как цель броска: надетое, брошенное сюда, снимается. */
+  const bagDrop = $derived(bagOutcome($gameState, $carriedItem))
+
+  function equipNow(id: string): void {
+    const item = $gameState.inventory.find((i) => i.id === id)
+    if (item && equipStatus($gameState, item).canEquip) equipInventoryItem(id)
+    dismiss()
+  }
+
+  // Долгое нажатие = «надеть немедленно». На тач-экране это третий путь:
+  // ни перетаскивания, ни двойного щелчка пальцем там нет.
+  let pressTimer: ReturnType<typeof setTimeout> | null = null
+  // Сработавшее долгое нажатие обязано СЪЕСТЬ следующий клик: иначе вещь
+  // надевается и тут же берётся в руку призраком того же нажатия.
+  let longFired = false
+  function startPress(id: string): void {
+    cancelPress()
+    longFired = false
+    pressTimer = setTimeout(() => {
+      pressTimer = null
+      longFired = true
+      equipNow(id)
+    }, LONG_PRESS_MS)
+  }
+  function cancelPress(): void {
+    if (pressTimer !== null) clearTimeout(pressTimer)
+    pressTimer = null
   }
 
   /**
@@ -178,11 +236,13 @@
 </script>
 
 <svelte:window
-  onkeydown={(e) => e.key === 'Escape' && dismiss()}
+  onkeydown={(e) => e.key === 'Escape' && unpinCompare()}
   onpointerdown={(e) => {
-    // Клик ВНЕ карточки закрывает прикреплённое окно. Кнопки внутри
-    // карточки остаются своими целями нажатия — окно мышь не ловит.
-    if (pinned && !(e.target as HTMLElement)?.closest?.('[data-item-card]')) dismiss()
+    // Клик ВНЕ карточки закрывает прикреплённое окно — но НЕ роняет вещь из
+    // руки. Разница принципиальна: слоты куклы лежат вне сумки, и нажатие по
+    // ним приходит сюда РАНЬШЕ, чем к самому слоту. Роняя здесь несомое, мы
+    // отменяли бы ровно то действие, ради которого игрок и нажал на слот.
+    if (pinned && !(e.target as HTMLElement)?.closest?.('[data-item-card]')) unpinCompare()
   }}
 />
 
@@ -270,7 +330,26 @@
     </section>
   {/if}
 
-  <div class="grid" data-item-card>
+  <!-- СУМКА — ТОЖЕ ЦЕЛЬ БРОСКА: надетое, брошенное сюда, снимается. Иначе
+       перетаскивание работало бы в одну сторону, а снимать пришлось бы
+       кнопкой — два разных жеста на одно и то же действие. -->
+  {#if bagDrop.fits && !bagDrop.allowed && bagDrop.reason}
+    <p class="deny" data-deny>{UNEQUIP_BLOCK_TEXT[bagDrop.reason]}</p>
+  {/if}
+  <div
+    class="grid"
+    class:target={bagDrop.allowed}
+    data-item-card
+    role="list"
+    ondragover={(e: DragEvent) => {
+      if (bagDrop.allowed) e.preventDefault()
+    }}
+    ondrop={(e: DragEvent) => {
+      e.preventDefault()
+      if (bagDrop.allowed && $carriedItem?.from === 'slot') unequipSlot($carriedItem.slot)
+      releaseItem()
+    }}
+  >
     {#each sorted as item (item.id)}
       {@const share = shares.get(item.id)}
       <IconSlot
@@ -278,10 +357,30 @@
         rarity={item.rarity}
         active={compare?.id === item.id}
         interactive
+        draggable
+        drop={$carriedItem?.from === 'bag' && $carriedItem.itemId === item.id
+          ? 'carried'
+          : undefined}
+        ariaLabel="{item.name}: {itemSlotLabel(item)}"
         onmouseenter={(e: MouseEvent) => track(e, item.id)}
         onmousemove={(e: MouseEvent) => track(e, item.id)}
         onmouseleave={() => unhover(item.id)}
         onclick={(e: MouseEvent) => toggle(e, item.id)}
+        ondblclick={() => equipNow(item.id)}
+        onkeydown={(e: KeyboardEvent) => {
+          if (e.key !== 'Enter' && e.key !== ' ') return
+          e.preventDefault()
+          toggleCarried({ from: 'bag', itemId: item.id })
+        }}
+        onpointerdown={() => startPress(item.id)}
+        onpointerup={cancelPress}
+        onpointercancel={cancelPress}
+        ondragstart={(e: DragEvent) => {
+          takeItem({ from: 'bag', itemId: item.id })
+          e.dataTransfer?.setData('text/plain', item.id)
+          if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
+        }}
+        ondragend={() => releaseItem()}
       >
         <span class="name">{item.name}</span>
         <!-- Уровень вещи — её главная сила: без него «Редкий» 3-го уровня
@@ -361,6 +460,11 @@
 
   {#snippet footer()}
     <p class="hint">Надетый предмет продать нельзя — сперва сними его в «Экипировке».</p>
+    <p class="hint">
+      Находку можно перетащить на слот куклы, нажать её и затем нажать слот
+      либо задержать на ней нажатие — наденется сразу. Надетое, брошенное
+      обратно в сумку, снимается.
+    </p>
   {/snippet}
 </Panel>
 
@@ -437,6 +541,13 @@
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
     gap: var(--space-2);
+    border: 1px solid transparent;
+    border-radius: var(--radius-md);
+  }
+  /* Сюда можно бросить надетое. Рамка появляется только на время броска —
+     в покое у сетки её нет, иначе сумка выглядела бы ещё одной панелью. */
+  .grid.target {
+    border-color: var(--c-accent);
   }
   .grip {
     font-size: var(--text-2xs);
