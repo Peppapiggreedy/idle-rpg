@@ -12,17 +12,69 @@ async function open(page: Page, width = 1280): Promise<void> {
   await expect(page.locator('html')).toHaveAttribute('data-ready', 'preset')
 }
 
-test('постоянная зона — ровно четыре блока', async ({ page }) => {
-  // Состав проверяется по разметке, а не глазами: «сцена, ряд действий,
-  // полоски героя, порог привала» — это правило, и пятый блок в него не
-  // влезает.
-  //
-  // БЛОКОВ СТАЛО ЧЕТЫРЕ, а не три: порог привала переехал сюда из раздела
-  // «Мир». Он отвечает на вопрос «когда мне уходить отдыхать» и стоит рядом
-  // с полоской здоровья, а не в разделе про зоны, куда за ним надо идти.
+test('постоянная зона — ровно шесть ячеек, и каждая названа', async ({ page }) => {
+  // Состав проверяется по разметке, а не глазами: седьмая ячейка в правило
+  // не влезает. Ячеек шесть, потому что зона — ОДНА СЕТКА на три полосы:
+  //   1. столбец меню · сцена · столбец меню
+  //   2. «Автокаст» · ряд действий с порогом привала
+  //   3. полоски героя во всю ширину
   await open(page)
-  const blocks = page.locator('[data-permanent] > *')
-  await expect(blocks).toHaveCount(4)
+  await expect(page.locator('[data-permanent] > *')).toHaveCount(6)
+  for (const selector of [
+    'nav[aria-label="Меню: где меняешь"]',
+    '.stage',
+    'nav[aria-label="Меню: где читаешь"]',
+    '.autocast',
+    '.controls',
+    '.vitals',
+  ]) {
+    await expect(
+      page.locator(`[data-permanent] > ${selector}`),
+      `ячейки ${selector} нет прямо в постоянной зоне`,
+    ).toHaveCount(1)
+  }
+})
+
+test('кнопки меню стоят ПО БОКАМ сцены, а не под зоной', async ({ page }) => {
+  // Сцена — главный элемент экрана, и кнопки вокруг неё читаются как рамка
+  // вокруг главного. Те же кнопки, отодвинутые под полоски героя, читались
+  // как ещё один ряд среди прочих.
+  await open(page)
+  const stage = (await page.locator('.stage').boundingBox())!
+  const left = (await page.locator('nav[aria-label="Меню: где меняешь"]').boundingBox())!
+  const right = (await page.locator('nav[aria-label="Меню: где читаешь"]').boundingBox())!
+  // Слева от сцены и справа от неё — по горизонтали, а не над и под.
+  expect(left.x + left.width).toBeLessThanOrEqual(stage.x + 1)
+  expect(right.x).toBeGreaterThanOrEqual(stage.x + stage.width - 1)
+  // И по вертикали столбцы начинаются вместе со сценой, а не после неё.
+  expect(Math.abs(left.y - stage.y)).toBeLessThan(stage.height / 2)
+  expect(Math.abs(right.y - stage.y)).toBeLessThan(stage.height / 2)
+})
+
+test('«Автокаст» стоит под левым столбцом, слева от ряда умений', async ({ page }) => {
+  // Автокаст — не действие, а переключатель того, КТО действия жмёт, и
+  // разведены они местом, а не чертой внутри одного ряда. Колонка у него
+  // общая со столбцом меню: обе стоят в одной сетке, поэтому совпадают
+  // сами, без подбора чисел.
+  await open(page)
+  const auto = (await page.locator('.autocast').boundingBox())!
+  const nav = (await page.locator('nav[aria-label="Меню: где меняешь"]').boundingBox())!
+  const acts = (await page.locator('[aria-label="Действия"]').boundingBox())!
+  expect(Math.round(auto.x)).toBe(Math.round(nav.x))
+  expect(Math.round(auto.width)).toBe(Math.round(nav.width))
+  // Ряд умений — справа от него и на той же полосе.
+  expect(acts.x).toBeGreaterThan(auto.x + auto.width - 1)
+  expect(Math.abs(acts.y - auto.y)).toBeLessThan(auto.height)
+  // И в самом ряду автокаста больше нет: там только действия.
+  await expect(page.locator('[aria-label="Действия"] [aria-label="Автокаст"]')).toHaveCount(0)
+})
+
+test('порог привала стоит на одной полосе с рядом умений', async ({ page }) => {
+  await open(page)
+  const acts = (await page.locator('[aria-label="Действия"]').boundingBox())!
+  const rest = (await page.locator('.rest').first().boundingBox())!
+  expect(rest.x).toBeGreaterThan(acts.x + acts.width - 1)
+  expect(Math.abs(rest.y - acts.y)).toBeLessThan(acts.height)
 })
 
 test('кнопки ряда действий одного размера', async ({ page }) => {
@@ -231,23 +283,34 @@ test('пошлина крафта видна в карточке рецепта,
 // прекращается, и прятать его нельзя: сцена видна ВСЕГДА. Ниже проверяется
 // и то, что она уехала, и то, что она осталась.
 
-test('открытое меню уводит сцену в правый нижний угол', async ({ page }) => {
+test('открытое меню сжимает сцену НА МЕСТЕ, между столбцами кнопок', async ({ page }) => {
+  // Углом это было, пока кнопки стояли под всей зоной: сцена уходила из
+  // потока и ничего за собой не оставляла. Теперь кнопки стоят по её бокам,
+  // и уведи сцену из потока — между столбцами останется дыра, а сами
+  // столбцы разъедутся по краям пустой полосы.
   await open(page, 1280)
   const stage = page.locator('.stage')
   const wide = await stage.boundingBox()
   await menuButton(page, 'Мир').click()
-  const corner = await stage.boundingBox()
+  const small = await stage.boundingBox()
 
-  // Она стала уже — и не уже минимума из данных: ниже него силуэты
-  // сливаются, а табличка с именем моба не помещается в строку.
-  expect(corner!.width).toBeLessThan(wide!.width)
-  expect(corner!.width).toBeGreaterThanOrEqual(SCENE_MINI_MIN_PX)
-  expect(corner!.width).toBeLessThanOrEqual(SCENE_MINI_MAX_PX)
+  // Стала уже — и не уже минимума из данных: ниже него силуэты сливаются,
+  // а табличка с именем моба не помещается в строку.
+  expect(small!.width).toBeLessThan(wide!.width)
+  expect(small!.width).toBeGreaterThanOrEqual(SCENE_MINI_MIN_PX)
+  expect(small!.width).toBeLessThanOrEqual(SCENE_MINI_MAX_PX)
 
-  // И стоит именно в правом нижнем углу окна, а не «где-то правее».
-  const win = page.viewportSize()!
-  expect(corner!.x + corner!.width).toBeGreaterThan(win.width * 0.7)
-  expect(corner!.y + corner!.height).toBeGreaterThan(win.height * 0.7)
+  // Осталась НА МЕСТЕ: верх тот же, столбцы кнопок по-прежнему по бокам.
+  expect(Math.round(small!.y)).toBe(Math.round(wide!.y))
+  const left = (await page.locator('nav[aria-label="Меню: где меняешь"]').boundingBox())!
+  const right = (await page.locator('nav[aria-label="Меню: где читаешь"]').boundingBox())!
+  expect(left.x + left.width).toBeLessThanOrEqual(small!.x + 1)
+  expect(right.x).toBeGreaterThan(small!.x + small!.width)
+
+  // А меню легло НИЖЕ постоянной зоны, во всю ширину.
+  const zone = (await page.locator('[data-permanent]').boundingBox())!
+  const pane = (await page.locator('.pane').boundingBox())!
+  expect(pane.y).toBeGreaterThanOrEqual(zone.y + zone.height - 1)
 
   // Закрыли меню — сцена вернулась во всю ширину.
   await menuButton(page, 'Мир').click()
@@ -255,10 +318,11 @@ test('открытое меню уводит сцену в правый нижн
   expect(Math.round(back!.width)).toBe(Math.round(wide!.width))
 })
 
-test('в углу нет ни тряски, ни сдвигов, ни выпадов', async ({ page }) => {
+test('в уменьшенной сцене нет ни тряски, ни сдвигов, ни выпадов', async ({ page }) => {
   // Сокращённый набор эффектов держится ОБНУЛЁННЫМИ РУЧКАМИ ДВИЖЕНИЯ, а не
   // выключением каждого эффекта по отдельности: замах, выпад и отброс
-  // считаются от этих трёх величин. Поэтому и проверять надо их.
+  // считаются от этих трёх величин. Поэтому и проверять надо их. В узкой
+  // сцене тряска читается как дрожь, а стопка чисел закрывает обоих бойцов.
   //
   // Открываем СО СЦЕНОЙ, а не с `scene=off`: без неё проверять нечего —
   // на месте сцены стоит текстовая панель.
