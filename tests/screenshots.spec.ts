@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
-import { openHeroDrawer, sectionTab } from './screen.js'
+import { openMenu } from './screen.js'
 import { NUMERIC_ELEMENTS, NUMERIC_MATCH } from './numeric-elements.js'
 import { SCENE_POSES } from '../src/lib/ui/route.js'
 
@@ -115,26 +115,29 @@ for (const preset of PRESETS) {
   }
 }
 
-// Все четыре раздела. Индекс — позиция вкладки в SECTION_IDS; берём именно
-// индекс, потому что подпись «Сумки» несёт счётчик и меняется с пресетом.
+// ВСЕ СЕМЬ МЕНЮ. Раньше здесь было четыре раздела по индексу вкладки;
+// теперь меню открываются по названию кнопки — оно и есть их имя.
 const SECTIONS = [
-  { index: 0, name: 'progress' },
-  { index: 1, name: 'bag' },
-  { index: 2, name: 'world' },
-  { index: 3, name: 'settings' },
+  { menu: 'Герой', name: 'hero' },
+  { menu: 'Сумка', name: 'bag' },
+  { menu: 'Мир', name: 'world' },
+  { menu: 'Таланты', name: 'talents' },
+  { menu: 'Крафт', name: 'craft' },
+  { menu: 'Журнал', name: 'log' },
+  { menu: 'Настройки', name: 'settings' },
 ] as const
 // Узкий и широкий: между ними лежит единственный брейкпоинт игры.
 const SECTION_WIDTHS = [390, 1280] as const
 
 for (const section of SECTIONS) {
   for (const width of SECTION_WIDTHS) {
-    const name = `section-${section.name}-${width}`
-    test(`раздел: ${section.name} @ ${width}`, async ({ page }) => {
+    const name = `menu-${section.name}-${width}`
+    test(`меню: ${section.name} @ ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 })
       // rich — самый насыщенный пресет: в нём есть и лут, и открытые зоны,
       // и вложенные таланты, поэтому разделы не выглядят пустыми.
       await openPreset(page, 'rich', true)
-      await page.locator('nav[aria-label="Разделы"] button').nth(section.index).click()
+      await openMenu(page, section.menu)
       expect(await capture(page, name)).toMatchSnapshot(`${name}.png`)
     })
   }
@@ -184,7 +187,7 @@ for (const element of NUMERIC_ELEMENTS) {
     test(`числа: ${element.name} @ ${preset}`, async ({ page }) => {
       await page.setViewportSize({ width: 1280, height: 900 })
       await openPreset(page, preset, true)
-      if (element.section) await sectionTab(page, element.section).click()
+      if (element.menu) await openMenu(page, element.menu)
       expect(await captureElement(page, element.selector, name)).toMatchSnapshot(
         `${name}.png`,
         NUMERIC_MATCH,
@@ -208,15 +211,19 @@ test('на узком экране ничего не вылезает по го�
   }
 })
 
-// Нижние вкладки — способ переключать разделы на телефоне: если полоса
-// уезжает вместе с содержимым, до неё придётся долистывать.
-test('на мобильном вкладки прибиты к низу экрана', async ({ page }) => {
+// Нижняя панель — способ открывать меню на телефоне: если полоса уезжает
+// вместе с содержимым, до неё придётся долистывать.
+test('на мобильном кнопки меню прибиты к низу экрана', async ({ page }) => {
   const height = 700
   await page.setViewportSize({ width: 390, height })
   await openPreset(page, 'rich', true)
-  const nav = page.locator('nav[aria-label="Разделы"]')
+  const nav = page.locator('nav[aria-label="Меню: где меняешь"]')
   const before = await nav.boundingBox()
   expect(Math.round(before!.y + before!.height)).toBe(height)
+  // Открываем меню: полосу проверяем на самом длинном содержимом, какое
+  // бывает, — с закрытым меню страница коротка, и «не перекрывает» вышло бы
+  // правдой само собой.
+  await page.locator('nav[aria-label^="Меню"] button', { hasText: 'Мир' }).first().click()
   // Крутим до САМОГО низа, а не на фиксированные четыре тысячи пикселей:
   // страница растёт вместе с игрой, и колесо на постоянное число once
   // уже переставало доезжать до конца — тест тогда мерил не полосу вкладок,
@@ -225,11 +232,11 @@ test('на мобильном вкладки прибиты к низу экра
   await page.waitForTimeout(200)
   const after = await nav.boundingBox()
   expect(Math.round(after!.y)).toBe(Math.round(before!.y))
-  // И под полосой не прячется последняя панель раздела. Берём именно панели:
-  // на десктопе они разложены по колонкам-обёрткам, а на мобильном обёртки
-  // растворены в `display: contents` — своей рамки у такого элемента нет,
-  // и замер по нему ничего бы не значил.
-  const panels = page.locator('main .section > .col > *, main .section > *:not(.col)')
+  // И под полосой не прячется последняя панель открытого меню. Берём именно
+  // панели: у самой `.pane` рамка тянется на всю высоту содержимого, и её
+  // нижний край ничего не сказал бы про то, видно ли последнюю панель.
+  const panels = page.locator('main .pane > *')
+  expect(await panels.count()).toBeGreaterThan(0)
   const box = await panels.last().boundingBox()
   expect(box!.y + box!.height).toBeLessThanOrEqual(before!.y + 1)
 })
@@ -244,9 +251,8 @@ test('левая рука под двуручным объясняет, поче
   // В пресете rich надето двуручное: пресет лежит в репозитории и не меняется
   // сам по себе, поэтому проверять можно прямо по нему.
   await openPreset(page, 'rich', true)
-  // Экипировка живёт в выдвижке «Герой», а не во вкладке: без неё слотов
-  // на странице нет вовсе.
-  await openHeroDrawer(page)
+  // Экипировка живёт в меню «Герой»: без него слотов на странице нет вовсе.
+  await openMenu(page, 'Герой')
   const offhand = page.locator('.slot', { hasText: 'Левая рука' }).first()
   await expect(offhand).toContainText('Занята двуручным')
 })
@@ -259,7 +265,7 @@ test('левая рука под двуручным объясняет, поче
 test('карточка предмета при наведении не двигает свои кнопки', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 })
   await openPreset(page, 'rich', true)
-  await sectionTab(page, 'Сумка').click()
+  await openMenu(page, 'Сумка')
   const card = page.locator('.slot').filter({ has: page.locator('button', { hasText: 'Продать' }) }).first()
   await expect(card).toBeVisible()
   // Карточку СНАЧАЛА докручиваем целиком в окно, а уже потом меряем. Иначе
@@ -287,25 +293,16 @@ test('карточка предмета при наведении не двиг�
   await expect(box).toHaveCSS('pointer-events', 'none')
 })
 
-test('вкладки разделов держат 44px на нажатие', async ({ page }) => {
+test('кнопки меню держат 44px на нажатие', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 720 })
   await openPreset(page, 'rich', true)
-  const tabs = page.locator('nav[aria-label="Разделы"] button')
+  const tabs = page.locator('nav[aria-label^="Меню"] button')
   const count = await tabs.count()
-  expect(count).toBe(4)
+  expect(count).toBe(7)
   for (let i = 0; i < count; i += 1) {
     const box = await tabs.nth(i).boundingBox()
     expect(box?.height ?? 0).toBeGreaterThanOrEqual(44)
   }
-})
-
-// Характеристики и экипировка уехали из вкладок в выдвижку «Герой», и без
-// отдельного снимка они выпали бы из визуальной проверки целиком.
-test('выдвижка героя', async ({ page }) => {
-  await page.setViewportSize({ width: 1280, height: 900 })
-  await openPreset(page, 'rich', true)
-  await openHeroDrawer(page)
-  expect(await capture(page, 'drawer-hero-1280')).toMatchSnapshot('drawer-hero-1280.png')
 })
 
 test('витрина интерфейса', async ({ page }) => {

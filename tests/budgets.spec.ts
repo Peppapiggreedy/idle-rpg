@@ -46,7 +46,7 @@ test('за полчаса игрового времени сцена и DOM не
   // ронять тест каждый раз, когда сумка вырастет.
   // Таймаут щедрый: дроп на старте редкий (25% с моба при TTK ~13 игровых
   // секунд), и на полную сумку уходит пара минут даже на ×100.
-  const bagTab = page.locator('nav[aria-label="Разделы"] button', { hasText: 'Сумка' })
+  const bagTab = page.locator('nav[aria-label^="Меню"] button', { hasText: 'Сумка' })
   const limit = (await bagTab.innerText()).match(/\/\s*(\d+)/)?.[1]
   expect(limit, 'на вкладке сумки должен быть счётчик вида 0/24').toBeTruthy()
   await expect(bagTab).toContainText(`${limit}/${limit}`, { timeout: 240_000 })
@@ -124,7 +124,7 @@ test('тяжёлый раздел не роняет кадры против лё
     return (samples[2] + samples[3]) / 2
   }
   const openSection = async (name: string): Promise<number> => {
-    await page.locator('nav[aria-label="Разделы"] button', { hasText: name }).click()
+    await page.locator('nav[aria-label^="Меню"] button', { hasText: name }).click()
     await page.waitForTimeout(1000)
     return fps()
   }

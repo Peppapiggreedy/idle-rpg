@@ -2,7 +2,8 @@ import { expect, test, type Page } from '@playwright/test'
 
 // Компоновка экрана. Проверяется то, что ломается молча и чего не видно
 // на картинке: состав постоянной зоны, равенство кнопок действий, живучесть
-// хоткеев и то, что выдвижка не трогает боевую сцену.
+// хоткеев и правила семи меню: одно за раз, Esc и повторное нажатие
+// закрывают, ряд действий жив при любом открытом меню.
 
 async function open(page: Page, width = 1280): Promise<void> {
   await page.setViewportSize({ width, height: 900 })
@@ -40,83 +41,89 @@ test('кнопки ряда действий одного размера', async
   }
 })
 
-test('журнал свёрнут по умолчанию и переживает перезагрузку', async ({ page }) => {
+// СЕМЬ МЕНЮ ВМЕСТО ЧЕТЫРЁХ РАЗДЕЛОВ И ДВУХ ВЫДВИЖЕК. Раньше на одну задачу
+// было два паттерна: вкладки внизу и листы поверх низа экрана. Тесты ниже
+// держат новое правило: одно меню за раз, повторное нажатие и Esc закрывают,
+// а ряд умений живёт при любом открытом меню.
+const MENUS = ['Герой', 'Сумка', 'Мир', 'Таланты', 'Крафт', 'Журнал', 'Настройки']
+
+const menuButton = (page: Page, name: string) =>
+  page.locator('nav[aria-label^="Меню"] button', { hasText: name }).first()
+
+test('кнопок меню семь, и они разложены по двум столбцам', async ({ page }) => {
   await open(page)
-  const log = page.locator('[role="region"][aria-label="Журнал"]')
-  await expect(log).toHaveCount(0)
-  await page.getByRole('button', { name: 'Журнал', exact: true }).click()
-  await expect(log).toBeVisible()
+  await expect(page.locator('nav[aria-label^="Меню"] button')).toHaveCount(MENUS.length)
+  // СЛЕВА — ГДЕ МЕНЯЕШЬ, СПРАВА — ГДЕ ЧИТАЕШЬ.
+  await expect(page.locator('nav[aria-label="Меню: где меняешь"] button')).toHaveCount(5)
+  await expect(page.locator('nav[aria-label="Меню: где читаешь"] button')).toHaveCount(2)
+})
+
+test('открытого меню по умолчанию нет, и оно не переживает перезагрузку', async ({ page }) => {
+  // «Где я сейчас» — не настройка машины: после перезагрузки игрок хочет
+  // видеть бой, а не вкладку, на которой закрыл вчера.
+  await open(page)
+  await expect(page.locator('.pane > *')).toHaveCount(0)
+  await menuButton(page, 'Журнал').click()
+  await expect(page.locator('.pane > *').first()).toBeVisible()
   await page.reload()
   await expect(page.locator('html')).toHaveAttribute('data-ready', 'preset')
-  await expect(page.locator('[role="region"][aria-label="Журнал"]')).toBeVisible()
+  await expect(page.locator('.pane > *')).toHaveCount(0)
 })
 
-test('состояние выдвижек не попадает в экспорт сейва', async ({ page }) => {
-  // «Как я смотрю» — свойство машины, а не прогресс: увозить открытый
-  // журнал на другой компьютер вместе с сейвом незачем.
+test('открытое меню не попадает ни в сейв, ни в настройки машины', async ({ page }) => {
   await open(page)
-  await page.getByRole('button', { name: 'Журнал', exact: true }).click()
-  await expect(page.locator('[role="region"][aria-label="Журнал"]')).toBeVisible()
+  await menuButton(page, 'Журнал').click()
+  await expect(page.locator('.pane > *').first()).toBeVisible()
   const save = await page.evaluate(() => localStorage.getItem('idle-rpg-save') ?? '')
-  expect(save).not.toContain('drawer')
+  expect(save).not.toContain('menu')
   const ui = await page.evaluate(() => localStorage.getItem('idle-rpg:ui') ?? '')
-  expect(ui).toContain('drawers')
+  expect(ui).not.toContain('drawers')
+  expect(ui).not.toContain('menu')
 })
 
-test('открытие выдвижки не двигает боевую сцену', async ({ page }) => {
-  // Сцена — главный элемент экрана. Панель, которая её сдвигает или ужимает,
-  // заставляет игрока заново искать бой глазами.
+test('открытое меню всегда одно, а повторное нажатие и Esc закрывают', async ({ page }) => {
   await open(page)
-  const stage = page.locator('[data-permanent] > *').first()
-  const before = await stage.boundingBox()
-  for (const name of ['Герой', 'Журнал']) {
-    await page.getByRole('button', { name, exact: true }).click()
-    const after = await stage.boundingBox()
-    // Закрываем своей же кнопкой в шапке листа. Тянуться к соседней ручке
-    // поверх открытого листа нельзя: лист прибит к низу окна и накрывает
-    // их обе, и браузер, доставая ручку из-под него, прокрутит страницу —
-    // сцена уедет не от вёрстки, а от прокрутки.
-    await page.getByRole('button', { name: 'Закрыть' }).click()
-    expect(Math.round(after!.x)).toBe(Math.round(before!.x))
-    expect(Math.round(after!.y)).toBe(Math.round(before!.y))
-    expect(Math.round(after!.width)).toBe(Math.round(before!.width))
-    expect(Math.round(after!.height)).toBe(Math.round(before!.height))
-  }
+  await menuButton(page, 'Герой').click()
+  await expect(menuButton(page, 'Герой')).toHaveAttribute('aria-pressed', 'true')
+  // Открытие второго закрывает первое.
+  await menuButton(page, 'Мир').click()
+  await expect(menuButton(page, 'Герой')).toHaveAttribute('aria-pressed', 'false')
+  await expect(menuButton(page, 'Мир')).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.locator('nav[aria-label^="Меню"] button[aria-pressed="true"]')).toHaveCount(1)
+  // Повторное нажатие той же кнопки закрывает.
+  await menuButton(page, 'Мир').click()
+  await expect(page.locator('.pane > *')).toHaveCount(0)
+  // Esc закрывает открытое.
+  await menuButton(page, 'Настройки').click()
+  await expect(page.locator('.pane > *').first()).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(page.locator('.pane > *')).toHaveCount(0)
 })
 
-test('открытой выдвижки всегда не больше одной', async ({ page }) => {
-  // Оба листа прибиты к низу окна одним и тем же `bottom`: открытые разом,
-  // они лежат друг на друге, и виден только тот, что позже в разметке.
-  // Открыть второй — значит закрыть первый.
+test('«Герой» открывает куклу И сумку, «Сумка» — только сумку', async ({ page }) => {
+  // Исключение осознанное: иначе перетаскивать предмет из сумки на слот
+  // некуда — два меню одновременно не открываются.
   await open(page)
-  const sheets = page.locator('[role="region"]:has(button[aria-label="Закрыть"])')
-  await page.getByRole('button', { name: 'Герой', exact: true }).click()
-  await expect(sheets).toHaveCount(1)
-  await expect(sheets).toHaveAttribute('aria-label', 'Герой')
-  // Ручка «Журнала» уходит под открытый лист, и мышью до неё не достать:
-  // отправляем событие прямо кнопке. Проверяется правило стора, а не то,
-  // куда попадёт курсор, — живой игрок закрывает лист крестиком в шапке.
-  await page.getByRole('button', { name: 'Журнал', exact: true }).dispatchEvent('click')
-  await expect(sheets).toHaveCount(1)
-  await expect(sheets).toHaveAttribute('aria-label', 'Журнал')
+  await menuButton(page, 'Герой').click()
+  await expect(page.locator('.pane').getByText('Экипировка', { exact: true })).toBeVisible()
+  await expect(page.locator('.pane').getByText('Инвентарь', { exact: true })).toBeVisible()
+  await menuButton(page, 'Сумка').click()
+  await expect(page.locator('.pane').getByText('Инвентарь', { exact: true })).toBeVisible()
+  await expect(page.locator('.pane').getByText('Экипировка', { exact: true })).toHaveCount(0)
 })
 
-test('хоткеи умений живы в любом разделе и при открытых выдвижках', async ({ page }) => {
+test('хоткеи умений живы при КАЖДОМ открытом меню', async ({ page }) => {
   // Слушатель клавиатуры один на всю игру и висит в ряду действий: спрячешь
-  // ряд во вкладку — хоткеи умрут глобально. Здесь это и проверяется.
+  // ряд под меню — хоткеи умрут глобально. Проверяется по случаю на меню,
+  // а не «на одном и ладно».
   await open(page)
   const first = page.locator('[aria-label="Действия"] button.slot').first()
-  const tabs = page.locator('nav[aria-label="Разделы"] button')
-  const count = await tabs.count()
-  for (let i = 0; i < count; i += 1) {
-    await tabs.nth(i).click()
+  for (const name of MENUS) {
+    await menuButton(page, name).click()
+    await expect(first, `ряд действий пропал при открытом меню «${name}»`).toBeVisible()
+    await page.keyboard.press('1')
     await expect(first).toBeVisible()
   }
-  await page.getByRole('button', { name: 'Герой', exact: true }).click()
-  await expect(first).toBeVisible()
-  // Нажатие хоткея доходит до логики: умение уходит в кулдаун или в очередь.
-  await page.keyboard.press('1')
-  await expect(first).toBeVisible()
 })
 
 test('на мобильном ряд действий скроллится, а не жмёт кнопки', async ({ page }) => {
@@ -136,7 +143,7 @@ test('на мобильном ряд действий скроллится, а �
 // ровно до первого открытия инспектора.
 test('названий закрытых ступеней нет в разметке страницы', async ({ page }) => {
   await open(page)
-  await page.locator('nav[aria-label="Разделы"] button').first().click()
+  await page.locator('nav[aria-label^="Меню"] button', { hasText: 'Таланты' }).first().click()
   const ladder = page.locator('section', { hasText: 'Лестница открытий' }).first()
   await expect(ladder).toBeVisible()
   const html = await page.content()
@@ -204,7 +211,7 @@ test('общей задержки нет рядом с полоской зама
 // узнаёшь после клика, — не цена, а сюрприз.
 test('пошлина крафта видна в карточке рецепта, а кнопка заперта нехваткой', async ({ page }) => {
   await open(page, 1280)
-  await page.locator('nav[aria-label="Разделы"] button', { hasText: 'Сумка' }).click()
+  await page.locator('nav[aria-label^="Меню"] button', { hasText: 'Крафт' }).first().click()
   const recipe = page.locator('.recipe').first()
   await expect(recipe).toBeVisible()
   // Строка пошлины есть и в ней есть число.

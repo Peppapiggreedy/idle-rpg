@@ -10,24 +10,34 @@ import { SOUND_DEFAULT_VOLUMES } from '../data/balance'
 
 export const UI_SETTINGS_KEY = 'idle-rpg:ui'
 
-// Разделы интерфейса. Порядок задаёт порядок вкладок.
+// МЕНЮ ИНТЕРФЕЙСА — ОДИН ПАТТЕРН НА ВСЁ. Раньше их было два: разделы
+// (вкладки внизу) и выдвижки поверх нижней части экрана. Два способа
+// показать панель означали два способа её закрыть, два места, где искать
+// нужное, и вечный вопрос, куда класть следующее.
 //
-// «Персонажа» среди них НЕТ намеренно: к статам и экипировке обращаются
-// постоянно, а вкладка — это место, куда уходишь надолго. Они переехали
-// в выдвижку «Герой», которая открывается поверх нижней части экрана
-// и не трогает боевую сцену.
-export type SectionId = 'progress' | 'bag' | 'world' | 'settings'
+// СЛЕВА — ГДЕ МЕНЯЕШЬ, СПРАВА — ГДЕ ЧИТАЕШЬ. Правило разделения записано
+// ДАННЫМИ (`MENU_SIDE`), а не расстановкой в разметке: иначе следующая
+// кнопка встанет наугад. Журнал и настройки героя не меняют — они справа;
+// всё остальное меняет.
+export type MenuId = 'hero' | 'bag' | 'world' | 'talents' | 'craft' | 'log' | 'settings'
 
-export const SECTION_IDS: SectionId[] = ['progress', 'bag', 'world', 'settings']
+/** Порядок — порядок кнопок в столбце. */
+export const MENU_IDS: MenuId[] = ['hero', 'bag', 'world', 'talents', 'craft', 'log', 'settings']
 
-/**
- * Выдвижки поверх нижней части экрана: «Герой» (статы и экипировка) и
- * «Журнал» (лог боя). Журнал свёрнут по умолчанию — лента событий полезна,
- * когда её спросили, а постоянно занимать ею экран не за что.
- */
-export type DrawerId = 'hero' | 'log'
+export type MenuSide = 'left' | 'right'
 
-export const DRAWER_IDS: DrawerId[] = ['hero', 'log']
+export const MENU_SIDE: Record<MenuId, MenuSide> = {
+  hero: 'left',
+  bag: 'left',
+  world: 'left',
+  talents: 'left',
+  craft: 'left',
+  log: 'right',
+  settings: 'right',
+}
+
+export const menusOn = (side: MenuSide): MenuId[] =>
+  MENU_IDS.filter((id) => MENU_SIDE[id] === side)
 
 /**
  * Текстовый режим. 'auto' — сцена (двумерная рисуется обычными элементами
@@ -46,15 +56,11 @@ export interface UiSettings {
   // а не в сейве. Экспорт сейва не должен увозить на чужой компьютер
   // выключенный звук.
   volumes: Record<VolumeId, number>
-  // Открытые выдвижки — тоже «как я смотрю», а не прогресс: место им здесь,
-  // рядом с текстовым режимом, а не в сейве.
-  drawers: Record<DrawerId, boolean>
 }
 
 const DEFAULTS: UiSettings = {
   textMode: 'auto',
   volumes: { ...SOUND_DEFAULT_VOLUMES },
-  drawers: { hero: false, log: false },
 }
 
 // --- Хранилище ---------------------------------------------------------
@@ -82,25 +88,10 @@ export function sanitizeUiSettings(raw: unknown): UiSettings {
       }
     }
   }
-  // Выдвижки принимаем только булевыми: мусор в localStorage не должен
-  // оставить игрока с наполовину открытой панелью.
-  const drawers = { ...DEFAULTS.drawers }
-  const rawDrawers = (data as { drawers?: unknown }).drawers
-  if (typeof rawDrawers === 'object' && rawDrawers !== null) {
-    let taken = false
-    for (const id of DRAWER_IDS) {
-      const value = (rawDrawers as Record<string, unknown>)[id]
-      // Открытая может быть только одна: листы прибиты к низу окна одним
-      // и тем же `bottom` и, открытые разом, лежат друг на друге. Запись
-      // с двумя открытыми — это либо правка руками, либо настройки старой
-      // сборки; берём первую и закрываем вторую.
-      if (typeof value === 'boolean' && value && !taken) {
-        drawers[id] = true
-        taken = true
-      }
-    }
-  }
-  return { textMode, volumes, drawers }
+  // Ключа `drawers` здесь больше нет, и старая запись с ним отбрасывается
+  // сама: собирается новый объект, а не чинится прежний. Открытое меню —
+  // это «где я сейчас», а не настройка машины, и в localStorage ему не место.
+  return { textMode, volumes }
 }
 
 function load(): UiSettings {
@@ -141,25 +132,6 @@ export function setTextMode(mode: TextModeSetting): void {
   })
 }
 
-export function setDrawer(id: DrawerId, open: boolean): void {
-  settings.update((s) => {
-    if (s.drawers[id] === open) return s
-    // Открытая выдвижка ЗАКРЫВАЕТ вторую. Обе прибиты к низу окна одним и
-    // тем же `bottom` — открытые разом, они просто лежали друг на друге,
-    // и виден был только тот лист, что позже в разметке.
-    const drawers = open
-      ? (Object.fromEntries(DRAWER_IDS.map((x) => [x, x === id])) as Record<DrawerId, boolean>)
-      : { ...s.drawers, [id]: false }
-    const next = { ...s, drawers }
-    persist(next)
-    return next
-  })
-}
-
-export function toggleDrawer(id: DrawerId): void {
-  setDrawer(id, !get(settings).drawers[id])
-}
-
 export function setVolume(id: VolumeId, value: number): void {
   const clamped = Math.min(1, Math.max(0, value))
   settings.update((s) => {
@@ -182,13 +154,26 @@ export function reportUserGesture(): void {
   if (!get(gestured)) gestured.set(true)
 }
 
-// --- Активный раздел ---------------------------------------------------
+// --- Открытое меню -----------------------------------------------------
 
-// Раздел в localStorage не пишем: это «где я был», а не настройка. После
+// ОДНО МЕНЮ ЗА РАЗ, и это единственное состояние экрана. Открытие второго
+// закрывает первое само — не потому, что панели налезали бы друг на друга,
+// а потому, что меню занимает основную площадь и делить её не с чем.
+//
+// В localStorage не пишем: это «где я сейчас», а не настройка. После
 // перезагрузки игрок хочет видеть бой, а не вкладку настроек.
-const section = writable<SectionId>('progress')
-export const activeSection = readonly(section)
+const menu = writable<MenuId | null>(null)
+export const openMenu = readonly(menu)
 
-export function setSection(id: SectionId): void {
-  section.set(id)
+export function setMenu(id: MenuId | null): void {
+  menu.set(id)
+}
+
+/** Повторное нажатие той же кнопки закрывает меню. */
+export function toggleMenu(id: MenuId): void {
+  menu.update((current) => (current === id ? null : id))
+}
+
+export function closeMenu(): void {
+  menu.set(null)
 }

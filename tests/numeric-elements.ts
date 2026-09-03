@@ -15,9 +15,9 @@ export interface NumericElement {
   /** Локатор корня элемента. Svelte оставляет исходный класс рядом с хешем,
    *  поэтому класс из компонента годится как есть. */
   selector: string
-  /** Подпись вкладки раздела, которую надо открыть, чтобы элемент появился;
+  /** Подпись кнопки МЕНЮ, которое надо открыть, чтобы элемент появился;
    *  без неё элемент лежит в постоянной зоне и виден всегда. */
-  section?: string
+  menu?: string
 }
 
 export const NUMERIC_ELEMENTS: readonly NumericElement[] = [
@@ -28,7 +28,7 @@ export const NUMERIC_ELEMENTS: readonly NumericElement[] = [
   // числа, что несёт подпись сцены.
   { name: 'monster', selector: '.battle' },
   // Кошелёк в сумке (InventoryPanel): золото.
-  { name: 'purse', selector: '.purse', section: 'Сумка' },
+  { name: 'purse', selector: '.purse', menu: 'Сумка' },
 ]
 
 /**

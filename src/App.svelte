@@ -14,8 +14,8 @@
   import { INVENTORY_SIZE, availablePoints, upgradeShare } from './lib/game'
   import { gameStarted, gameState } from './lib/stores/game'
   import { placeTitle } from './lib/ui/placeText'
-  import { activeSection } from './lib/stores/ui'
-  import { isTextMode, toggleDrawer, uiSettings } from './lib/stores/ui'
+  import { closeMenu, openMenu } from './lib/stores/ui'
+  import { isTextMode, uiSettings } from './lib/stores/ui'
   import { isSceneDisabled } from './lib/ui/route'
 
   import BattleScene from './lib/ui/BattleScene.svelte'
@@ -26,8 +26,7 @@
   import TempleHud from './lib/ui/TempleHud.svelte'
   import VitalsBar from './lib/ui/VitalsBar.svelte'
   import RestRow from './lib/ui/RestRow.svelte'
-  import Drawer from './lib/ui/Drawer.svelte'
-  import SectionTabs from './lib/ui/SectionTabs.svelte'
+  import MenuButtons from './lib/ui/MenuButtons.svelte'
   import SwingIndicator from './lib/ui/SwingIndicator.svelte'
   import { IconSprite } from './lib/ui/icons'
 
@@ -58,16 +57,24 @@
   const sceneOff = isSceneDisabled()
   const textMode = $derived(sceneOff || isTextMode($uiSettings))
   const points = $derived(availablePoints($gameState))
+  // Esc закрывает открытое меню. Слушатель один и висит здесь: у меню нет
+  // своего корня, который мог бы поймать клавишу, а плодить по слушателю
+  // на каждое меню значило бы семь подписок вместо одной.
+  function onKeydown(event: KeyboardEvent): void {
+    if (event.key === 'Escape' && $openMenu !== null) closeMenu()
+  }
   const place = $derived(placeTitle($gameState))
-  const drawers = $derived($uiSettings.drawers)
   // Апгрейд в сумке видно из любого раздела: точка на вкладке.
   const hasUpgrade = $derived(
     $gameState.inventory.some((item) => upgradeShare($gameState, item) !== null),
   )
+  const bagNote = $derived({ bag: `${$gameState.inventory.length}/${INVENTORY_SIZE}` })
 </script>
 
 <!-- Спрайт иконок: один раз на страницу, до всего остального. -->
 <IconSprite />
+
+<svelte:window onkeydown={onKeydown} />
 
 <!-- Пока класс не выбран, экран игры не спрятан под шторкой — его нет вовсе.
      Разница не косметическая: смонтированный под шторкой экран оставлял
@@ -113,81 +120,50 @@
       <RestRow />
     </div>
 
-    <!-- Ручки выдвижек стоят сразу под полосками: «что со мной» и «что
-         происходит» — два вопроса, на которые отвечают в одном месте. -->
-    <div class="handles">
-      <Drawer
-        title="Герой"
-        icon="stat-strength"
-        open={drawers.hero}
-        onToggle={() => toggleDrawer('hero')}
-      >
-        <StatsPanel />
-        <EquipmentPanel />
-      </Drawer>
-      <Drawer
-        title="Журнал"
-        icon="log"
-        open={drawers.log}
-        onToggle={() => toggleDrawer('log')}
-      >
-        <CombatLog />
-      </Drawer>
-    </div>
+    <!-- СЕМЬ КНОПОК ДВУМЯ СТОЛБЦАМИ ПО БОКАМ СЦЕНЫ. Слева — где меняешь
+         (герой, сумка, мир, таланты, крафт), справа — где читаешь (журнал,
+         настройки). Сторона берётся из данных (`MENU_SIDE`), а не из
+         порядка в этой разметке: иначе следующая кнопка встанет наугад.
 
-    <SectionTabs
-      bagCount={$gameState.inventory.length}
-      bagLimit={INVENTORY_SIZE}
-      hasPoints={points > 0}
-      {hasUpgrade}
-    />
-
-    <!-- Разделы из одной панели ведут себя иначе, чем из двух: сумке нужна
-         вся ширина под сетку предметов, а настройкам — узкая колонка, иначе
-         строки пояснений растянет через весь экран и их станет не прочесть.
-
-         Две колонки собраны РУКАМИ, а не сеткой из плоского списка панелей.
-         Сетка кладёт панели построчно и равняет строку по самой высокой:
-         дерево талантов в две тысячи пикселей рядом с панелькой задания
-         оставляло под заданием пустоту во весь экран. Колонка растёт своей
-         высотой, поэтому панели распределены по ним так, чтобы итоговые
-         высоты сошлись. На мобильном колонки исчезают (`display: contents`)
-         и панели идут одним столбцом в порядке разметки. -->
-    <div
-      class="section"
-      class:full={$activeSection === 'bag'}
-      class:solo={$activeSection === 'settings'}
-    >
-      {#if $activeSection === 'progress'}
-        <div class="col">
-          <TalentPanel />
-        </div>
-        <div class="col">
-          <QuestPanel />
-          <ProgressionPanel />
-          <AbilityPanel />
-        </div>
-      {:else if $activeSection === 'bag'}
-        <InventoryPanel />
-        <CraftPanel />
-        <EnchantPanel />
-      {:else if $activeSection === 'world'}
-        <!-- Карта — один широкий блок, а не колонка: путь из двадцати узлов
-             скроллится по горизонтали и делить его пополам нечем. Данжи
-             живут ВНУТРИ карты, у своих зон; отдельного списка больше нет. -->
-        <div class="col">
+         На узком экране столбцов нет — кнопки уезжают в нижнюю панель,
+         прибитую к низу окна: держать по краям сцены два столбца шириной
+         в кнопку значило бы отдать им треть ширины. -->
+    <div class="menus">
+      <MenuButtons side="left" marks={{ talents: points > 0, bag: hasUpgrade }} notes={bagNote} />
+      <div class="pane" class:empty={$openMenu === null}>
+        {#if $openMenu === 'hero'}
+          <!-- ИСКЛЮЧЕНИЕ, И ОНО ОСОЗНАННОЕ: «Герой» открывает куклу И СУМКУ
+               рядом. Иначе перетаскивать предмет из сумки на слот некуда:
+               два меню одновременно не открываются. «Сумка» при этом
+               открывает только сумку — продать и распылить можно, не
+               разворачивая куклу. -->
+          <StatsPanel />
+          <EquipmentPanel />
+          <InventoryPanel />
+        {:else if $openMenu === 'bag'}
+          <InventoryPanel />
+        {:else if $openMenu === 'world'}
           <ZonePanel />
-        </div>
-        <div class="col">
           <TemplePanel />
-        </div>
-      {:else}
-        <SettingsPanel />
-      {/if}
+        {:else if $openMenu === 'talents'}
+          <TalentPanel />
+          <AbilityPanel />
+          <ProgressionPanel />
+          <QuestPanel />
+        {:else if $openMenu === 'craft'}
+          <CraftPanel />
+          <EnchantPanel />
+        {:else if $openMenu === 'log'}
+          <CombatLog />
+        {:else if $openMenu === 'settings'}
+          <SettingsPanel />
+        {/if}
+      </div>
+      <MenuButtons side="right" />
     </div>
 
-    <!-- Место под нижнюю панель вкладок: на мобильном она прибита к низу
-         экрана и иначе накрыла бы последнюю строку раздела. -->
+    <!-- Место под нижнюю панель меню: на мобильном она прибита к низу
+         экрана и иначе накрыла бы последнюю строку открытого меню. -->
     <div class="tabbar-space" aria-hidden="true"></div>
   </main>
 
@@ -255,23 +231,29 @@
     font-size: var(--text-sm);
     font-weight: var(--weight-regular);
   }
-  .handles {
+  /* Три колонки: кнопки слева, меню посередине, кнопки справа. Панель
+     меню растёт своей высотой; когда меню закрыто, её нет вовсе, и
+     столбцы кнопок стоят по бокам сцены. */
+  .menus {
     display: flex;
-    flex-wrap: wrap;
+    align-items: flex-start;
     gap: var(--space-2);
     min-width: 0;
   }
-  .section {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: var(--space-3);
-    align-items: start;
+  .pane {
+    flex: 1 1 auto;
     min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
   }
-  /* На узком экране колонок нет вовсе: обёртки растворяются, и панели
-     становятся прямыми детьми сетки в порядке разметки. */
-  .col {
-    display: contents;
+  /* ПУСТАЯ ПАНЕЛЬ ОСТАЁТСЯ В РАСКЛАДКЕ РАСПОРКОЙ, а не исчезает. Убранная
+     через `display: none`, она схлопывала строку, и правый столбец кнопок
+     переезжал вплотную к левому — к середине экрана, поверх отладочной
+     панели, которая его и перехватывала. Кнопки обязаны стоять по КРАЯМ
+     сцены и когда меню закрыто. */
+  .pane.empty {
+    min-height: 0;
   }
   .tabbar-space {
     height: var(--tabbar-height);
@@ -285,24 +267,8 @@
     .permanent {
       gap: var(--space-3);
     }
-    .section {
-      grid-template-columns: 1fr 1fr;
-      gap: var(--space-4);
-    }
-    .col {
-      display: flex;
-      flex-direction: column;
-      gap: var(--space-4);
-      min-width: 0;
-    }
-    .section.full {
-      grid-template-columns: 1fr;
-    }
-    .section.solo {
-      grid-template-columns: minmax(0, 42rem);
-      justify-content: center;
-    }
-    /* На десктопе вкладки стоят в потоке — резервировать нечего. */
+    /* На десктопе кнопки стоят столбцами в потоке — резервировать место
+       под нижнюю панель нечего. */
     .tabbar-space {
       display: none;
     }
