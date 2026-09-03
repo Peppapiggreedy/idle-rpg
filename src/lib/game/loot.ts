@@ -13,6 +13,7 @@ import {
   ARMOR_BASE_VITALITY,
   ARMOR_BONUS_STAT,
   ARMOR_NOUNS,
+  itemStatValue,
   ONE_HANDED,
   SHIELDS,
   WEAPONS,
@@ -57,6 +58,20 @@ export function rollSlot(rng: Rng): SlotId {
 }
 
 /**
+ * Все числа КОНКРЕТНОЙ вещи — через одно зерно (`ITEM_STAT_GRAIN` в
+ * `data/items.ts`): что считается штуками, то на генерации округляется к
+ * ближайшему целому, доли и секунды проходят как есть. Здесь единственная
+ * точка применения: и находка, и ковка, и стартовый комплект строят
+ * модификаторы этими тремя функциями, поэтому второго места, где предмет
+ * обзаводится числом, нет.
+ *
+ * МАТОЖИДАНИЕ ЧЕРЕЗ НЕЁ НЕ ХОДИТ — см. `averageArmorMods` ниже.
+ */
+function grained(mods: StatModifier[]): StatModifier[] {
+  return mods.map((mod) => ({ ...mod, value: itemStatValue(mod.stat, mod.value) }))
+}
+
+/**
  * Оружие: три модификатора kind 'base' задают БАЗУ боя (скорость и диапазон
  * урона), побочные статы идут обычными модификаторами. Снятое оружие перестаёт
  * давать base — значения возвращаются к UNARMED из data/balance.ts.
@@ -75,7 +90,7 @@ export function weaponMods(
   // Уровень и тир множат СИЛУ предмета (урон и плоские атрибуты), но не
   // скорость: темп боя — свойство образца оружия, а не его свежести.
   const power = itemLevelScale(level).times(rarity.bonusMult)
-  return [
+  return grained([
     { stat: off ? 'offhandSpeed' : 'weaponSpeed', kind: 'base', value: template.weaponSpeed, source },
     {
       stat: off ? 'offhandDamageMin' : 'weaponDamageMin',
@@ -93,7 +108,7 @@ export function weaponMods(
     // поэтому множатся все без разбора: процент множить было бы нечем — он
     // считается от суммы конвейера и от уровня вещи не зависит вовсе.
     ...template.extra.map((mod) => ({ ...mod, value: mod.value.times(power), source })),
-  ]
+  ])
 }
 
 /** Щит: урона не даёт, зато даёт блок. Тоже через конвейер, без исключений. */
@@ -102,12 +117,12 @@ export function shieldMods(template: ShieldTemplate, rarity: RarityDef, level = 
   // Шанс блока не растёт: вероятность — не сила. Растёт то, СКОЛЬКО блок
   // снимает, и атрибуты.
   const power = itemLevelScale(level).times(rarity.bonusMult)
-  return [
+  return grained([
     { stat: 'blockChance', kind: 'base', value: template.blockChance, source },
     { stat: 'blockValue', kind: 'base', value: template.blockValue.times(power), source },
     // Тот же разговор, что и у оружия: побочные статы щита только плоские.
     ...template.extra.map((mod) => ({ ...mod, value: mod.value.times(power), source })),
-  ]
+  ])
 }
 
 // Главный атрибут приходит ПАРАМЕТРОМ: дроп его разыгрывает, крафт берёт из
@@ -135,18 +150,36 @@ export function armorMods(
     budget.set(stat, (budget.get(stat) ?? new Decimal(0)).plus(value))
   add(primary, ARMOR_BASE_PRIMARY)
   add(ARMOR_BONUS_STAT, ARMOR_BASE_VITALITY)
-  return [...budget].map(([stat, value]) => ({
-    stat,
-    kind: 'flat' as const,
-    value: value.times(power),
-    source,
-  }))
+  return grained(
+    [...budget].map(([stat, value]) => ({
+      stat,
+      kind: 'flat' as const,
+      value: value.times(power),
+      source,
+    })),
+  )
 }
 
 /**
  * Средняя броня для эталонных сборок прогона баланса: матожидание случайного
  * главного атрибута — четверть бюджета в каждый из четырёх. Строится теми же
  * константами, что и настоящий дроп, иначе прогон мерил бы не ту игру.
+ *
+ * ЕДИНСТВЕННОЕ МЕСТО, ГДЕ ЧИСЛА НЕ ОКРУГЛЯЮТСЯ, и это не забытая строка.
+ * Здесь считается не вещь, а МАТОЖИДАНИЕ по популяции вещей: четверть
+ * бюджета в каждый атрибут — это средняя брони вообще, а не чей-то шлем.
+ * Ступенька в эталоне запрещена тем же доводом, что и `floor`/`ceil` в
+ * `farmCycle` (см. «ОЦЕНКА — ДОЛГОСРОЧНОЕ СРЕДНЕЕ» в CLAUDE.md и
+ * `rate-continuity.test.ts`): округление сделало бы эталонного героя
+ * ступенчатой функцией уровня вещей, и каждый контракт, который меряется
+ * по лестнице уровней, начал бы прыгать на границах ступеней. Расхождение
+ * с настоящей популяцией при этом меньше половины единицы на стат — тоньше
+ * собственной точности эталона.
+ *
+ * ГРАНИЦА ПРОСТАЯ: конкретная вещь — целая, матожидание — непрерывное.
+ * Оружие и щит эталона идут через `weaponMods`/`shieldMods`, потому что это
+ * КОНКРЕТНЫЕ вещи и в модели тоже: эталонный герой носит один полуторник и
+ * один заслон, а не «средний меч».
  */
 export function averageArmorMods(slot: ArmorSlot, rarity: RarityDef, level = 1): StatModifier[] {
   const source = `equipment:${slot}`

@@ -26,9 +26,11 @@ import {
   ARMOR_BASE_PRIMARY,
   ARMOR_BASE_VITALITY,
   ARMOR_BONUS_STAT,
+  ITEM_STAT_GRAIN,
   SHIELDS,
   WEAPONS,
 } from '../data/items'
+import { itemLevelScale } from '../data/balance'
 import type { Item } from '../types'
 
 // rng из заготовленной последовательности значений.
@@ -79,10 +81,14 @@ describe('rollLoot', () => {
     expect(by('weaponSpeed')).toBeCloseTo(1.4, 9)
     // Числа берутся ИЗ ДАННЫХ редкости, а не переписываются руками: лестница
     // редкостей — предмет баланса, и тест обязан проверять формулу, а не
-    // конкретное значение множителя.
+    // конкретное значение множителя. Урон — величина «штуками» по
+    // ITEM_STAT_GRAIN, поэтому формула включает округление к ближайшему:
+    // в данных вещи лежит целое, и подсказка показывает то же самое.
     const mult = RARITY_BY_ID.legendary.bonusMult.toNumber()
-    expect(by('weaponDamageMin')).toBeCloseTo(7 * mult, 9)
-    expect(by('weaponDamageMax')).toBeCloseTo(14 * mult, 9)
+    expect(by('weaponDamageMin')).toBe(Math.round(7 * mult))
+    expect(by('weaponDamageMax')).toBe(Math.round(14 * mult))
+    // А скорость округление не трогает: секунды дробные по природе.
+    expect(by('weaponSpeed')).toBeCloseTo(1.4, 9)
   })
 
   it('броня даёт атрибуты обычными модификаторами, без base', () => {
@@ -455,5 +461,172 @@ describe('на выпадающих вещах только флэт', () => {
     const value = (mods: ReturnType<typeof weaponMods>) =>
       mods.find((m) => m.stat === stat)!.value.toNumber()
     expect(value(high)).toBeGreaterThan(value(low) * 5)
+  })
+})
+
+
+// ЦЕЛЫЕ БОНУСЫ НА ПРЕДМЕТАХ (`ITEM_STAT_GRAIN` в data/items.ts).
+//
+// Бросок множит числа шаблона на уровень вещи и на тир, и до этой правки в
+// карточке стояло «+12.4 силы» и «Урон оружия (мин): 25.5». Вещи считаются
+// штуками — округление идёт НА ГЕНЕРАЦИИ, поэтому проверять его надо здесь,
+// в данных предмета, а не в форматировании.
+describe('целые бонусы на предметах', () => {
+  const ARMOR_SLOTS = SLOT_IDS.filter((s) => s !== 'mainHand' && s !== 'offHand') as Array<
+    'head' | 'chest' | 'hands' | 'legs' | 'trinket'
+  >
+  const LEVELS = [1, 2, 7, 13, 20, 37, 50, 64, 80, 93, 100]
+
+  /** Каждый модификатор всякой вещи в сетке «шаблон × тир × уровень». */
+  function* everyMod(): Generator<{ mod: { stat: string; value: Decimal }; where: string }> {
+    for (const rarity of RARITIES) {
+      for (const level of LEVELS) {
+        for (const template of WEAPONS) {
+          for (const slot of ['mainHand', 'offHand'] as const) {
+            if (slot === 'offHand' && template.grip === 'two') continue
+            for (const mod of weaponMods(template, rarity, slot, level))
+              yield { mod, where: `${template.id}/${slot}/${rarity.id}/${level}` }
+          }
+        }
+        for (const template of SHIELDS) {
+          for (const mod of shieldMods(template, rarity, level))
+            yield { mod, where: `${template.id}/${rarity.id}/${level}` }
+        }
+        for (const slot of ARMOR_SLOTS) {
+          for (const primary of ARMOR_ATTRIBUTES) {
+            for (const mod of armorMods(slot, rarity, level, primary))
+              yield { mod, where: `${slot}/${primary}/${rarity.id}/${level}` }
+          }
+        }
+      }
+    }
+  }
+
+  it('всё, что считается штуками, лежит в предмете целым числом', () => {
+    let checked = 0
+    for (const { mod, where } of everyMod()) {
+      if (ITEM_STAT_GRAIN[mod.stat as keyof typeof ITEM_STAT_GRAIN] !== 'whole') continue
+      checked += 1
+      const value = mod.value.toNumber()
+      expect(Number.isInteger(value), `${where}: ${mod.stat} = ${value}`).toBe(true)
+    }
+    // Пустая сетка прошла бы этот тест молча — считаем, что проверять было что.
+    expect(checked).toBeGreaterThan(1000)
+  })
+
+  it('тысяча бросков дропа не даёт ни одной дробной штуки', () => {
+    const rng = createRng(20260903)
+    let checked = 0
+    for (let i = 0; i < 1000; i += 1) {
+      const item = rollLoot(rng, i, 1 + (i % 100))
+      if (!item) continue
+      for (const mod of item.mods) {
+        if (ITEM_STAT_GRAIN[mod.stat] !== 'whole') continue
+        checked += 1
+        expect(Number.isInteger(mod.value.toNumber()), `${item.name}: ${mod.stat}`).toBe(true)
+      }
+    }
+    expect(checked).toBeGreaterThan(100)
+  })
+
+  it('дробные по природе величины округление НЕ трогает', () => {
+    // Скорость оружия — секунды: 1.4с это 1.4с, а не «полторы».
+    for (const template of WEAPONS) {
+      const speed = weaponMods(template, RARITY_BY_ID.legendary, 'mainHand', 80).find(
+        (m) => m.stat === 'weaponSpeed',
+      )!
+      expect(speed.value.eq(template.weaponSpeed), template.id).toBe(true)
+    }
+    // Шанс блока — доля: округлённая до целого, она стала бы нулём.
+    for (const template of SHIELDS) {
+      const chance = shieldMods(template, RARITY_BY_ID.legendary, 80).find(
+        (m) => m.stat === 'blockChance',
+      )!
+      expect(chance.value.eq(template.blockChance), template.id).toBe(true)
+      expect(chance.value.gt(0)).toBe(true)
+    }
+  })
+
+  it('ни одна прибавка не округляется В НОЛЬ', () => {
+    // Ноль означал бы строку, которой в карточке нет вовсе (её прячет
+    // `changesAnything`), и молча пропавший стат вещи. Сейчас самая мелкая
+    // прибавка в данных — 2 (общий довесок брони), но правило важнее числа:
+    // мельче единицы в данных заводить нельзя, и тест это скажет вслух.
+    for (const { mod, where } of everyMod()) {
+      if (ITEM_STAT_GRAIN[mod.stat as keyof typeof ITEM_STAT_GRAIN] !== 'whole') continue
+      expect(mod.value.gt(0), `${where}: ${mod.stat} округлился в ноль`).toBe(true)
+    }
+  })
+
+  // ГЛАВНАЯ ПРОВЕРКА СТАДИИ: округление не должно систематически съедать силу.
+  // Вниз оно забирало бы в среднем полединицы с каждой строки — на семи слотах
+  // это несколько единиц из воздуха. К ближайшему смещение нулевое, и здесь
+  // оно меряется: сумма всех прибавок сетки до и после.
+  it('средняя сила предмета от округления меняется меньше чем на процент', () => {
+    let before = 0
+    let after = 0
+    const worst: Array<{ where: string; drift: number }> = []
+    for (const rarity of RARITIES) {
+      for (const level of LEVELS) {
+        const power = itemLevelScale(level).times(rarity.bonusMult)
+        // «До» пересчитывается теми же константами данных, что и «после»:
+        // это ровно та формула, что стояла в loot.ts до округления.
+        const raws: Array<{ stat: string; raw: Decimal; where: string }> = []
+        for (const template of WEAPONS) {
+          raws.push(
+            { stat: 'weaponDamageMin', raw: template.damageMin.times(power), where: template.id },
+            { stat: 'weaponDamageMax', raw: template.damageMax.times(power), where: template.id },
+            ...template.extra.map((m) => ({
+              stat: m.stat as string,
+              raw: m.value.times(power),
+              where: template.id,
+            })),
+          )
+        }
+        for (const template of SHIELDS) {
+          raws.push(
+            { stat: 'blockValue', raw: template.blockValue.times(power), where: template.id },
+            ...template.extra.map((m) => ({
+              stat: m.stat as string,
+              raw: m.value.times(power),
+              where: template.id,
+            })),
+          )
+        }
+        for (const primary of ARMOR_ATTRIBUTES) {
+          const merged = primary === ARMOR_BONUS_STAT
+          raws.push({
+            stat: primary,
+            raw: (merged ? ARMOR_BASE_PRIMARY.plus(ARMOR_BASE_VITALITY) : ARMOR_BASE_PRIMARY).times(
+              power,
+            ),
+            where: `armor/${primary}`,
+          })
+          if (!merged)
+            raws.push({
+              stat: ARMOR_BONUS_STAT,
+              raw: ARMOR_BASE_VITALITY.times(power),
+              where: `armor/${primary}`,
+            })
+        }
+        for (const { stat, raw, where } of raws) {
+          const rounded = raw.round().toNumber()
+          before += raw.toNumber()
+          after += rounded
+          worst.push({
+            where: `${where}/${stat}/${rarity.id}/${level}`,
+            drift: (rounded - raw.toNumber()) / raw.toNumber(),
+          })
+        }
+      }
+    }
+    const drift = (after - before) / before
+    worst.sort((a, b) => Math.abs(b.drift) - Math.abs(a.drift))
+    console.log(
+      `Округление к ближайшему: сумма прибавок ${before.toFixed(1)} → ${after.toFixed(1)}, ` +
+        `сдвиг ${(drift * 100).toFixed(3)}%. Худшая отдельная строка: ` +
+        `${worst[0].where} ${(worst[0].drift * 100).toFixed(1)}%.`,
+    )
+    expect(Math.abs(drift)).toBeLessThan(0.01)
   })
 })

@@ -29,19 +29,19 @@
         {
           "stat": "offhandDamageMin",
           "kind": "base",
-          "value": "37.24",
+          "value": "37",
           "source": "equipment:offHand"
         },
         {
           "stat": "offhandDamageMax",
           "kind": "base",
-          "value": "74.47999999999999",
+          "value": "74",
           "source": "equipment:offHand"
         },
         {
           "stat": "agility",
           "kind": "flat",
-          "value": "79.80000000000001",
+          "value": "80",
           "source": "equipment:offHand"
         }
       ]
@@ -63,13 +63,13 @@
         {
           "stat": "blockValue",
           "kind": "base",
-          "value": "98.95200000000001",
+          "value": "99",
           "source": "equipment:offHand"
         },
         {
           "stat": "vitality",
           "kind": "flat",
-          "value": "32.984",
+          "value": "33",
           "source": "equipment:offHand"
         }
       ]
@@ -91,13 +91,13 @@
         {
           "stat": "blockValue",
           "kind": "base",
-          "value": "79.80000000000001",
+          "value": "80",
           "source": "equipment:offHand"
         },
         {
           "stat": "vitality",
           "kind": "flat",
-          "value": "26.6",
+          "value": "27",
           "source": "equipment:offHand"
         }
       ]
@@ -112,7 +112,7 @@
         {
           "stat": "vitality",
           "kind": "flat",
-          "value": "30.299999999999997",
+          "value": "30",
           "source": "equipment:chest"
         }
       ]
@@ -127,13 +127,13 @@
         {
           "stat": "agility",
           "kind": "flat",
-          "value": "25.048000000000002",
+          "value": "25",
           "source": "equipment:hands"
         },
         {
           "stat": "vitality",
           "kind": "flat",
-          "value": "12.524000000000001",
+          "value": "13",
           "source": "equipment:hands"
         }
       ]
@@ -148,7 +148,7 @@
         {
           "stat": "vitality",
           "kind": "flat",
-          "value": "39.06",
+          "value": "39",
           "source": "equipment:legs"
         }
       ]
@@ -170,19 +170,19 @@
         {
           "stat": "weaponDamageMin",
           "kind": "base",
-          "value": "91.12400000000001",
+          "value": "91",
           "source": "equipment:mainHand"
         },
         {
           "stat": "weaponDamageMax",
           "kind": "base",
-          "value": "182.24800000000002",
+          "value": "182",
           "source": "equipment:mainHand"
         },
         {
           "stat": "strength",
           "kind": "flat",
-          "value": "57.98800000000001",
+          "value": "58",
           "source": "equipment:mainHand"
         }
       ]
@@ -240,19 +240,19 @@
         {
           "stat": "weaponDamageMin",
           "kind": "base",
-          "value": "135.65999999999997",
+          "value": "136",
           "source": "equipment:mainHand"
         },
         {
           "stat": "weaponDamageMax",
           "kind": "base",
-          "value": "271.31999999999994",
+          "value": "271",
           "source": "equipment:mainHand"
         },
         {
           "stat": "strength",
           "kind": "flat",
-          "value": "74.47999999999999",
+          "value": "74",
           "source": "equipment:mainHand"
         }
       ]
@@ -268,7 +268,7 @@
         {
           "stat": "vitality",
           "kind": "flat",
-          "value": "39.06",
+          "value": "39",
           "source": "equipment:head"
         }
       ]
@@ -283,13 +283,13 @@
         {
           "stat": "agility",
           "kind": "flat",
-          "value": "21.28",
+          "value": "21",
           "source": "equipment:chest"
         },
         {
           "stat": "vitality",
           "kind": "flat",
-          "value": "10.64",
+          "value": "11",
           "source": "equipment:chest"
         }
       ]
@@ -304,7 +304,7 @@
         {
           "stat": "vitality",
           "kind": "flat",
-          "value": "49.476",
+          "value": "49",
           "source": "equipment:hands"
         }
       ]
@@ -319,7 +319,7 @@
         {
           "stat": "vitality",
           "kind": "flat",
-          "value": "31.92",
+          "value": "32",
           "source": "equipment:legs"
         }
       ]
@@ -334,7 +334,7 @@
         {
           "stat": "vitality",
           "kind": "flat",
-          "value": "49.70400000000001",
+          "value": "50",
           "source": "equipment:trinket"
         }
       ]
@@ -382,7 +382,7 @@
   "gold": "13400000",
   "level": "22",
   "currentXp": "2281",
-  "currentHp": "1460",
+  "currentHp": "1461",
   "currentMana": "155",
   "heroState": "alive",
   "reviveMsLeft": 0,
