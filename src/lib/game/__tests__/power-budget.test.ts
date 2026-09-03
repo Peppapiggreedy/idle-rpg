@@ -34,6 +34,7 @@ import { LEVEL_CAP, POWER_BUDGET } from '../../data/balance'
 import { PROC_BY_ID } from '../../data/procs'
 import { ABILITIES } from '../../data/abilities'
 import { DEFAULT_CLASS } from '../../data/classes'
+import { dump } from './dump'
 
 const SEED = 4242
 const HEAL = ABILITIES.find((a) => a.heal)
@@ -115,7 +116,11 @@ describe('бюджет силы Стража на потолке', () => {
     })
     // Реликвия идёт строкой без коридора: «сколько должен давать уникальный
     // предмет» владелец не назначал, её вклад виден в долях урона.
-    const relicMult = rate(withRelic).killsPerSecond.div(rate(enchanted).killsPerSecond).toNumber()
+    // В ключе отпечатка id прока, а не имя реликвии: имя — текст для игрока.
+    const relicMult = dump(
+      `power/${DEFAULT_CLASS.id}/level-${String(LEVEL_CAP).padStart(3, '0')}/multiplier/relic-${relicOutput.procId}/value`,
+      rate(withRelic).killsPerSecond.div(rate(enchanted).killsPerSecond).toNumber(),
+    )
     rows.push({
       источник: `реликвия с проком урона (${relicOutput.name})`,
       множитель: Number(relicMult.toFixed(3)),
@@ -127,13 +132,19 @@ describe('бюджет силы Стража на потолке', () => {
     const full = rate(withRelic, 'manual')
     // eslint-disable-next-line no-console
     console.log(
-      `итого эталонное снаряжение → полный герой: ×${full.killsPerSecond
-        .div(rate(geared).killsPerSecond)
-        .toFixed(2)}`,
+      `итого эталонное снаряжение → полный герой: ×${dump(
+        `power/${DEFAULT_CLASS.id}/level-${String(LEVEL_CAP).padStart(3, '0')}/multiplier/full-manual-over-geared/value`,
+        full.killsPerSecond.div(rate(geared).killsPerSecond),
+      ).toFixed(2)}`,
     )
     for (const b of branches) {
       // eslint-disable-next-line no-console
-      console.log(`ветка ${b.id}: уб/с ${rate(b.state).killsPerSecond.toFixed(4)}`)
+      console.log(
+        `ветка ${b.id}: уб/с ${dump(
+          `power/${DEFAULT_CLASS.id}/level-${String(LEVEL_CAP).padStart(3, '0')}/branch-${b.id}/kills-per-second`,
+          rate(b.state).killsPerSecond,
+        ).toFixed(4)}`,
+      )
     }
     expect(rows).toHaveLength(sources.length + 1)
   }, 600_000)
@@ -144,8 +155,17 @@ describe('бюджет силы Стража на потолке', () => {
       // СНЯТИЕ ИСТОЧНИКА — ПАДЕНИЕ В КОРИДОРЕ: пол выше единицы, значит герой
       // без этого источника в коридор не попадает никогда. Без этой строки
       // «коридор» мог бы начинаться с нуля и не значить ничего.
-      expect(corridor.min, `${source.id}: пол коридора выше единицы`).toBeGreaterThan(1)
-      const mult = source.to().killsPerSecond.div(source.from().killsPerSecond).toNumber()
+      expect(
+        dump(
+          `power/${DEFAULT_CLASS.id}/level-${String(LEVEL_CAP).padStart(3, '0')}/multiplier/${source.id}/corridor-min`,
+          corridor.min,
+        ),
+        `${source.id}: пол коридора выше единицы`,
+      ).toBeGreaterThan(1)
+      const mult = dump(
+        `power/${DEFAULT_CLASS.id}/level-${String(LEVEL_CAP).padStart(3, '0')}/multiplier/${source.id}/value`,
+        source.to().killsPerSecond.div(source.from().killsPerSecond).toNumber(),
+      )
       expect(mult, source.name).toBeGreaterThanOrEqual(corridor.min)
       expect(mult, source.name).toBeLessThanOrEqual(corridor.max)
     }, 600_000)
@@ -157,9 +177,18 @@ describe('бюджет силы Стража на потолке', () => {
       .plus(full.abilityDamagePerSecond)
       .plus(full.procDamagePerSecond)
     const shares = {
-      autoattack: full.autoDamagePerSecond.div(sum).toNumber(),
-      abilities: full.abilityDamagePerSecond.div(sum).toNumber(),
-      procs: full.procDamagePerSecond.div(sum).toNumber(),
+      autoattack: dump(
+        `power/${DEFAULT_CLASS.id}/level-${String(LEVEL_CAP).padStart(3, '0')}/full-manual/damage-share/autoattack`,
+        full.autoDamagePerSecond.div(sum).toNumber(),
+      ),
+      abilities: dump(
+        `power/${DEFAULT_CLASS.id}/level-${String(LEVEL_CAP).padStart(3, '0')}/full-manual/damage-share/abilities`,
+        full.abilityDamagePerSecond.div(sum).toNumber(),
+      ),
+      procs: dump(
+        `power/${DEFAULT_CLASS.id}/level-${String(LEVEL_CAP).padStart(3, '0')}/full-manual/damage-share/procs`,
+        full.procDamagePerSecond.div(sum).toNumber(),
+      ),
     }
     // eslint-disable-next-line no-console
     console.log(
@@ -183,7 +212,12 @@ describe('бюджет силы Стража на потолке', () => {
     }
     // Сумма — сто процентов по построению: это защита от того, что источник
     // урона появится мимо всех трёх строк и никем не будет замечен.
-    expect(shares.autoattack + shares.abilities + shares.procs).toBeCloseTo(1, 6)
+    expect(
+      dump(
+        `power/${DEFAULT_CLASS.id}/level-${String(LEVEL_CAP).padStart(3, '0')}/full-manual/damage-share/sum`,
+        shares.autoattack + shares.abilities + shares.procs,
+      ),
+    ).toBeCloseTo(1, 6)
   }, 600_000)
 
   it('каденция апгрейдов: актуальные вещи против отставших на десять уровней', () => {
@@ -203,7 +237,10 @@ describe('бюджет силы Стража на потолке', () => {
       const kps = (s: GameState) =>
         estimateCombatRate({ ...s, monster: monsterFromTemplate(representativeMonster(z)) })
           .killsPerSecond
-      const mult = kps(now).div(kps(lagging)).toNumber()
+      const mult = dump(
+        `power/${DEFAULT_CLASS.id}/gear-cadence/level-${String(point.level).padStart(3, '0')}/multiplier`,
+        kps(now).div(kps(lagging)).toNumber(),
+      )
       // eslint-disable-next-line no-console
       console.log(`каденция, уровень ${point.level}: ×${mult.toFixed(3)} (коридор ${point.min}–${point.max})`)
       expect(mult, `каденция ${point.level}`).toBeGreaterThanOrEqual(point.min)
@@ -222,7 +259,18 @@ describe('бюджет силы Стража на потолке', () => {
     const combat = ABILITIES.filter((a) => !a.heal).map((a) => a.id)
     const without = simulate({ hours: 3, zoneId: z.id, freezeLevel: true, seed: SEED, build: { ...build, autocast: combat } })
     const withHeal = simulate({ hours: 3, zoneId: z.id, freezeLevel: true, seed: SEED, build: { ...build, autocast: 'all' } })
-    const cut = 1 - withHeal.restShare / without.restShare
+    const cut = dump(
+      `power/${DEFAULT_CLASS.id}/heal-rest/level-${String(level).padStart(3, '0')}/seed-${SEED}/rest-cut`,
+      1 -
+        dump(
+          `power/${DEFAULT_CLASS.id}/heal-rest/level-${String(level).padStart(3, '0')}/seed-${SEED}/rest-share/autocast-all`,
+          withHeal.restShare,
+        ) /
+          dump(
+            `power/${DEFAULT_CLASS.id}/heal-rest/level-${String(level).padStart(3, '0')}/seed-${SEED}/rest-share/autocast-combat`,
+            without.restShare,
+          ),
+    )
     // eslint-disable-next-line no-console
     console.log(
       `лечение: простой ${(without.restShare * 100).toFixed(1)} % → ` +
@@ -236,6 +284,8 @@ describe('бюджет силы Стража на потолке', () => {
     // Защитные ветки пускают ГЛУБЖЕ — это их смысл, и по темпу в своей зоне
     // их не сравнить. Цифры печатаются; чинить их эта стадия не берётся.
     void new Decimal(0)
-    expect(branches.length).toBeGreaterThan(1)
+    expect(dump(`power/${DEFAULT_CLASS.id}/talent-branches/count`, branches.length)).toBeGreaterThan(
+      1,
+    )
   })
 })

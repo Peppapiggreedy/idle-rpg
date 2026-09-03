@@ -135,16 +135,21 @@ jobs:
             exit 1
           fi
 
-  # Юниты и golden. Матрицы прогонов здесь нет — она в balance. Список
-  # исключений ТОТ ЖЕ, что у `npm run test` в package.json: обгон зон и кран
-  # золота строят эталонное прохождение и идут в balance, а не здесь.
+  # Юниты и golden. Матрицы прогонов здесь нет — она в balance.
+  #
+  # СПИСОК ИСКЛЮЧЕНИЙ НЕ ПОВТОРЯЕТСЯ ЗДЕСЬ, и это главное в этом джобе. Раньше
+  # он был выписан руками и в package.json, и тут, и в nightly.yml — три копии
+  # одного списка, которые честно разъехались: `power-budget.test.ts` добавили
+  # в исключения третьей ночью только в package.json, и дорогой тест полгода
+  # шёл на каждом PR ДВАЖДЫ — здесь и в balance. Теперь список один, в
+  # `npm run test:unit`, а джоб его зовёт.
   unit:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup
       - name: Юниты и golden
-        run: npx vitest run --exclude "src/lib/game/__tests__/balance.test.ts" --exclude "src/lib/game/__tests__/run.test.ts" --exclude "src/lib/game/level-gap.test.ts" --exclude "src/lib/game/__tests__/gold.test.ts"
+        run: npm run test:unit
 
   # Отдельным джобом ради ИМЕНИ: сломанная ссылка в data/ видна по названию
   # проверки, а не поиском по логу тестов.

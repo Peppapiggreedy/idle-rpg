@@ -777,7 +777,86 @@ function replacedSwingsPerSecond(stats: StatBlock, rotation: RotationRate): Deci
   return Decimal.min(used, new Decimal(1).div(stats.swingTime))
 }
 
+/**
+ * КЕШ ОЦЕНКИ БОЯ.
+ *
+ * `estimateCombatRate` — чистая функция входа: ни случайности, ни часов, ни
+ * записи в аргументы. Значит её можно запоминать, и делать это стоит: один
+ * прогон полного пути зовёт её 330 512 раз (661 024 прохода `rawRate` — вдвое,
+ * потому что режим `auto` считает ещё и точку отсчёта «та же ротация руками»).
+ * Приходят они не вразнобой: примерка находки в `equipUpgrades` считает ОДНО И
+ * ТО ЖЕ текущее снаряжение заново для каждой следующей вещи в сумке.
+ *
+ * КЛЮЧ ОБЯЗАН ПОКРЫВАТЬ ВСЁ, ЧТО ФУНКЦИЯ ЧИТАЕТ, и ошибиться можно в две
+ * стороны, неравноценные: слишком подробный ключ даёт промах — медленно, но
+ * верно; слишком грубый возвращает чужой ответ — быстро и неправильно. Поэтому
+ * ниже перечислено всё до последнего поля, а сомнения решены в пользу
+ * подробности. Держит это балансный отпечаток: 1853 величины обязаны совпасть
+ * побитово.
+ *
+ * Снаружи — WeakMap по БЛОКУ СТАТОВ: `{ ...state, monster }` сохраняет ссылку
+ * на него, поэтому попадания есть, а память уходит вместе с самим блоком.
+ */
+const RATE_CACHE = new WeakMap<StatBlock, Map<string, CombatRate>>()
+/** Разных мобов на одних статах конечное число; переполнение — очистка. */
+const RATE_CACHE_LIMIT = 1024
+
+// Тождество объектов, переживающих spread состояния, — числом. Дешевле обхода
+// их содержимого и точнее его же.
+const IDENTITIES = new WeakMap<object, number>()
+let nextIdentity = 0
+function identityOf(value: object): number {
+  const known = IDENTITIES.get(value)
+  if (known !== undefined) return known
+  nextIdentity += 1
+  IDENTITIES.set(value, nextIdentity)
+  return nextIdentity
+}
+
+/**
+ * Моб строится заново на каждый вызов, тождество бесполезно — он входит в ключ
+ * ЗНАЧЕНИЕМ. Decimal держит мантиссу и порядок двумя числами, и этой пары
+ * довольно: равные величины нормализованы одинаково, а разойдись
+ * представления — вышел бы промах, то есть безопасная сторона.
+ */
+function monsterKey(monster: GameState['monster']): string {
+  const d = (x: Decimal) => `${x.mantissa}e${x.exponent}`
+  return `${monster.level}:${monster.swingTime}:${d(monster.maxHp)}:${d(monster.damageMin)}:${d(monster.damageMax)}`
+}
+
+function rateKey(state: GameState, mode: PlayMode): string {
+  return [
+    mode,
+    state.classId,
+    identityOf(state.level),
+    identityOf(state.talents),
+    identityOf(state.equipment),
+    identityOf(state.abilitySettings),
+    identityOf(state.activePotions),
+    state.holdManaForHeal ? 1 : 0,
+    // Зона нужна только ручному режиму (травы для зелий), но стоит в ключе
+    // всегда: лишний разряд не стоит ничего, забытая зависимость — неверный ответ.
+    state.currentZoneId,
+    monsterKey(state.monster),
+  ].join('|')
+}
+
 export function estimateCombatRate(state: GameState, mode: PlayMode = 'auto'): CombatRate {
+  let byKey = RATE_CACHE.get(state.stats)
+  if (!byKey) {
+    byKey = new Map()
+    RATE_CACHE.set(state.stats, byKey)
+  }
+  const key = rateKey(state, mode)
+  const cached = byKey.get(key)
+  if (cached) return cached
+  const computed = computeCombatRate(state, mode)
+  if (byKey.size >= RATE_CACHE_LIMIT) byKey.clear()
+  byKey.set(key, computed)
+  return computed
+}
+
+function computeCombatRate(state: GameState, mode: PlayMode = 'auto'): CombatRate {
   const rate = rawRate(state, PLAN[mode])
   if (mode === 'manual') return rate
   // ЖЕЛЕЗНОЕ ПРАВИЛО в одном месте: автокаст не бывает выгоднее ручной игры
