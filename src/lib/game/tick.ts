@@ -181,7 +181,7 @@ const applyRest: TickStep = (s, ctx) => {
   const log = pushEvent(done.combatLog, { type: 'rest-end', interrupted: false })
   // В данже цепочка боссов своя: там моба назначает забег, а не зона.
   if (done.dungeonRun) return { ...done, combatLog: log }
-  const monster = spawnMonster(currentZone(done), ctx.rng)
+  const monster = spawnMonster(currentZone(done), ctx.rng, done.level.toNumber())
   return {
     ...done,
     monster,
@@ -840,7 +840,7 @@ const applyRespawn: TickStep = (s, ctx) => {
   if (s.respawnMsLeft <= 0) return s
   const left = s.respawnMsLeft - ctx.dtMs
   if (left > 0) return { ...s, respawnMsLeft: left }
-  const monster = spawnMonster(currentZone(s), ctx.rng)
+  const monster = spawnMonster(currentZone(s), ctx.rng, s.level.toNumber())
   return {
     ...s,
     respawnMsLeft: 0,
@@ -926,6 +926,13 @@ const PIPELINE: TickStep[] = [
   applyResourceGain,
   applyRegen,
   applyRespawn,
+  // ЭТОГО ШАГА ЗДЕСЬ НЕ БЫЛО, и храм молча не платил ничего. Функция была
+  // написана, снабжена комментарием «стоит ПОСЛЕ applyRespawn намеренно» — и
+  // в конвейер не попала: `run.cleared` оставался нулём при любой глубине
+  // забега, а `finishTempleRun` платит ровно за этажи выше рекорда, то есть
+  // за отрезок от 1 до 0. Игрок доходил до четырнадцатого этажа и получал
+  // пусто. Поймано замером: волны шли до седьмой, `cleared` стоял на нуле.
+  applyTempleWave,
   applyHerbGather,
   applyQuests,
   applyAutosaveCounter,

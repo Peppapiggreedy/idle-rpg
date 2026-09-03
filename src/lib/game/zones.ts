@@ -14,12 +14,12 @@ import {
 } from '../data/balance'
 import {
   SAFE_ZONE,
+  zoneSpawnVariants,
   ZONES,
   ZONE_BY_ID,
   averageMonsterLevel,
   representativeMonster,
   zoneForMonsterLevel,
-  zoneMonsterVariants,
   type Zone,
 } from '../data/zones'
 import { INITIAL_ZONE_IDS } from '../data/dungeons'
@@ -134,7 +134,11 @@ export interface ZoneRate {
  * отдельная потеря против каждого моба.
  */
 export function zoneRate(state: GameState, zone: Zone, mode: PlayMode = 'auto'): ZoneRate {
-  const variants = zoneMonsterVariants(zone)
+  // ВАРИАНТЫ ВЗВЕШЕНЫ РАСПРЕДЕЛЕНИЕМ СПАВНА, а не равновероятны. Пока спавн
+  // брал любой уровень полосы, равномерное усреднение было точным; теперь
+  // уровень жмётся к герою, и считать бои с мобами, которых этому герою почти
+  // не выдают, значило бы моделировать другую игру.
+  const variants = zoneSpawnVariants(zone, state.level.toNumber())
   // ТЕМП ЗОНЫ — ЭТО N УБИЙСТВ ЗА СУММУ ЦИКЛОВ, поэтому усредняются ВРЕМЕНА
   // боёв, а не темпы: спавн выдаёт мобов пула по очереди, и час игры — это
   // сумма их циклов. Среднее темпов (E[1/c]) выше настоящего 1/E[c] тем
@@ -149,24 +153,33 @@ export function zoneRate(state: GameState, zone: Zone, mode: PlayMode = 'auto'):
   let hpLossTime = new Decimal(0)
   // Цена каждого вида боя отдельно — для смертности смешанного пула.
   const fightLosses: number[] = []
-  for (const template of variants) {
+  for (const { template, weight } of variants) {
     const rate = estimateCombatRate(facing(state, template), mode)
     // Моб, которого герой не пробивает, тянет цикл в бесконечность: убийств
     // в такой зоне нет вовсе — это и есть «безнадёжно».
     if (rate.idealKillsPerSecond.lte(0)) {
       return { killsPerSecond: new Decimal(0), goldPerSecond: new Decimal(0), xpPerSecond: new Decimal(0), uptime: 0, dies: true, deathsPerHour: 0 }
     }
-    const cycleSec = new Decimal(1).div(rate.idealKillsPerSecond)
+    // ВЕСОМ УМНОЖАЮТСЯ ВРЕМЕНА И НАГРАДЫ, а не результат: час игры — это
+    // сумма циклов, встреченных с их вероятностями. Знаменателем идёт та же
+    // взвешенная сумма времён, поэтому «на секунду боя» остаётся честным.
+    const cycleSec = new Decimal(1).div(rate.idealKillsPerSecond).times(weight)
     totalCycleSec = totalCycleSec.plus(cycleSec)
-    killable += 1
-    gold = gold.plus(template.goldReward)
+    killable += weight
+    gold = gold.plus(template.goldReward.times(weight))
     // Штраф за отставание — ПО КАЖДОМУ мобу отдельно, а не по зоне целиком:
     // внутри одной зоны пять уровней мобов, и на границе штрафа половина пула
     // может считаться полным опытом, а половина — половинным. Золото рядом
     // идёт без штрафа: он бьёт только по опыту.
-    xp = xp.plus(template.xpReward.times(xpGapShare(state.level.toNumber(), template.level)))
+    xp = xp.plus(
+      template.xpReward.times(xpGapShare(state.level.toNumber(), template.level)).times(weight),
+    )
     hpLossTime = hpLossTime.plus(rate.hpLossPerSecond.times(cycleSec))
-    fightLosses.push(rate.hpLossPerSecond.times(cycleSec).toNumber())
+    // Цена боя — БЕЗ веса: это стоимость ОДНОЙ схватки такого вида, и
+    // смертность считает её как есть, а не как долю часа.
+    fightLosses.push(
+      rate.hpLossPerSecond.div(rate.idealKillsPerSecond).toNumber(),
+    )
   }
   const meanCycleSec = totalCycleSec.div(killable)
   const idealKills = new Decimal(1).div(meanCycleSec)
@@ -285,7 +298,7 @@ function enterZone(
   rng: Rng,
   reason: 'travel' | 'retreat',
 ): GameState {
-  const monster = spawnMonster(zone, rng)
+  const monster = spawnMonster(zone, rng, state.level.toNumber())
   let combatLog = pushEvent(state.combatLog, {
     type: 'zone',
     zoneName: zone.name,

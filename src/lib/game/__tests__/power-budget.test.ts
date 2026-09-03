@@ -30,7 +30,7 @@ import { ENCHANTS } from '../../data/enchants'
 import { RECIPES } from '../../data/recipes'
 import { craftedItem } from '../crafting'
 import { SLOT_IDS, type SlotId } from '../../data/slots'
-import { LEVEL_CAP, POWER_BUDGET } from '../../data/balance'
+import { LEVEL_CAP, POTION_UNLOCK_LEVEL, POWER_BUDGET } from '../../data/balance'
 import { PROC_BY_ID } from '../../data/procs'
 import { ABILITIES } from '../../data/abilities'
 import { DEFAULT_CLASS } from '../../data/classes'
@@ -96,12 +96,24 @@ describe('бюджет силы Стража на потолке', () => {
       to: () => rate(enchanted),
     },
     {
+      // СТРОКА ДЕЙСТВУЕТ ТОЛЬКО С POTION_UNLOCK_LEVEL. Травничество и зелья
+      // открываются целиком на сороковом уровне: до него склянок нет ни в
+      // мешке, ни в рецептах, ни в ряду действий. Бюджет меряется на потолке
+      // (LEVEL_CAP), поэтому строка законна — но условие проверяется явно,
+      // а не подразумевается: опустись замер ниже сорокового, и коридор
+      // мерил бы силу, которой у героя нет.
       id: 'potions' as const,
-      name: 'зелья (ручной режим)',
+      name: `зелья (ручной режим, с ${POTION_UNLOCK_LEVEL} уровня)`,
       from: () => rate(withRelic),
       to: () => rate(withRelic, 'manual'),
     },
   ]
+
+  it('строка зелий меряется там, где зелья есть', () => {
+    // Не украшение: без этой проверки строка «зелья ×1.25» молча мерила бы
+    // ноль на герое, которому до травничества ещё десять уровней.
+    expect(LEVEL_CAP).toBeGreaterThanOrEqual(POTION_UNLOCK_LEVEL)
+  })
 
   it('таблица бюджета', () => {
     const rows = sources.map((s) => {

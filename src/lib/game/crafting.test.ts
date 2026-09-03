@@ -23,7 +23,12 @@ import {
 } from '../data/recipes'
 import { LEVEL_CAP } from '../data/balance'
 import { TEMPLE } from '../data/temple'
-import { INVENTORY_SIZE, MATERIAL_DROP_CHANCE, REST_FOOD_SPEEDUP } from '../data/balance'
+import {
+  CRAFT_UNLOCK_LEVEL,
+  INVENTORY_SIZE,
+  MATERIAL_DROP_CHANCE,
+  REST_FOOD_SPEEDUP,
+} from '../data/balance'
 import { ZONES } from '../data/zones'
 
 
@@ -38,6 +43,11 @@ function seqRng(values: number[]) {
 function hero(patch: Partial<GameState> = {}): GameState {
   return ensureStats({
     ...createInitialState(1),
+    // УРОВЕНЬ ПРОФЕССИИ ПО УМОЛЧАНИЮ. Ремёсла открываются на тридцатом
+    // (CRAFT_UNLOCK_LEVEL), и герой первого уровня упирался бы в отказ
+    // `level` в каждом тесте про материалы — то есть мерил бы не то, что
+    // написано в его названии. Про сам порог есть свои тесты ниже.
+    level: new Decimal(CRAFT_UNLOCK_LEVEL),
     abilitySettings: manualOnlySettings(),
     // ЗОЛОТА С ЗАПАСОМ ПО УМОЛЧАНИЮ. У крафта теперь есть пошлина, и без неё
     // каждый тест про материалы упирался бы в отказ по золоту — то есть мерил

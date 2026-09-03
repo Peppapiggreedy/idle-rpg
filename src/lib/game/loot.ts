@@ -5,7 +5,7 @@ import type { Rng } from './rng'
 import { pushEvent, type GameState } from './state'
 import type { Item } from '../types'
 import { RARITIES, RARITY_BY_ID, type RarityDef } from '../data/rarity'
-import { DROP_CHANCE, ITEM_BASE_SELL_PRICE, LOOT_ADJECTIVES, SHIELD_SHARE } from '../data/loot'
+import { DROP_CHANCE, LOOT_ADJECTIVES, SHIELD_SHARE, itemSellPrice } from '../data/loot'
 import { SLOT_DROP_WEIGHTS, SLOT_IDS, type SlotId } from '../data/slots'
 import {
   ARMOR_ATTRIBUTES,
@@ -13,6 +13,7 @@ import {
   ARMOR_BASE_VITALITY,
   ARMOR_BONUS_STAT,
   ARMOR_NOUNS,
+  itemStatValue,
   ONE_HANDED,
   SHIELDS,
   WEAPONS,
@@ -23,7 +24,9 @@ import {
 } from '../data/items'
 import { INVENTORY_SIZE, itemLevelScale } from '../data/balance'
 import type { StatModifier } from './stats'
-import { isEquipped, upgradeShare } from './equipment'
+import { betterOnAnyAxis, isEquipped, upgradeShare } from './equipment'
+import { dustValue } from './enchanting'
+import { inventorySize, lootPolicyOf } from './upgrades'
 import type { BossLoot } from '../data/dungeons'
 
 // Реэкспорт для обратной совместимости импортов.
@@ -57,6 +60,20 @@ export function rollSlot(rng: Rng): SlotId {
 }
 
 /**
+ * Все числа КОНКРЕТНОЙ вещи — через одно зерно (`ITEM_STAT_GRAIN` в
+ * `data/items.ts`): что считается штуками, то на генерации округляется к
+ * ближайшему целому, доли и секунды проходят как есть. Здесь единственная
+ * точка применения: и находка, и ковка, и стартовый комплект строят
+ * модификаторы этими тремя функциями, поэтому второго места, где предмет
+ * обзаводится числом, нет.
+ *
+ * МАТОЖИДАНИЕ ЧЕРЕЗ НЕЁ НЕ ХОДИТ — см. `averageArmorMods` ниже.
+ */
+function grained(mods: StatModifier[]): StatModifier[] {
+  return mods.map((mod) => ({ ...mod, value: itemStatValue(mod.stat, mod.value) }))
+}
+
+/**
  * Оружие: три модификатора kind 'base' задают БАЗУ боя (скорость и диапазон
  * урона), побочные статы идут обычными модификаторами. Снятое оружие перестаёт
  * давать base — значения возвращаются к UNARMED из data/balance.ts.
@@ -75,7 +92,7 @@ export function weaponMods(
   // Уровень и тир множат СИЛУ предмета (урон и плоские атрибуты), но не
   // скорость: темп боя — свойство образца оружия, а не его свежести.
   const power = itemLevelScale(level).times(rarity.bonusMult)
-  return [
+  return grained([
     { stat: off ? 'offhandSpeed' : 'weaponSpeed', kind: 'base', value: template.weaponSpeed, source },
     {
       stat: off ? 'offhandDamageMin' : 'weaponDamageMin',
@@ -93,7 +110,7 @@ export function weaponMods(
     // поэтому множатся все без разбора: процент множить было бы нечем — он
     // считается от суммы конвейера и от уровня вещи не зависит вовсе.
     ...template.extra.map((mod) => ({ ...mod, value: mod.value.times(power), source })),
-  ]
+  ])
 }
 
 /** Щит: урона не даёт, зато даёт блок. Тоже через конвейер, без исключений. */
@@ -102,12 +119,12 @@ export function shieldMods(template: ShieldTemplate, rarity: RarityDef, level = 
   // Шанс блока не растёт: вероятность — не сила. Растёт то, СКОЛЬКО блок
   // снимает, и атрибуты.
   const power = itemLevelScale(level).times(rarity.bonusMult)
-  return [
+  return grained([
     { stat: 'blockChance', kind: 'base', value: template.blockChance, source },
     { stat: 'blockValue', kind: 'base', value: template.blockValue.times(power), source },
     // Тот же разговор, что и у оружия: побочные статы щита только плоские.
     ...template.extra.map((mod) => ({ ...mod, value: mod.value.times(power), source })),
-  ]
+  ])
 }
 
 // Главный атрибут приходит ПАРАМЕТРОМ: дроп его разыгрывает, крафт берёт из
@@ -135,18 +152,36 @@ export function armorMods(
     budget.set(stat, (budget.get(stat) ?? new Decimal(0)).plus(value))
   add(primary, ARMOR_BASE_PRIMARY)
   add(ARMOR_BONUS_STAT, ARMOR_BASE_VITALITY)
-  return [...budget].map(([stat, value]) => ({
-    stat,
-    kind: 'flat' as const,
-    value: value.times(power),
-    source,
-  }))
+  return grained(
+    [...budget].map(([stat, value]) => ({
+      stat,
+      kind: 'flat' as const,
+      value: value.times(power),
+      source,
+    })),
+  )
 }
 
 /**
  * Средняя броня для эталонных сборок прогона баланса: матожидание случайного
  * главного атрибута — четверть бюджета в каждый из четырёх. Строится теми же
  * константами, что и настоящий дроп, иначе прогон мерил бы не ту игру.
+ *
+ * ЕДИНСТВЕННОЕ МЕСТО, ГДЕ ЧИСЛА НЕ ОКРУГЛЯЮТСЯ, и это не забытая строка.
+ * Здесь считается не вещь, а МАТОЖИДАНИЕ по популяции вещей: четверть
+ * бюджета в каждый атрибут — это средняя брони вообще, а не чей-то шлем.
+ * Ступенька в эталоне запрещена тем же доводом, что и `floor`/`ceil` в
+ * `farmCycle` (см. «ОЦЕНКА — ДОЛГОСРОЧНОЕ СРЕДНЕЕ» в CLAUDE.md и
+ * `rate-continuity.test.ts`): округление сделало бы эталонного героя
+ * ступенчатой функцией уровня вещей, и каждый контракт, который меряется
+ * по лестнице уровней, начал бы прыгать на границах ступеней. Расхождение
+ * с настоящей популяцией при этом меньше половины единицы на стат — тоньше
+ * собственной точности эталона.
+ *
+ * ГРАНИЦА ПРОСТАЯ: конкретная вещь — целая, матожидание — непрерывное.
+ * Оружие и щит эталона идут через `weaponMods`/`shieldMods`, потому что это
+ * КОНКРЕТНЫЕ вещи и в модели тоже: эталонный герой носит один полуторник и
+ * один заслон, а не «средний меч».
  */
 export function averageArmorMods(slot: ArmorSlot, rarity: RarityDef, level = 1): StatModifier[] {
   const source = `equipment:${slot}`
@@ -258,19 +293,23 @@ export function rollBossLoot(loot: BossLoot, rng: Rng, itemSeq: number, level = 
   })
 }
 
+// Цена продажи — формула ИЗ ДАННЫХ, по уровню вещи и тиру. Своей арифметики
+// здесь нет: разбор добычи, автопродажа и кнопка в сумке зовут одно и то же.
 export function sellPrice(item: Item): Decimal {
-  return ITEM_BASE_SELL_PRICE.times(RARITY_BY_ID[item.rarity].sellMult)
+  return itemSellPrice(item.level, item.rarity)
 }
 
 /**
  * Ценность предмета для разбора добычи: больше — ценнее. Апгрейды всегда
- * ценнее не-апгрейдов, внутри группы решает прирост урона в секунду,
+ * ценнее не-апгрейдов, внутри группы решает лучшая из осей приоритета,
  * а при равенстве — цена продажи.
  *
  * Своей меры «хорошести» здесь нет и быть не должно: сравнение идёт тем же
- * `estimateCombatRate`, что и подсказка в сумке, и автонадевание до его
- * сноса. Две разные меры разошлись бы, и игрок увидел бы, как игра выкинула
- * то, что сама же пометила апгрейдом.
+ * `estimateCombatRate`, что и подсказка в сумке. Две разные меры разошлись
+ * бы, и игрок увидел бы, как игра выкинула то, что сама же пометила
+ * апгрейдом. ПРИОРИТЕТ БЕРЁТСЯ ИЗ СОСТОЯНИЯ (`upgradeShare` без третьего
+ * аргумента): поставил игрок «выживание» — разбор считает лишним то, что
+ * не спасает, а не то, что слабо бьёт.
  */
 export function lootValue(state: GameState, item: Item, cache?: LootValueCache): number {
   const hit = cache?.get(item.id)
@@ -317,10 +356,38 @@ export function isUpgradeValue(value: number): boolean {
  * Раньше при полной сумке дроп не бросался ВООБЩЕ: герой переставал
  * находить вещи, пока игрок не продаст, и это было видно в golden —
  * статы упирались в потолок. Теперь бросок идёт всегда.
+ *
+ * ЖЕЛЕЗНОЕ ПРАВИЛО СИЛЬНЕЕ ПРИОРИТЕТА. «Лучше» для вытеснения считается по
+ * ОБЕИМ осям (`betterOnAnyAxis`), а не по тем, что выбрал игрок: приоритет
+ * говорит, что подсветить и что считать лишним при разборе, но молча
+ * потерять находку он права не даёт. Игрок, поставивший «урон», просил не
+ * звать панцирь апгрейдом — он не просил выбрасывать панцирь.
  */
 export function stashLoot(state: GameState, item: Item, cache?: LootValueCache): GameState {
   const withSeq = { ...state, itemSeq: Math.max(state.itemSeq, Number(item.id.split('-')[1]) + 1) }
-  if (state.inventory.length < INVENTORY_SIZE) {
+  // РАЗБОР НА ЛЕТУ — покупка, а не умолчание. Пока переключатель стоит на
+  // «не трогать» (и пока положения не куплены), поведение ровно прежнее:
+  // всё падает в сумку. Купленные положения убирают из неё МУСОР — вещь,
+  // не лучшую ни по одной оси, — и никогда находку: железное правило сумки
+  // проверяется первым и здесь.
+  const policy = lootPolicyOf(state)
+  if (policy !== 'keep' && !betterOnAnyAxis(state, item)) {
+    if (policy === 'sell') {
+      const gold = sellPrice(item)
+      return {
+        ...withSeq,
+        gold: state.gold.plus(gold),
+        combatLog: pushEvent(state.combatLog, { type: 'autosell', item, gold }),
+      }
+    }
+    const dust = dustValue(item)
+    return {
+      ...withSeq,
+      enchantDust: state.enchantDust.plus(dust),
+      combatLog: pushEvent(state.combatLog, { type: 'autodust', item, dust }),
+    }
+  }
+  if (state.inventory.length < inventorySize(state)) {
     return {
       ...withSeq,
       inventory: [...state.inventory, item],
@@ -338,8 +405,9 @@ export function stashLoot(state: GameState, item: Item, cache?: LootValueCache):
       worstIndex = index
     }
   })
-  // Находка не ценнее худшего в сумке — уходит в золото сама.
-  if (value <= worstValue) {
+  // Находка не ценнее худшего в сумке — уходит в золото сама. Но сперва
+  // железное правило: лучше хоть по одной оси — остаётся в любом случае.
+  if (value <= worstValue && !betterOnAnyAxis(state, item)) {
     const gold = sellPrice(item)
     return {
       ...withSeq,

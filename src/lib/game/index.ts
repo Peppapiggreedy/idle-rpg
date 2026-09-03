@@ -25,6 +25,7 @@ export {
   farmRateWith,
   equipStatus,
   unequipStatus,
+  changesAnything,
 } from './equipment'
 export type {
   EquipPreview,
@@ -126,6 +127,7 @@ export {
   leaveTemple,
   templeById,
   templeStatus,
+  pendingTempleReward,
   TEMPLE,
   recipeUnlocked,
   recipeUnlockWave,

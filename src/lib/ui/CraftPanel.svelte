@@ -16,7 +16,7 @@
   import { MATERIALS, MATERIAL_BY_ID } from '../data/materials'
   import { HERBS, HERB_BY_ID } from '../data/herbs'
   import { REAGENTS, REAGENT_BY_ID } from '../data/reagents'
-  import { PROFESSIONS, recipesOf, type RecipeDef } from '../data/recipes'
+  import { PROFESSIONS, professionUnlocked, recipesOf, type RecipeDef } from '../data/recipes'
   import { SLOT_NAMES } from '../data/slots'
   import { rarityName } from './kit'
   import { Button, NumberText, Panel, Tooltip } from './kit'
@@ -96,11 +96,23 @@
     return `+${formatNumber(mod.value)} ${name}`
   }
   const statLabels = $derived(statNames($gameState.classId))
+
+  /**
+   * ЗАКРЫТО ЗНАЧИТ НЕ ВИДНО. Профессия, до которой герой не дорос, не
+   * показывается вовсе — ни серой, ни с замком. Интригу держит лестница
+   * открытий в разделе «Развитие»: там сказано, что на тридцатом что-то
+   * будет, и не сказано что. Запертая вкладка на её месте отвечала бы на
+   * вопрос заранее и притом раздражала.
+   */
+  const openProfessions = $derived(
+    PROFESSIONS.filter((p) => professionUnlocked(p.id, $gameState.level.toNumber())),
+  )
 </script>
 
+{#if openProfessions.length > 0}
 <Panel title="Ремёсла">
   <p class="hint">
-    Уровней у профессий нет: рецепт собирается, как только есть материалы.
+    Рецепт собирается, как только есть материалы и золото на пошлину.
     Материалы падают своим броском и место в сумке не занимают.
   </p>
 
@@ -121,7 +133,7 @@
     {/if}
   </section>
 
-  {#each PROFESSIONS as profession (profession.id)}
+  {#each openProfessions as profession (profession.id)}
     <section class="profession">
       <h3><Icon name={profession.icon} />{profession.name}</h3>
       <p class="hint">{profession.tagline}</p>
@@ -178,6 +190,7 @@
     </section>
   {/each}
 </Panel>
+{/if}
 
 <style>
   .hint,

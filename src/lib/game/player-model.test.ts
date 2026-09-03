@@ -57,27 +57,64 @@ const SHALLOW = zoneForMonsterLevel(13)
 const OWN = zoneForMonsterLevel(25)
 
 /**
- * Сколько живучести нужно, чтобы панцирь стал апгрейдом в ЦЕЛЕВОЙ зоне и
- * остался не-апгрейдом в мелкой. Число НЕ ЗАШИТО: любая правка баланса его
- * двигает, а свойство остаётся. Нет такого числа вовсе — свойство пропало,
- * и тест обязан упасть, а не молча проверять пустоту.
+ * Сколько живучести нужно, чтобы панцирь ОКУПАЛСЯ ПО УРОНУ в целевой зоне и
+ * не окупался в мелкой. Число НЕ ЗАШИТО: любая правка баланса его двигает,
+ * а свойство остаётся. Нет такого числа вовсе — свойство пропало, и тест
+ * обязан упасть, а не молча проверять пустоту.
+ *
+ * МЕРИТСЯ ПО ОСИ УРОНА, а не по метке «апгрейд», и это следствие двух осей.
+ * Пока мера была одна, «апгрейд» и «окупается по урону» значили одно и то
+ * же; теперь панцирь — апгрейд в любой зоне, потому что цену боя он снижает
+ * везде. Свойство третьей ночи от этого никуда не делось: оно про то, что
+ * ЖИВУЧЕСТЬ ПЛАТИТ УРОНОМ ТОЛЬКО ТАМ, ГДЕ ГЕРОЙ ТЕРЯЕТ АПТАЙМ, — и меряется
+ * теперь на той оси, о которой оно и было.
  */
 function flippingVitality(): number {
   const shallow = laggard(SHALLOW.id)
   const own = laggard(OWN.id)
   for (const v of [25, 50, 100, 200, 400, 800]) {
     const item = vitalityChest(v)
-    if (compareItem(own, item).isUpgrade && !compareItem(shallow, item).isUpgrade) return v
+    const here = compareItem(shallow, item).axes.damage ?? 0
+    const there = compareItem(own, item).axes.damage ?? 0
+    if (there > 0 && here <= 0) return v
   }
-  throw new Error('нет живучести, которая решает в целевой зоне и не решает в мелкой')
+  throw new Error('нет живучести, которая окупается по урону в целевой зоне и не окупается в мелкой')
 }
 
 describe('модель игрока одевается под зону, куда идёт', () => {
-  it('в мелкой зоне живучесть не апгрейд, в целевой — апгрейд', () => {
+  it('живучесть окупается уроном только в целевой зоне', () => {
     const vitality = flippingVitality()
-    const state = { ...laggard(SHALLOW.id), inventory: [vitalityChest(vitality)] }
-    // Оценка «здесь и сейчас»: в мелкой зоне герой не гибнет и без панциря,
-    // а слот занят вещью с атрибутами — значит живучесть проигрывает.
+    const item = vitalityChest(vitality)
+    const shallow = compareItem(laggard(SHALLOW.id), item)
+    const own = compareItem(laggard(OWN.id), item)
+
+    // Свойство третьей ночи: в мелкой зоне герой не теряет аптайма и без
+    // панциря, поэтому запас там уроном НЕ окупается; в своей полосе — да.
+    expect(shallow.axes.damage!, 'мелкая зона: запас уроном не окупается').toBeLessThanOrEqual(0)
+    expect(own.axes.damage!, 'целевая зона: запас окупается уроном').toBeGreaterThan(0)
+
+    // Свойство ЧЕТВЁРТОЙ ночи: цену боя панцирь снижает В ОБЕИХ зонах, и
+    // именно поэтому он апгрейд и там, и там. Раньше мера была одна, и в
+    // мелкой зоне игра говорила про панцирь «не апгрейд» — то есть молчала
+    // ровно о том, что он и делает.
+    expect(shallow.axes.survival!, 'мелкая зона: цена боя падает').toBeGreaterThan(0)
+    expect(own.axes.survival!, 'целевая зона: цена боя падает').toBeGreaterThan(0)
+    expect(shallow.isUpgrade && own.isUpgrade, 'при «балансе» апгрейд в обеих зонах').toBe(true)
+
+    // А при приоритете «урон» остаётся ровно прежний вердикт: панцирь не
+    // апгрейд в мелкой зоне и апгрейд в целевой. Переключатель этим и
+    // ценен — он возвращает игроку старое поведение, если тот его хочет.
+    const damageOnly = (s: GameState) => ({ ...s, upgradePriority: 'damage' as const })
+    expect(compareItem(damageOnly(laggard(SHALLOW.id)), item).isUpgrade).toBe(false)
+    expect(compareItem(damageOnly(laggard(OWN.id)), item).isUpgrade).toBe(true)
+  })
+
+  it('модель одевается под зону, куда идёт, а не где стоит', () => {
+    // Панцирь настолько тяжёлый, что в мелкой зоне ОСЛАБЛЯЕТ героя по урону:
+    // модель с приоритетом «урон» наденет его только глядя на целевую зону.
+    const vitality = flippingVitality()
+    const base = { ...laggard(SHALLOW.id), inventory: [vitalityChest(vitality)] }
+    const state = { ...base, upgradePriority: 'damage' as const }
     const here = equipUpgrades(state)
     expect(here.equipment.chest?.id, 'мелкая зона: панцирь не должен надеться').not.toBe(
       'test-vitality-chest',

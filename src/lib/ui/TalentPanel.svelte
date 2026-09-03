@@ -18,7 +18,7 @@
     type TalentFlag,
     type TalentModifier,
   } from '../data/talents'
-  import { TALENT_FIRST_LEVEL } from '../data/balance'
+  import { LEVEL_CAP, TALENT_FIRST_LEVEL } from '../data/balance'
   import { gameState, investTalentPoint, resetTalentTree } from '../stores/game'
   import { resourceWords } from './resource'
   import { flatText } from './statText'
@@ -120,12 +120,23 @@
   }
 </script>
 
+<!-- ЗАКРЫТО ЗНАЧИТ НЕ ВИДНО: до первого очка дерева нет в разметке вовсе.
+     Пустое дерево с подписью «первое очко на десятом уровне» показывало
+     игроку всю будущую прокачку заранее — то есть ровно то, что лестница
+     открытий держит закрытым. -->
+{#if $gameState.level.gte(TALENT_FIRST_LEVEL)}
 <Panel title="Таланты">
   {#snippet header()}
     {#if points > 0}
       <Tag tone="xp" size="md" label="свободных очков: {points}" />
-    {:else if $gameState.level.lt(TALENT_FIRST_LEVEL)}
-      <Tag size="md" label="первое очко — на {TALENT_FIRST_LEVEL} уровне" />
+    {:else if $gameState.level.gte(LEVEL_CAP)}
+      <!--
+        НА ПОТОЛКЕ ОБЕЩАТЬ НЕЧЕГО. «Следующее с уровнем» — правда ровно до
+        сотого: дальше уровней не будет, и обещание превращается в ожидание
+        того, что не наступит. Всё, что можно, уже вложено; поменять выбор
+        можно только сбросом, и подпись говорит именно это.
+      -->
+      <Tag size="md" label="очки кончились: все вложены, дальше только сброс" />
     {:else}
       <Tag size="md" label="очков нет — следующее с уровнем" />
     {/if}
@@ -183,6 +194,7 @@
     </span>
   {/snippet}
 </Panel>
+{/if}
 
 <style>
   h3 {

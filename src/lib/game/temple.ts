@@ -174,6 +174,36 @@ export function clearTempleWave(state: GameState): GameState {
   }
 }
 
+/**
+ * СКОЛЬКО ЗАБЕГ УЖЕ ЗАРАБОТАЛ, прямо сейчас. Та же арифметика, что и в
+ * `finishTempleRun`, — второй копии правила «платят только этажи выше
+ * рекорда» не существует, — но состояние не меняется: это взгляд, а не
+ * начисление. HUD показывает этим числом копилку забега.
+ */
+export function pendingTempleReward(state: GameState): {
+  floors: number
+  from: number
+  to: number
+  dust: number
+  gold: Decimal
+} {
+  const run = state.templeRun
+  const temple = activeTemple(state)
+  const empty = { floors: 0, from: 0, to: 0, dust: 0, gold: new Decimal(0) }
+  if (!run || !temple) return empty
+  const to = Math.min(run.cleared, temple.floors)
+  const from = state.templeBestWave + 1
+  if (to < from) return empty
+  let dust = 0
+  let gold = new Decimal(0)
+  for (let floor = from; floor <= to; floor += 1) {
+    const reward = floorReward(temple, floor)
+    dust += reward.dust
+    gold = gold.plus(reward.gold)
+  }
+  return { floors: to - from + 1, from, to, dust, gold }
+}
+
 /** Что начислил забег. Числа для итогового экрана; текст рендерит UI. */
 export interface TempleOutcome {
   /** До какого этажа дошёл забег (последний ПОЛНОСТЬЮ пройденный). */
@@ -294,7 +324,7 @@ export function leaveTemple(
     ...state,
     templeRun: null,
     currentZoneId: zone.id,
-    monster: spawnMonster(zone, rng),
+    monster: spawnMonster(zone, rng, state.level.toNumber()),
     swingProgress: 0,
     offhandSwingProgress: 0,
     respawnMsLeft: 0,

@@ -1,0 +1,393 @@
+{
+  "version": 25,
+  "classId": "warden",
+  "materials": {},
+  "activePotions": [],
+  "enchantDust": "0",
+  "saveId": 404,
+  "templeRun": null,
+  "templeBestWave": 0,
+  "templeCleared": false,
+  "procCooldownsMs": {},
+  "restSpeedupSource": null,
+  "lastTimestamp": 1700000000000,
+  "inventory": [
+    {
+      "id": "item-0",
+      "name": "Пастуший Змеезуб",
+      "rarity": "common",
+      "slot": "offHand",
+      "level": 28,
+      "grip": "one",
+      "mods": [
+        {
+          "stat": "offhandSpeed",
+          "kind": "base",
+          "value": "1.4",
+          "source": "equipment:offHand"
+        },
+        {
+          "stat": "offhandDamageMin",
+          "kind": "base",
+          "value": "37.24",
+          "source": "equipment:offHand"
+        },
+        {
+          "stat": "offhandDamageMax",
+          "kind": "base",
+          "value": "74.47999999999999",
+          "source": "equipment:offHand"
+        },
+        {
+          "stat": "agility",
+          "kind": "flat",
+          "value": "79.80000000000001",
+          "source": "equipment:offHand"
+        }
+      ]
+    },
+    {
+      "id": "item-1",
+      "name": "Сумрачный Заслон",
+      "rarity": "rare",
+      "slot": "offHand",
+      "level": 28,
+      "grip": "shield",
+      "mods": [
+        {
+          "stat": "blockChance",
+          "kind": "base",
+          "value": "0.25",
+          "source": "equipment:offHand"
+        },
+        {
+          "stat": "blockValue",
+          "kind": "base",
+          "value": "98.95200000000001",
+          "source": "equipment:offHand"
+        },
+        {
+          "stat": "vitality",
+          "kind": "flat",
+          "value": "32.984",
+          "source": "equipment:offHand"
+        }
+      ]
+    },
+    {
+      "id": "item-5",
+      "name": "Сумрачный Заслон",
+      "rarity": "uncommon",
+      "slot": "offHand",
+      "level": 28,
+      "grip": "shield",
+      "mods": [
+        {
+          "stat": "blockChance",
+          "kind": "base",
+          "value": "0.25",
+          "source": "equipment:offHand"
+        },
+        {
+          "stat": "blockValue",
+          "kind": "base",
+          "value": "79.80000000000001",
+          "source": "equipment:offHand"
+        },
+        {
+          "stat": "vitality",
+          "kind": "flat",
+          "value": "26.6",
+          "source": "equipment:offHand"
+        }
+      ]
+    },
+    {
+      "id": "item-100",
+      "name": "Сумрачный Нагрудник",
+      "rarity": "uncommon",
+      "slot": "chest",
+      "level": 20,
+      "mods": [
+        {
+          "stat": "vitality",
+          "kind": "flat",
+          "value": "30.299999999999997",
+          "source": "equipment:chest"
+        }
+      ]
+    },
+    {
+      "id": "item-101",
+      "name": "Щербатый Наруч",
+      "rarity": "rare",
+      "slot": "hands",
+      "level": 20,
+      "mods": [
+        {
+          "stat": "agility",
+          "kind": "flat",
+          "value": "25.048000000000002",
+          "source": "equipment:hands"
+        },
+        {
+          "stat": "vitality",
+          "kind": "flat",
+          "value": "12.524000000000001",
+          "source": "equipment:hands"
+        }
+      ]
+    },
+    {
+      "id": "item-111",
+      "name": "Гремящий Сапог",
+      "rarity": "rare",
+      "slot": "legs",
+      "level": 21,
+      "mods": [
+        {
+          "stat": "vitality",
+          "kind": "flat",
+          "value": "39.06",
+          "source": "equipment:legs"
+        }
+      ]
+    },
+    {
+      "id": "item-120",
+      "name": "Верный Полуторник",
+      "rarity": "epic",
+      "slot": "mainHand",
+      "level": 22,
+      "grip": "one",
+      "mods": [
+        {
+          "stat": "weaponSpeed",
+          "kind": "base",
+          "value": "2.2",
+          "source": "equipment:mainHand"
+        },
+        {
+          "stat": "weaponDamageMin",
+          "kind": "base",
+          "value": "91.12400000000001",
+          "source": "equipment:mainHand"
+        },
+        {
+          "stat": "weaponDamageMax",
+          "kind": "base",
+          "value": "182.24800000000002",
+          "source": "equipment:mainHand"
+        },
+        {
+          "stat": "strength",
+          "kind": "flat",
+          "value": "57.98800000000001",
+          "source": "equipment:mainHand"
+        }
+      ]
+    },
+    {
+      "id": "start-mainHand-bastard",
+      "name": "Полуторник",
+      "rarity": "common",
+      "slot": "mainHand",
+      "level": 1,
+      "grip": "one",
+      "mods": [
+        {
+          "stat": "weaponSpeed",
+          "kind": "base",
+          "value": "2.2",
+          "source": "equipment:mainHand"
+        },
+        {
+          "stat": "weaponDamageMin",
+          "kind": "base",
+          "value": "11",
+          "source": "equipment:mainHand"
+        },
+        {
+          "stat": "weaponDamageMax",
+          "kind": "base",
+          "value": "22",
+          "source": "equipment:mainHand"
+        },
+        {
+          "stat": "strength",
+          "kind": "flat",
+          "value": "7",
+          "source": "equipment:mainHand"
+        }
+      ]
+    }
+  ],
+  "equipment": {
+    "mainHand": {
+      "id": "item-4",
+      "name": "Щербатый Крушитель",
+      "rarity": "common",
+      "slot": "mainHand",
+      "level": 28,
+      "grip": "two",
+      "mods": [
+        {
+          "stat": "weaponSpeed",
+          "kind": "base",
+          "value": "3.4",
+          "source": "equipment:mainHand"
+        },
+        {
+          "stat": "weaponDamageMin",
+          "kind": "base",
+          "value": "135.65999999999997",
+          "source": "equipment:mainHand"
+        },
+        {
+          "stat": "weaponDamageMax",
+          "kind": "base",
+          "value": "271.31999999999994",
+          "source": "equipment:mainHand"
+        },
+        {
+          "stat": "strength",
+          "kind": "flat",
+          "value": "74.47999999999999",
+          "source": "equipment:mainHand"
+        }
+      ]
+    },
+    "offHand": null,
+    "head": {
+      "id": "item-110",
+      "name": "Ржавый Венец",
+      "rarity": "rare",
+      "slot": "head",
+      "level": 21,
+      "mods": [
+        {
+          "stat": "vitality",
+          "kind": "flat",
+          "value": "39.06",
+          "source": "equipment:head"
+        }
+      ]
+    },
+    "chest": {
+      "id": "item-6",
+      "name": "Верный Панцирь",
+      "rarity": "common",
+      "slot": "chest",
+      "level": 28,
+      "mods": [
+        {
+          "stat": "agility",
+          "kind": "flat",
+          "value": "21.28",
+          "source": "equipment:chest"
+        },
+        {
+          "stat": "vitality",
+          "kind": "flat",
+          "value": "10.64",
+          "source": "equipment:chest"
+        }
+      ]
+    },
+    "hands": {
+      "id": "item-3",
+      "name": "Сумрачный Налокотник",
+      "rarity": "rare",
+      "slot": "hands",
+      "level": 28,
+      "mods": [
+        {
+          "stat": "vitality",
+          "kind": "flat",
+          "value": "49.476",
+          "source": "equipment:hands"
+        }
+      ]
+    },
+    "legs": {
+      "id": "item-2",
+      "name": "Пастуший Набедренник",
+      "rarity": "common",
+      "slot": "legs",
+      "level": 28,
+      "mods": [
+        {
+          "stat": "vitality",
+          "kind": "flat",
+          "value": "31.92",
+          "source": "equipment:legs"
+        }
+      ]
+    },
+    "trinket": {
+      "id": "item-121",
+      "name": "Закалённый Амулет",
+      "rarity": "epic",
+      "slot": "trinket",
+      "level": 22,
+      "mods": [
+        {
+          "stat": "vitality",
+          "kind": "flat",
+          "value": "49.70400000000001",
+          "source": "equipment:trinket"
+        }
+      ]
+    }
+  },
+  "currentZoneId": "shepherds-meadow",
+  "lastSurvivedZoneId": null,
+  "dungeonRun": null,
+  "dungeonsCleared": {
+    "sunken-barrow": true
+  },
+  "unlockedZoneIds": {},
+  "questProgress": {
+    "done": {},
+    "counter": 0
+  },
+  "gcdMsLeft": 0,
+  "abilityCooldownsMs": {},
+  "regenDelayMsLeft": 0,
+  "restHpThreshold": 0.6,
+  "abilitySettings": {
+    "quick-strike": {
+      "autocast": true,
+      "priority": 0,
+      "reserve": 0
+    },
+    "rending-wound": {
+      "autocast": true,
+      "priority": 1,
+      "reserve": 0
+    },
+    "shattering-blow": {
+      "autocast": true,
+      "priority": 2,
+      "reserve": 0
+    }
+  },
+  "itemSeq": 13,
+  "gold": "13400000",
+  "level": "22",
+  "currentXp": "2281",
+  "currentHp": "1460",
+  "currentMana": "155",
+  "heroState": "alive",
+  "reviveMsLeft": 0,
+  "talents": {
+    "wrath-honed-edge": 6,
+    "wrath-keen-eye": 6,
+    "wrath-savage-blows": 1
+  },
+  "talentResets": 2,
+  "totalTicks": "0",
+  "playtimeMs": "0",
+  "abilityCasts": "0",
+  "holdManaForHeal": true
+}

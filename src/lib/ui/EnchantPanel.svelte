@@ -14,7 +14,7 @@
   } from '../game'
   import { ENCHANT_UNLOCK_LEVEL } from '../data/balance'
   import type { Decimal } from '../game/numbers'
-  import { SLOT_NAMES } from '../data/slots'
+  import { itemSlotLabel } from './itemText'
   import { enchantInventoryItem, gameState } from '../stores/game'
   import ItemMods from './ItemMods.svelte'
   import { Button, IconSlot, Panel, Tag, Tooltip } from './kit'
@@ -52,13 +52,14 @@
   }
 </script>
 
+<!-- ЗАКРЫТО ЗНАЧИТ НЕ ВИДНО. Панели зачарования до пятидесятого уровня нет в
+     разметке вовсе — ни серой, ни с замком. Раньше здесь стояла строка
+     «Зачарование откроется на 50 уровне»: она отвечала на вопрос, который
+     лестница открытий держит закрытым тридцать уровней, и всё это время
+     занимала место в разделе. Интригу несёт лестница, а не запертая
+     панель. -->
+{#if unlocked}
 <Panel title="Зачарование" subtitle="{formatNumber(dust)} пыли">
-  {#if !unlocked}
-    <p class="hint">
-      Зачарование откроется на {ENCHANT_UNLOCK_LEVEL} уровне. До него находки продавай:
-      пыль пока девать некуда.
-    </p>
-  {:else}
     <p class="hint">
       Пыль берётся только из распыления находок — с мобов она не падает. На вещи
       ровно одно зачарование: новое затирает старое.
@@ -67,7 +68,7 @@
     <div class="targets">
       {#each targets as item (item.id)}
         <IconSlot
-          slotLabel={SLOT_NAMES[item.slot]}
+          slotLabel={itemSlotLabel(item)}
           rarity={item.rarity}
           active={selectedId === item.id}
           interactive
@@ -133,8 +134,8 @@
     {:else}
       <p class="hint">Выбери предмет — надетый или из сумки.</p>
     {/if}
-  {/if}
 </Panel>
+{/if}
 
 <style>
   .hint {

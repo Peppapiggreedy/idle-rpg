@@ -2,7 +2,7 @@
 // рода — чтобы прилагательные из loot.ts согласовывались без склонений.
 import { Decimal } from '../game/numbers'
 import type { SlotId } from './slots'
-import type { StatModifier } from '../game/stats'
+import type { StatId, StatModifier } from '../game/stats'
 
 /**
  * ХВАТ — как предмет ложится в руки. Свойство ПРЕДМЕТА, а не слота: слот
@@ -154,6 +154,80 @@ export const ARMOR_ATTRIBUTES: readonly AttributeId[] = [
   'intellect',
   'vitality',
 ]
+
+/**
+ * ЗЕРНО ХАРАКТЕРИСТИКИ НА ПРЕДМЕТЕ: целое или дробное.
+ *
+ * Бросок лута множит числа шаблона на уровень вещи и на тир, и результат
+ * почти никогда не круглый: «+12.4 силы», «+7.75 ловкости», «Урон оружия
+ * (мин): 25.5». Игрок читает такую строку как ошибку — вещи в этом жанре
+ * считаются штуками, а не долями, — и сравнение двух находок по десятым
+ * долям не читается вовсе. Поэтому величины, которые СЧИТАЮТСЯ ШТУКАМИ,
+ * округляются НА ГЕНЕРАЦИИ: в `mods` предмета лежит целое, и подсказка
+ * показывает ровно то, что считает конвейер статов. Округлять на
+ * ОТОБРАЖЕНИИ было бы хуже молчания: карточка показывала бы одно, а бой
+ * считал другое.
+ *
+ * К БЛИЖАЙШЕМУ, А НЕ ВНИЗ. Вниз округление забирало бы в среднем полединицы
+ * с каждой строки: на семи слотах по две строки это семь единиц из воздуха,
+ * то есть систематический налог на всю экипировку. К ближайшему смещение
+ * нулевое по построению.
+ *
+ * ГРАНИЦА ПРОХОДИТ ПО ПРИРОДЕ ВЕЛИЧИНЫ, а не по виду модификатора:
+ *
+ *   'whole'    — то, что считается штуками: атрибуты, урон, запасы,
+ *                сила блока, сила атаки. Целое здесь — это ровно то, как
+ *                игрок число и читает;
+ *   'fraction' — ДОЛИ (шанс крита, шанс блока, ускорение, снижение урона,
+ *                множитель крита, сила левой руки, порог привала), СЕКУНДЫ
+ *                (скорость оружия, пауза регена, длина привала) и величины
+ *                В СЕКУНДУ (реген здоровья и маны). Округлить долю до
+ *                целого значит превратить 0.045 в ноль, а 1.4 секунды —
+ *                в полторы: это не «аккуратнее», это другая игра.
+ *
+ * `Record<StatId, …>` заставляет назвать зерно КАЖДОЙ характеристики: новая
+ * характеристика не пройдёт проверку типов, пока про неё не решат. Молчаливый
+ * дефолт тут опаснее всего — новый шанс, попавший в 'whole' по умолчанию,
+ * округлился бы в ноль и молча перестал работать.
+ */
+export const ITEM_STAT_GRAIN: Record<StatId, 'whole' | 'fraction'> = {
+  strength: 'whole',
+  agility: 'whole',
+  intellect: 'whole',
+  vitality: 'whole',
+  attackPower: 'whole',
+  weaponDamageMin: 'whole',
+  weaponDamageMax: 'whole',
+  offhandDamageMin: 'whole',
+  offhandDamageMax: 'whole',
+  blockValue: 'whole',
+  maxHp: 'whole',
+  maxMana: 'whole',
+  weaponSpeed: 'fraction',
+  offhandSpeed: 'fraction',
+  offhandPenalty: 'fraction',
+  blockChance: 'fraction',
+  regenDelay: 'fraction',
+  restDuration: 'fraction',
+  restThreshold: 'fraction',
+  haste: 'fraction',
+  critChance: 'fraction',
+  critMultiplier: 'fraction',
+  hpRegen: 'fraction',
+  hpRegenOutOfCombat: 'fraction',
+  manaRegen: 'fraction',
+  damageReduction: 'fraction',
+}
+
+/**
+ * Значение модификатора так, как оно ложится В ДАННЫЕ ВЕЩИ. Через неё
+ * проходит КАЖДОЕ число всякого предмета — и выпавшего, и кованого, и
+ * стартового, — потому что все три пути строят модификаторы одними и теми
+ * же `weaponMods` / `shieldMods` / `armorMods` в `game/loot.ts`.
+ */
+export function itemStatValue(stat: StatId, value: Decimal): Decimal {
+  return ITEM_STAT_GRAIN[stat] === 'whole' ? value.round() : value
+}
 
 export const ARMOR_BASE_PRIMARY = new Decimal(4)
 export const ARMOR_BASE_VITALITY = new Decimal(2)

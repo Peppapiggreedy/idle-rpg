@@ -6,6 +6,7 @@ import {
   BRUTE,
   COMMON,
   RUNT,
+  SPAWN_LEVEL_SPREAD,
   buildMonster,
   type MonsterArchetype,
   type MonsterRole,
@@ -374,10 +375,61 @@ export function representativeMonster(zone: Zone): MonsterTemplate {
   return buildMonster(archetype, averageMonsterLevel(zone), zone.rewardMultiplier)
 }
 
-// ВСЕ мобы, которых спавн может выдать в зоне: пул × диапазон уровней.
-// spawnMonster берёт из этого множества равновероятно, поэтому усреднение по
-// нему — точная оценка темпа зоны, а не «средний моб» (hp входит в темп
-// нелинейно, через округление числа ударов вверх).
+/**
+ * ВЕРОЯТНОСТИ УРОВНЕЙ ПРИ СПАВНЕ В ЭТОЙ ЗОНЕ — ОДНА ФУНКЦИЯ НА ИГРУ И МОДЕЛЬ.
+ *
+ * Ею пользуется и бросок спавна (`spawnMonster` в game/state.ts), и оценка
+ * темпа зоны (`zoneRate`). Второй копии распределения быть не должно: тик и
+ * модель разошлись бы молча, и прогноз зоны начал бы обещать не ту игру.
+ *
+ * Центр — уровень героя, ПРИЖАТЫЙ к полосе зоны. Смещения, выпадающие за
+ * полосу, отбрасываются, а оставшиеся веса нормируются: отброшенные не
+ * должны воровать вероятность у оставшихся. Сумма весов — единица всегда.
+ */
+export function spawnLevelWeights(
+  zone: Zone,
+  heroLevel: number,
+): Array<{ level: number; weight: number }> {
+  const { min, max } = zone.monsterLevelRange
+  const center = Math.min(max, Math.max(min, Math.round(heroLevel)))
+  const picked: Array<{ level: number; weight: number }> = []
+  let total = 0
+  for (const { offset, weight } of SPAWN_LEVEL_SPREAD) {
+    const level = center + offset
+    if (level < min || level > max) continue
+    picked.push({ level, weight })
+    total += weight
+  }
+  // Полоса шириной в уровень или сбитые данные: остаётся один центр.
+  if (picked.length === 0 || total <= 0) return [{ level: center, weight: 1 }]
+  return picked.map(({ level, weight }) => ({ level, weight: weight / total }))
+}
+
+/**
+ * МОБЫ, КОТОРЫХ СПАВН МОЖЕТ ВЫДАТЬ ЭТОМУ ГЕРОЮ, с их вероятностями.
+ *
+ * Раньше здесь было «пул × ВСЯ полоса уровней равновероятно», и это была
+ * правда: спавн брал любой уровень полосы. Теперь уровень жмётся к герою
+ * (SPAWN_LEVEL_SPREAD), и равномерное усреднение стало бы моделью другой
+ * игры — оно считало бы бои с мобами, которых этому герою почти не выдают.
+ */
+export function zoneSpawnVariants(
+  zone: Zone,
+  heroLevel: number,
+): Array<{ template: MonsterTemplate; weight: number }> {
+  const share = 1 / zone.monsterPool.length
+  return spawnLevelWeights(zone, heroLevel).flatMap(({ level, weight }) =>
+    zone.monsterPool.map((archetype) => ({
+      template: buildMonster(archetype, level, zone.rewardMultiplier),
+      weight: weight * share,
+    })),
+  )
+}
+
+// ВСЕ мобы полосы: пул × диапазон уровней, без оглядки на героя. Нужен там,
+// где спрашивают «что вообще водится в зоне» — например, крайние награды и
+// самый тяжёлый бой полосы. Темп зоны считается НЕ по нему (см.
+// zoneSpawnVariants выше): спавн давно не равновероятен по уровням.
 export function zoneMonsterVariants(zone: Zone): MonsterTemplate[] {
   const variants: MonsterTemplate[] = []
   const { min, max } = zone.monsterLevelRange

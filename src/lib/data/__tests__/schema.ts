@@ -114,6 +114,7 @@ export interface BalanceNumbers {
   talentFirstLevel: number
   enchantUnlockLevel: number
   potionUnlockLevel: number
+  craftUnlockLevel: number
   levelCap: number
   ttkHardFloor: number
   ttkTargetMin: number
@@ -122,6 +123,8 @@ export interface BalanceNumbers {
   ttkBehindMax: number
   ttkAheadMin: number
   ttkDriftMax: number
+  goldFromMonsters: number
+  goldFromLoot: number
   /** Ступени штрафа опыта за отставание: gap <= maxGap -> share. */
   xpGapPenalty: ReadonlyArray<{ maxGap: number; share: number }>
 }
@@ -553,6 +556,13 @@ const FLAG_PAYLOADS: Record<
   },
 }
 
+/**
+ * СТАТЫ, КОТОРЫЕ НА САМОМ ДЕЛЕ НАСТРОЙКИ ИГРОКА. Живут в конвейере, потому
+ * что считаются там же, где всё остальное, — но принадлежат не герою, а
+ * игроку: он выставляет их сам. Ни талант, ни предмет их двигать не вправе.
+ */
+const SETTING_STAT_IDS: readonly string[] = ['restThreshold']
+
 export const TALENT_SCHEMA: EntitySchema<TalentDef> = {
   kind: 'талант',
   file: 'data/talents.ts',
@@ -609,6 +619,20 @@ export const TALENT_SCHEMA: EntitySchema<TalentDef> = {
             where,
             'таланту нельзя менять weaponSpeed — ускорение выражается статом haste, ' +
               'иначе замах уходит в ноль или в бесконечность (data/talents.ts)',
+          )
+        }
+        // НАСТРОЙКА ИГРОКА — НЕ ХАРАКТЕРИСТИКА. Порог привала игрок ставит
+        // ползунком и ждёт, что игра ему следует; талант, молча сдвигающий
+        // его вверх, читается как поломка — на экране 60 %, а герой уходит
+        // отдыхать на 72 %, и объяснения этому нигде нет. Прокачивается то,
+        // чем герой ЯВЛЯЕТСЯ (например, длина привала), а не то, что он себе
+        // назначил. Три таких таланта удалены в четвёртую ночь.
+        if (SETTING_STAT_IDS.includes(mod.stat)) {
+          report.add(
+            where,
+            `таланту нельзя менять «${mod.stat}» — это НАСТРОЙКА игрока, а не ` +
+              'характеристика героя: он ставит её сам и ждёт, что игра ей следует ' +
+              '(data/talents.ts)',
           )
         }
       }
@@ -2179,8 +2203,58 @@ function checkReachable(content: Content, report: Report): void {
     )
   }
 
-  // --- Зоны: в каждой растёт хоть одна трава ---
+  // --- ЗАПЕРТАЯ МЕХАНИКА НЕ СОБИРАЕТ РЕСУРС РАНЬШЕ СВОЕГО УРОВНЯ ---
+  //
+  // Правило общее: механика с уровнем открытия N не может иметь источник
+  // ресурса в зоне НИЖЕ N. Иначе получается худшее из состояний — счётчик
+  // растёт, а кнопки нет: игрок двадцать уровней смотрит, как копится то,
+  // к чему у него ни рецепта, ни применения.
+  //
+  // Зона считается «ниже N», если её мобы НАЧИНАЮТСЯ ниже N: зона накрывает
+  // пять уровней, и герой приходит в неё по нижней границе.
+  //
+  // Таблица источников — здесь, а не в данных: зоно-привязанный ресурс в
+  // игре пока ровно один (трава). Появится второй — он добавится строкой,
+  // и правило проверит его тем же кодом.
+  const zoneSources: Array<{
+    mechanic: string
+    level: number
+    kind: string
+    file: string
+    sources: ReadonlyArray<{ id: string; zoneIds?: string[] }>
+  }> = [
+    {
+      mechanic: 'травничество',
+      level: content.balance.potionUnlockLevel,
+      kind: 'трава',
+      file: 'data/herbs.ts',
+      sources: content.herbs,
+    },
+  ]
+  for (const source of zoneSources) {
+    for (const entity of source.sources) {
+      for (const zoneId of entity.zoneIds ?? []) {
+        const zone = content.zones.find((z) => z.id === zoneId)
+        if (!zone?.monsterLevelRange) continue
+        report.need(
+          zone.monsterLevelRange.min >= source.level,
+          `${source.kind} ${entity.id}`,
+          `растёт в зоне «${zoneId}» (мобы ${zone.monsterLevelRange.min}-` +
+            `${zone.monsterLevelRange.max}), а ${source.mechanic} открывается только ` +
+            `на ${source.level} уровне: ресурс копился бы там, где его некуда деть ` +
+            `(${source.file})`,
+        )
+      }
+    }
+  }
+
+  // --- Зоны: в каждой ОТКРЫТОЙ ДЛЯ МЕХАНИКИ зоне растёт хоть одна трава ---
+  //
+  // Проверяются только зоны от уровня травничества и выше: ниже него трав
+  // нет НАМЕРЕННО (правило выше), и требовать их там значило бы держать два
+  // взаимоисключающих условия сразу.
   for (const zone of content.zones) {
+    if ((zone.monsterLevelRange?.min ?? 0) < content.balance.potionUnlockLevel) continue
     report.need(
       content.herbs.some((h) => h.zoneIds?.includes(zone.id)),
       `зона ${zone.id}`,
@@ -2488,13 +2562,29 @@ function checkBalance(content: Content, report: Report): void {
     { field: 'TALENT_FIRST_LEVEL', get: (x) => x.talentFirstLevel, min: 1, integer: true },
     { field: 'ENCHANT_UNLOCK_LEVEL', get: (x) => x.enchantUnlockLevel, min: 1, integer: true },
     { field: 'POTION_UNLOCK_LEVEL', get: (x) => x.potionUnlockLevel, min: 1, integer: true },
+    { field: 'CRAFT_UNLOCK_LEVEL', get: (x) => x.craftUnlockLevel, min: 1, integer: true },
     { field: 'TTK_DRIFT_MAX', get: (x) => x.ttkDriftMax, min: 0, exclusiveMin: true, max: 1, why: 'это доля разброса' },
+    { field: 'GOLD_SOURCE_SHARE.monsters', get: (x) => x.goldFromMonsters, min: 0, exclusiveMin: true, max: 1, why: 'это доля крана золота' },
+    { field: 'GOLD_SOURCE_SHARE.loot', get: (x) => x.goldFromLoot, min: 0, exclusiveMin: true, max: 1, why: 'это доля крана золота' },
   ]
   for (const rule of rules) checkNumber(b, rule, where, 'data/balance.ts', report)
+  // ДОЛИ КРАНА ЗОЛОТА ОБЯЗАНЫ ДАВАТЬ ЕДИНИЦУ. Они делят одно и то же число
+  // (MONSTER_BASE.goldReward): сумма меньше единицы молча урезала бы весь
+  // доход игры, больше — раздувала, и обе правки выглядели бы как невинная
+  // подстройка «сколько платят находки».
+  const goldSum = b.goldFromMonsters + b.goldFromLoot
+  if (Math.abs(goldSum - 1) > 1e-9) {
+    report.add(
+      where,
+      `GOLD_SOURCE_SHARE: доли дают ${goldSum}, а обязаны единицу — ` +
+        'иначе общий кран золота уедет вместе с правкой (data/balance.ts)',
+    )
+  }
   // Механика, которая открывается выше потолка, не откроется никогда.
   for (const [field, level] of [
     ['TALENT_FIRST_LEVEL', b.talentFirstLevel],
     ['POTION_UNLOCK_LEVEL', b.potionUnlockLevel],
+    ['CRAFT_UNLOCK_LEVEL', b.craftUnlockLevel],
     ['ENCHANT_UNLOCK_LEVEL', b.enchantUnlockLevel],
   ] as const) {
     if (level > b.levelCap) {

@@ -9,55 +9,67 @@
   //
   // Ничего не отнимает и никуда не торопит: таймера обратного отсчёта нет,
   // закрывается сама и не мешает нажимать что угодно (pointer-events: none).
+  //
+  // Очередь показов живёт в ui/lootReveal.ts и покрыта тестами: N находок
+  // подряд дают ровно N показов, и каждый снимается сам по времени.
   import { untrack } from 'svelte'
   import { gameState } from '../stores/game'
   import { freshEvents } from './logView'
-  import { RARITY_BY_ID } from '../data/rarity'
+  import { emptyRevealQueue, enqueueReveals, showNext } from './lootReveal'
   import { rarityName, rarityStyle } from './kit'
   import { Icon } from './icons'
   import { SLOT_ICONS } from '../data/slots'
-  import type { CombatEvent, Item } from '../types'
+  import type { CombatEvent } from '../types'
 
   // Сколько вспышка висит. Не «успей посмотреть»: за это время её видно, а
   // сама находка никуда не денется — она уже в сумке.
   const REVEAL_MS = 2600
 
-  let shown = $state<{ item: Item; key: number } | null>(null)
-  let seen = $state<CombatEvent | null>(null)
-  let key = 0
-  let timer: ReturnType<typeof setTimeout> | null = null
+  /**
+   * ОТМЕТКА ПРОЧИТАННОГО — ОБЫЧНАЯ ПЕРЕМЕННАЯ, И ЭТО НЕ НЕДОСМОТР.
+   *
+   * `freshEvents` ищет отметку через `indexOf`, то есть по ТОЖДЕСТВУ объекта,
+   * а `$state` в Svelte 5 оборачивает присвоенный объект в прокси. Прокси не
+   * равен оригиналу, `indexOf` не находит его никогда и возвращает ВЕСЬ
+   * журнал как свежий — то есть находка считается новой в каждом кадре.
+   *
+   * Замер на живой игре (×100, наблюдение за вставками узла): одна эпическая
+   * находка дала ШЕСТЬ вспышек за 82 мс, по одной на кадр, пока событие не
+   * уехало из буфера журнала. Игрок видел это как «всплывает много раз
+   * подряд»; курсор тут ни при чём — останавливало вытеснение, а не наведение.
+   *
+   * Отметка нигде не рисуется, поэтому реактивность ей не нужна вовсе.
+   */
+  let seen: CombatEvent | null = null
+
+  let queue = $state(emptyRevealQueue())
 
   $effect(() => {
     const tail = $gameState.combatLog
     untrack(() => {
       const fresh = freshEvents(tail, seen)
       seen = tail[0] ?? seen
-      // Из пачки берём ПОСЛЕДНЮЮ подходящую: две легендарки в один тик —
-      // случай теоретический, но мигать двумя вспышками сразу незачем.
-      const worthy = fresh.filter(
-        (e) => e.type === 'loot' && RARITY_BY_ID[e.item.rarity].reveal,
-      )
-      const last = worthy[worthy.length - 1]
-      if (!last || last.type !== 'loot') return
-      key += 1
-      shown = { item: last.item, key }
-      if (timer) clearTimeout(timer)
-      timer = setTimeout(() => (shown = null), REVEAL_MS)
+      queue = enqueueReveals(queue, fresh)
     })
   })
 
-  $effect(() => () => {
-    if (timer) clearTimeout(timer)
+  // Очередь движется ВРЕМЕНЕМ. Каждому показу — свой полный срок: таймер
+  // заводится на номер показа, а не на факт «что-то показывается».
+  $effect(() => {
+    const key = queue.current?.key
+    if (key === undefined) return
+    const timer = setTimeout(() => untrack(() => (queue = showNext(queue))), REVEAL_MS)
+    return () => clearTimeout(timer)
   })
 </script>
 
-{#if shown}
-  {#key shown.key}
-    <div class="reveal" style={rarityStyle(shown.item.rarity)} aria-live="polite">
-      <Icon name={SLOT_ICONS[shown.item.slot]} size="lg" />
+{#if queue.current}
+  {#key queue.current.key}
+    <div class="reveal" style={rarityStyle(queue.current.item.rarity)} aria-live="polite">
+      <Icon name={SLOT_ICONS[queue.current.item.slot]} size="lg" />
       <div class="text">
-        <span class="tier">{rarityName(shown.item.rarity)}</span>
-        <span class="name">{shown.item.name}</span>
+        <span class="tier">{rarityName(queue.current.item.rarity)}</span>
+        <span class="name">{queue.current.item.name}</span>
       </div>
     </div>
   {/key}

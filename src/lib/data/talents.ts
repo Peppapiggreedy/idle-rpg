@@ -441,12 +441,22 @@ const WARDEN_VIGIL = branch('warden-vigil', [
     effect: mods(m('intellect', 'flat', 3)),
   },
   {
-    id: 'vigil-field-medicine',
-    name: 'Походная перевязка',
-    icon: 'talent-field-medicine',
-    // Сдвигает ВЫБРАННЫЙ игроком порог вверх, а не спорит с ним: настройка
-    // приходит в конвейер базой, талант — прибавкой поверх.
-    effect: mods(m('restThreshold', 'flat', 0.02)),
+    // ЗДЕСЬ СТОЯЛА «ПОХОДНАЯ ПЕРЕВЯЗКА» — талант на +2% ПОРОГА привала за ранг,
+    // и он был ошибкой уровня механики, а не числа. Порог привала — НАСТРОЙКА
+    // ИГРОКА: он выставляет её ползунком и ждёт, что игра ей следует. Талант,
+    // который молча двигает чужую настройку, читается как поломка: игрок
+    // ставит 60%, а герой уходит отдыхать на 72% и объяснения этому на экране
+    // нет. Настройки не бывают «прокачиваемыми» — прокачивается то, чем герой
+    // ЯВЛЯЕТСЯ, а не то, что он себе назначил.
+    //
+    // На его месте — настоящая характеристика: длина привала. Процентом, а не
+    // секундами: секунды уже заняты соседним «Скорым лагерем», а процент от
+    // суммы конвейера складывается с ним по-другому и даёт выбор, а не
+    // удвоение одного и того же.
+    id: 'vigil-swift-camp',
+    name: 'Скорые сборы',
+    icon: 'talent-quick-camp',
+    effect: mods(m('restDuration', 'percent', -0.04)),
   },
   {
     id: 'vigil-slow-bleeding',
@@ -706,10 +716,12 @@ const REAVER_INSTINCT = branch('reaver-instinct', [
     effect: mods(m('maxMana', 'percent', 0.04)),
   },
   {
-    id: 'instinct-beast-sense',
-    name: 'Звериное чутьё',
-    icon: 'talent-field-medicine',
-    effect: mods(m('restThreshold', 'flat', 0.02)),
+    // Как и «Походная перевязка» у стража: талант двигал ПОРОГ привала, то
+    // есть настройку игрока. Заменён на длину привала процентом.
+    id: 'instinct-light-camp',
+    name: 'Лёгкий лагерь',
+    icon: 'talent-quick-camp',
+    effect: mods(m('restDuration', 'percent', -0.04)),
   },
   {
     // 21-е очко.
@@ -751,10 +763,11 @@ const REAVER_INSTINCT = branch('reaver-instinct', [
     effect: mods(m('restDuration', 'flat', -0.3)),
   },
   {
-    id: 'instinct-alertness',
-    name: 'Чуткость',
-    icon: 'talent-field-medicine',
-    effect: mods(m('restThreshold', 'flat', 0.015)),
+    // Третий талант на ПОРОГ привала — по тому же доводу заменён на длину.
+    id: 'instinct-restless',
+    name: 'Неугомонность',
+    icon: 'talent-quick-camp',
+    effect: mods(m('restDuration', 'percent', -0.03)),
   },
   {
     id: 'instinct-patience',

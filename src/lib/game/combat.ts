@@ -35,7 +35,7 @@ import {
   type RotationRate,
 } from './rotation'
 import type { Monster } from '../types'
-import { SAFE_ZONE, ZONE_BY_ID, zoneMonsterVariants, type Zone } from '../data/zones'
+import { SAFE_ZONE, ZONE_BY_ID, zoneSpawnVariants, type Zone } from '../data/zones'
 import { monsterFromTemplate, type AbilitySettings } from './state'
 import { ABILITY_BY_ID } from '../data/abilities'
 import { classById } from '../data/classes'
@@ -900,8 +900,15 @@ export interface TtkEstimate {
  * на смерти героя: TTK — про длину ОДНОГО боя, а смертность зоны — отдельная
  * характеристика (см. forecastZone).
  *
- * Перебор — по ВСЕМ мобам, которых может выдать спавн (пул × уровни), тем же
- * множеством, что и zoneRate.
+ * Перебор — по тем мобам, которых спавн выдаёт ЭТОМУ герою, и с их
+ * вероятностями: тем же множеством и теми же весами, что и zoneRate.
+ * Равномерное усреднение по всей полосе было точным, пока спавн брал любой
+ * её уровень; теперь уровень жмётся к герою, и равномерная средняя описывала
+ * бы бои, которых этому герою почти не выдают.
+ *
+ * СРЕДНЕЕ ВЗВЕШЕННОЕ, А КРАЯ — НЕТ. `min` и `max` остаются настоящими
+ * крайними случаями множества: они отвечают на вопрос «самый быстрый и самый
+ * долгий бой, который может случиться», и доля вероятности их не меняет.
  */
 export function estimateZoneTtk(
   state: GameState,
@@ -912,12 +919,12 @@ export function estimateZoneTtk(
   // Зона берётся из данных напрямую, а не через game/zones.ts: тот сам зовёт
   // combat.ts, и импорт обратно замкнул бы модули в кольцо.
   const target = typeof zone === 'string' ? (ZONE_BY_ID[zone] ?? SAFE_ZONE) : zone
-  const variants = zoneMonsterVariants(target)
+  const variants = zoneSpawnVariants(target, state.level.toNumber())
   if (variants.length === 0) return { min: 0, avg: 0, max: 0 }
   let total = 0
   let min = Number.POSITIVE_INFINITY
   let max = 0
-  for (const template of variants) {
+  for (const { template, weight } of variants) {
     const facing: GameState = { ...state, monster: monsterFromTemplate(template) }
     const rate = estimateCombatRate(facing, mode)
     // Бесконечность здесь законна: герой может не пробивать моба вовсе.
@@ -925,11 +932,12 @@ export function estimateZoneTtk(
       ? new Decimal(1).div(rate.idealKillsPerSecond).toNumber()
       : Number.POSITIVE_INFINITY
     const ttk = Math.max(0, cycle - respawnSec)
-    total += ttk
+    total += ttk * weight
     if (ttk < min) min = ttk
     if (ttk > max) max = ttk
   }
-  return { min, avg: total / variants.length, max }
+  // Веса уже нормированы (сумма единица), поэтому total — это и есть среднее.
+  return { min, avg: total, max }
 }
 
 /** Среднее время убийства моба зоны, секунд. */

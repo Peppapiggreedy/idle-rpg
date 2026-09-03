@@ -1,5 +1,5 @@
 {
-  "version": 25,
+  "version": 28,
   "classId": "warden",
   "materials": {},
   "activePotions": [],
@@ -22,34 +22,13 @@
         {
           "stat": "agility",
           "kind": "flat",
-          "value": "8.48",
+          "value": "8",
           "source": "equipment:hands"
         },
         {
           "stat": "vitality",
           "kind": "flat",
-          "value": "4.24",
-          "source": "equipment:hands"
-        }
-      ]
-    },
-    {
-      "id": "item-3",
-      "name": "Сумрачный Наруч",
-      "rarity": "uncommon",
-      "slot": "hands",
-      "level": 8,
-      "mods": [
-        {
-          "stat": "strength",
-          "kind": "flat",
-          "value": "10.600000000000001",
-          "source": "equipment:hands"
-        },
-        {
-          "stat": "vitality",
-          "kind": "flat",
-          "value": "5.300000000000001",
+          "value": "4",
           "source": "equipment:hands"
         }
       ]
@@ -64,13 +43,13 @@
         {
           "stat": "agility",
           "kind": "flat",
-          "value": "8.48",
+          "value": "8",
           "source": "equipment:chest"
         },
         {
           "stat": "vitality",
           "kind": "flat",
-          "value": "4.24",
+          "value": "4",
           "source": "equipment:chest"
         }
       ]
@@ -85,13 +64,34 @@
         {
           "stat": "strength",
           "kind": "flat",
-          "value": "8.48",
+          "value": "8",
           "source": "equipment:chest"
         },
         {
           "stat": "vitality",
           "kind": "flat",
-          "value": "4.24",
+          "value": "4",
+          "source": "equipment:chest"
+        }
+      ]
+    },
+    {
+      "id": "item-10",
+      "name": "Звёздный Панцирь",
+      "rarity": "common",
+      "slot": "chest",
+      "level": 8,
+      "mods": [
+        {
+          "stat": "strength",
+          "kind": "flat",
+          "value": "8",
+          "source": "equipment:chest"
+        },
+        {
+          "stat": "vitality",
+          "kind": "flat",
+          "value": "4",
           "source": "equipment:chest"
         }
       ]
@@ -115,41 +115,41 @@
         {
           "stat": "weaponDamageMin",
           "kind": "base",
-          "value": "83.793",
+          "value": "84",
           "source": "equipment:mainHand"
         },
         {
           "stat": "weaponDamageMax",
           "kind": "base",
-          "value": "167.586",
+          "value": "168",
           "source": "equipment:mainHand"
         },
         {
           "stat": "strength",
           "kind": "flat",
-          "value": "46.004000000000005",
+          "value": "46",
           "source": "equipment:mainHand"
         }
       ]
     },
     "offHand": null,
     "head": {
-      "id": "item-2",
-      "name": "Гремящий Капюшон",
-      "rarity": "common",
+      "id": "item-9",
+      "name": "Сумрачный Капюшон",
+      "rarity": "uncommon",
       "slot": "head",
       "level": 8,
       "mods": [
         {
-          "stat": "intellect",
+          "stat": "agility",
           "kind": "flat",
-          "value": "8.48",
+          "value": "11",
           "source": "equipment:head"
         },
         {
           "stat": "vitality",
           "kind": "flat",
-          "value": "4.24",
+          "value": "5",
           "source": "equipment:head"
         }
       ]
@@ -164,13 +164,13 @@
         {
           "stat": "strength",
           "kind": "flat",
-          "value": "8.48",
+          "value": "8",
           "source": "equipment:chest"
         },
         {
           "stat": "vitality",
           "kind": "flat",
-          "value": "4.24",
+          "value": "4",
           "source": "equipment:chest"
         }
       ]
@@ -185,13 +185,13 @@
         {
           "stat": "intellect",
           "kind": "flat",
-          "value": "8.48",
+          "value": "8",
           "source": "equipment:hands"
         },
         {
           "stat": "vitality",
           "kind": "flat",
-          "value": "4.24",
+          "value": "4",
           "source": "equipment:hands"
         }
       ]
@@ -206,13 +206,13 @@
         {
           "stat": "intellect",
           "kind": "flat",
-          "value": "10.600000000000001",
+          "value": "11",
           "source": "equipment:legs"
         },
         {
           "stat": "vitality",
           "kind": "flat",
-          "value": "5.300000000000001",
+          "value": "5",
           "source": "equipment:legs"
         }
       ]
@@ -236,6 +236,9 @@
   "regenDelayMsLeft": 0,
   "restHpThreshold": 0.6,
   "holdManaForHeal": true,
+  "upgradePriority": "balance",
+  "purchasedUpgradeIds": [],
+  "lootPolicy": "keep",
   "abilitySettings": {
     "quick-strike": {
       "autocast": true,
@@ -263,7 +266,7 @@
   "level": "10",
   "currentXp": "488",
   "currentHp": "299",
-  "currentMana": "104",
+  "currentMana": "85",
   "heroState": "alive",
   "reviveMsLeft": 0,
   "talents": {},

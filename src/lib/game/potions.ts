@@ -44,6 +44,12 @@ import { pushEvent, type ActivePotion, type GameState } from './state'
  */
 export function gatherHerbs(state: GameState, dtMs: number): GameState {
   if (dtMs <= 0) return state
+  // ТРАВНИЧЕСТВО ОТКРЫВАЕТСЯ ЦЕЛИКОМ И СРАЗУ. Порог тот же, что у зелий:
+  // собирать то, что некуда деть, — это счётчик, который растёт и ничего не
+  // обещает. Трава и растёт только с зон этого уровня (data/herbs.ts), но
+  // правило стоит и здесь: зону выбирает игрок, и герой тридцатого уровня,
+  // забредший в сорок первую, травником от этого не становится.
+  if (state.level.lt(POTION_UNLOCK_LEVEL)) return state
   // Мёртвый не собирает, и в данже трав нет: там подземелье, а не поляна.
   if (state.heroState === 'dead' || state.dungeonRun) return state
   const growing = herbsInZone(state.currentZoneId)

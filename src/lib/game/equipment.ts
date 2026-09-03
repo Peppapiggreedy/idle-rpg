@@ -1,6 +1,7 @@
 // Надеть / снять / оценить экипировку. Чистые операции над состоянием.
-import { estimateCombatRate, swingDamageRange } from './combat'
-import { INVENTORY_SIZE } from '../data/balance'
+import { estimateCombatRate, swingDamageRange, type CombatRate } from './combat'
+import { INVENTORY_SIZE, RESPAWN_DELAY_MS } from '../data/balance'
+import { inventorySize } from './upgrades'
 import {
   SAFE_ZONE,
   ZONE_BY_ID,
@@ -15,6 +16,13 @@ import { Decimal } from './numbers'
 import type { Equipment, GameState } from './state'
 import type { SlotId } from '../data/slots'
 import type { Item } from '../types'
+import {
+  DEFAULT_UPGRADE_PRIORITY,
+  UPGRADE_AXES,
+  UPGRADE_RULES,
+  type UpgradeAxis,
+  type UpgradePriority,
+} from '../data/upgrade'
 
 /**
  * ПРАВИЛА ХВАТА. Живут ЗДЕСЬ, а не в данных слотов: слот — это перечень мест,
@@ -99,7 +107,7 @@ export function equipStatus(state: GameState, item: Item): EquipStatus {
   // Место под сам предмет есть всегда: он покидает сумку. А вот СНЯТОЕ может
   // и не поместиться — тогда надевать нельзя, иначе предмет пропал бы молча.
   const freed = state.inventory.filter((i) => i.id !== item.id).length
-  if (freed + removed.length > INVENTORY_SIZE) return blocked('two-handed-needs-both')
+  if (freed + removed.length > inventorySize(state)) return blocked('two-handed-needs-both')
   return { canEquip: true, reason: null, removed }
 }
 
@@ -117,7 +125,7 @@ function withEquipped(state: GameState, item: Item): GameState {
 
 /** Темп фарма, каким он станет с предметом (сам предмет не надевается). */
 export function farmRateWith(state: GameState, item: Item): Decimal {
-  return farmRate(withEquipped(state, item))
+  return axesOf(withEquipped(state, item)).damage
 }
 
 /**
@@ -137,7 +145,28 @@ export function farmRateWith(state: GameState, item: Item): Decimal {
  * которой пользуются прогноз зоны и оффлайн, — второй меры «хорошести»
  * в игре по-прежнему нет.
  */
-function farmRate(state: GameState): Decimal {
+/**
+ * ДВЕ ОСИ ЗА ОДИН ПРОХОД, и это не оптимизация ради оптимизации: обе
+ * считаются из ОДНОГО И ТОГО ЖЕ `estimateCombatRate` по одним и тем же
+ * трём мобам. Считай их порознь — появилось бы два места, где выбирается
+ * противник, и они разъехались бы на первой же правке.
+ *
+ *   damage   — убийств в секунду, прежняя единственная мера;
+ *   fightCost — цена ОДНОЙ схватки долей максимального запаса, ровно та
+ *              формула, на которой стоит контракт цены боя в CLAUDE.md
+ *              (потеря за бой плюс реген за паузу респауна, делить на
+ *              максимум). Меньше — лучше.
+ *
+ * ЦЕНА БЕРЁТСЯ НЕТТО (`hpLossPerSecond`), а не валовая. Контракт цены боя
+ * стоит на валовой намеренно — там мерят счёт, который выставляет моб, до
+ * того как герой оплатит его маной. Но игроку в сумке нужен другой ответ:
+ * сколько он РЕАЛЬНО потеряет за бой в этой вещи. Предмет на интеллект
+ * даёт лишнее лечение и цену снижает — по валовой это было бы не видно
+ * вовсе, и «выживание» умалчивало бы ровно про то, чем Страж и выживает.
+ * Мана при этом не считается дважды: потраченная на лечение, она не идёт
+ * в урон, и ось урона это уже видит.
+ */
+function axesOf(state: GameState): { damage: Decimal; fightCost: number } {
   // ПРОТИВ ТРЁХ РОЛЕЙ ЗОНЫ на её среднем уровне, а не против того, кто стоит
   // перед героем сейчас, и не против одного «среднего» моба.
   //
@@ -161,31 +190,54 @@ function farmRate(state: GameState): Decimal {
   // КАЖДУЮ примерку: быстрый набор тестов уезжал с полуминуты за десять.
   const zone = referenceZone(state)
   const level = Math.round(averageMonsterLevel(zone))
-  let sum = new Decimal(0)
+  let kills = new Decimal(0)
+  let cost = 0
   for (const archetype of zone.monsterPool) {
     const monster = monsterFromTemplate(buildMonster(archetype, level, zone.rewardMultiplier))
-    sum = sum.plus(estimateCombatRate({ ...state, monster }).killsPerSecond)
+    const facing = { ...state, monster }
+    const rate = estimateCombatRate(facing)
+    kills = kills.plus(rate.killsPerSecond)
+    cost += fightCostShare(facing, rate)
   }
-  return sum.div(zone.monsterPool.length)
+  const n = zone.monsterPool.length
+  return { damage: kills.div(n), fightCost: cost / n }
+}
+
+/**
+ * Доля максимального запаса, которую снимает ОДНА схватка. Формула — та же,
+ * что у контракта цены боя (`balance-pacing.test.ts`): потеря за цикл боя
+ * плюс реген вне боя за паузу респауна, делить на максимум. Пауза респауна
+ * входит потому, что за неё платит не схватка, а промежуток между ними.
+ *
+ * Не убивает вовсе (`idealKillsPerSecond` нулевой) — цена бесконечна: это
+ * честнее нуля, иначе беспомощная связка выглядела бы самой безопасной.
+ */
+function fightCostShare(state: GameState, rate: CombatRate): number {
+  if (rate.idealKillsPerSecond.lte(0)) return Number.POSITIVE_INFINITY
+  const cycleSec = new Decimal(1).div(rate.idealKillsPerSecond)
+  return rate.hpLossPerSecond
+    .times(cycleSec)
+    .plus(state.stats.hpRegenOutOfCombat.times(RESPAWN_DELAY_MS / 1000))
+    .div(state.stats.maxHp)
+    .toNumber()
 }
 
 
 /**
- * ПУСТОЙ СЛОТ — ЭТО НОЛЬ, и порог для него другой.
+ * ПУСТОЙ СЛОТ — ЭТО НОЛЬ ПО ОБЕИМ ОСЯМ, и порог для него другой.
  *
- * Мера «лучше» в игре одна — убийств в секунду из `estimateCombatRate`, — и
- * живучесть входит в неё только через аптайм. В зоне, где герой не умирает,
- * аптайм равен единице, и первый в жизни панцирь не двигает оценку ВООБЩЕ:
- * строгое «больше» не выполняется, и игра сказала бы «не апгрейд» о вещи,
- * которая надевается на голое место. Раньше это было незаметно: игра дарила
- * полный комплект, и пустых слотов не существовало. Теперь слотов шесть, и
- * прогон полного пути показал цену: герой останавливался на 82 уровне из ста,
- * потому что так и ходил в одном белом клинке.
+ * Ни одна ось не обязана от первой вещи на голое место вырасти. В зоне, где
+ * герой не умирает, аптайм равен единице, и панцирь не двигает убийств в
+ * секунду ВООБЩЕ; цену боя он снижает, но в безопасной зоне и она уже почти
+ * ноль. Строгое «больше» не выполняется ни там, ни там — и игра говорила
+ * «не апгрейд» о вещи, надеваемой в пустой слот. Раньше это было незаметно:
+ * игра дарила полный комплект, и пустых слотов не существовало. Теперь их
+ * шесть, и прогон полного пути показал цену: герой останавливался на 82
+ * уровне из ста, потому что так и ходил в одном белом клинке.
  *
- * Второй меры при этом не заведено — направление по-прежнему решает та же
- * оценка. Добавлено ровно одно правило и только для пустого слота: вещь не
- * обязана оценку ПОДНЯТЬ, ей достаточно её не уронить. Плюс требование хоть
- * что-то менять, иначе «апгрейдом» стал бы и предмет без модификаторов.
+ * Правило для пустого слота одно: вещь не обязана оценку ПОДНЯТЬ, ей
+ * достаточно её не уронить. Плюс требование хоть что-то менять, иначе
+ * «апгрейдом» стал бы и предмет без модификаторов.
  */
 function fillsEmptySlot(state: GameState, item: Item): boolean {
   return state.equipment[item.slot] === null && item.mods.some(changesAnything)
@@ -197,7 +249,7 @@ function fillsEmptySlot(state: GameState, item: Item): boolean {
  * единица. Это не «сумма статов», а проверка на пустышку: без неё вещь
  * с модификатором в ноль считалась бы апгрейдом на голое место.
  */
-function changesAnything(mod: { kind: StatModifier['kind']; value: Decimal }): boolean {
+export function changesAnything(mod: { kind: StatModifier['kind']; value: Decimal }): boolean {
   return mod.kind === 'multiplier' ? !mod.value.eq(1) : !mod.value.eq(0)
 }
 
@@ -211,11 +263,88 @@ function facingReference(state: GameState): GameState {
   return { ...state, monster: monsterFromTemplate(representativeMonster(referenceZone(state))) }
 }
 
-/** Лучше ли предмет надетого — по оценочному темпу убийств. */
-export function isUpgrade(state: GameState, item: Item): boolean {
-  const after = farmRateWith(state, item)
-  const before = farmRate(state)
-  return fillsEmptySlot(state, item) ? after.gte(before) : after.gt(before)
+/**
+ * ИЗМЕНЕНИЕ ПО КАЖДОЙ ОСИ, долей: положительное — лучше, отрицательное —
+ * хуже, null — считать не от чего (герой сейчас не убивает вовсе, или цена
+ * боя и так ноль). Знак у обеих осей ОДИНАКОВЫЙ по смыслу: у выживания он
+ * перевёрнут внутри, потому что там «лучше» значит МЕНЬШЕ.
+ *
+ * Считается ровно одна пара состояний — «как есть» и «если надеть», — и обе
+ * оси берутся из неё. Отдельного прохода на каждую ось нет.
+ */
+export interface AxisDeltas {
+  damage: number | null
+  survival: number | null
+}
+
+function axisDeltas(
+  before: { damage: Decimal; fightCost: number },
+  after: { damage: Decimal; fightCost: number },
+): AxisDeltas {
+  const damage = before.damage.lte(0)
+    ? after.damage.gt(0)
+      ? Number.POSITIVE_INFINITY
+      : null
+    : after.damage.minus(before.damage).div(before.damage).toNumber()
+  // Выживание — СНИЖЕНИЕ цены боя: (было − стало) / было. Плюс значит
+  // «схватка стала дешевле», то есть та же сторона, что и у урона.
+  const survival =
+    !Number.isFinite(before.fightCost) || before.fightCost <= 0
+      ? null
+      : (before.fightCost - after.fightCost) / before.fightCost
+  return { damage, survival }
+}
+
+/** Лучше ли предмет хотя бы по одной оси из перечисленных. */
+function betterOnAny(
+  deltas: AxisDeltas,
+  axes: readonly UpgradeAxis[],
+  emptySlot: boolean,
+): boolean {
+  return axes.some((axis) => {
+    const d = deltas[axis]
+    if (d === null) return false
+    // Пустой слот: не уронить достаточно (см. fillsEmptySlot).
+    return emptySlot ? d >= 0 : d > 0
+  })
+}
+
+/**
+ * Лучше ли предмет надетого по ДЕЙСТВУЮЩЕМУ приоритету игрока.
+ *
+ * Приоритет приходит из состояния, а какие оси он смотрит — из данных
+ * (`UPGRADE_RULES`). Ветки по конкретному положению переключателя здесь нет:
+ * появится четвёртое — оно добавится строкой в данные.
+ */
+export function isUpgrade(state: GameState, item: Item, priority?: UpgradePriority): boolean {
+  return betterOnAny(
+    compareAxes(state, item),
+    UPGRADE_RULES[priority ?? priorityOf(state)].axes,
+    fillsEmptySlot(state, item),
+  )
+}
+
+/**
+ * ЖЕЛЕЗНОЕ ПРАВИЛО СУМКИ: предмет, который лучше ХОТЬ ПО ОДНОЙ оси, при
+ * полной сумке не продаётся и не распыляется — он вытесняет худшее.
+ *
+ * Приоритет сюда НЕ передаётся, и это не упущение. Приоритет говорит, что
+ * подсветить и что считать лишним при разборе; терять же находку молча
+ * нельзя ни при каком положении переключателя. Игрок, поставивший «урон»,
+ * не просил выбрасывать защитные вещи — он просил не звать их апгрейдом.
+ */
+export function betterOnAnyAxis(state: GameState, item: Item): boolean {
+  return betterOnAny(compareAxes(state, item), UPGRADE_AXES, fillsEmptySlot(state, item))
+}
+
+/** Действующий приоритет игрока; старый сейв без поля — «баланс». */
+export function priorityOf(state: GameState): UpgradePriority {
+  return state.upgradePriority ?? DEFAULT_UPGRADE_PRIORITY
+}
+
+/** Изменение по обеим осям, если надеть предмет. */
+export function compareAxes(state: GameState, item: Item): AxisDeltas {
+  return axisDeltas(axesOf(state), axesOf(withEquipped(state, item)))
 }
 
 // Производные числа для сравнения предметов в UI: не «+4 к силе атаки»,
@@ -225,20 +354,24 @@ export interface EquipPreview {
   damageMax: Decimal
   swingTime: number // секунд между ударами с учётом haste
   damagePerSecond: Decimal
-  /** Убийств в секунду с учётом аптайма — мера, по которой считается апгрейд. */
+  /** Убийств в секунду с учётом аптайма — ось УРОНА. */
   killsPerSecond: Decimal
+  /** Цена одной схватки долей запаса — ось ВЫЖИВАНИЯ. Меньше — лучше. */
+  fightCost: number
 }
 
 function previewOf(state: GameState): EquipPreview {
   const { min, max } = swingDamageRange(state.stats)
   const facing = facingReference(state)
+  const axes = axesOf(state)
   return {
     damageMin: min,
     damageMax: max,
     swingTime: state.stats.swingTime,
     damagePerSecond: estimateCombatRate(facing).damagePerSecond,
-    // Темп фарма — то, чем СРАВНИВАЮТСЯ предметы: в нём и урон, и аптайм.
-    killsPerSecond: farmRate(state),
+    // Обе оси сравнения: в первой урон и аптайм, во второй цена схватки.
+    killsPerSecond: axes.damage,
+    fightCost: axes.fightCost,
   }
 }
 
@@ -272,6 +405,16 @@ export interface EquipComparison {
    * спорили бы друг с другом на одной и той же карточке.
    */
   combatDelta: number | null
+  /**
+   * ОБЕ ОСИ, ВСЕГДА. Подсказка показывает и урон, и выживание независимо от
+   * того, какое положение переключателя выбрано: приоритет решает, что
+   * ПОДСВЕТИТЬ, а не что показать. Иначе игрок, поставивший «урон», не узнал
+   * бы, что находка вдвое дешевле по цене боя, — а это как раз то, ради чего
+   * ось выживания и заведена.
+   */
+  axes: AxisDeltas
+  /** Оси, по которым предмет считается апгрейдом при текущем приоритете. */
+  markedAxes: readonly UpgradeAxis[]
 }
 
 /** Сравнение «а если надеть?» по производным числам, а не по сумме статов. */
@@ -280,21 +423,28 @@ export function compareItem(state: GameState, item: Item): EquipComparison {
   const withItem = previewOf(equipped)
   const current = previewOf(state)
   const base = current.killsPerSecond
+  const empty = fillsEmptySlot(state, item)
+  const axes = axisDeltas(
+    { damage: current.killsPerSecond, fightCost: current.fightCost },
+    { damage: withItem.killsPerSecond, fightCost: withItem.fightCost },
+  )
+  const markedAxes = UPGRADE_RULES[priorityOf(state)].axes
   return {
     slot: item.slot,
     withItem,
     current,
     currentItem: state.equipment[item.slot],
     damagePerSecondDelta: withItem.damagePerSecond.minus(current.damagePerSecond),
-    // Порог для пустого слота ниже — см. fillsEmptySlot.
-    isUpgrade: fillsEmptySlot(state, item)
-      ? withItem.killsPerSecond.gte(current.killsPerSecond)
-      : withItem.killsPerSecond.gt(current.killsPerSecond),
+    // Метка ставится по ДЕЙСТВУЮЩЕМУ приоритету; порог для пустого слота
+    // ниже — см. fillsEmptySlot.
+    isUpgrade: betterOnAny(axes, markedAxes, empty),
     before: state.stats,
     after: equipped.stats,
     combatDelta: base.lte(0)
       ? null
       : withItem.killsPerSecond.minus(base).div(base).toNumber(),
+    axes,
+    markedAxes,
   }
 }
 
@@ -331,7 +481,7 @@ export interface UnequipStatus {
 /** Можно ли снять предмет из слота ПРЯМО СЕЙЧАС — ему нужно место в сумке. */
 export function unequipStatus(state: GameState, slot: SlotId): UnequipStatus {
   if (!state.equipment[slot]) return { canUnequip: false, reason: 'empty-slot' }
-  if (state.inventory.length >= INVENTORY_SIZE) {
+  if (state.inventory.length >= inventorySize(state)) {
     return { canUnequip: false, reason: 'inventory-full' }
   }
   return { canUnequip: true, reason: null }
@@ -362,10 +512,24 @@ export function isEquipped(state: GameState, itemId: string): boolean {
  * Пустой слот — прирост от нуля, поэтому доля не считается вовсе
  * (делить не на что): такой предмет лучше по определению.
  */
-export function upgradeShare(state: GameState, item: Item): number | null {
-  const cmp = compareItem(state, item)
-  if (!cmp.isUpgrade) return null
-  const base = cmp.current.killsPerSecond
-  if (base.lte(0)) return Number.POSITIVE_INFINITY
-  return cmp.withItem.killsPerSecond.minus(base).div(base).toNumber()
+export function upgradeShare(
+  state: GameState,
+  item: Item,
+  priority?: UpgradePriority,
+): number | null {
+  const axes = compareAxes(state, item)
+  const rule = UPGRADE_RULES[priority ?? priorityOf(state)]
+  if (!betterOnAny(axes, rule.axes, fillsEmptySlot(state, item))) return null
+  // ЦЕННОСТЬ — ЛУЧШАЯ ИЗ ОСЕЙ ПРИОРИТЕТА, а не их сумма. Складывать доли
+  // разных осей нельзя: «+10 % урона» и «+10 % выживания» — не двадцать
+  // процентов чего бы то ни было, и вещь, слегка улучшающая обе оси,
+  // обгоняла бы вещь, вдвое поднимающую одну. Лучшая ось отвечает на тот
+  // вопрос, который игрок и задаёт: насколько эта находка лучше в том,
+  // в чём она лучше.
+  let best = 0
+  for (const axis of rule.axes) {
+    const d = axes[axis]
+    if (d !== null && d > best) best = d
+  }
+  return best
 }

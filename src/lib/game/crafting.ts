@@ -15,6 +15,7 @@ import {
 import { RARITY_BY_ID } from '../data/rarity'
 import { ARMOR_NOUNS, SHIELD_BY_ID, WEAPON_BY_ID } from '../data/items'
 import { INVENTORY_SIZE, MATERIAL_DROP_CHANCE, REAGENT_DROP_CHANCE } from '../data/balance'
+import { inventorySize } from './upgrades'
 import { REAGENT_BY_ID, type ReagentDef } from '../data/reagents'
 import type { DungeonDef } from '../data/dungeons'
 import { armorMods, shieldMods, weaponMods } from './loot'
@@ -102,7 +103,7 @@ export function recipeStatus(state: GameState, recipe: RecipeDef): RecipeStatus 
   // тогда, когда всё остальное уже есть.
   if (tollShort.gt(0)) return blocked('gold')
   // Предмет должен куда-то лечь; еда места не занимает.
-  if (recipe.output.kind === 'item' && state.inventory.length >= INVENTORY_SIZE) {
+  if (recipe.output.kind === 'item' && state.inventory.length >= inventorySize(state)) {
     return blocked('inventory-full')
   }
   return { recipe, canCraft: true, reason: null, missing, toll, tollShort }

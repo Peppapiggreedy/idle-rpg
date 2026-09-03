@@ -27,12 +27,17 @@ import {
   loadGame,
   MIGRATIONS,
   migrateSave,
+  REMOVED_TALENT_IDS,
   stateFromPayload,
   type SaveStorage,
 } from '../save'
 import { CLASS_BY_ID, DEFAULT_CLASS, classById } from '../../data/classes'
 import { TEMPLE, recipeUnlocked } from '../../data/temple'
 import { materialCount } from '../crafting'
+import { availableLootPolicies, inventorySize } from '../upgrades'
+import { TALENTS } from '../../data/talents'
+import { snapRestThreshold } from '../../data/balance'
+import { GOLD_UPGRADES } from '../../data/upgrades'
 
 function fixture(name: string): string {
   return readFileSync(new URL(`../__fixtures__/${name}`, import.meta.url), 'utf8')
@@ -226,6 +231,108 @@ describe('фикстуры сейвов', () => {
     const raw = JSON.parse(fixture('save-v24.json'))
     expect(state.level.toString()).toBe(String(raw.level))
     expect(state.gold.toString()).toBe(String(raw.gold))
+  })
+
+  it('save-v25 -> v26: приоритет апгрейда — БАЛАНС, остальное цело', () => {
+    const raw = JSON.parse(fixture('save-v25.json'))
+    expect('upgradePriority' in raw, 'в 25-й версии поля не было').toBe(false)
+    const payload = migrateSave(raw)!
+    expect(payload.version).toBe(SAVE_VERSION)
+    // БАЛАНС, а не «урон». Одноосная мера и была дефектом, ради которого
+    // приоритет заведён; сохранить её ветеранам значило бы оставить их с той
+    // же слепой зоной, из-за которой броня годами не считалась апгрейдом.
+    expect(payload.upgradePriority).toBe('balance')
+
+    const state = loadFixture('save-v25.json')
+    expect(state.upgradePriority).toBe('balance')
+    // Прогресс не тронут: это настройка показа и разбора добычи.
+    expect(state.level.toString()).toBe(String(raw.level))
+    expect(state.gold.toString()).toBe(String(raw.gold))
+    expect(state.inventory).toHaveLength(raw.inventory.length)
+  })
+
+  it('незнакомое значение приоритета читается как умолчание', () => {
+    // Сейв правят руками, и терять из-за опечатки доступ к игре не за что.
+    const raw = { ...JSON.parse(fixture('save-v25.json')), version: 26, upgradePriority: 'ерунда' }
+    const state = stateFromPayload(migrateSave(raw)!)
+    expect(state.upgradePriority).toBe('balance')
+  })
+
+  it('save-v26 -> v27: лестница покупок пуста, разбор на «не трогать»', () => {
+    const raw = JSON.parse(fixture('save-v26.json'))
+    expect('purchasedUpgradeIds' in raw, 'в 26-й версии поля не было').toBe(false)
+    const payload = migrateSave(raw)!
+    expect(payload.version).toBe(SAVE_VERSION)
+    expect(payload.purchasedUpgradeIds).toEqual([])
+    expect(payload.lootPolicy).toBe('keep')
+
+    const state = loadFixture('save-v26.json')
+    // Сумка у ветерана прежнего размера: покупок он не делал, и внезапно
+    // выросшая сумка была бы подарком, которого он не просил.
+    expect(inventorySize(state)).toBe(INVENTORY_SIZE)
+    expect(availableLootPolicies(state)).toEqual(['keep'])
+    // Прогресс не тронут: покупки — новая трата золота, а не пересчёт старого.
+    expect(state.level.toString()).toBe(String(raw.level))
+    expect(state.gold.toString()).toBe(String(raw.gold))
+  })
+
+  it('незнакомая покупка в сейве отбрасывается, а не роняет загрузку', () => {
+    // Ступень могли переименовать или убрать: держать ссылку в никуда
+    // незачем, а размер сумки считается ИЗ этого списка.
+    const raw = {
+      ...JSON.parse(fixture('save-v26.json')),
+      version: 27,
+      purchasedUpgradeIds: ['такой-покупки-нет', GOLD_UPGRADES[0].id],
+      lootPolicy: 'ерунда',
+    }
+    const state = stateFromPayload(migrateSave(raw)!)
+    expect(state.purchasedUpgradeIds).toEqual([GOLD_UPGRADES[0].id])
+    expect(state.lootPolicy).toBe('keep')
+  })
+
+  it('save-v27 -> v28: таланты на порог привала удалены, очки ВЕРНУЛИСЬ', () => {
+    const raw = JSON.parse(fixture('save-v27.json'))
+    // Предпосылка: в фикстуре есть вложенный удалённый талант, иначе тест
+    // не отличил бы «очки вернулись» от «их и не было».
+    const spent = raw.talents['vigil-field-medicine']
+    expect(spent, 'фикстура обязана нести вложенный старый талант').toBeGreaterThan(0)
+
+    const payload = migrateSave(raw)!
+    expect(payload.version).toBe(SAVE_VERSION)
+    for (const id of REMOVED_TALENT_IDS) expect(payload.talents[id]).toBeUndefined()
+
+    const state = loadFixture('save-v27.json')
+    // ОЧКИ СВОБОДНЫ, а не пропали: доступные считаются как «заработано минус
+    // вложено», и снятые ранги освобождают их сами.
+    const before = Object.entries(raw.talents as Record<string, number>).reduce(
+      (sum, [, rank]) => sum + rank,
+      0,
+    )
+    expect(spentPoints(state.talents)).toBe(before - spent)
+    expect(availablePoints(state)).toBe(earnedPoints(state.level) - spentPoints(state.talents))
+    expect(availablePoints(state)).toBeGreaterThanOrEqual(spent)
+    // Остальные ранги на месте — миграция про три таланта, а не про дерево.
+    expect(state.talents['wrath-honed-edge']).toBe(raw.talents['wrath-honed-edge'])
+  })
+
+  it('save-v27 -> v28: порог привала прижат к шагу ползунка', () => {
+    const raw = JSON.parse(fixture('save-v27.json'))
+    expect(raw.restHpThreshold, 'фикстура несёт порог не кратный шагу').toBe(0.55)
+    const payload = migrateSave(raw)!
+    expect(payload.restHpThreshold).toBe(snapRestThreshold(0.55))
+    // Кратен шагу, то есть попадает ровно в одно положение ползунка.
+    expect(Math.round(payload.restHpThreshold * 100) % 10).toBe(0)
+  })
+
+  it('ни один талант больше не двигает ПОРОГ привала', () => {
+    // Порог — настройка игрока. Талант, который её двигает, читается как
+    // поломка: игрок ставит 60 %, а герой уходит на 72 %.
+    for (const talent of TALENTS) {
+      if (talent.effect.kind !== 'modifiers') continue
+      for (const mod of talent.effect.mods) {
+        expect(mod.stat, `талант ${talent.id}`).not.toBe('restThreshold')
+      }
+    }
   })
 
   it('save-v19 -> v20: незаконная связка рук расформирована', () => {

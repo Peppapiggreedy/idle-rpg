@@ -11,6 +11,10 @@ import { xpToNextLevel } from '../game/formulas'
 import { Decimal } from '../game/numbers'
 import { applyOfflineProgress } from '../game/save'
 import { sellItem } from '../game/loot'
+import type { UpgradePriority } from '../data/upgrade'
+import type { LootPolicy } from '../data/upgrades'
+import { snapRestThreshold } from '../data/balance'
+import { buyUpgrade } from '../game/upgrades'
 import { craft as craftAction } from '../game/crafting'
 import { recordDecision, resetTelemetry } from './telemetry'
 import { equipItem, unequipItem } from '../game/equipment'
@@ -347,10 +351,12 @@ export function resetTalentTree(): void {
 /** Порог ухода на привал по HP. 0 — не уходить: герой будет фармить до смерти. */
 export function setRestHpThreshold(share: number): void {
   recordDecision('rest-threshold')
-  // statsDirty: порог входит в конвейер базой стата restThreshold —
-  // без пересчёта талант на порог увидел бы старое значение.
+  // ПРИЖИМАЕТСЯ К ШАГУ ПОЛЗУНКА ЗДЕСЬ, а не в разметке: значение приходит и
+  // из миграции старого сейва, и из отладочных путей, и «0.5499999» в сейве
+  // читалось бы на экране как 55 % при шаге в десять.
+  // statsDirty: порог входит в конвейер базой стата restThreshold.
   state.update((s) =>
-    ensureStats({ ...s, restHpThreshold: Math.min(1, Math.max(0, share)), statsDirty: true }),
+    ensureStats({ ...s, restHpThreshold: snapRestThreshold(share), statsDirty: true }),
   )
 }
 
@@ -414,6 +420,30 @@ export function setAbilityReserve(abilityId: string, reserve: number): void {
       abilitySettings: { ...s.abilitySettings, [abilityId]: { ...setting, reserve: clamped } },
     }
   })
+}
+
+/**
+ * ЧТО СЧИТАТЬ АПГРЕЙДОМ: урон, выживание или баланс. Настройка игрока —
+ * решает и метку на находке, и что уйдёт в золото при полной сумке. Правила
+ * положений лежат в данных (`data/upgrade.ts`), здесь только запись выбора.
+ */
+export function setUpgradePriority(value: UpgradePriority): void {
+  // Решение того же рода, что и надевание: игрок говорит игре, что считать
+  // улучшением, и от этого меняется, во что герой оденется дальше.
+  recordDecision('equip')
+  state.update((s) => ({ ...s, upgradePriority: value }))
+}
+
+/** Покупка за золото. Нельзя — состояние не меняется, причину скажет кнопка. */
+export function buyGoldUpgrade(id: string): void {
+  recordDecision('craft')
+  state.update((s) => buyUpgrade(s, id))
+}
+
+/** Что делать с лишней находкой: не трогать, продавать, распылять. */
+export function setLootPolicy(value: LootPolicy): void {
+  recordDecision('inventory-policy')
+  state.update((s) => ({ ...s, lootPolicy: value }))
 }
 
 /** Беречь ли ману под лечение: боевые умения автокаста оставляют цену одного лечения. */
@@ -548,7 +578,7 @@ export function applyScreenshotState(preset: GameState): void {
   const seeded: GameState = {
     ...preset,
     rngSeed: SCREENSHOT_SEED,
-    monster: spawnMonster(currentZone(preset), createRng(SCREENSHOT_SEED)),
+    monster: spawnMonster(currentZone(preset), createRng(SCREENSHOT_SEED), preset.level.toNumber()),
   }
   screenshotMode = true
   const stream = createRng(SCREENSHOT_SEED)

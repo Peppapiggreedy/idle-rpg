@@ -153,12 +153,32 @@ export interface SimOptions {
   freezeLevel?: boolean
 }
 
+/** Во сколько встанет сумка, если продать её целиком. */
+function bagValue(state: GameState): Decimal {
+  return state.inventory.reduce((sum, item) => sum.plus(sellPrice(item)), new Decimal(0))
+}
+
 export interface SimResult {
   hours: number
   zoneId: string // зона, где прогон закончился (при travel: 'best' может отличаться)
   startZoneId: string
   killsPerHour: Decimal
+  /** Золото, дошедшее до кошелька: продажи и награда мобов. */
   goldPerHour: Decimal
+  /**
+   * Насколько подорожала сумка: непроданные находки — это ОТЛОЖЕННОЕ ЗОЛОТО,
+   * а не потерянное. Сумка — буфер на дюжину мест, и в установившемся режиме
+   * каждая новая находка вытесняет одну старую в продажу; за один час буфер
+   * ещё наполняется, и без этого слагаемого прогон недосчитывался бы того,
+   * что игрок держит в руках.
+   */
+  lootHeld: Decimal
+  /**
+   * КРАН ЗОЛОТА ЦЕЛИКОМ: кошелёк плюс подорожание сумки. Именно это число
+   * описывает модель `goldPerHourAt`, и именно по нему сверяются контракты
+   * дохода — `goldPerHour` без сумки мерил бы скорость наполнения буфера.
+   */
+  incomePerHour: Decimal
   xpPerHour: Decimal
   deathsPerHour: number
   // Сколько игровых секунд ещё копить до следующего уровня по темпу прогона;
@@ -735,7 +755,7 @@ export function buildSimState(build: SimBuild, zoneId: string, seed: number): Ga
     // иначе первая же смерть увела бы прогон в безопасную зону и он мерил бы
     // не ту зону, которую просили.
     lastSurvivedZoneId: zone.id,
-    monster: spawnMonster(zone, createRng(seed)),
+    monster: spawnMonster(zone, createRng(seed), base.level.toNumber()),
     statsDirty: true,
   }
   const ready = ensureStats(state)
@@ -891,6 +911,7 @@ export function simulate(options: SimOptions): SimResult {
   let state = buildSimState(build, zoneId, seed)
   const startLevel = state.level
   const startGold = state.gold
+  const startBag = bagValue(state)
   const frozen = { level: state.level, currentXp: state.currentXp, xpToNext: state.xpToNext }
 
   let xp = new Decimal(0)
@@ -1016,6 +1037,7 @@ export function simulate(options: SimOptions): SimResult {
 
   const seconds = hours * 3600
   const gold = state.gold.minus(startGold)
+  const lootHeld = bagValue(state).minus(startBag)
   const xpPerSecond = xp.div(seconds)
   const remaining = state.xpToNext.minus(state.currentXp)
   return {
@@ -1024,6 +1046,8 @@ export function simulate(options: SimOptions): SimResult {
     startZoneId: zoneId,
     killsPerHour: kills.div(hours),
     goldPerHour: gold.div(hours),
+    lootHeld,
+    incomePerHour: gold.plus(lootHeld).div(hours),
     xpPerHour: xp.div(hours),
     deathsPerHour: deaths / hours,
     secondsToNextLevel: xpPerSecond.lte(0) ? null : remaining.div(xpPerSecond).toNumber(),
@@ -1069,6 +1093,17 @@ export function simulate(options: SimOptions): SimResult {
  * автонадевание через заднюю дверь.
  */
 export function equipUpgrades(state: GameState, aimZone?: string): GameState {
+  // ПРИОРИТЕТ У МОДЕЛИ ТОТ ЖЕ, ЧТО У ИГРОКА, и берётся он из состояния —
+  // отдельного правила для прогона нет и заводить его нельзя. Герой прогона
+  // строится теми же `createInitialState`/`buildSimState`, а там умолчание
+  // «баланс»: модель считает апгрейдом то, что лучше хоть по одной оси,
+  // ровно как игра скажет игроку.
+  //
+  // ОТСЮДА СЛЕДУЕТ, что порядок «лучше» — ЧАСТИЧНЫЙ: вещь, выменивающая
+  // урон на живучесть, и вещь обратная обе считаются апгрейдами друг над
+  // другом, и модель может их переставлять. Замер полного пути это
+  // выдерживает (11.6 ч против 11.0, уровень 100 достигнут), а перебор
+  // ограничен сверху числом слотов на один проход — но знать про это надо.
   let next = state
   // По одному предмету за проход: надевание меняет статы, и следующая вещь
   // сравнивается уже с новым набором.

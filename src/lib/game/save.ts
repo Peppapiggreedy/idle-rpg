@@ -31,6 +31,7 @@ import {
   REGEN_DELAY_S,
   REGEN_TICK_S,
   REST_HP_THRESHOLD_DEFAULT,
+  snapRestThreshold,
   LEGACY_V3_SWING_TIME_S,
   OFFLINE_CAP_HOURS,
   OFFLINE_CHUNK_MIN,
@@ -55,10 +56,21 @@ import { leaveDungeon } from './dungeons'
 import { QUEST_CHAIN } from '../data/quests'
 import type { DungeonRun, QuestProgress, TempleRun } from '../types'
 import { rankOf } from './talents'
-import { FALLBACK_ITEM_NAME, ITEM_BASE_SELL_PRICE } from '../data/loot'
+import { FALLBACK_ITEM_NAME, itemSellPrice } from '../data/loot'
 import { SAFE_ZONE, ZONES, ZONE_BY_ID } from '../data/zones'
 import { currentZone, offlineZone, zoneRate } from './zones'
 import { isUpgradeValue, lootValue, rollLoot, stashLoot, type LootValueCache } from './loot'
+import {
+  DEFAULT_UPGRADE_PRIORITY,
+  UPGRADE_PRIORITIES,
+  type UpgradePriority,
+} from '../data/upgrade'
+import {
+  DEFAULT_LOOT_POLICY,
+  GOLD_UPGRADE_BY_ID,
+  LOOT_POLICIES,
+  type LootPolicy,
+} from '../data/upgrades'
 import { averageMonsterLevel } from '../data/zones'
 import { leaveTemple } from './temple'
 import type { Rng } from './rng'
@@ -86,7 +98,23 @@ const OFFLINE_LOOT_SALT = 0x9e37_79b9
 /** Все хваты одним списком: сейв принимает только их. */
 const GRIPS: Grip[] = ['one', 'two', 'shield']
 
-export const SAVE_VERSION = 25
+export const SAVE_VERSION = 28
+
+/**
+ * ТАЛАНТЫ, УДАЛЁННЫЕ ИЗ ДЕРЕВА, — списком и с причиной.
+ *
+ * Все три двигали ПОРОГ ПРИВАЛА, то есть настройку игрока: он выставляет её
+ * ползунком и ждёт, что игра ей следует, а талант молча сдвигал её вверх.
+ * На их местах теперь таланты на ДЛИНУ привала — настоящую характеристику.
+ *
+ * Список нужен миграции 27 -> 28 и остаётся в коде навсегда: сейв
+ * двадцать седьмой версии может прийти когда угодно.
+ */
+export const REMOVED_TALENT_IDS: readonly string[] = [
+  'vigil-field-medicine',
+  'instinct-beast-sense',
+  'instinct-alertness',
+]
 export const AUTOSAVE_INTERVAL_MS = AUTOSAVE_INTERVAL_S * 1000
 // Потолок оффлайн-прогресса: дольше отсутствовать можно, но не оплачивается.
 export const OFFLINE_CAP_MS = OFFLINE_CAP_HOURS * 60 * 60 * 1000
@@ -191,6 +219,12 @@ export interface SavePayloadV21 {
   restHpThreshold: number
   /** Беречь ману под лечение — настройка автокаста. */
   holdManaForHeal: boolean
+  /** Что игрок считает апгрейдом: урон, выживание или баланс. */
+  upgradePriority: UpgradePriority
+  /** Что куплено за золото: id ступеней лестницы покупок. */
+  purchasedUpgradeIds: string[]
+  /** Что делать с лишней находкой: не трогать, продавать, распылять. */
+  lootPolicy: LootPolicy
   reviveMsLeft: number
   // Таланты: id -> ранг (обычные числа, не Decimal — рангов единицы).
   talents: Record<string, number>
@@ -362,6 +396,9 @@ export function payloadFromState(state: GameState, lastTimestamp: number): SaveP
     regenDelayMsLeft: Math.max(0, state.regenDelayMsLeft),
     restHpThreshold: state.restHpThreshold,
     holdManaForHeal: state.holdManaForHeal !== false,
+    upgradePriority: state.upgradePriority,
+    purchasedUpgradeIds: [...state.purchasedUpgradeIds],
+    lootPolicy: state.lootPolicy,
     abilitySettings,
     itemSeq: state.itemSeq,
     gold: state.gold.toString(),
@@ -816,6 +853,18 @@ export function stateFromPayload(p: SavePayloadV21): GameState {
     // Отсутствие поля (старый сейв) читается как «включено» — так же, как
     // у нового героя.
     holdManaForHeal: p.holdManaForHeal !== false,
+    // Незнакомое значение (руками правленый сейв) читается как умолчание —
+    // терять из-за него доступ к игре не за что.
+    upgradePriority: UPGRADE_PRIORITIES.includes(p.upgradePriority)
+      ? p.upgradePriority
+      : DEFAULT_UPGRADE_PRIORITY,
+    // Незнакомые id покупок отбрасываются: ступень могли переименовать или
+    // убрать, и держать в сейве ссылку в никуда незачем — размер сумки и
+    // открытые положения переключателя считаются ИЗ ЭТОГО списка.
+    purchasedUpgradeIds: (Array.isArray(p.purchasedUpgradeIds) ? p.purchasedUpgradeIds : []).filter(
+      (id) => GOLD_UPGRADE_BY_ID[id] !== undefined,
+    ),
+    lootPolicy: LOOT_POLICIES.includes(p.lootPolicy) ? p.lootPolicy : DEFAULT_LOOT_POLICY,
     restSpeedupSource: null,
   }
   // Поток случайности берём от сида состояния — загрузка детерминированна.
@@ -861,7 +910,7 @@ export function resumeOutside(state: GameState, rng: Rng): GameState {
     // другим путём и засчитывается (см. leaveTemple).
     return leaveTemple({ ...state, currentZoneId: offlineZone(state).id }, rng, false, false)
   }
-  return { ...state, monster: spawnMonster(currentZone(state), rng) }
+  return { ...state, monster: spawnMonster(currentZone(state), rng, state.level.toNumber()) }
 }
 
 /**
@@ -959,11 +1008,19 @@ function gripV19toV20(raw: unknown): Grip | undefined {
   return undefined
 }
 
-/** Цена продажи по сохранённым полям: до состояния игры ещё далеко. */
+/**
+ * Цена продажи по сохранённым полям: до состояния игры ещё далеко.
+ *
+ * Формула ТА ЖЕ, что в игре (`itemSellPrice`): миграция, продавая лишнее из
+ * переполненной сумки, обязана считать вещь ровно во столько же, во сколько
+ * её оценит игра секундой позже. Битые поля — самый дешёвый исход: тир
+ * обычный, уровень первый.
+ */
 function savedSellPrice(raw: unknown): number {
   const item = (raw ?? {}) as RawSave
   const rarity = RARITY_BY_ID[item.rarity as Rarity] as RarityDef | undefined
-  return ITEM_BASE_SELL_PRICE.times(rarity ? rarity.sellMult : 1).toNumber()
+  const level = typeof item.level === 'number' && item.level >= 1 ? item.level : 1
+  return itemSellPrice(level, rarity ? rarity.id : 'common').toNumber()
 }
 
 export const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
@@ -1009,6 +1066,9 @@ export const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
 
     let gold = new Decimal(String(raw.gold ?? '0'))
     for (const item of removed) {
+      // ЗДЕСЬ ИМЕННО БАЗОВЫЙ РАЗМЕР, а не производный от покупок: миграция
+      // 19-й версии работает с СЫРЫМ сейвом, покупок в нём быть не может —
+      // лестница покупок появилась семью версиями позже.
       if (inventory.length < INVENTORY_SIZE) {
         inventory.push(item)
         continue
@@ -1276,6 +1336,45 @@ export const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
     }
     return next
   },
+  /**
+   * 27 -> 28. Порог привала стал ползунком, а таланты на порог удалены.
+   *
+   * ОЧКИ ВОЗВРАЩАЮТСЯ СВОБОДНЫМИ, А НЕ ПРОПАДАЮТ. Отдельного счётчика
+   * доступных очков в состоянии нет — они считаются как «заработано минус
+   * вложено», — поэтому достаточно убрать ранги удалённых талантов: очки
+   * освобождаются сами и вкладываются куда игрок захочет. Молча съесть
+   * шесть очков у ветерана нельзя ни при какой правке дерева.
+   *
+   * Порог заодно прижимается к шагу ползунка: старые пресеты (0/40/60/80 %)
+   * и так кратны десяти, но сейв мог быть правлен руками.
+   */
+  27: (raw) => {
+    const talents = { ...((raw.talents ?? {}) as Record<string, number>) }
+    for (const id of REMOVED_TALENT_IDS) delete talents[id]
+    return {
+      ...raw,
+      version: 28,
+      talents,
+      restHpThreshold: snapRestThreshold(
+        typeof raw.restHpThreshold === 'number' ? raw.restHpThreshold : REST_HP_THRESHOLD_DEFAULT,
+      ),
+    }
+  },
+  // 26 -> 27. Лестница покупок: у старого героя куплено ничего, разбор
+  // добычи стоит на «не трогать». Прогресс не трогается вовсе — покупки
+  // это новая трата золота, а не пересчёт старого.
+  26: (raw) => ({
+    ...raw,
+    version: 27,
+    purchasedUpgradeIds: [],
+    lootPolicy: DEFAULT_LOOT_POLICY,
+  }),
+  // 25 -> 26. Приоритет апгрейда. У старого героя настройки не было, и
+  // «лучше» считалось одной осью — уроном. Ставим БАЛАНС, а не «урон»:
+  // одноосная мера и была дефектом, ради которого приоритет заведён, и
+  // сохранять её ветеранам значило бы оставить их с той же слепой зоной.
+  // Прогресс миграция не трогает — это настройка показа и разбора добычи.
+  25: (raw) => ({ ...raw, version: 26, upgradePriority: DEFAULT_UPGRADE_PRIORITY }),
   // 24 -> 25. Резерв маны под лечение: у старого героя настройки не было —
   // включаем, как у нового. Само лечение он получит уровнем, как и все умения.
   // (В ветке второй ночи эта миграция стояла на 23; на main номер занял снос
