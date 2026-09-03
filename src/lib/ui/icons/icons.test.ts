@@ -59,6 +59,9 @@ const used: IconName[] = [
   'action-disenchant',
   'material-dust',
   'profession-enchanting',
+  // Автокаст: пара иконок на кнопке в ряду действий — рука и механизм.
+  'autocast-off',
+  'autocast-on',
 ]
 
 describe('спрайт иконок', () => {

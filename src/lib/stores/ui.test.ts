@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
-  SECTION_IDS,
+  MENU_IDS,
+  MENU_SIDE,
   isTextMode,
+  menusOn,
   sanitizeUiSettings,
   type UiSettings,
 } from './ui'
@@ -13,7 +15,6 @@ describe('настройки интерфейса: разбор сохранён
       expect(sanitizeUiSettings(raw)).toEqual({
         textMode: 'auto',
         volumes: SOUND_DEFAULT_VOLUMES,
-        drawers: { hero: false, log: false },
       })
     }
   })
@@ -22,12 +23,10 @@ describe('настройки интерфейса: разбор сохранён
     expect(sanitizeUiSettings({ textMode: 'on' })).toEqual({
       textMode: 'on',
       volumes: SOUND_DEFAULT_VOLUMES,
-      drawers: { hero: false, log: false },
     })
     expect(sanitizeUiSettings({ textMode: 'off' })).toEqual({
       textMode: 'off',
       volumes: SOUND_DEFAULT_VOLUMES,
-      drawers: { hero: false, log: false },
     })
   })
 
@@ -58,7 +57,6 @@ describe('текстовый режим', () => {
   const settings = (textMode: UiSettings['textMode']): UiSettings => ({
     textMode,
     volumes: { ...SOUND_DEFAULT_VOLUMES },
-    drawers: { hero: false, log: false },
   })
 
   it('явный выбор игрока решает: «всегда текст» — текст, «всегда сцена» — сцена', () => {
@@ -73,40 +71,33 @@ describe('текстовый режим', () => {
   })
 })
 
-describe('разделы', () => {
-  it('порядок вкладок фиксирован и без повторов', () => {
-    // «Персонажа» среди вкладок нет: статы и экипировка живут в выдвижке
-    // «Герой», к ним обращаются постоянно, а вкладка — про «уйти надолго».
-    expect(SECTION_IDS).toEqual(['progress', 'bag', 'world', 'settings'])
-    expect(new Set(SECTION_IDS).size).toBe(SECTION_IDS.length)
-  })
-})
-
-describe('выдвижки', () => {
-  it('журнал свёрнут по умолчанию', () => {
-    // Лента событий полезна, когда её спросили; постоянно занимать ею
-    // экран не за что.
-    expect(sanitizeUiSettings({}).drawers).toEqual({ hero: false, log: false })
+describe('меню', () => {
+  it('меню ровно семь, порядок фиксирован и без повторов', () => {
+    // Было четыре раздела и две выдвижки — два разных паттерна на одну
+    // задачу. Стало семь одинаковых кнопок.
+    expect(MENU_IDS).toEqual(['hero', 'bag', 'world', 'talents', 'craft', 'log', 'settings'])
+    expect(new Set(MENU_IDS).size).toBe(MENU_IDS.length)
   })
 
-  it('состояние выдвижек переживает перезагрузку и чинится от мусора', () => {
-    expect(sanitizeUiSettings({ drawers: { hero: false, log: true } }).drawers).toEqual({
-      hero: false,
-      log: true,
-    })
-    // Мусор в localStorage не должен оставить наполовину открытую панель.
-    const junk = sanitizeUiSettings({ drawers: { hero: 'да', log: 1 } })
-    expect(junk.drawers).toEqual({ hero: false, log: false })
+  it('СЛЕВА — ГДЕ МЕНЯЕШЬ, СПРАВА — ГДЕ ЧИТАЕШЬ', () => {
+    // Правило записано данными, а не расстановкой в разметке: иначе
+    // следующая кнопка встанет наугад. Журнал и настройки героя не
+    // меняют — они справа; всё остальное меняет.
+    expect(menusOn('left')).toEqual(['hero', 'bag', 'world', 'talents', 'craft'])
+    expect(menusOn('right')).toEqual(['log', 'settings'])
   })
 
-  it('открытой может быть только одна', () => {
-    // Оба листа прибиты к низу окна одним и тем же `bottom`: открытые
-    // разом, они лежат друг на друге, и виден только тот, что позже
-    // в разметке. Запись с двумя открытыми приходит из старой сборки
-    // или из правки localStorage руками — вторую закрываем.
-    expect(sanitizeUiSettings({ drawers: { hero: true, log: true } }).drawers).toEqual({
-      hero: true,
-      log: false,
-    })
+  it('у каждого меню есть сторона, и лишних сторон нет', () => {
+    for (const id of MENU_IDS) expect(MENU_SIDE[id]).toMatch(/^(left|right)$/)
+    expect(Object.keys(MENU_SIDE).sort()).toEqual([...MENU_IDS].sort())
+  })
+
+  it('открытое меню не хранится в настройках машины', () => {
+    // «Где я сейчас» — не настройка: после перезагрузки игрок хочет видеть
+    // бой, а не вкладку настроек. Ключ прежних выдвижек из localStorage
+    // отбрасывается сам — собирается новый объект, а не чинится старый.
+    const settings = sanitizeUiSettings({ textMode: 'on', drawers: { hero: true, log: true } })
+    expect('drawers' in settings).toBe(false)
+    expect(settings.textMode).toBe('on')
   })
 })

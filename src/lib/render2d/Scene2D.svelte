@@ -31,6 +31,7 @@
     HEAL_PULSE_MS,
     HIT_FLASH_MS,
     MOBILE_BREAKPOINT,
+    SCENE_MINI_FLOATERS,
     STRIKE_MS,
   } from '../data/render'
   import { HERO_SPRITE } from '../data/sprites'
@@ -39,6 +40,23 @@
   import { createFloaterQueue, floaterKind, floaterProgress, type Floater } from './floaters'
   import { createLevelUpTracker, type LevelUpView } from './levelup'
   import { sceneModel, type MonsterView, type SceneModel } from './model'
+
+  interface Props {
+    /**
+     * СЦЕНА УЕХАЛА В УГОЛ: открытое меню занимает основную площадь, а бой
+     * продолжается в уменьшенной сцене. Набор эффектов там СОКРАЩЁН — не
+     * ради кадров, а ради читаемости: в углу шириной с ладонь тряска и
+     * выпады превращаются в дрожь, а стопка всплывающих чисел закрывает
+     * собой обоих бойцов. Остаются вспышка попадания, полоски здоровья и
+     * одно число.
+     *
+     * Это ПРОП, а не подписка: сцена по-прежнему только читает игровое
+     * состояние, а «открыто ли меню» — состояние экрана, и знать о нём
+     * слою рендера неоткуда.
+     */
+    mini?: boolean
+  }
+  let { mini = false }: Props = $props()
 
   type HitState = 'none' | 'hit' | 'crit'
 
@@ -170,7 +188,14 @@
     view = pose === null ? m : posedModel(m)
     effects = pose === null ? liveEffects(now) : posedEffects()
     // В позе число застыло (см. seedPoseFloater) и по часам не тает.
-    if (pose === null) painted = floaters.alive(now).map((f) => ({ f, life: floaterProgress(f, now) }))
+    if (pose === null) {
+      const alive = floaters.alive(now)
+      // В углу видно только САМОЕ СВЕЖЕЕ число: старые отбрасываются, а не
+      // выстраиваются в стопку. Очередь при этом общая — вернувшись из меню,
+      // игрок видит сцену в её обычном виде без всякого пересоздания.
+      const shown = mini ? alive.slice(-SCENE_MINI_FLOATERS) : alive
+      painted = shown.map((f) => ({ f, life: floaterProgress(f, now) }))
+    }
     // Поза нового уровня показывает уровень героя из состояния, а не константу:
     // эталон обязан показывать те же числа, что игра.
     levelUp =
@@ -305,6 +330,7 @@
 
 <div
   class="host"
+  class:mini
   bind:this={host}
   data-phase={view.phase}
   data-pose={pose}
@@ -381,14 +407,14 @@
     {#if effects.heroHit !== 'none'}
       <i class="flash hero"></i>
     {/if}
-    {#if effects.heroHeal}
+    {#if effects.heroHeal && !mini}
       <i class="ring"></i>
     {/if}
   </div>
 
   <!-- Новый уровень: вспышка и номер над героем. Всё ведёт --life (доля
        прожитого), как у всплывающих чисел; в позе застывает на пике. -->
-  {#if levelUp}
+  {#if levelUp && !mini}
     <div class="levelup" style="--life: {levelUp.life.toFixed(3)}">
       <i class="burst"></i>
       <span class="caption">уровень</span>
@@ -396,16 +422,36 @@
     </div>
   {/if}
 
-  <!-- Полоски здоровья над головами: ширина — доля здоровья. У моба она
-       ЕДИНСТВЕННАЯ на экране (в раме второй нет), поэтому несёт число. -->
-  <div class="bars">
-    <div class="bar hero">
-      <i style="width: {Math.round(view.hero.health * 100)}%"></i>
+  <!-- ТАБЛИЧКИ НАД ГОЛОВАМИ: у моба — имя, уровень и здоровье в ОДНОМ месте,
+       у героя — такая же полоска здоровья.
+
+       Раньше внимание рвалось надвое: имя моба лежало подписью в нижнем
+       углу рамы, а здоровье — полоской над его головой, и глазу приходилось
+       собирать одного противника из двух углов экрана. Теперь всё, что про
+       моба, стоит над мобом.
+
+       Полоски у обоих ОДНОГО ВИДА — одна высота, одна форма, число внутри по
+       одному правилу. До этого у моба была крупная красная пилюля с числами,
+       а у героя тонкая чёрточка без них: чужое состояние читалось лучше
+       своего. Цвет остался единственным различием, и он про смысл: здоровье
+       героя — цвет лечения, здоровье моба — цвет урона. -->
+  <div class="plates">
+    <div class="plate hero">
+      <div class="bar">
+        <i style="width: {Math.round(view.hero.health * 100)}%"></i>
+        <span class="hp">{view.hero.hpLabel}</span>
+      </div>
     </div>
     {#if view.monster}
-      <div class="bar monster" class:boss={view.monster.isBoss}>
-        <i style="width: {Math.round(view.monster.health * 100)}%"></i>
-        <span class="hp">{view.monster.hpLabel}</span>
+      <div class="plate monster" class:boss={view.monster.isBoss}>
+        <div class="title">
+          <span class="name">{view.monster.name}</span>
+          <span class="level">{view.monster.level} ур.</span>
+        </div>
+        <div class="bar">
+          <i style="width: {Math.round(view.monster.health * 100)}%"></i>
+          <span class="hp">{view.monster.hpLabel}</span>
+        </div>
       </div>
     {/if}
   </div>
@@ -460,6 +506,20 @@
       --ground: 30%;
       --figure-h: 38%;
     }
+  }
+  /* УГОЛ: НИ ТРЯСКИ, НИ СДВИГОВ, НИ ВЫПАДОВ. Обнуляются сами ручки
+     движения, а не каждый эффект по отдельности: замах, выпад и отброс
+     считаются от этих трёх величин, и правило держится одним местом.
+     Вспышка попадания при этом остаётся — она и отвечает на вопрос,
+     ради которого в угол смотрят. */
+  .host.mini {
+    --lean: 0%;
+    --lunge: 0%;
+    --kick: 0%;
+    /* Земля выше, фигуры мельче: в узком кадре подпись над мобом иначе
+       ложится ему на голову. */
+    --ground: 24%;
+    --figure-h: 40%;
   }
   .bg {
     position: absolute;
@@ -603,17 +663,65 @@
     opacity: 0.9;
   }
 
-  .bars {
+  .plates {
     position: absolute;
     inset: 0;
     pointer-events: none;
   }
-  .bar {
+  /* Табличка стоит над головой и центрируется по фигуре. Ширина у обеих
+     одна: полоски обязаны читаться как одна и та же полоска. */
+  .plate {
     position: absolute;
     bottom: calc(var(--head) + 0.4rem);
-    width: 3rem;
-    height: var(--bar-sm);
+    /* Ширина растёт со сценой, но с обеих сторон зажата. Снизу — чтобы
+       число «текущее / максимум» влезало на телефоне; сверху — чтобы две
+       таблички не сошлись посреди площадки, когда сцена широкая. Доля
+       подобрана так, что на 390px они расходятся с зазором. */
+    width: clamp(7rem, 24%, 12rem);
     transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.15rem;
+  }
+  .plate.hero {
+    left: var(--hero-x);
+  }
+  .plate.monster {
+    left: var(--monster-x);
+  }
+  .plate.monster.boss {
+    bottom: calc(var(--ground) + var(--figure-h) * 1.25 + 0.4rem);
+    width: 8rem;
+  }
+  /* Имя и уровень моба — над его же полоской, а не в углу рамы. */
+  .title {
+    display: flex;
+    align-items: baseline;
+    justify-content: center;
+    gap: 0.3rem;
+    min-width: 0;
+    line-height: 1;
+    text-shadow: var(--shadow-sm);
+  }
+  .name {
+    font-size: var(--text-xs);
+    font-weight: var(--weight-bold);
+    color: var(--c-text);
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .level {
+    flex: 0 0 auto;
+    font-size: var(--text-2xs);
+    color: var(--c-text-faint);
+  }
+  /* ОДИН ВИД НА ОБЕ ПОЛОСКИ: высота, форма и рамка общие, разный только
+     цвет заливки — он и несёт смысл. */
+  .bar {
+    position: relative;
+    height: var(--bar-lg);
     border-radius: var(--radius-pill);
     background: color-mix(in srgb, var(--c-surface-sunken) 80%, transparent);
     outline: 1px solid color-mix(in srgb, var(--c-border) 70%, transparent);
@@ -624,23 +732,10 @@
     height: 100%;
     border-radius: var(--radius-pill);
   }
-  .bar.hero {
-    left: var(--hero-x);
-  }
-  .bar.hero i {
+  .plate.hero .bar i {
     background: var(--c-heal);
   }
-  .bar.monster {
-    left: var(--monster-x);
-    /* Число внутри: полоска выше и шире хвостовой, иначе цифры не влезут. */
-    width: 7rem;
-    height: var(--bar-lg);
-  }
-  .bar.monster.boss {
-    bottom: calc(var(--ground) + var(--figure-h) * 1.25 + 0.4rem);
-    width: 8rem;
-  }
-  .bar.monster i {
+  .plate.monster .bar i {
     background: var(--c-damage);
   }
   /* «Текущее / максимум» поверх заливки: тень держит читаемость и на

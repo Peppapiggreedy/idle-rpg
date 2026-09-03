@@ -275,7 +275,7 @@
   </Panel>
 
   <!-- ================= ЯЧЕЙКИ И ЯРЛЫКИ ================= -->
-  <Panel title="IconSlot" subtitle="пустая ячейка, своя подпись пустоты, наводимая — и все пять редкостей">
+  <Panel title="IconSlot" subtitle="пустая, своя подпись пустоты, наводимая, три состояния перетаскивания — и все пять редкостей">
     <div class="slots">
       <IconSlot slotLabel="Оружие" />
       <IconSlot slotLabel="Голова" emptyText="слот закрыт" />
@@ -285,6 +285,18 @@
       <IconSlot slotLabel="Кольцо" interactive active>
         <span class="item-name">Наводимая ячейка</span>
         <p class="note">interactive: реагирует на наведение и получает фокус с клавиатуры.</p>
+      </IconSlot>
+      <!-- СОСТОЯНИЯ ПЕРЕТАСКИВАНИЯ. Их три, и различать их надо боковым
+           зрением: на кукле семь ячеек сразу. -->
+      <IconSlot slotLabel="Оружие" rarity="rare" drop="carried">
+        <span class="item-name">Взято в руку</span>
+        <p class="note">drop=carried: вещь «в воздухе», ждёт, куда её положат.</p>
+      </IconSlot>
+      <IconSlot slotLabel="Голова" drop="target">
+        <p class="note">drop=target: сюда можно положить то, что несут.</p>
+      </IconSlot>
+      <IconSlot slotLabel="Ноги" drop="dim">
+        <p class="note">drop=dim: сюда нельзя — ячейка уходит на задний план.</p>
       </IconSlot>
       {#each RARITY_IDS as rarity (rarity)}
         <IconSlot slotLabel="Оружие" {rarity} active={rarity === 'legendary'}>

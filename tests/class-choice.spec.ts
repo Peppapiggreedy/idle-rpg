@@ -52,7 +52,7 @@ test('до выбора класса игры нет вовсе, а не «сп�
 
   expect(await actionButtons(page).count(), 'кнопок умений быть не должно').toBe(0)
   expect(await page.locator('canvas').count(), 'сцены быть не должно').toBe(0)
-  expect(await page.locator('nav[aria-label="Разделы"]').count(), 'вкладок быть не должно').toBe(0)
+  expect(await page.locator('nav[aria-label^="Меню"]').count(), 'кнопок меню быть не должно').toBe(0)
 
   // Хоткей умения ничего не находит и ничего не делает.
   await page.keyboard.press('1')

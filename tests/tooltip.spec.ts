@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { sectionTab, visibleFraction } from './screen.js'
+import { openMenu, visibleFraction } from './screen.js'
 
 /** Селектор пузыря первой кнопки умений — для замера настоящей видимости. */
 const ABILITY_BUBBLE = '[aria-label="Действия"] .host [role="tooltip"]'
@@ -138,7 +138,7 @@ test('подсказка умения показывает посчитанно�
 // нигде на экране.
 test('после действия над предметом сравнение снова работает при наведении', async ({ page }) => {
   await open(page, 1280)
-  await sectionTab(page, 'Сумка').click()
+  await openMenu(page, 'Сумка')
 
   const cards = page
     .locator('.slot')
