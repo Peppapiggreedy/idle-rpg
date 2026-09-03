@@ -7,7 +7,9 @@
   // ушёл в подсказку, на кнопке остались иконка, хоткей и таймер.
   //
   // В этот же ряд встают зелья: они такие же кнопки с кулдауном, и стоять
-  // им положено рядом с умениями, а не в отдельном углу экрана.
+  // им положено рядом с умениями, а не в отдельном углу экрана. А вот
+  // автокаст ИЗ РЯДА УБРАН (ui/AutocastButton.svelte): он не действие, а
+  // переключатель того, кто действия жмёт, и место ему рядом, но не внутри.
   //
   // Бар живёт рядом со сценой и СМОНТИРОВАН ВСЕГДА, в любом разделе: здесь
   // единственный на всю игру глобальный слушатель клавиатуры. Спрячь его
@@ -23,7 +25,7 @@
     type PotionSlot,
   } from '../game'
   import { GCD_MS } from '../data/balance'
-  import { activateAbility, drinkPotion, gameState, setAbilityAutocast } from '../stores/game'
+  import { activateAbility, drinkPotion, gameState } from '../stores/game'
   import { abilityReasonText } from './abilityText'
   import { potionEffectText, potionReasonText } from './potionText'
   import { resourceWords } from './resource'
@@ -107,24 +109,6 @@
   // про то, когда именно умение освободится.
   const gcdFraction = $derived(GCD_MS > 0 ? Math.max(0, $gameState.gcdMsLeft) / GCD_MS : 0)
 
-  // АВТОКАСТ ОДНОЙ КНОПКОЙ, В ТОМ ЖЕ РЯДУ.
-  //
-  // Галки на каждое умение никуда не делись — они в разделе умений, там же
-  // приоритет. Но вопрос «жать самому или пусть жмёт игра» задаётся не при
-  // настройке, а посреди боя, и ответ на него должен лежать рядом с самими
-  // кнопками. Кнопка не заводит нового состояния: она переключает те же
-  // галки тем же экшеном, что и раздел, — просто все разом.
-  //
-  // «Включён» — когда хотя бы одно умение на автокасте: полувключённого
-  // состояния у кнопки нет, а полувключённая ротация есть, и честнее
-  // показать её включённой, чем врать выключенной.
-  const autocastOn = $derived(
-    ordered.some((a) => $gameState.abilitySettings[a.id]?.autocast ?? false),
-  )
-  function toggleAutocast(): void {
-    const next = !autocastOn
-    for (const ability of ordered) setAbilityAutocast(ability.id, next)
-  }
 </script>
 
 <svelte:window onkeydown={onKey} />
@@ -184,26 +168,6 @@
     </Tooltip>
   {/each}
 
-  <!-- Автокаст стоит ПОСЛЕ действий и отделён чертой: это не ещё одно
-       действие, а переключатель того, кто их жмёт. -->
-  <Tooltip
-    text={autocastOn
-      ? 'Автокаст включён: игра жмёт умения сама, по приоритету из раздела умений. Нажми, чтобы играть руками.'
-      : 'Автокаст выключен: умения жмёшь ты. Нажми, чтобы игра жала их сама.'}
-    width="wide"
-  >
-    <button
-      type="button"
-      class="slot auto"
-      class:on={autocastOn}
-      aria-pressed={autocastOn}
-      aria-label="Автокаст"
-      onclick={toggleAutocast}
-    >
-      <Icon name={autocastOn ? 'autocast-on' : 'autocast-off'} size="lg" />
-      <span class="caption">Автокаст</span>
-    </button>
-  </Tooltip>
 </div>
 
 <style>
@@ -242,23 +206,6 @@
   }
   .slot:hover:not(:disabled) {
     border-color: var(--c-accent);
-  }
-  /* Автокаст — тот же квадрат того же размера, но отделён чертой: он не
-     действие, а переключатель того, кто действия жмёт. Включённое
-     состояние показано рамкой взаимодействия, а не заливкой: заливка в
-     этом ряду занята кулдауном и читалась бы как «идёт откат». */
-  .slot.auto {
-    margin-left: var(--space-2);
-    border-left: 1px solid var(--c-border);
-  }
-  .slot.auto.on {
-    border-color: var(--c-accent);
-    color: var(--c-accent);
-  }
-  .caption {
-    font-size: var(--text-2xs);
-    line-height: 1;
-    letter-spacing: var(--tracking-wide);
   }
   .slot:disabled {
     cursor: not-allowed;
