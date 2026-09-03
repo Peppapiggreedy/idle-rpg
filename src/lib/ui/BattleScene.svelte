@@ -13,10 +13,21 @@
   // в текстовом режиме App ставит на это место текстовую панель.
   import { gameState } from '../stores/game'
   import Scene2D from '../render2d/Scene2D.svelte'
+
+  interface Props {
+    /** Сцена уехала в угол: пропорции те же, эффектов меньше. */
+    mini?: boolean
+  }
+  let { mini = false }: Props = $props()
 </script>
 
-<div class="scene" role="img" aria-label="Боевая сцена: {$gameState.monster.name}">
-  <Scene2D />
+<div
+  class="scene"
+  class:mini
+  role="img"
+  aria-label="Боевая сцена: {$gameState.monster.name}"
+>
+  <Scene2D {mini} />
 </div>
 
 <style>
@@ -45,5 +56,10 @@
     .scene {
       aspect-ratio: 16 / 9;
     }
+  }
+  /* В углу пропорции ТЕ ЖЕ, что на десктопе: угол — это уменьшенная сцена,
+     а не другая. Меняется только ширина, и её задаёт .stage.mini. */
+  .scene.mini {
+    aspect-ratio: 16 / 9;
   }
 </style>

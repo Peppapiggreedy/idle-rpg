@@ -17,6 +17,12 @@
   import { closeMenu, openMenu } from './lib/stores/ui'
   import { isTextMode, uiSettings } from './lib/stores/ui'
   import { isSceneDisabled } from './lib/ui/route'
+  import {
+    MOBILE_BREAKPOINT,
+    SCENE_MINI_MAX_PX,
+    SCENE_MINI_MIN_PX,
+    SCENE_MINI_SHARE,
+  } from './lib/data/render'
 
   import BattleScene from './lib/ui/BattleScene.svelte'
   import BattlePanel from './lib/ui/BattlePanel.svelte'
@@ -57,6 +63,28 @@
   const sceneOff = isSceneDisabled()
   const textMode = $derived(sceneOff || isTextMode($uiSettings))
   const points = $derived(availablePoints($gameState))
+
+  // СЦЕНА УЕЗЖАЕТ В УГОЛ, КОГДА ОТКРЫТО МЕНЮ. Меню занимает основную
+  // площадь, но бой не прекращается — и прятать его нельзя: сцена видна
+  // ВСЕГДА, это правило проекта. Уменьшенная сцена стоит в правом нижнем
+  // углу поверх меню и держит те же пропорции 16:9.
+  //
+  // НА УЗКОМ ЭКРАНЕ УГЛА НЕТ. Треть от 390px — это 130 пикселей: силуэты
+  // сливаются, табличка с именем не помещается, а места меню всё равно не
+  // остаётся. Вместо сцены там встаёт ОДНА СТРОКА-СВОДКА, и берётся она из
+  // того же вида, что несёт текстовый режим (BattlePanel), а не пишется
+  // второй раз.
+  //
+  // Ширину окна берём подпиской, а не медиазапросом: медиазапрос умеет
+  // спрятать элемент, но не умеет ПОДМЕНИТЬ компонент, а сводка — другой
+  // компонент, а не сцена в другом размере.
+  let viewportWidth = $state(globalThis.innerWidth ?? MOBILE_BREAKPOINT)
+  const narrow = $derived(viewportWidth < MOBILE_BREAKPOINT)
+  const menuOpen = $derived($openMenu !== null)
+  const miniScene = $derived(menuOpen && !narrow)
+  const summary = $derived(menuOpen && narrow)
+  // Ширина угла: доля окна, зажатая между минимумом и потолком из данных.
+  const miniWidth = `clamp(${SCENE_MINI_MIN_PX}px, ${Math.round(SCENE_MINI_SHARE * 100)}vw, ${SCENE_MINI_MAX_PX}px)`
   // Esc закрывает открытое меню. Слушатель один и висит здесь: у меню нет
   // своего корня, который мог бы поймать клавишу, а плодить по слушателю
   // на каждое меню значило бы семь подписок вместо одной.
@@ -74,7 +102,7 @@
 <!-- Спрайт иконок: один раз на страницу, до всего остального. -->
 <IconSprite />
 
-<svelte:window onkeydown={onKeydown} />
+<svelte:window onkeydown={onKeydown} bind:innerWidth={viewportWidth} />
 
 <!-- Пока класс не выбран, экран игры не спрятан под шторкой — его нет вовсе.
      Разница не косметическая: смонтированный под шторкой экран оставлял
@@ -94,26 +122,33 @@
     <!-- ПОСТОЯННАЯ ЗОНА: три блока и ничего больше. Одна колонка на любой
          ширине — сцена главный элемент экрана и делить её место не с чем. -->
     <div class="permanent" data-permanent>
-      <div class="stage">
-        <!-- ГДЕ ГЕРОЙ СЕЙЧАС. Строку собирает placeTitle из ДАННЫХ места,
-             поэтому новая зона, данж или будущий рейд попадают в заголовок
-             сами, без правки этого файла. -->
-        <h2 class="place" aria-live="polite">
-          <span class="place-name">{place.name}</span>
-          {#if place.detail}
-            <span class="place-detail"
-              >{place.join === 'parens' ? `(${place.detail})` : `· ${place.detail}`}</span
-            >
-          {/if}
-        </h2>
-        {#if textMode}
-          <BattlePanel />
+      <div class="stage" class:mini={miniScene} style:--mini-width={miniWidth}>
+        {#if summary}
+          <!-- СТРОКА-СВОДКА вместо сцены: имя, уровень и здоровье моба.
+               Заголовок места и полоса замаха уходят вместе со сценой —
+               «одна строка» значит одна строка. -->
+          <BattlePanel compact />
         {:else}
-          <BattleScene />
+          <!-- ГДЕ ГЕРОЙ СЕЙЧАС. Строку собирает placeTitle из ДАННЫХ места,
+               поэтому новая зона, данж или будущий рейд попадают в заголовок
+               сами, без правки этого файла. -->
+          <h2 class="place" aria-live="polite">
+            <span class="place-name">{place.name}</span>
+            {#if place.detail}
+              <span class="place-detail"
+                >{place.join === 'parens' ? `(${place.detail})` : `· ${place.detail}`}</span
+              >
+            {/if}
+          </h2>
+          {#if textMode}
+            <BattlePanel />
+          {:else}
+            <BattleScene mini={miniScene} />
+          {/if}
+          <SwingIndicator />
+          <DungeonHud />
+          <TempleHud />
         {/if}
-        <SwingIndicator />
-        <DungeonHud />
-        <TempleHud />
       </div>
       <ActionBar />
       <VitalsBar />
@@ -254,6 +289,23 @@
      сцены и когда меню закрыто. */
   .pane.empty {
     min-height: 0;
+  }
+  /* СЦЕНА В УГЛУ. Уходит из потока целиком — иначе на её месте осталась бы
+     дыра в половину экрана, а меню ради этого ужалось бы в полоску. Правый
+     нижний угол выбран потому, что левый занят отладочной панелью, а верх
+     экрана — постоянной зоной: полоски и ряд действий остаются на месте,
+     уезжает только сцена. */
+  .stage.mini {
+    position: fixed;
+    right: var(--space-3);
+    bottom: var(--space-3);
+    width: var(--mini-width);
+    z-index: 70;
+    padding: var(--space-2);
+    border-radius: var(--radius-lg);
+    background: var(--c-surface);
+    border: 1px solid var(--c-border);
+    box-shadow: var(--shadow-lg);
   }
   .tabbar-space {
     height: var(--tabbar-height);

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { SCENE_MINI_MAX_PX, SCENE_MINI_MIN_PX } from '../src/lib/data/render.js'
 
 // Компоновка экрана. Проверяется то, что ломается молча и чего не видно
 // на картинке: состав постоянной зоны, равенство кнопок действий, живучесть
@@ -224,4 +225,85 @@ test('пошлина крафта видна в карточке рецепта,
   // сам факт названной причины.
   const button = recipe.getByRole('button')
   await expect(button).toHaveText(/Собрать|Не хватает|Сумка полна|откроется|рубежа/i)
+})
+
+// СЦЕНА УЕЗЖАЕТ В УГОЛ. Открытое меню занимает основную площадь, но бой не
+// прекращается, и прятать его нельзя: сцена видна ВСЕГДА. Ниже проверяется
+// и то, что она уехала, и то, что она осталась.
+
+test('открытое меню уводит сцену в правый нижний угол', async ({ page }) => {
+  await open(page, 1280)
+  const stage = page.locator('.stage')
+  const wide = await stage.boundingBox()
+  await menuButton(page, 'Мир').click()
+  const corner = await stage.boundingBox()
+
+  // Она стала уже — и не уже минимума из данных: ниже него силуэты
+  // сливаются, а табличка с именем моба не помещается в строку.
+  expect(corner!.width).toBeLessThan(wide!.width)
+  expect(corner!.width).toBeGreaterThanOrEqual(SCENE_MINI_MIN_PX)
+  expect(corner!.width).toBeLessThanOrEqual(SCENE_MINI_MAX_PX)
+
+  // И стоит именно в правом нижнем углу окна, а не «где-то правее».
+  const win = page.viewportSize()!
+  expect(corner!.x + corner!.width).toBeGreaterThan(win.width * 0.7)
+  expect(corner!.y + corner!.height).toBeGreaterThan(win.height * 0.7)
+
+  // Закрыли меню — сцена вернулась во всю ширину.
+  await menuButton(page, 'Мир').click()
+  const back = await stage.boundingBox()
+  expect(Math.round(back!.width)).toBe(Math.round(wide!.width))
+})
+
+test('в углу нет ни тряски, ни сдвигов, ни выпадов', async ({ page }) => {
+  // Сокращённый набор эффектов держится ОБНУЛЁННЫМИ РУЧКАМИ ДВИЖЕНИЯ, а не
+  // выключением каждого эффекта по отдельности: замах, выпад и отброс
+  // считаются от этих трёх величин. Поэтому и проверять надо их.
+  //
+  // Открываем СО СЦЕНОЙ, а не с `scene=off`: без неё проверять нечего —
+  // на месте сцены стоит текстовая панель.
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await page.goto('?debug=1&state=rich')
+  await expect(page.locator('html')).toHaveAttribute('data-ready', 'preset')
+  await menuButton(page, 'Мир').click()
+  const motion = await page.locator('[data-phase]').evaluate((el) => {
+    const style = getComputedStyle(el)
+    return ['--lean', '--lunge', '--kick'].map((name) => style.getPropertyValue(name).trim())
+  })
+  for (const value of motion) expect(parseFloat(value)).toBe(0)
+})
+
+test('на 390px открытое меню оставляет строку-сводку, а не сцену', async ({ page }) => {
+  // Треть от 390 — это 130 пикселей: угла на телефоне не бывает. Вместо
+  // сцены встаёт одна строка, и она тот же вид, что несёт текстовый режим.
+  await open(page, 390)
+  for (const name of MENUS) {
+    await menuButton(page, name).click()
+    // Сцена или сводка — что-то из двух в разметке есть ВСЕГДА.
+    const summary = page.locator('[data-compact="1"]')
+    await expect(summary, `меню «${name}»: сводки нет`).toHaveCount(1)
+    // Имя моба и его здоровье числом — то, ради чего сводка и заведена.
+    await expect(summary).toContainText(/\d+\s*ур\./)
+    await expect(summary).toContainText(/\d/)
+    // И одна строка: высота в пределах полутора строк ряда действий.
+    const box = await summary.boundingBox()
+    expect(box!.height, `меню «${name}»: сводка в две строки`).toBeLessThan(64)
+    // По горизонтали не вылезает ничего.
+    const overflow = await page.evaluate(() => {
+      const el = document.documentElement
+      return el.scrollWidth - el.clientWidth
+    })
+    expect(overflow, `меню «${name}»: страница шире экрана`).toBeLessThanOrEqual(0)
+  }
+})
+
+test('без открытого меню сцена на месте и на телефоне, и на десктопе', async ({ page }) => {
+  // Обратная сторона той же проверки: сводка ЗАМЕНЯЕТ сцену только под
+  // открытым меню. Иначе «сцена видна всегда» превратилось бы в «сцена
+  // видна, пока не тронешь ни одной кнопки».
+  for (const width of [390, 1280]) {
+    await open(page, width)
+    await expect(page.locator('[data-compact="1"]')).toHaveCount(0)
+    await expect(page.locator('.battle')).toHaveCount(1)
+  }
 })

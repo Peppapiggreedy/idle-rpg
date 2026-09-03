@@ -7,6 +7,18 @@
   import { gameState } from '../stores/game'
   import { NumberText, StatBar, Tag, Tooltip } from './kit'
 
+  interface Props {
+    /**
+     * СТРОКА-СВОДКА вместо сцены. На телефоне открытое меню занимает экран
+     * целиком, и уменьшать сцену там некуда: угол шириной в треть узкого
+     * экрана — это уже не сцена. Вместо неё встаёт одна строка, и берётся
+     * она ЗДЕСЬ ЖЕ, а не пишется второй раз: это тот же вид, что несёт
+     * текстовый режим, только свёрнутый до имени, уровня и здоровья.
+     */
+    compact?: boolean
+  }
+  let { compact = false }: Props = $props()
+
   // Обе цифры честно: что герой выдаёт сам и что выйдет, если играть руками.
   const autoRate = $derived(estimateCombatRate($gameState, 'auto'))
   const manualRate = $derived(estimateCombatRate($gameState, 'manual'))
@@ -26,7 +38,7 @@
   const toEnrage = $derived(boss && run ? secondsToEnrage(boss, run.fightMs) : 0)
 </script>
 
-<div class="battle">
+<div class="battle" class:compact data-compact={compact ? '1' : undefined}>
   <div class="head">
     <span class="name">{$gameState.monster.name}</span>
     <span class="level">{$gameState.monster.level} ур.</span>
@@ -40,13 +52,13 @@
     max={$gameState.monster.maxHp.toNumber()}
     tone="damage"
     size="lg"
-    label="Здоровье"
+    label={compact ? '' : 'Здоровье'}
     valueLabel="{formatNumber($gameState.monster.currentHp)} / {formatNumber(
       $gameState.monster.maxHp,
     )}"
   />
 
-  {#if boss && run}
+  {#if boss && run && !compact}
     <p class="enrage" class:angry={enrage > 1}>
       {#if enrage > 1}
         Ярость ×{enrage.toFixed(1)} — следующий рывок через {toEnrage.toFixed(1)}с
@@ -56,6 +68,7 @@
     </p>
   {/if}
 
+  {#if !compact}
   <div class="dps">
     <span class="label">Урон в секунду</span>
     <Tooltip
@@ -75,6 +88,7 @@
       <span class="attention">внимание даёт +{attentionGain}%</span>
     {/if}
   </div>
+  {/if}
 </div>
 
 <style>
@@ -87,6 +101,33 @@
     border: 1px solid var(--c-border);
     border-radius: var(--radius-lg);
     background: var(--c-surface);
+  }
+  /* Сводка — ОДНА СТРОКА: имя, уровень и полоска здоровья в ряд. Ни урона
+     в секунду, ни таймера ярости: на них смотрят, когда смотрят на бой, а
+     сводку читают краем глаза поверх открытого меню. */
+  .battle.compact {
+    flex-direction: row;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+  }
+  .battle.compact .head {
+    flex: 0 0 auto;
+    flex-wrap: nowrap;
+  }
+  .battle.compact .name {
+    font-size: var(--text-sm);
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    max-width: 9rem;
+  }
+  /* Полоска занимает остаток строки. Селектор смотрит внутрь примитива,
+     потому что растягивать надо именно его корень: своей обёртки у StatBar
+     в этой строке нет, а лишняя схлопнула бы отступы в обычном режиме. */
+  .battle.compact :global(.wrap) {
+    flex: 1 1 auto;
+    min-width: 0;
   }
   .head {
     display: flex;
