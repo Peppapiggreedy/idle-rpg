@@ -27,6 +27,7 @@ const COST_SECONDS: Record<string, number> = {
   'balance-pacing.test.ts': 182,
   'balance-model.test.ts': 160,
   'balance-style.test.ts': 113,
+  'balance-temple.test.ts': 28,
   'power-budget.test.ts': 24,
   'level-gap.test.ts': 1,
 }

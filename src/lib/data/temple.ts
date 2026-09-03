@@ -69,8 +69,13 @@ export const TEMPLE_WAVE_DELAY_MS = 1200
  * забега стоит дороже, но не настолько, чтобы всё остальное обесценилось.
  */
 export const TEMPLE_WAVE_GROWTH = {
-  hp: 1.13,
-  damage: 1.07,
+  // СЛОЖНОСТЬ НЕСЁТ УРОВЕНЬ ЭТАЖА (templeFloorLevel), а ставки волны остались
+  // только на здоровье: этажи обязаны ещё и тяжелеть, а не просто больнее
+  // бить. Урон волны множителя больше не имеет вовсе — его даёт уровень моба
+  // и общий штраф за разрыв уровней; накладывать сверху ещё и степень значило
+  // бы считать одно и то же дважды, и стена вставала бы на третьем этаже.
+  hp: 1.05,
+  damage: 1,
   reward: 1.1,
 }
 
@@ -129,9 +134,42 @@ export const TEMPLE_BY_ID: Record<string, TempleDef> = Object.fromEntries(
 /** Храм в игре один: панель и вход спрашивают именно его. */
 export const TEMPLE: TempleDef = TEMPLES[0]
 
-/** Уровень бойцов храма: уровень героя, обрезанный потолком. */
-export function templeMonsterLevel(heroLevel: number): number {
-  return Math.min(LEVEL_CAP, Math.max(1, Math.round(heroLevel)))
+/**
+ * УРОВЕНЬ БОЙЦА ЗАДАЁТ ЭТАЖ, А НЕ ГЕРОЙ. Это и есть кривая сложности храма.
+ *
+ * Раньше боец брал уровень ГЕРОЯ, и храм получался ровным: на семидесятом
+ * герой дрался с семидесятыми, на сотом — с сотыми, и глубина забега от
+ * уровня почти не зависела. Замер это подтвердил: 70 → 5 этажей, 90 → 5,
+ * 100 → 5-7. «Полная зачистка на сотом» при такой кривой недостижима в
+ * принципе, а вместе с ней недостижима и награда за неё.
+ *
+ * Теперь этаж — АБСОЛЮТНАЯ ступень: `TEMPLE_FLOOR_BASE_LEVEL + STEP × этаж`,
+ * от 68-го уровня на первом этаже до потолка на семнадцатом и выше.
+ *
+ * СТЕНОЙ РАБОТАЕТ ОБЩЕЕ ПРАВИЛО МИРА, а не своя механика храма:
+ * `levelGapDamageMult` даёт мобам выше героя +30 % урона за уровень после
+ * пятого. Замер показал, где эта стена встаёт: хорошо одетый герой (доля
+ * снаряжения из контракта ворот данжей) держит разрыв примерно до +8 и
+ * гибнет дальше. Отсюда и числа — они не подобраны, а решены:
+ *
+ *   стена на этаже 5 при герое 70   →  base + 6×step = 78;
+ *   стена на этаже 15 при герое 90  →  base + 16×step = 98,
+ *
+ * то есть step = 2, base = 66. Замер по трём сидам на этих числах:
+ * 70 → 5 этажей, 80 → 9-10, 90 → 14, 100 → 20 (полная зачистка).
+ * Решение владельца было «примерно 5 / 15 / 20», и точки сходятся в ±1.
+ *
+ * Выше семнадцатого этажа уровень упирается в потолок мира, и дальше этажи
+ * тяжелеют только запасом (TEMPLE_WAVE_GROWTH.hp): выше сотого уровня мобов
+ * в игре нет и заводить их ради храма нельзя — это была бы своя лестница
+ * рядом с общей.
+ */
+export const TEMPLE_FLOOR_BASE_LEVEL = 66
+export const TEMPLE_FLOOR_LEVEL_STEP = 2
+
+export function templeFloorLevel(floor: number): number {
+  const level = TEMPLE_FLOOR_BASE_LEVEL + TEMPLE_FLOOR_LEVEL_STEP * Math.max(1, floor)
+  return Math.min(LEVEL_CAP, Math.max(1, Math.round(level)))
 }
 
 /**
@@ -144,7 +182,11 @@ export function buildTempleMonster(
   heroLevel: number,
   wave: number,
 ): MonsterTemplate {
-  const base = buildMonster(archetype, templeMonsterLevel(heroLevel), temple.rewardMultiplier)
+  // heroLevel больше не участвует в числах бойца: сложность несёт ЭТАЖ.
+  // Параметр остаётся в подписи, потому что его передают все зовущие, и
+  // убирать его — отдельная правка на пять файлов ради одной строки.
+  void heroLevel
+  const base = buildMonster(archetype, templeFloorLevel(wave), temple.rewardMultiplier)
   const hp = waveScale(TEMPLE_WAVE_GROWTH.hp, wave)
   const damage = waveScale(TEMPLE_WAVE_GROWTH.damage, wave)
   return {

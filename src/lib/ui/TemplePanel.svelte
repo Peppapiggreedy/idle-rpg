@@ -5,6 +5,7 @@
   //
   // Весь текст здесь; логика отдаёт коды причин, номера волн и id рецептов.
   import { TEMPLE, recipeUnlockWave, templeStatus, type TempleBlockReason } from '../game'
+  import { MATERIAL_BY_ID } from '../data/materials'
   import { RECIPE_BY_ID } from '../data/recipes'
   import { ZONE_BY_ID } from '../data/zones'
   import { enterTempleRun, gameState } from '../stores/game'
@@ -81,6 +82,28 @@
         {/if}
       </li>
     {/each}
+    <!-- ПОЛНАЯ ЗАЧИСТКА — ТОЖЕ РУБЕЖ, и до этой ночи её не было в списке
+         вовсе: рецепт «Венец испытаний» существовал в данных, реагент
+         «Обетный знак» тоже, связаны они были через clearReward — и игрок
+         не знал ни о том, ни о другом. Идти на двадцатый этаж было не за
+         чем: игра не называла, что там. Строка называет обе половины
+         награды и то, что одна нужна другой. -->
+    <li class="milestone" class:open={$gameState.templeCleared}>
+      <Icon name="temple-wave" />
+      <span class="text">
+        Все {TEMPLE.floors} этажей — «{MATERIAL_BY_ID[TEMPLE.clearReward.materialId]?.name ??
+          TEMPLE.clearReward.materialId}» и рецепт «{RECIPE_BY_ID[TEMPLE.clearReward.recipeId]
+          ?.name ?? TEMPLE.clearReward.recipeId}»
+        <span class="sub">
+          Знак нужен самому рецепту: без полной зачистки венец не собрать.
+        </span>
+      </span>
+      {#if $gameState.templeCleared}
+        <Tag tone="gold" label="взято" />
+      {:else}
+        <span class="left">осталось {TEMPLE.floors - status.bestWave}</span>
+      {/if}
+    </li>
   </ul>
 
   {#snippet footer()}
@@ -144,6 +167,11 @@
   .text {
     flex: 1;
     min-width: 0;
+  }
+  .sub {
+    display: block;
+    font-size: var(--text-xs);
+    color: var(--c-text-dim);
   }
   .left {
     font-size: var(--text-xs);

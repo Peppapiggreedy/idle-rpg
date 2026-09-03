@@ -127,6 +127,7 @@ export {
   leaveTemple,
   templeById,
   templeStatus,
+  pendingTempleReward,
   TEMPLE,
   recipeUnlocked,
   recipeUnlockWave,

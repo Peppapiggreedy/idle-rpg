@@ -926,6 +926,13 @@ const PIPELINE: TickStep[] = [
   applyResourceGain,
   applyRegen,
   applyRespawn,
+  // ЭТОГО ШАГА ЗДЕСЬ НЕ БЫЛО, и храм молча не платил ничего. Функция была
+  // написана, снабжена комментарием «стоит ПОСЛЕ applyRespawn намеренно» — и
+  // в конвейер не попала: `run.cleared` оставался нулём при любой глубине
+  // забега, а `finishTempleRun` платит ровно за этажи выше рекорда, то есть
+  // за отрезок от 1 до 0. Игрок доходил до четырнадцатого этажа и получал
+  // пусто. Поймано замером: волны шли до седьмой, `cleared` стоял на нуле.
+  applyTempleWave,
   applyHerbGather,
   applyQuests,
   applyAutosaveCounter,
