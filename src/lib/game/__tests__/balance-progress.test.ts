@@ -58,7 +58,7 @@ import { classIt, contractClasses } from './class-set'
 import { dump } from './dump'
 import { ABILITIES, ABILITY_BY_ID } from '../../data/abilities'
 import { monsterFromTemplate, type GameState } from '../state'
-import { CONTRACT_SEED, SAMPLE, ZONE_SET, CLASS_SET, sampleHours, sampleSeeds, log, num, pct, ttk, header, row, COLUMNS, hitsPerKill } from './balance-shared'
+import { CONTRACT_SEED, SAMPLE, ZONE_SET, CLASS_SET, sampleHours, sampleSeeds, log, num, pct, ttk, header, row, COLUMNS, hitsPerKill, zoneIncomePerHour } from './balance-shared'
 
 describe('прогресс монотонный', () => {
   // Уровень заморожен: за восемь часов свободного прогона герой уходит на
@@ -74,22 +74,28 @@ describe('прогресс монотонный', () => {
     )
     const results = ZONE_SET.map((zone) => {
       const result = simulate({ hours: sampleHours(4), zoneId: zone.id, freezeLevel: true, build })
-      log(row(result, zone.name))
+      log(`${row(result, zone.name)} ${num(zoneIncomePerHour(result, zone))}`)
       return result
     })
 
     // ЗОЛОТО монотонно по ВСЕМ зонам без исключений: штраф за отставание его
     // не трогает, и это ровно то, ради чего он его не трогает — за низкими
     // материалами должно оставаться куда пойти.
+    //
+    // МЕРИТСЯ `zoneIncomePerHour`, А НЕ ЗОЛОТО КОШЕЛЬКА: убийства из прогона,
+    // цена убийства из данных. Довод — рядом с самой функцией: с переносом
+    // дохода на продажу находок золото стало тяжелохвостым, и соседние зоны
+    // (шаг ~10 %) начали инвертироваться на шуме замера (±9 % за четыре
+    // часа). Кривая при этом ровная — инверсии были по 1-2 %.
     for (let i = 1; i < results.length; i++) {
       expect(
         dump(
-          `balance/monotone/level-${String(LEVEL).padStart(3, '0')}/zone-${ZONE_SET[i].id}/gold-per-hour`,
-          results[i].goldPerHour,
+          `balance/monotone/level-${String(LEVEL).padStart(3, '0')}/zone-${ZONE_SET[i].id}/income-per-hour`,
+          zoneIncomePerHour(results[i], ZONE_SET[i]),
         ).gt(
           dump(
-            `balance/monotone/level-${String(LEVEL).padStart(3, '0')}/zone-${ZONE_SET[i - 1].id}/gold-per-hour`,
-            results[i - 1].goldPerHour,
+            `balance/monotone/level-${String(LEVEL).padStart(3, '0')}/zone-${ZONE_SET[i - 1].id}/income-per-hour`,
+            zoneIncomePerHour(results[i - 1], ZONE_SET[i - 1]),
           ),
         ),
         ZONE_SET[i].id,
