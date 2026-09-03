@@ -231,6 +231,11 @@ export const ICONS = {
 
   // --- Интерфейс ---
   log: { file: 'lorc/scroll-unfurled.svg', author: 'Lorc' },
+  // Автокаст: рука — жмёшь сам, механизм — жмёт игра. Пара, а не одна
+  // иконка с галкой: кнопка стоит в ряду действий и читается по рисунку,
+  // а не по подписи.
+  'autocast-off': { file: 'lorc/hand.svg', author: 'Lorc' },
+  'autocast-on': { file: 'lorc/auto-repair.svg', author: 'Lorc' },
 
   // --- Улучшения и валюты ---
   gold: { file: 'delapouite/coins.svg', author: 'Delapouite' },

@@ -25,6 +25,7 @@
   import DungeonHud from './lib/ui/DungeonHud.svelte'
   import TempleHud from './lib/ui/TempleHud.svelte'
   import VitalsBar from './lib/ui/VitalsBar.svelte'
+  import RestRow from './lib/ui/RestRow.svelte'
   import Drawer from './lib/ui/Drawer.svelte'
   import SectionTabs from './lib/ui/SectionTabs.svelte'
   import SwingIndicator from './lib/ui/SwingIndicator.svelte'
@@ -76,10 +77,12 @@
      см. startGameLoop и persistNow. -->
 {#if $gameStarted}
   <main>
-    <header class="top">
-      <h1>Idle RPG</h1>
-      <NoticeBar />
-    </header>
+    <!-- ЗАГОЛОВКА ИГРЫ ЗДЕСЬ БОЛЬШЕ НЕТ. «Idle RPG» стояло строкой над сценой
+         на каждом экране и на каждой ширине: игрок и так знает, во что
+         играет, а строка стоила сцене вертикали — самого дорогого, что есть
+         на телефоне. Название осталось там, где оно нужно, — в заголовке
+         вкладки. Уведомление остаётся: оно появляется редко и по делу. -->
+    <NoticeBar />
 
     <!-- ПОСТОЯННАЯ ЗОНА: три блока и ничего больше. Одна колонка на любой
          ширине — сцена главный элемент экрана и делить её место не с чем. -->
@@ -107,6 +110,7 @@
       </div>
       <ActionBar />
       <VitalsBar />
+      <RestRow />
     </div>
 
     <!-- Ручки выдвижек стоят сразу под полосками: «что со мной» и «что
@@ -209,24 +213,6 @@
     min-width: 0;
     overflow-x: clip;
   }
-  .top {
-    /* На мобильном шапка растворяется: заголовок скрыт, а уведомление
-       появляется редко — пустая полоса не должна отъедать высоту у сцены. */
-    display: contents;
-  }
-  h1 {
-    /* На мобильном верх экрана отдан сцене целиком: название игры уже есть
-       в заголовке вкладки, а строка под ним стоила бы сцене высоты. */
-    display: none;
-    margin: 0;
-    font-size: var(--text-lg);
-    line-height: var(--leading-tight);
-    letter-spacing: var(--tracking-wide);
-    text-transform: uppercase;
-    color: var(--c-text-faint);
-    text-align: center;
-  }
-
   /* Постоянная зона: три блока сверху вниз, одна колонка на любой ширине.
      Раньше здесь было три колонки (герой / сцена / умения) — от них
      отказались: сцена главный элемент экрана, и делить с ней ширину
@@ -295,18 +281,6 @@
     main {
       padding: var(--space-5) var(--space-4);
       gap: var(--space-4);
-    }
-    .top {
-      display: flex;
-      flex-direction: column;
-      gap: var(--space-2);
-    }
-    h1 {
-      display: block;
-      font-size: var(--text-xl);
-      text-transform: none;
-      letter-spacing: normal;
-      color: var(--c-text);
     }
     .permanent {
       gap: var(--space-3);

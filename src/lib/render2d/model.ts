@@ -23,6 +23,13 @@ export interface HeroView {
   restProgress: number
   /** Доля замаха 0..1: по ней герой отводит руку. */
   swing: number
+  /**
+   * Здоровье числом — «текущее / максимум», как у моба. Появилось вместе с
+   * правилом одного вида полос: раньше у моба над головой была крупная
+   * полоска с числами, а у героя — тонкая чёрточка без них, и чужое
+   * состояние читалось лучше своего.
+   */
+  hpLabel: string
 }
 
 export interface MonsterView {
@@ -91,6 +98,7 @@ export function sceneModel(state: GameState): SceneModel {
           ? 1 - fraction(state.restMsLeft, state.restTotalMs)
           : 0,
       swing: phase === 'fight' ? fraction(state.swingProgress, 1) : 0,
+      hpLabel: `${formatNumber(state.currentHp)} / ${formatNumber(state.stats.maxHp)}`,
     },
     monster: monsterAlive
       ? {

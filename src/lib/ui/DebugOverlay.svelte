@@ -2,15 +2,20 @@
   import { onMount } from 'svelte'
   import { formatNumber, subscribeAttacks } from '../game'
   import { gameState, loopMetrics } from '../stores/game'
-  import { isScreenshotMode } from './route'
+  import { isDebugMode, isScreenshotMode } from './route'
   import { DECISION_WINDOW, refreshTelemetry, telemetry } from '../stores/telemetry'
   import type { AttackEvent } from '../types'
 
-  // Оверлей нужен для отладки вслепую на живой странице; прячется через ?debug=0.
-  // В режиме съёмки скрыт всегда: в нём время сборки и счётчик кадров —
-  // от снимка к снимку они разные, и эталон не сойдётся никогда.
-  const visible =
-    new URLSearchParams(window.location.search).get('debug') !== '0' && !isScreenshotMode()
+  // ОВЕРЛЕЙ ЕСТЬ ТОЛЬКО ПРИ ?debug=1, как и отладочная панель рядом.
+  //
+  // Было наоборот: он показывался ВСЕГДА и прятался через ?debug=0 — то есть
+  // обычный игрок видел в углу fps, tps, счётчик тиков и время сборки. Это
+  // приборы разработчика, а не часть игры: игроку они ничего не говорят и
+  // занимают угол экрана на каждом кадре.
+  //
+  // В режиме съёмки скрыт и при ?debug=1: время сборки и счётчик кадров от
+  // снимка к снимку разные, и эталон не сошёлся бы никогда.
+  const visible = isDebugMode() && !isScreenshotMode()
 
   let lastError = $state('')
   let lastAttack = $state<AttackEvent | null>(null)

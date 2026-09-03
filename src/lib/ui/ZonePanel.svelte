@@ -11,9 +11,8 @@
     type ZoneForecast,
   } from '../game'
   import { ZONES, ZONE_BY_ID } from '../data/zones'
-  import { MAX_REST_THRESHOLD, REST_THRESHOLD_STEP, snapRestThreshold } from '../data/balance'
-  import { restDurationMs, zoneSafety } from '../game/rest'
-  import { enterDungeonRun, gameState, setRestHpThreshold, travelToZone } from '../stores/game'
+  import { zoneSafety } from '../game/rest'
+  import { enterDungeonRun, gameState, travelToZone } from '../stores/game'
   import { allDungeonStatuses, type DungeonBlockReason, type DungeonDef } from '../game'
   import { DUNGEONS, HEROIC, HEROIC_DUNGEONS, clearKey, dungeonOpening } from '../data/dungeons'
   import { Button, NumberText, Panel, Tag } from './kit'
@@ -96,31 +95,7 @@
    * стоял отдельной строкой в общем списке статов — там он читался как
    * находка, а не как настройка (см. SETTING_STATS в ui/statFormat.ts).
    */
-  /**
-   * ДЕЙСТВУЮЩИЙ порог — тот, что реально считает конвейер. Пока порог двигали
-   * таланты, он расходился с выставленным, и показывать надо было именно его.
-   * Таланты на порог удалены (порог — настройка игрока, а не характеристика),
-   * но строка осталась: конвейер по-прежнему единственный источник правды, и
-   * молчаливое расхождение обязано быть видно, откуда бы оно ни взялось.
-   */
-  const effectiveRest = $derived(
-    Math.abs($gameState.stats.restThreshold - $gameState.restHpThreshold) < 1e-9
-      ? null
-      : `${Math.round($gameState.stats.restThreshold * 100)}%`,
-  )
 
-  /**
-   * ПОДПИСЬ ПОЛЗУНКА ГОВОРИТ ДЕЙСТВУЮЩУЮ ДЛИНУ ПРИВАЛА, а не константу из
-   * данных: таланты её режут, еда режет вдвое, и число из `data/balance.ts`
-   * было бы неправдой ровно у того игрока, который эти таланты и вложил.
-   * `restDurationMs` считает то же самое, что и сам привал.
-   */
-  const restSeconds = $derived(Math.round(restDurationMs($gameState) / 1000))
-  const restPercent = $derived(Math.round($gameState.restHpThreshold * 100))
-  function onRestSlider(event: Event): void {
-    const value = Number((event.currentTarget as HTMLInputElement).value)
-    setRestHpThreshold(snapRestThreshold(value / 100))
-  }
 </script>
 
 <Panel title="Мир">
@@ -222,40 +197,6 @@
     </div>
   {/if}
 
-  <!-- ПОЛЗУНОК ВМЕСТО ЧЕТЫРЁХ ПРЕСЕТОВ. Между 40 % и 60 % разница в цене боя
-       ощутима, а выбрать там было нечего; «никогда» стояло в одном ряду с
-       процентами, будто это такой же процент. Крайние положения читаются
-       сами и названы словами. -->
-  <div class="rest">
-    <label class="label" for="rest-threshold">
-      Уходить на привал при HP ниже{#if effectiveRest !== null}<span class="effective"
-          >&nbsp;(конвейер считает {effectiveRest})</span
-        >{/if}:
-    </label>
-    <div class="rest-row">
-      <input
-        id="rest-threshold"
-        type="range"
-        min="0"
-        max={Math.round(MAX_REST_THRESHOLD * 100)}
-        step={Math.round(REST_THRESHOLD_STEP * 100)}
-        value={restPercent}
-        oninput={onRestSlider}
-        aria-valuetext={restPercent === 0 ? 'никогда' : `${restPercent} процентов`}
-      />
-      <b class="rest-value">
-        {#if restPercent === 0}никогда{:else}{restPercent}%{/if}
-      </b>
-    </div>
-    <p class="rest-hint">
-      {#if restPercent === 0}
-        Привалов не будет вовсе — герой дерётся, пока не погибнет.
-      {:else}
-        Привал длится {restSeconds} с и восстанавливает всё.
-      {/if}
-    </p>
-  </div>
-
   {#snippet footer()}
     <p class="hint">
       Уйти на привал можно ТОЛЬКО МЕЖДУ БОЯМИ: начатую схватку герой доводит
@@ -317,41 +258,6 @@
   }
   .safety.safe {
     color: var(--c-heal);
-  }
-  .effective {
-    color: var(--c-text-dim);
-    font-weight: var(--weight-regular);
-  }
-  .rest-row {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-  }
-  .rest-row input {
-    flex: 1 1 auto;
-    min-width: 0;
-    /* Область нажатия на мобильном: ползунок обязан ловить палец. */
-    min-height: 44px;
-    accent-color: var(--c-accent);
-  }
-  .rest-value {
-    min-width: 4.5rem;
-    text-align: right;
-  }
-  .rest-hint {
-    margin: 0;
-    font-size: var(--text-xs);
-    color: var(--c-text-dim);
-  }
-  .rest {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-    margin-top: var(--space-3);
-  }
-  .rest .label {
-    font-size: var(--text-sm);
-    color: var(--c-text-muted);
   }
   .head {
     display: flex;

@@ -1,12 +1,12 @@
 <script lang="ts">
   // Рама боевой сцены: держит пропорции (16:9 на десктопе, 4:3 на мобильном)
-  // и накрывает картинку читаемой подписью — имя и уровень моба: по силуэту
-  // их не прочитать.
+  // и больше не несёт ничего.
   //
-  // Здоровья моба в раме НЕТ: его показывает ОДНА полоска над головой моба
-  // в самой сцене, с числом внутри. Вторая полоска здесь дублировала её и
-  // заставляла глаз выбирать, на какую смотреть. В текстовом режиме сцены
-  // нет, и здоровье моба показывает текстовая панель своей полоской.
+  // ПОДПИСИ ЗДЕСЬ БОЛЬШЕ НЕТ. Имя и уровень моба лежали в нижнем углу рамы,
+  // а его здоровье — полоской над головой: одного противника приходилось
+  // собирать из двух углов экрана, и взгляд рвался надвое. Всё, что про
+  // моба, переехало в ОДНУ табличку над ним (render2d/Scene2D.svelte) —
+  // имя, уровень и здоровье вместе.
   //
   // Сама картинка — render2d/Scene2D.svelte: фон, спрайты, эффекты и
   // всплывающие числа обычными элементами. Рама про рендер не знает вовсе:
@@ -17,12 +17,6 @@
 
 <div class="scene" role="img" aria-label="Боевая сцена: {$gameState.monster.name}">
   <Scene2D />
-  <div class="inner">
-    <div class="target">
-      <span class="name">{$gameState.monster.name}</span>
-      <span class="level">{$gameState.monster.level} ур.</span>
-    </div>
-  </div>
 </div>
 
 <style>
@@ -46,37 +40,6 @@
         var(--c-surface-sunken)
       );
     overflow: hidden;
-  }
-  .inner {
-    /* Подпись лежит ПОВЕРХ сцены и не перехватывает указатель: сцена
-       ниже по стеку должна оставаться доступной для будущего управления. */
-    position: relative;
-    pointer-events: none;
-    width: 100%;
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-    padding: var(--space-3);
-  }
-  .target {
-    display: flex;
-    align-items: baseline;
-    gap: var(--space-2);
-    flex-wrap: wrap;
-  }
-  .name {
-    font-size: var(--text-lg);
-    font-weight: var(--weight-bold);
-    line-height: var(--leading-tight);
-  }
-  .name,
-  .level {
-    /* Подпись лежит на сцене: без тени она теряется на светлой площадке. */
-    text-shadow: var(--shadow-sm);
-  }
-  .level {
-    font-size: var(--text-xs);
-    color: var(--c-text-faint);
   }
   @media (min-width: 720px) {
     .scene {
