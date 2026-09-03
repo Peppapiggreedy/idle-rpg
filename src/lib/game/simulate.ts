@@ -735,7 +735,7 @@ export function buildSimState(build: SimBuild, zoneId: string, seed: number): Ga
     // иначе первая же смерть увела бы прогон в безопасную зону и он мерил бы
     // не ту зону, которую просили.
     lastSurvivedZoneId: zone.id,
-    monster: spawnMonster(zone, createRng(seed)),
+    monster: spawnMonster(zone, createRng(seed), base.level.toNumber()),
     statsDirty: true,
   }
   const ready = ensureStats(state)

@@ -181,7 +181,7 @@ const applyRest: TickStep = (s, ctx) => {
   const log = pushEvent(done.combatLog, { type: 'rest-end', interrupted: false })
   // В данже цепочка боссов своя: там моба назначает забег, а не зона.
   if (done.dungeonRun) return { ...done, combatLog: log }
-  const monster = spawnMonster(currentZone(done), ctx.rng)
+  const monster = spawnMonster(currentZone(done), ctx.rng, done.level.toNumber())
   return {
     ...done,
     monster,
@@ -840,7 +840,7 @@ const applyRespawn: TickStep = (s, ctx) => {
   if (s.respawnMsLeft <= 0) return s
   const left = s.respawnMsLeft - ctx.dtMs
   if (left > 0) return { ...s, respawnMsLeft: left }
-  const monster = spawnMonster(currentZone(s), ctx.rng)
+  const monster = spawnMonster(currentZone(s), ctx.rng, s.level.toNumber())
   return {
     ...s,
     respawnMsLeft: 0,

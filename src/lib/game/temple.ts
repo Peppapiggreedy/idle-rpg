@@ -324,7 +324,7 @@ export function leaveTemple(
     ...state,
     templeRun: null,
     currentZoneId: zone.id,
-    monster: spawnMonster(zone, rng),
+    monster: spawnMonster(zone, rng, state.level.toNumber()),
     swingProgress: 0,
     offhandSwingProgress: 0,
     respawnMsLeft: 0,

@@ -9,7 +9,13 @@ import { ensureStats } from './stats'
 import { forecastZone, zoneRate } from './zones'
 import { applyOfflineProgress } from './save'
 import { XP_GAP_PENALTY, xpGapShare } from '../data/balance'
-import { ZONES, ZONE_BY_ID, averageMonsterLevel, zoneForMonsterLevel } from '../data/zones'
+import {
+  ZONES,
+  ZONE_BY_ID,
+  averageMonsterLevel,
+  spawnLevelWeights,
+  zoneForMonsterLevel,
+} from '../data/zones'
 import { averageGear } from './simulate'
 
 const NO_LUCK = () => 1
@@ -128,6 +134,40 @@ describe('штраф бьёт только по опыту', () => {
       checked = true
     }
     expect(checked).toBe(true)
+  })
+})
+
+// СПАВН ВОКРУГ УРОВНЯ ГЕРОЯ НЕ РАЗМЫВАЕТ ШТРАФ. Мобы прижимаются к уровню
+// героя (SPAWN_LEVEL_SPREAD), а значит отставшая зона выдаёт их с ВЕРХНЕЙ
+// границы полосы — самый мягкий разрыв, какой она вообще может дать. Если бы
+// клампа не было или полоса поехала, отставшая зона начала бы платить опыт
+// дольше положенного, и заметить это можно только так: считая долю по тому
+// самому распределению, по которому спавнит игра.
+describe('штраф переживает спавн вокруг героя', () => {
+  // Средняя доля опыта за бой в зоне: по тем мобам, которых спавн реально
+  // выдаёт этому герою, с их вероятностями.
+  const shareIn = (zone: (typeof ZONES)[number], hero: number) =>
+    spawnLevelWeights(zone, hero).reduce((sum, w) => sum + w.weight * xpGapShare(hero, w.level), 0)
+
+  it('зона перестаёт платить опыт ровно на «верх полосы + 11»', () => {
+    for (const zone of ZONES) {
+      const top = zone.monsterLevelRange.max
+      // На последней ступени полной таблицы доля ещё больше нуля...
+      expect(shareIn(zone, top + HALF.maxGap), zone.name).toBeGreaterThan(0)
+      // ...а следующим уровнем — уже ноль, без промежуточного «почти ноль».
+      expect(shareIn(zone, top + HALF.maxGap + 1), zone.name).toBe(0)
+    }
+  })
+
+  it('доля не растёт с уровнем героя ни в одной зоне', () => {
+    for (const zone of ZONES) {
+      let prev = 1
+      for (let hero = 1; hero <= zone.monsterLevelRange.max + HALF.maxGap + 5; hero += 1) {
+        const share = shareIn(zone, hero)
+        expect(share, `${zone.name}, ур. ${hero}`).toBeLessThanOrEqual(prev)
+        prev = share
+      }
+    }
   })
 })
 

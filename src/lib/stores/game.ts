@@ -578,7 +578,7 @@ export function applyScreenshotState(preset: GameState): void {
   const seeded: GameState = {
     ...preset,
     rngSeed: SCREENSHOT_SEED,
-    monster: spawnMonster(currentZone(preset), createRng(SCREENSHOT_SEED)),
+    monster: spawnMonster(currentZone(preset), createRng(SCREENSHOT_SEED), preset.level.toNumber()),
   }
   screenshotMode = true
   const stream = createRng(SCREENSHOT_SEED)

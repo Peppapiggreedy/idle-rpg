@@ -6,7 +6,7 @@ import { DEFAULT_LOOT_POLICY, type LootPolicy } from '../data/upgrades'
 import { xpToNextLevel } from './formulas'
 import { randomSeed } from './rng'
 import { buildMonster } from '../data/monsters'
-import { SAFE_ZONE, type Zone } from '../data/zones'
+import { SAFE_ZONE, spawnLevelWeights, type Zone } from '../data/zones'
 import { ABILITY_BY_ID, type AbilityDef } from '../data/abilities'
 import { CLASS_BY_ID, DEFAULT_CLASS, classById, type ClassDef } from '../data/classes'
 import { RARITY_BY_ID } from '../data/rarity'
@@ -318,11 +318,33 @@ export function monsterFromTemplate(template: MonsterTemplate): Monster {
   return { ...template, currentHp: template.maxHp, swingProgress: 0 }
 }
 
-// Спавн из зоны: сперва бросок уровня из диапазона, затем бросок архетипа
-// из пула. Порядок бросков фиксирован — от него зависит воспроизводимость.
-export function spawnMonster(zone: Zone, rng: Rng): Monster {
-  const { min, max } = zone.monsterLevelRange
-  const level = min + Math.min(max - min, Math.floor(rng() * (max - min + 1)))
+/**
+ * УРОВЕНЬ МОБА ПРИ СПАВНЕ. Распределение — вокруг уровня героя
+ * (`SPAWN_LEVEL_SPREAD` в data/monsters.ts), зажатое границами полосы зоны и
+ * заново нормированное: отброшенные смещения не должны воровать вероятность
+ * у оставшихся, иначе на краю полосы бросок начал бы промахиваться мимо всех
+ * вариантов и падать на запасной.
+ *
+ * Центр — уровень героя, ПРИЖАТЫЙ к полосе: герой выше зоны получает мобов у
+ * верхней границы, ниже — у нижней. Ровно один бросок rng, как и было.
+ */
+function rollMonsterLevel(zone: Zone, rng: Rng, heroLevel: number): number {
+  // Веса считает ОДНА функция на игру и модель (`spawnLevelWeights` в
+  // data/zones.ts): вторая копия распределения разошлась бы с моделью темпа
+  // зоны молча, и прогноз начал бы обещать не ту игру.
+  const options = spawnLevelWeights(zone, heroLevel)
+  let roll = rng()
+  for (const option of options) {
+    roll -= option.weight
+    if (roll < 0) return option.level
+  }
+  return options[options.length - 1].level
+}
+
+// Спавн из зоны: сперва бросок уровня, затем бросок архетипа из пула.
+// Порядок бросков фиксирован — от него зависит воспроизводимость.
+export function spawnMonster(zone: Zone, rng: Rng, heroLevel: number): Monster {
+  const level = rollMonsterLevel(zone, rng, heroLevel)
   const pool = zone.monsterPool
   const archetype = pool[Math.min(pool.length - 1, Math.floor(rng() * pool.length))]
   return monsterFromTemplate(buildMonster(archetype, level, zone.rewardMultiplier))
@@ -394,7 +416,7 @@ export function createInitialState(
     rngSeed,
     // Первый моб — из безопасной зоны; поток случайности берём от того же сида,
     // что и весь прогон, поэтому старт детерминирован.
-    monster: spawnMonster(SAFE_ZONE, createRng(rngSeed)),
+    monster: spawnMonster(SAFE_ZONE, createRng(rngSeed), level.toNumber()),
     respawnMsLeft: 0,
     combatLog: [],
     msSinceAutosave: 0,

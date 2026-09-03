@@ -157,7 +157,7 @@ export function leaveDungeon(state: GameState, rng: Rng, defeated: boolean): Gam
     ...state,
     dungeonRun: null,
     currentZoneId: zone.id,
-    monster: spawnMonster(zone, rng),
+    monster: spawnMonster(zone, rng, state.level.toNumber()),
     swingProgress: 0,
     respawnMsLeft: 0,
     activeEffects: [],

@@ -910,7 +910,7 @@ export function resumeOutside(state: GameState, rng: Rng): GameState {
     // другим путём и засчитывается (см. leaveTemple).
     return leaveTemple({ ...state, currentZoneId: offlineZone(state).id }, rng, false, false)
   }
-  return { ...state, monster: spawnMonster(currentZone(state), rng) }
+  return { ...state, monster: spawnMonster(currentZone(state), rng, state.level.toNumber()) }
 }
 
 /**

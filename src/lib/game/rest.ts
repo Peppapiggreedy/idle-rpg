@@ -10,7 +10,7 @@
 import { Decimal } from './numbers'
 import { estimateCombatRate, expectedMonsterDamage } from './combat'
 import { levelGapDamageMult, MIN_REST_DURATION_S, REST_FOOD_SPEEDUP } from '../data/balance'
-import { zoneMonsterVariants, type Zone } from '../data/zones'
+import { zoneSpawnVariants, type Zone } from '../data/zones'
 import type { StatBlock } from './stats'
 import { restCooldownMultiplier, restDurationMultiplier } from './talents'
 import { takeFood } from './crafting'
@@ -110,9 +110,11 @@ export function restProgress(state: GameState): number {
 // Безопасность зоны
 // ---------------------------------------------------------------------------
 
-/** Самый сильный удар, который может прилететь в этой зоне. */
+/** Самый сильный удар, который может прилететь ЭТОМУ герою в этой зоне. */
 export function maxMonsterHit(zone: Zone, stats: StatBlock, heroLevel: number): Decimal {
-  return zoneMonsterVariants(zone).reduce((max, template) => {
+  // Тот же довод, что и у худшего боя ниже: спавн жмёт уровень моба к герою,
+  // и верхний край полосы новичку зоны просто не выпадает.
+  return zoneSpawnVariants(zone, heroLevel).reduce((max, { template }) => {
     const hit = expectedMonsterDamage(
       { ...template, currentHp: template.maxHp, swingProgress: 0 },
       stats,
@@ -196,8 +198,13 @@ export interface ZoneSafety {
 export function zoneSafety(state: GameState, zone: Zone): ZoneSafety {
   const thresholdHp = state.stats.maxHp.times(state.stats.restThreshold)
   const worstHit = maxMonsterHit(zone, state.stats, state.level.toNumber())
-  const worstFight = zoneMonsterVariants(zone).reduce(
-    (max, template) => Decimal.max(max, fightLoss(state, template)),
+  // ХУДШИЙ БОЙ — ИЗ ТЕХ, ЧТО ГЕРОЮ ВООБЩЕ ВЫДАДУТ. Раньше здесь перебиралась
+  // вся полоса зоны, и это было правдой: спавн брал любой её уровень. Теперь
+  // уровень жмётся к герою (SPAWN_LEVEL_SPREAD), и здоровяк с верхнего края
+  // полосы новичку зоны просто не выпадает — считать по нему значило бы
+  // пугать игрока боем, которого не будет.
+  const worstFight = zoneSpawnVariants(zone, state.level.toNumber()).reduce(
+    (max, { template }) => Decimal.max(max, fightLoss(state, template)),
     new Decimal(0),
   )
   return {

@@ -23,6 +23,7 @@ import {
   EARLY_HP_DISCOUNT,
   MONSTER_BASE,
   MONSTER_GROWTH,
+  SPAWN_LEVEL_SPREAD,
   buildMonster,
   COMMON,
   RUNT,
@@ -30,6 +31,7 @@ import {
 } from '../data/monsters'
 import { PACING_MAX_LEVEL, averageGear, unlockedByLevel } from './simulate'
 import { INITIAL_ZONE_IDS } from '../data/dungeons'
+import { LEVEL_CAP } from '../data/balance'
 
 const QUARRY = ZONE_BY_ID['hollow-quarry']
 const RIDGE = ZONE_BY_ID['ashen-ridge']
@@ -148,23 +150,56 @@ describe('спавн из пула зоны', () => {
     const rng = createRng(4242)
     expect(QUARRY.monsterPool).toHaveLength(3)
     const seen = new Set<string>()
-    for (let i = 0; i < 1000; i++) seen.add(spawnMonster(QUARRY, rng).id)
+    // Уровень героя внутри полосы: пул от него не зависит, но подпись
+    // функции требует его назвать.
+    const level = QUARRY.monsterLevelRange.min
+    for (let i = 0; i < 1000; i++) seen.add(spawnMonster(QUARRY, rng, level).id)
     expect(seen).toEqual(new Set(QUARRY.monsterPool.map((a) => a.id)))
   })
 
   it('уровень моба всегда внутри диапазона зоны', () => {
+    // ГРАНИЦЫ ПОЛОСЫ СИЛЬНЕЕ РАСПРЕДЕЛЕНИЯ, и проверяется это на героях
+    // ЛЮБОГО уровня: и на тех, кто пришёл в зону раньше времени, и на тех,
+    // кто вернулся в неё через полсотни уровней.
     const rng = createRng(7)
     for (const zone of ZONES) {
-      for (let i = 0; i < 200; i++) {
-        const m = spawnMonster(zone, rng)
-        expect(m.level).toBeGreaterThanOrEqual(zone.monsterLevelRange.min)
-        expect(m.level).toBeLessThanOrEqual(zone.monsterLevelRange.max)
+      const { min, max } = zone.monsterLevelRange
+      for (const heroLevel of [1, min - 1, min, max, max + 1, LEVEL_CAP]) {
+        for (let i = 0; i < 100; i++) {
+          const m = spawnMonster(zone, rng, heroLevel)
+          expect(m.level, `${zone.id} при герое ${heroLevel}`).toBeGreaterThanOrEqual(min)
+          expect(m.level, `${zone.id} при герое ${heroLevel}`).toBeLessThanOrEqual(max)
+        }
       }
     }
   })
 
+  it('уровень моба жмётся к уровню героя, а не размазан по полосе', () => {
+    // 70 % ровно уровень героя, по 10 % на ±1, по 5 % на ±2 — распределение
+    // лежит в данных (SPAWN_LEVEL_SPREAD), здесь проверяется, что спавн ему
+    // следует. Зона взята широкая, герой стоит в её середине: у краёв
+    // распределение обрезается границами, и доли там другие по построению.
+    const zone = ZONES.find((z) => z.monsterLevelRange.max - z.monsterLevelRange.min >= 4)!
+    const heroLevel = Math.round(
+      (zone.monsterLevelRange.min + zone.monsterLevelRange.max) / 2,
+    )
+    const rng = createRng(20260904)
+    const counts = new Map<number, number>()
+    const N = 20_000
+    for (let i = 0; i < N; i++) {
+      const m = spawnMonster(zone, rng, heroLevel)
+      counts.set(m.level, (counts.get(m.level) ?? 0) + 1)
+    }
+    for (const { offset, weight } of SPAWN_LEVEL_SPREAD) {
+      const share = (counts.get(heroLevel + offset) ?? 0) / N
+      // Допуск — три процентных пункта: двадцать тысяч бросков дают
+      // стандартное отклонение доли меньше половины пункта.
+      expect(Math.abs(share - weight), `смещение ${offset}`).toBeLessThan(0.03)
+    }
+  })
+
   it('спавн даёт моба с полным здоровьем и нулевым замахом', () => {
-    const m = spawnMonster(SAFE_ZONE, createRng(1))
+    const m = spawnMonster(SAFE_ZONE, createRng(1), 1)
     expect(m.currentHp.eq(m.maxHp)).toBe(true)
     expect(m.swingProgress).toBe(0)
   })
