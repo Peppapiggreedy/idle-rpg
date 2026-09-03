@@ -10,6 +10,7 @@ import { createInitialState, type GameState } from '../../state'
 // saveId у пресета ФИКСИРОВАН вместе с сидом: он входит в сейв, а снимок
 // обязан быть воспроизводим до байта.
 import { DEFAULT_CLASS } from '../../../data/classes'
+import { CRAFT_UNLOCK_LEVEL } from '../../../data/balance'
 import { ensureStats } from '../../stats'
 import { xpToNextLevel } from '../../formulas'
 import { equipItem } from '../../equipment'
@@ -114,7 +115,13 @@ function mid(): GameState {
 /** Поздняя игра: полный инвентарь, все зоны, вложенные таланты, данж пройден. */
 function rich(): GameState {
   let state = createInitialState(404, DEFAULT_CLASS.id, 404)
-  state = atLevel(state, 22)
+  // УРОВЕНЬ БЕРЁТСЯ ОТ ПОРОГА РЕМЁСЕЛ, А НЕ ВПИСАН ЧИСЛОМ. Пресет «поздний»
+  // существует ради того, чтобы на нём было видно открытое содержимое; с
+  // лестницей открытий (панель закрытой механики не отображается ВОВСЕ)
+  // прежние 22 уровня перестали показывать ремёсла — а значит и пошлину
+  // крафта, и рецепты. Двойка сверху — чтобы порог был взят с запасом, а не
+  // ровно в край.
+  state = atLevel(state, CRAFT_UNLOCK_LEVEL + 2)
   // Лут босса даёт высокие тиры — в инвентаре видно все цвета редкости.
   const bossLoot = DUNGEONS[0].bosses.flatMap((boss, index) =>
     rollBossLoot(boss.loot, createRng(500 + index), 100 + index * 10, boss.level),

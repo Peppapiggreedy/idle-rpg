@@ -383,16 +383,17 @@
   },
   "itemSeq": 13,
   "gold": "13400000",
-  "level": "22",
-  "currentXp": "2281",
-  "currentHp": "1461",
-  "currentMana": "155",
+  "level": "32",
+  "currentXp": "3993",
+  "currentHp": "1584",
+  "currentMana": "205",
   "heroState": "alive",
   "reviveMsLeft": 0,
   "talents": {
     "wrath-honed-edge": 6,
     "wrath-keen-eye": 6,
-    "wrath-savage-blows": 1
+    "wrath-savage-blows": 6,
+    "wrath-frenzy": 5
   },
   "talentResets": 2,
   "totalTicks": "0",
