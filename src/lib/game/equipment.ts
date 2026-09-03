@@ -197,7 +197,7 @@ function fillsEmptySlot(state: GameState, item: Item): boolean {
  * единица. Это не «сумма статов», а проверка на пустышку: без неё вещь
  * с модификатором в ноль считалась бы апгрейдом на голое место.
  */
-function changesAnything(mod: { kind: StatModifier['kind']; value: Decimal }): boolean {
+export function changesAnything(mod: { kind: StatModifier['kind']; value: Decimal }): boolean {
   return mod.kind === 'multiplier' ? !mod.value.eq(1) : !mod.value.eq(0)
 }
 

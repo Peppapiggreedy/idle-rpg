@@ -12,7 +12,8 @@
     type DisenchantBlockReason,
   } from '../game'
   import { EQUIP_BLOCK_TEXT, GRIP_TEXT } from './itemText'
-  import { SLOT_NAMES } from '../data/slots'
+  import { ENCHANT_UNLOCK_LEVEL } from '../data/balance'
+  import { itemSlotLabel } from './itemText'
   import {
     disenchantInventoryItem,
     equipInventoryItem,
@@ -58,7 +59,10 @@
   // Распыление живёт ЗДЕСЬ, рядом с продажей: это две половины одного
   // решения — «что делать с находкой», — и разносить их по экранам нельзя.
   const DISENCHANT_REASON: Record<DisenchantBlockReason, string> = {
-    locked: 'Распыление откроется на 50 уровне',
+    // Число берётся из данных, а не переписывается сюда: логика запирает
+    // распыление тем же ENCHANT_UNLOCK_LEVEL, и разъедься они — текст начнёт
+    // врать молча, ровно как врал «0 шанс блока».
+    locked: `Распыление откроется на ${ENCHANT_UNLOCK_LEVEL} уровне`,
     equipped: 'Сперва сними предмет',
     missing: 'Предмета больше нет',
   }
@@ -156,7 +160,7 @@
     {#each sorted as item (item.id)}
       {@const share = shares.get(item.id)}
       <IconSlot
-        slotLabel={SLOT_NAMES[item.slot]}
+        slotLabel={itemSlotLabel(item)}
         rarity={item.rarity}
         active={compare?.id === item.id}
         interactive

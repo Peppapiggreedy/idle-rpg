@@ -14,7 +14,7 @@
   } from '../game'
   import { ENCHANT_UNLOCK_LEVEL } from '../data/balance'
   import type { Decimal } from '../game/numbers'
-  import { SLOT_NAMES } from '../data/slots'
+  import { itemSlotLabel } from './itemText'
   import { enchantInventoryItem, gameState } from '../stores/game'
   import ItemMods from './ItemMods.svelte'
   import { Button, IconSlot, Panel, Tag, Tooltip } from './kit'
@@ -67,7 +67,7 @@
     <div class="targets">
       {#each targets as item (item.id)}
         <IconSlot
-          slotLabel={SLOT_NAMES[item.slot]}
+          slotLabel={itemSlotLabel(item)}
           rarity={item.rarity}
           active={selectedId === item.id}
           interactive
