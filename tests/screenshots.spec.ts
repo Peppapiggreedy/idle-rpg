@@ -143,6 +143,61 @@ for (const section of SECTIONS) {
   }
 }
 
+// СЦЕНА В УГЛУ, СТРОКА-СВОДКА И КУКЛА ПОД РУКОЙ. Три снимка на то, чего
+// раньше не было вовсе: открытое меню уводит сцену в правый нижний угол,
+// на телефоне вместо угла встаёт одна строка, а кукла при выборе находки
+// подсвечивает подходящий слот и тушит остальные. Всё это — состояния, в
+// которых игра проводит бо́льшую часть времени разбора добычи, и без своих
+// эталонов они ломались бы молча.
+test('сцена в углу при открытом меню', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await openPreset(page, 'rich', false)
+  await expect(page.locator('[data-scene="ready"]')).toBeAttached({ timeout: 30_000 })
+  await openMenu(page, 'Мир')
+  const name = 'scene-corner-1280'
+  expect(await capture(page, name)).toMatchSnapshot(`${name}.png`)
+})
+
+test('строка-сводка вместо сцены на 390', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 780 })
+  await openPreset(page, 'rich', false)
+  await expect(page.locator('[data-scene="ready"]')).toBeAttached({ timeout: 30_000 })
+  await openMenu(page, 'Мир')
+  // Сводка на месте: без неё снимок был бы про что-то другое.
+  await expect(page.locator('[data-compact="1"]')).toHaveCount(1)
+  const name = 'scene-summary-390'
+  expect(await capture(page, name)).toMatchSnapshot(`${name}.png`)
+})
+
+test('кукла с подсвеченным слотом во время выбора', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await openPreset(page, 'rich', true)
+  await openMenu(page, 'Герой')
+  // Берём первую находку, у которой на кукле загорается слот. Перебор
+  // детерминирован: пресет фиксирован, порядок карточек тоже.
+  //
+  // Берём КЛАВИАТУРОЙ, а не нажатием: нажатие по карточке заодно
+  // прикрепляет окно сравнения у курсора, и оно легло бы поперёк снимка,
+  // закрывая ровно то, ради чего снимок и делается. Клавиатурный путь берёт
+  // вещь в руку и ничего не открывает.
+  const cards = page
+    .locator('section', { hasText: 'Инвентарь' })
+    .first()
+    .locator('.grid > .slot.filled')
+  const doll = page.locator('section', { hasText: 'Экипировка' }).first()
+  const count = await cards.count()
+  let carried = false
+  for (let i = 0; i < count && !carried; i += 1) {
+    await cards.nth(i).focus()
+    await page.keyboard.press('Enter')
+    if ((await doll.locator('.slot[data-drop="target"]').count()) > 0) carried = true
+    else await page.keyboard.press('Enter')
+  }
+  expect(carried, 'ни одна находка пресета не подсветила слот').toBe(true)
+  const name = 'doll-carry-1280'
+  expect(await capture(page, name)).toMatchSnapshot(`${name}.png`)
+})
+
 // Режим 2: со сценой. Ждём готовность сцены — атрибут ставит она сама,
 // когда фон и герой загрузились, — иначе в снимок уехала бы пустая площадка.
 for (const preset of PRESETS) {
