@@ -1,6 +1,7 @@
 // Игровое состояние и его создание. Отдельный модуль, чтобы tick, loot и save
 // зависели от него, а не друг от друга.
 import { Decimal } from './numbers'
+import { DEFAULT_UPGRADE_PRIORITY, type UpgradePriority } from '../data/upgrade'
 import { xpToNextLevel } from './formulas'
 import { randomSeed } from './rng'
 import { buildMonster } from '../data/monsters'
@@ -125,6 +126,14 @@ export interface GameState {
    * не делает.
    */
   holdManaForHeal: boolean
+  /**
+   * ПРИОРИТЕТ АПГРЕЙДА: что игрок считает улучшением — урон, выживание или
+   * то и другое. Настройка, а не свойство героя: лежит в сейве, меняется
+   * переключателем в панели сумки, по умолчанию «баланс». Решает две вещи:
+   * какая ось зажигает метку «Апгрейд» и что считается лишним при разборе
+   * добычи. Правила положений — данными в `data/upgrade.ts`.
+   */
+  upgradePriority: UpgradePriority
   // Что ускоряет привал. Пока всегда null: сюда приедет еда из кулинарии.
   // Поле и место его учёта заведены заранее, чтобы профессии не пришлось
   // втискивать в конвейер тика задним числом.
@@ -333,6 +342,7 @@ export function createInitialState(
     restTotalMs: 0,
     restHpThreshold: REST_HP_THRESHOLD_DEFAULT,
     holdManaForHeal: true,
+    upgradePriority: DEFAULT_UPGRADE_PRIORITY,
     restSpeedupSource: null,
     abilityCooldownsMs: {},
     abilityCharges: {},

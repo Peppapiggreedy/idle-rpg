@@ -9,6 +9,7 @@
   // pointer-events: none — обязательное свойство, а не украшение: окно висит
   // над карточкой, и без него оно перехватывало бы нажатия кнопок под собой.
   import { Decimal, compareItem, type StatId } from '../game'
+  import { UPGRADE_AXES, type UpgradeAxis } from '../data/upgrade'
   import { gameState } from '../stores/game'
   import { formatStatDelta, isImprovement, SHOWN_STAT_IDS, statNames } from './statFormat'
   import { RARITY_BY_ID } from '../data/rarity'
@@ -60,12 +61,33 @@
         },
   )
 
-  const combat = $derived(
-    cmp.combatDelta === null || Math.abs(cmp.combatDelta) < 0.0005
-      ? null
-      : `${cmp.combatDelta > 0 ? '+' : '−'}${(Math.abs(cmp.combatDelta) * 100)
-          .toFixed(1)
-          .replace('.', ',')} %`,
+  // ДВЕ ОСИ, ОБЕ ВСЕГДА. Приоритет игрока решает, что ПОДСВЕТИТЬ меткой
+  // «Апгрейд», но не что показать: игрок, поставивший «урон», обязан видеть,
+  // что находка вдвое дешевле по цене боя, — иначе ось выживания не помогла
+  // бы ему ни разу.
+  //
+  // Знак у обеих осей означает одно и то же: плюс — лучше. У выживания это
+  // СНИЖЕНИЕ цены боя, и переворот знака сделан в логике (`compareAxes`), а
+  // не здесь: подсказка не должна знать, какая ось считается наоборот.
+  const AXIS_NAME: Record<UpgradeAxis, string> = {
+    damage: 'Урон',
+    survival: 'Выживание',
+  }
+  const share = (v: number | null): string => {
+    if (v === null) return '—'
+    if (!Number.isFinite(v)) return 'с нуля'
+    if (Math.abs(v) < 0.0005) return 'без изменений'
+    return `${v > 0 ? '+' : '−'}${(Math.abs(v) * 100).toFixed(1).replace('.', ',')} %`
+  }
+  const axisRows = $derived(
+    UPGRADE_AXES.map((axis) => ({
+      axis,
+      name: AXIS_NAME[axis],
+      text: share(cmp.axes[axis]),
+      value: cmp.axes[axis],
+      // Ось, по которой ставится метка при текущем приоритете, — жирнее.
+      marked: cmp.markedAxes.includes(axis),
+    })),
   )
 
   // Границы экрана: не хватает места справа — открываемся слева, не хватает
@@ -99,12 +121,18 @@
     <span class="tier">{RARITY_BY_ID[item.rarity].name} · {item.level} ур.</span>
   </div>
 
-  <!-- ПЕРВОЙ СТРОКОЙ — боевая эффективность целиком. Она считается через
-       estimateCombatRate на обоих состояниях, поэтому в неё входят и аптайм,
-       и проки: по голой формуле урона броня никогда не была бы апгрейдом. -->
-  <div class="combat" class:up={(cmp.combatDelta ?? 0) > 0} class:down={(cmp.combatDelta ?? 0) < 0}>
-    Боевая эффективность: {combat ?? 'без изменений'}
-  </div>
+  <!-- ПЕРВЫМИ СТРОКАМИ — обе оси. Обе считаются через estimateCombatRate на
+       одной и той же паре состояний: в урон входят аптайм и проки, в
+       выживание — цена схватки долей запаса. По голой формуле урона броня
+       никогда не была бы апгрейдом — за этим ось выживания и заведена. -->
+  <ul class="axes">
+    {#each axisRows as row (row.axis)}
+      <li class:marked={row.marked}>
+        <span class="axis">{row.name}</span>
+        <b class:up={(row.value ?? 0) > 0} class:down={(row.value ?? 0) < 0}>{row.text}</b>
+      </li>
+    {/each}
+  </ul>
 
   {#if cmp.currentItem}
     <div class="against">вместо «{cmp.currentItem.name}»</div>
@@ -160,15 +188,30 @@
   .tier {
     color: var(--c-text-faint);
   }
-  .combat {
-    font-weight: var(--weight-bold);
-    color: var(--c-text-muted);
+  .axes {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    margin: 0 0 var(--space-2);
+    padding: 0;
+    list-style: none;
+    font-size: var(--text-sm);
   }
-  .combat.up,
+  .axes li {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-3);
+    color: var(--c-text-dim);
+  }
+  /* Ось, по которой сейчас ставится метка «Апгрейд», — ярче остальных.
+     Не «важнее»: вторая строка на месте и читается, просто игрок выбрал,
+     по какой из них игра будет подсвечивать находки. */
+  .axes li.marked {
+    color: var(--c-text);
+  }
   b.up {
     color: var(--c-heal);
   }
-  .combat.down,
   b.down {
     color: var(--c-damage);
   }

@@ -1,5 +1,5 @@
 {
-  "version": 25,
+  "version": 26,
   "classId": "warden",
   "materials": {},
   "activePotions": [],
@@ -68,6 +68,7 @@
   "regenDelayMsLeft": 0,
   "restHpThreshold": 0.6,
   "holdManaForHeal": true,
+  "upgradePriority": "balance",
   "abilitySettings": {
     "quick-strike": {
       "autocast": true,

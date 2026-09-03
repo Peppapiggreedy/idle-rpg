@@ -24,7 +24,7 @@ import {
 } from '../data/items'
 import { INVENTORY_SIZE, itemLevelScale } from '../data/balance'
 import type { StatModifier } from './stats'
-import { isEquipped, upgradeShare } from './equipment'
+import { betterOnAnyAxis, isEquipped, upgradeShare } from './equipment'
 import type { BossLoot } from '../data/dungeons'
 
 // Реэкспорт для обратной совместимости импортов.
@@ -297,13 +297,15 @@ export function sellPrice(item: Item): Decimal {
 
 /**
  * Ценность предмета для разбора добычи: больше — ценнее. Апгрейды всегда
- * ценнее не-апгрейдов, внутри группы решает прирост урона в секунду,
+ * ценнее не-апгрейдов, внутри группы решает лучшая из осей приоритета,
  * а при равенстве — цена продажи.
  *
  * Своей меры «хорошести» здесь нет и быть не должно: сравнение идёт тем же
- * `estimateCombatRate`, что и подсказка в сумке, и автонадевание до его
- * сноса. Две разные меры разошлись бы, и игрок увидел бы, как игра выкинула
- * то, что сама же пометила апгрейдом.
+ * `estimateCombatRate`, что и подсказка в сумке. Две разные меры разошлись
+ * бы, и игрок увидел бы, как игра выкинула то, что сама же пометила
+ * апгрейдом. ПРИОРИТЕТ БЕРЁТСЯ ИЗ СОСТОЯНИЯ (`upgradeShare` без третьего
+ * аргумента): поставил игрок «выживание» — разбор считает лишним то, что
+ * не спасает, а не то, что слабо бьёт.
  */
 export function lootValue(state: GameState, item: Item, cache?: LootValueCache): number {
   const hit = cache?.get(item.id)
@@ -350,6 +352,12 @@ export function isUpgradeValue(value: number): boolean {
  * Раньше при полной сумке дроп не бросался ВООБЩЕ: герой переставал
  * находить вещи, пока игрок не продаст, и это было видно в golden —
  * статы упирались в потолок. Теперь бросок идёт всегда.
+ *
+ * ЖЕЛЕЗНОЕ ПРАВИЛО СИЛЬНЕЕ ПРИОРИТЕТА. «Лучше» для вытеснения считается по
+ * ОБЕИМ осям (`betterOnAnyAxis`), а не по тем, что выбрал игрок: приоритет
+ * говорит, что подсветить и что считать лишним при разборе, но молча
+ * потерять находку он права не даёт. Игрок, поставивший «урон», просил не
+ * звать панцирь апгрейдом — он не просил выбрасывать панцирь.
  */
 export function stashLoot(state: GameState, item: Item, cache?: LootValueCache): GameState {
   const withSeq = { ...state, itemSeq: Math.max(state.itemSeq, Number(item.id.split('-')[1]) + 1) }
@@ -371,8 +379,9 @@ export function stashLoot(state: GameState, item: Item, cache?: LootValueCache):
       worstIndex = index
     }
   })
-  // Находка не ценнее худшего в сумке — уходит в золото сама.
-  if (value <= worstValue) {
+  // Находка не ценнее худшего в сумке — уходит в золото сама. Но сперва
+  // железное правило: лучше хоть по одной оси — остаётся в любом случае.
+  if (value <= worstValue && !betterOnAnyAxis(state, item)) {
     const gold = sellPrice(item)
     return {
       ...withSeq,

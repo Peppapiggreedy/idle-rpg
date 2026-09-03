@@ -11,6 +11,7 @@ import { xpToNextLevel } from '../game/formulas'
 import { Decimal } from '../game/numbers'
 import { applyOfflineProgress } from '../game/save'
 import { sellItem } from '../game/loot'
+import type { UpgradePriority } from '../data/upgrade'
 import { craft as craftAction } from '../game/crafting'
 import { recordDecision, resetTelemetry } from './telemetry'
 import { equipItem, unequipItem } from '../game/equipment'
@@ -414,6 +415,18 @@ export function setAbilityReserve(abilityId: string, reserve: number): void {
       abilitySettings: { ...s.abilitySettings, [abilityId]: { ...setting, reserve: clamped } },
     }
   })
+}
+
+/**
+ * ЧТО СЧИТАТЬ АПГРЕЙДОМ: урон, выживание или баланс. Настройка игрока —
+ * решает и метку на находке, и что уйдёт в золото при полной сумке. Правила
+ * положений лежат в данных (`data/upgrade.ts`), здесь только запись выбора.
+ */
+export function setUpgradePriority(value: UpgradePriority): void {
+  // Решение того же рода, что и надевание: игрок говорит игре, что считать
+  // улучшением, и от этого меняется, во что герой оденется дальше.
+  recordDecision('equip')
+  state.update((s) => ({ ...s, upgradePriority: value }))
 }
 
 /** Беречь ли ману под лечение: боевые умения автокаста оставляют цену одного лечения. */

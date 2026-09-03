@@ -1,5 +1,5 @@
 {
-  "version": 25,
+  "version": 26,
   "classId": "warden",
   "materials": {},
   "activePotions": [],
@@ -34,27 +34,6 @@
       ]
     },
     {
-      "id": "item-3",
-      "name": "Сумрачный Наруч",
-      "rarity": "uncommon",
-      "slot": "hands",
-      "level": 8,
-      "mods": [
-        {
-          "stat": "strength",
-          "kind": "flat",
-          "value": "11",
-          "source": "equipment:hands"
-        },
-        {
-          "stat": "vitality",
-          "kind": "flat",
-          "value": "5",
-          "source": "equipment:hands"
-        }
-      ]
-    },
-    {
       "id": "item-4",
       "name": "Звёздный Нагрудник",
       "rarity": "common",
@@ -78,6 +57,27 @@
     {
       "id": "item-6",
       "name": "Пастуший Нагрудник",
+      "rarity": "common",
+      "slot": "chest",
+      "level": 8,
+      "mods": [
+        {
+          "stat": "strength",
+          "kind": "flat",
+          "value": "8",
+          "source": "equipment:chest"
+        },
+        {
+          "stat": "vitality",
+          "kind": "flat",
+          "value": "4",
+          "source": "equipment:chest"
+        }
+      ]
+    },
+    {
+      "id": "item-10",
+      "name": "Звёздный Панцирь",
       "rarity": "common",
       "slot": "chest",
       "level": 8,
@@ -134,22 +134,22 @@
     },
     "offHand": null,
     "head": {
-      "id": "item-2",
-      "name": "Гремящий Капюшон",
-      "rarity": "common",
+      "id": "item-9",
+      "name": "Сумрачный Капюшон",
+      "rarity": "uncommon",
       "slot": "head",
       "level": 8,
       "mods": [
         {
-          "stat": "intellect",
+          "stat": "agility",
           "kind": "flat",
-          "value": "8",
+          "value": "11",
           "source": "equipment:head"
         },
         {
           "stat": "vitality",
           "kind": "flat",
-          "value": "4",
+          "value": "5",
           "source": "equipment:head"
         }
       ]
@@ -236,6 +236,7 @@
   "regenDelayMsLeft": 0,
   "restHpThreshold": 0.6,
   "holdManaForHeal": true,
+  "upgradePriority": "balance",
   "abilitySettings": {
     "quick-strike": {
       "autocast": true,
@@ -262,8 +263,8 @@
   "gold": "4820",
   "level": "10",
   "currentXp": "488",
-  "currentHp": "293",
-  "currentMana": "103",
+  "currentHp": "299",
+  "currentMana": "85",
   "heroState": "alive",
   "reviveMsLeft": 0,
   "talents": {},

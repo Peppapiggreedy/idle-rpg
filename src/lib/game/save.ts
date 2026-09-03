@@ -59,6 +59,11 @@ import { FALLBACK_ITEM_NAME, ITEM_BASE_SELL_PRICE } from '../data/loot'
 import { SAFE_ZONE, ZONES, ZONE_BY_ID } from '../data/zones'
 import { currentZone, offlineZone, zoneRate } from './zones'
 import { isUpgradeValue, lootValue, rollLoot, stashLoot, type LootValueCache } from './loot'
+import {
+  DEFAULT_UPGRADE_PRIORITY,
+  UPGRADE_PRIORITIES,
+  type UpgradePriority,
+} from '../data/upgrade'
 import { averageMonsterLevel } from '../data/zones'
 import { leaveTemple } from './temple'
 import type { Rng } from './rng'
@@ -86,7 +91,7 @@ const OFFLINE_LOOT_SALT = 0x9e37_79b9
 /** Все хваты одним списком: сейв принимает только их. */
 const GRIPS: Grip[] = ['one', 'two', 'shield']
 
-export const SAVE_VERSION = 25
+export const SAVE_VERSION = 26
 export const AUTOSAVE_INTERVAL_MS = AUTOSAVE_INTERVAL_S * 1000
 // Потолок оффлайн-прогресса: дольше отсутствовать можно, но не оплачивается.
 export const OFFLINE_CAP_MS = OFFLINE_CAP_HOURS * 60 * 60 * 1000
@@ -191,6 +196,8 @@ export interface SavePayloadV21 {
   restHpThreshold: number
   /** Беречь ману под лечение — настройка автокаста. */
   holdManaForHeal: boolean
+  /** Что игрок считает апгрейдом: урон, выживание или баланс. */
+  upgradePriority: UpgradePriority
   reviveMsLeft: number
   // Таланты: id -> ранг (обычные числа, не Decimal — рангов единицы).
   talents: Record<string, number>
@@ -362,6 +369,7 @@ export function payloadFromState(state: GameState, lastTimestamp: number): SaveP
     regenDelayMsLeft: Math.max(0, state.regenDelayMsLeft),
     restHpThreshold: state.restHpThreshold,
     holdManaForHeal: state.holdManaForHeal !== false,
+    upgradePriority: state.upgradePriority,
     abilitySettings,
     itemSeq: state.itemSeq,
     gold: state.gold.toString(),
@@ -816,6 +824,11 @@ export function stateFromPayload(p: SavePayloadV21): GameState {
     // Отсутствие поля (старый сейв) читается как «включено» — так же, как
     // у нового героя.
     holdManaForHeal: p.holdManaForHeal !== false,
+    // Незнакомое значение (руками правленый сейв) читается как умолчание —
+    // терять из-за него доступ к игре не за что.
+    upgradePriority: UPGRADE_PRIORITIES.includes(p.upgradePriority)
+      ? p.upgradePriority
+      : DEFAULT_UPGRADE_PRIORITY,
     restSpeedupSource: null,
   }
   // Поток случайности берём от сида состояния — загрузка детерминированна.
@@ -1276,6 +1289,12 @@ export const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
     }
     return next
   },
+  // 25 -> 26. Приоритет апгрейда. У старого героя настройки не было, и
+  // «лучше» считалось одной осью — уроном. Ставим БАЛАНС, а не «урон»:
+  // одноосная мера и была дефектом, ради которого приоритет заведён, и
+  // сохранять её ветеранам значило бы оставить их с той же слепой зоной.
+  // Прогресс миграция не трогает — это настройка показа и разбора добычи.
+  25: (raw) => ({ ...raw, version: 26, upgradePriority: DEFAULT_UPGRADE_PRIORITY }),
   // 24 -> 25. Резерв маны под лечение: у старого героя настройки не было —
   // включаем, как у нового. Само лечение он получит уровнем, как и все умения.
   // (В ветке второй ночи эта миграция стояла на 23; на main номер занял снос

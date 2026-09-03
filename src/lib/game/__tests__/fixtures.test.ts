@@ -228,6 +228,31 @@ describe('фикстуры сейвов', () => {
     expect(state.gold.toString()).toBe(String(raw.gold))
   })
 
+  it('save-v25 -> v26: приоритет апгрейда — БАЛАНС, остальное цело', () => {
+    const raw = JSON.parse(fixture('save-v25.json'))
+    expect('upgradePriority' in raw, 'в 25-й версии поля не было').toBe(false)
+    const payload = migrateSave(raw)!
+    expect(payload.version).toBe(SAVE_VERSION)
+    // БАЛАНС, а не «урон». Одноосная мера и была дефектом, ради которого
+    // приоритет заведён; сохранить её ветеранам значило бы оставить их с той
+    // же слепой зоной, из-за которой броня годами не считалась апгрейдом.
+    expect(payload.upgradePriority).toBe('balance')
+
+    const state = loadFixture('save-v25.json')
+    expect(state.upgradePriority).toBe('balance')
+    // Прогресс не тронут: это настройка показа и разбора добычи.
+    expect(state.level.toString()).toBe(String(raw.level))
+    expect(state.gold.toString()).toBe(String(raw.gold))
+    expect(state.inventory).toHaveLength(raw.inventory.length)
+  })
+
+  it('незнакомое значение приоритета читается как умолчание', () => {
+    // Сейв правят руками, и терять из-за опечатки доступ к игре не за что.
+    const raw = { ...JSON.parse(fixture('save-v25.json')), version: 26, upgradePriority: 'ерунда' }
+    const state = stateFromPayload(migrateSave(raw)!)
+    expect(state.upgradePriority).toBe('balance')
+  })
+
   it('save-v19 -> v20: незаконная связка рук расформирована', () => {
     // В 19-й версии хвата не было: оружие несло hands, а щит не был отмечен
     // никак. Формат просто не умел сказать «так нельзя» — и сейв мог нести

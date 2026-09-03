@@ -19,11 +19,13 @@
     equipInventoryItem,
     gameState,
     sellInventoryItem,
+    setUpgradePriority,
   } from '../stores/game'
   import ItemMods from './ItemMods.svelte'
   import EnchantLine from './EnchantLine.svelte'
   import ItemCompare from './ItemCompare.svelte'
   import { RARITY_BY_ID } from '../data/rarity'
+  import { UPGRADE_PRIORITIES, type UpgradePriority } from '../data/upgrade'
   import { Button, IconSlot, NumberText, Panel, Tag } from './kit'
   import { combatKey, createMemo } from './memo'
   import { Icon } from './icons'
@@ -39,8 +41,10 @@
   // полсотни на полной сумке десять раз в секунду; ровно из-за этого игра и
   // начинала дёргаться при открытой сумке.
   const sharesMemo = createMemo<Map<string, number | null>>()
+  // Приоритет входит в ключ мемо: сменил игрок положение переключателя —
+  // метки обязаны пересчитаться, а статы при этом не менялись.
   const shares = $derived(
-    sharesMemo(combatKey($gameState), () =>
+    sharesMemo([...combatKey($gameState), $gameState.upgradePriority], () =>
       new Map($gameState.inventory.map((i) => [i.id, upgradeShare($gameState, i)])),
     ),
   )
@@ -54,6 +58,20 @@
     if (share === null || share === undefined) return null
     if (!Number.isFinite(share)) return 'слот пуст'
     return `+${Math.round(share * 100)}%`
+  }
+
+  // ПЕРЕКЛЮЧАТЕЛЬ ПРИОРИТЕТА. Названия положений и пояснение к ним — текст
+  // для игрока, поэтому живут здесь, а не в данных: в `data/upgrade.ts`
+  // лежат сами правила («какие оси смотреть»), и они молчат.
+  const PRIORITY_NAME: Record<UpgradePriority, string> = {
+    damage: 'Урон',
+    survival: 'Выживание',
+    balance: 'Баланс',
+  }
+  const PRIORITY_HINT: Record<UpgradePriority, string> = {
+    damage: 'Апгрейд — то, что поднимает убийства в секунду. Остальное разбирается.',
+    survival: 'Апгрейд — то, что удешевляет бой. Остальное разбирается.',
+    balance: 'Апгрейд — то, что лучше хоть по одной оси. Лишнее — только хуже по обеим.',
   }
 
   // Распыление живёт ЗДЕСЬ, рядом с продажей: это две половины одного
@@ -156,6 +174,26 @@
     <span class="purse-label">золота</span>
   </div>
 
+  <!-- ЧТО СЧИТАТЬ АПГРЕЙДОМ. Две оси у находки разные — урон и цена боя, — и
+       какая из них важнее, решает не игра. Переключатель называет ТОЛЬКО
+       правило («что подсветится и что уйдёт в золото»), но никогда не
+       обещает исхода: игрок имеет право одеться как хочет. -->
+  <div class="priority">
+    <span class="priority-label" id="upgrade-priority-label">Апгрейд — это</span>
+    <div class="priority-row" role="group" aria-labelledby="upgrade-priority-label">
+      {#each UPGRADE_PRIORITIES as p (p)}
+        <Button
+          size="sm"
+          variant={$gameState.upgradePriority === p ? 'primary' : 'ghost'}
+          onclick={() => setUpgradePriority(p)}
+        >
+          {PRIORITY_NAME[p]}
+        </Button>
+      {/each}
+    </div>
+    <p class="priority-hint">{PRIORITY_HINT[$gameState.upgradePriority]}</p>
+  </div>
+
   <div class="grid" data-item-card>
     {#each sorted as item (item.id)}
       {@const share = shares.get(item.id)}
@@ -251,6 +289,30 @@
 </Panel>
 
 <style>
+  /* Переключатель приоритета: своя строка над сеткой находок, потому что
+     он меняет то, как читается КАЖДАЯ карточка ниже. */
+  .priority {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    margin-bottom: var(--space-3);
+  }
+  .priority-label {
+    font-size: var(--text-sm);
+    color: var(--c-text-dim);
+  }
+  .priority-row {
+    display: flex;
+    gap: var(--space-2);
+  }
+  .priority-hint {
+    flex-basis: 100%;
+    margin: 0;
+    font-size: var(--text-xs);
+    color: var(--c-text-dim);
+  }
+
   .purse {
     display: flex;
     align-items: center;
