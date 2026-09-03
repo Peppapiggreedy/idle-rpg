@@ -115,8 +115,10 @@ for (const preset of PRESETS) {
   }
 }
 
-// ВСЕ СЕМЬ МЕНЮ. Раньше здесь было четыре раздела по индексу вкладки;
-// теперь меню открываются по названию кнопки — оно и есть их имя.
+// ВСЕ ВОСЕМЬ МЕНЮ. Раньше здесь было четыре раздела по индексу вкладки;
+// теперь меню открываются по названию кнопки — оно и есть их имя. Семь
+// стоят в столбцах, восьмое — «Автокаст» — в ряду действий, который оно
+// настраивает; снимается оно так же, как остальные.
 const SECTIONS = [
   { menu: 'Герой', name: 'hero' },
   { menu: 'Сумка', name: 'bag' },
@@ -125,6 +127,7 @@ const SECTIONS = [
   { menu: 'Крафт', name: 'craft' },
   { menu: 'Журнал', name: 'log' },
   { menu: 'Настройки', name: 'settings' },
+  { menu: 'Автокаст', name: 'autocast' },
 ] as const
 // Узкий и широкий: между ними лежит единственный брейкпоинт игры.
 const SECTION_WIDTHS = [390, 1280] as const
@@ -351,6 +354,8 @@ test('карточка предмета при наведении не двиг�
 test('кнопки меню держат 44px на нажатие', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 720 })
   await openPreset(page, 'rich', true)
+  // Пресет rich — 32 уровень: открыты все семь кнопок столбцов. На первом
+  // уровне их пять, и это не поломка, а лестница открытий.
   const tabs = page.locator('nav[aria-label^="Меню"] button')
   const count = await tabs.count()
   expect(count).toBe(7)
@@ -358,6 +363,9 @@ test('кнопки меню держат 44px на нажатие', async ({ pag
     const box = await tabs.nth(i).boundingBox()
     expect(box?.height ?? 0).toBeGreaterThanOrEqual(44)
   }
+  // Восьмая кнопка — «Автокаст» в ряду действий — та же область нажатия.
+  const auto = page.locator('[data-permanent] button', { hasText: 'Автокаст' }).first()
+  expect((await auto.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44)
 })
 
 test('витрина интерфейса', async ({ page }) => {

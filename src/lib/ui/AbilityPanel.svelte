@@ -28,9 +28,30 @@
   const statuses = $derived(ordered.map((a) => abilityStatus($gameState, a)))
   // Есть ли у класса лечение — от этого зависит, показывать ли резерв под него.
   const healAbility = $derived(ordered.find((a) => a.heal) ?? null)
+
+  // ОБЩИЙ ВЫКЛЮЧАТЕЛЬ — ОДНА СТРОКА ВНУТРИ НАСТРОЕК, а не отдельная кнопка
+  // на экране. Кнопка в ряду действий теперь ОТКРЫВАЕТ эти настройки;
+  // включать и выключать ротацию целиком — их первая строка. Своего
+  // состояния она не заводит: жмёт те же галки тем же экшеном, все разом.
+  const autocastOn = $derived(
+    ordered.some((a) => $gameState.abilitySettings[a.id]?.autocast ?? false),
+  )
+  function toggleAll(): void {
+    const next = !autocastOn
+    for (const ability of ordered) setAbilityAutocast(ability.id, next)
+  }
 </script>
 
-<Panel title="Умения" subtitle="порядок в списке — это и есть приоритет автокаста">
+<Panel title="Автокаст" subtitle="что игра жмёт сама, в каком порядке и сколько бережёт">
+  <div class="master" data-autocast-master>
+    <span class="master-state" class:on={autocastOn}>
+      Автокаст {autocastOn ? 'включён' : 'выключен'}
+    </span>
+    <Button size="sm" variant={autocastOn ? 'ghost' : 'primary'} onclick={toggleAll}>
+      {autocastOn ? 'Выключить все' : 'Включить все'}
+    </Button>
+  </div>
+
   <ul class="list">
     {#each ordered as ability, i (ability.id)}
       {@const status = statuses[i]}
@@ -129,7 +150,8 @@
     <p class="hint">
       Автокаст жмёт первое доступное сверху вниз, но реагирует на
       {(AUTOCAST_DELAY_MS / 1000).toFixed(1)}с медленнее тебя и не придерживает кулдауны.
-      Сами кнопки умений — под сценой, они видны в любом разделе.
+      Сами кнопки умений — рядом, в ряду действий: они видны при любом
+      открытом меню.
     </p>
     <p class="hint">
       {#if resource.fromCombat}
@@ -144,6 +166,24 @@
 </Panel>
 
 <style>
+  /* Общий выключатель — первая строка настроек, отделённая от списка
+     умений чертой: он про ротацию целиком, а ниже — про каждое умение. */
+  .master {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    padding-bottom: var(--space-2);
+    margin-bottom: var(--space-3);
+    border-bottom: 1px solid var(--c-border);
+  }
+  .master-state {
+    font-weight: var(--weight-bold);
+    color: var(--c-text-muted);
+  }
+  .master-state.on {
+    color: var(--c-accent);
+  }
   .list {
     list-style: none;
     margin: 0;

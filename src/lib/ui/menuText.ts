@@ -16,4 +16,5 @@ export const MENU_LOOK: Record<MenuId, MenuLook> = {
   craft: { title: 'Крафт', icon: 'profession-smithing' },
   log: { title: 'Журнал', icon: 'log' },
   settings: { title: 'Настройки', icon: 'stat-swingTime' },
+  autocast: { title: 'Автокаст', icon: 'autocast-on' },
 }

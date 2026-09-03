@@ -14,7 +14,8 @@
   } from '../game'
   import { TALENT_BY_ID } from '../data/talents'
   import { gameState } from '../stores/game'
-  import { Panel } from './kit'
+  import { heroDetailsOpen, toggleHeroDetails } from '../stores/ui'
+  import { Button, NumberText, Panel } from './kit'
   import { STAT_ICONS } from '../data/stats'
   import { resourceWords } from './resource'
   import { PERCENT_STATS, SECONDS_STATS, SHOWN_STAT_IDS, statNames } from './statFormat'
@@ -84,7 +85,31 @@
   }
 </script>
 
-<Panel title="Статы" subtitle="нажми строку — покажу, из чего сложилось">
+<!-- ДВА ЧИСЛА КРУПНО, ОСТАЛЬНОЕ ПОД «ДЕТАЛЯМИ».
+     Именно два, а не одно: одним числом «лучше» уже мерили, и двуручное
+     било связку одноручное+щит ровно потому, что живучесть в это число не
+     входила. Остальные три десятка строк нужны редко и раз в час —
+     им место в свёрнутом списке. -->
+<Panel title="Герой">
+  <div class="big" data-hero-summary>
+    <div class="tile">
+      <span class="tile-name">Урон в секунду</span>
+      <span class="tile-value">{dps.toNumber().toFixed(2)}</span>
+    </div>
+    <div class="tile">
+      <span class="tile-name">Здоровье</span>
+      <span class="tile-value"><NumberText value={$gameState.stats.maxHp} /></span>
+    </div>
+  </div>
+
+  <div class="details-row">
+    <Button size="sm" variant="ghost" onclick={toggleHeroDetails}>
+      {$heroDetailsOpen ? 'Свернуть детали' : 'Детали'}
+    </Button>
+    <span class="details-hint">нажми строку — покажу, из чего сложилось</span>
+  </div>
+
+  {#if $heroDetailsOpen}
   <ul>
     <li>
       <button type="button" class="stat-row" onclick={() => toggle('swingDamage')}>
@@ -164,9 +189,50 @@
       </li>
     {/each}
   </ul>
+  {/if}
 </Panel>
 
 <style>
+  /* Два числа крупно. Ширина плитки — доля строки, а не число: на телефоне
+     они встают друг под друга сами. */
+  .big {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+    margin-bottom: var(--space-3);
+  }
+  .tile {
+    flex: 1 1 8rem;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    padding: var(--space-3);
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius-md);
+    background: var(--c-surface-sunken);
+  }
+  .tile-name {
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-wide);
+    color: var(--c-text-faint);
+  }
+  .tile-value {
+    font-size: var(--text-xl);
+    font-weight: var(--weight-bold);
+    font-variant-numeric: tabular-nums;
+  }
+  .details-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+    margin-bottom: var(--space-2);
+  }
+  .details-hint {
+    font-size: var(--text-xs);
+    color: var(--c-text-faint);
+  }
   ul {
     list-style: none;
     margin: 0;

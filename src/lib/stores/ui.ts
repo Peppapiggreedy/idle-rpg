@@ -6,7 +6,7 @@
 // выключенный звук чужих наушников. Поэтому свой ключ в localStorage,
 // своя версия и никакого влияния на формат сейва.
 import { get, readonly, writable } from 'svelte/store'
-import { SOUND_DEFAULT_VOLUMES } from '../data/balance'
+import { CRAFT_UNLOCK_LEVEL, SOUND_DEFAULT_VOLUMES, TALENT_FIRST_LEVEL } from '../data/balance'
 import type { SlotId } from '../data/slots'
 
 export const UI_SETTINGS_KEY = 'idle-rpg:ui'
@@ -20,12 +20,35 @@ export const UI_SETTINGS_KEY = 'idle-rpg:ui'
 // ДАННЫМИ (`MENU_SIDE`), а не расстановкой в разметке: иначе следующая
 // кнопка встанет наугад. Журнал и настройки героя не меняют — они справа;
 // всё остальное меняет.
-export type MenuId = 'hero' | 'bag' | 'world' | 'talents' | 'craft' | 'log' | 'settings'
+export type MenuId =
+  | 'hero'
+  | 'bag'
+  | 'world'
+  | 'talents'
+  | 'craft'
+  | 'log'
+  | 'settings'
+  | 'autocast'
 
 /** Порядок — порядок кнопок в столбце. */
-export const MENU_IDS: MenuId[] = ['hero', 'bag', 'world', 'talents', 'craft', 'log', 'settings']
+export const MENU_IDS: MenuId[] = [
+  'hero',
+  'bag',
+  'world',
+  'talents',
+  'craft',
+  'log',
+  'settings',
+  'autocast',
+]
 
-export type MenuSide = 'left' | 'right'
+/**
+ * Где стоит кнопка. Два столбца по бокам сцены и ОДНО исключение — автокаст:
+ * он настраивает ряд умений, поэтому стоит вплотную к нему, в своей ячейке
+ * сетки, а не среди «где меняешь». Сторона `'row'` — это и есть «в ряду
+ * действий»: `menusOn` её не выдаёт, и в столбцы кнопка не попадает.
+ */
+export type MenuSide = 'left' | 'right' | 'row'
 
 export const MENU_SIDE: Record<MenuId, MenuSide> = {
   hero: 'left',
@@ -35,10 +58,32 @@ export const MENU_SIDE: Record<MenuId, MenuSide> = {
   craft: 'left',
   log: 'right',
   settings: 'right',
+  autocast: 'row',
 }
 
-export const menusOn = (side: MenuSide): MenuId[] =>
-  MENU_IDS.filter((id) => MENU_SIDE[id] === side)
+/**
+ * ЗАКРЫТОЕ НЕ ВИДНО ВОВСЕ — И ЭТО ОТНОСИТСЯ К САМИМ КНОПКАМ.
+ *
+ * Правило было записано про панели, но не применено к кнопкам меню: игрок
+ * первого уровня видел «Таланты» и «Крафт» и открывал пустоту. Порог — тот
+ * же, по которому механика открывается на самом деле; своих чисел здесь
+ * нет, только ссылки на `data/balance.ts`.
+ *
+ * Меню, которого в карте нет, видно с первого уровня: сумка, мир, журнал,
+ * настройки и автокаст осмысленны сразу.
+ */
+export const MENU_UNLOCK_LEVEL: Partial<Record<MenuId, number>> = {
+  talents: TALENT_FIRST_LEVEL,
+  craft: CRAFT_UNLOCK_LEVEL,
+}
+
+/** Открыто ли меню герою этого уровня. */
+export const menuUnlocked = (id: MenuId, level: number): boolean =>
+  level >= (MENU_UNLOCK_LEVEL[id] ?? 1)
+
+/** Кнопки столбца, которые ЭТОТ герой уже заслужил. */
+export const menusOn = (side: MenuSide, level = Number.POSITIVE_INFINITY): MenuId[] =>
+  MENU_IDS.filter((id) => MENU_SIDE[id] === side && menuUnlocked(id, level))
 
 /**
  * Текстовый режим. 'auto' — сцена (двумерная рисуется обычными элементами
@@ -210,4 +255,17 @@ export function toggleCarried(next: Carry): void {
 
 export function releaseItem(): void {
   carried.set(null)
+}
+
+// --- Развёрнутые «Детали» карточки героя ------------------------------
+
+// КАРТОЧКА ГЕРОЯ ПОКАЗЫВАЕТ ДВА ЧИСЛА КРУПНО, остальное — списком под
+// кнопкой «Детали». Развёрнуто оно или нет — это «где я сейчас», а не
+// прогресс: в сейве такому не место, оно живёт здесь, рядом с открытым
+// меню и несомой вещью.
+const heroDetails = writable(false)
+export const heroDetailsOpen = readonly(heroDetails)
+
+export function toggleHeroDetails(): void {
+  heroDetails.update((open) => !open)
 }

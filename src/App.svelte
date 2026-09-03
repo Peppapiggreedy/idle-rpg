@@ -112,6 +112,10 @@
     $gameState.inventory.some((item) => upgradeShare($gameState, item) !== null),
   )
   const bagNote = $derived({ bag: `${$gameState.inventory.length}/${INVENTORY_SIZE}` })
+  // Кнопка меню, до которой герой не дорос, не показывается вовсе — то же
+  // правило, что и у панелей внутри. Уровень идёт в MenuButtons числом:
+  // сам компонент про игровое состояние не знает.
+  const heroLevel = $derived($gameState.level.toNumber())
 </script>
 
 <!-- Спрайт иконок: один раз на страницу, до всего остального. -->
@@ -146,7 +150,12 @@
          прибитую к низу окна: держать по краям сцены два столбца шириной
          в кнопку значило бы отдать им треть ширины. -->
     <div class="permanent" data-permanent>
-      <MenuButtons side="left" marks={{ talents: points > 0, bag: hasUpgrade }} notes={bagNote} />
+      <MenuButtons
+        side="left"
+        level={heroLevel}
+        marks={{ talents: points > 0, bag: hasUpgrade }}
+        notes={bagNote}
+      />
 
       <div class="stage" class:mini={miniScene} style:--mini-width={miniWidth}>
         {#if summary}
@@ -177,7 +186,7 @@
         {/if}
       </div>
 
-      <MenuButtons side="right" />
+      <MenuButtons side="right" level={heroLevel} />
 
       <!-- ВТОРАЯ ПОЛОСА. «Автокаст» встаёт в колонку левого столбца — он не
            действие, а переключатель того, кто действия жмёт, и разведены они
@@ -208,11 +217,16 @@
         {:else if $openMenu === 'world'}
           <ZonePanel />
           <TemplePanel />
-        {:else if $openMenu === 'talents'}
-          <TalentPanel />
-          <AbilityPanel />
           <ProgressionPanel />
+        {:else if $openMenu === 'talents'}
+          <!-- ТОЛЬКО ТРИ ВЕТКИ. Умения и настройки автокаста уехали в своё
+               меню — их открывает кнопка рядом с рядом умений, которую они
+               и настраивают. Лестница открытий уехала в «Мир»: она про то,
+               что откроется дальше В МИРЕ, и место ей рядом с картой зон. -->
+          <TalentPanel />
           <QuestPanel />
+        {:else if $openMenu === 'autocast'}
+          <AbilityPanel />
         {:else if $openMenu === 'craft'}
           <CraftPanel />
           <EnchantPanel />
