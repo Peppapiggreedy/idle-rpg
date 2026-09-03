@@ -31,6 +31,7 @@ import {
   REGEN_DELAY_S,
   REGEN_TICK_S,
   REST_HP_THRESHOLD_DEFAULT,
+  snapRestThreshold,
   LEGACY_V3_SWING_TIME_S,
   OFFLINE_CAP_HOURS,
   OFFLINE_CHUNK_MIN,
@@ -97,7 +98,23 @@ const OFFLINE_LOOT_SALT = 0x9e37_79b9
 /** Все хваты одним списком: сейв принимает только их. */
 const GRIPS: Grip[] = ['one', 'two', 'shield']
 
-export const SAVE_VERSION = 27
+export const SAVE_VERSION = 28
+
+/**
+ * ТАЛАНТЫ, УДАЛЁННЫЕ ИЗ ДЕРЕВА, — списком и с причиной.
+ *
+ * Все три двигали ПОРОГ ПРИВАЛА, то есть настройку игрока: он выставляет её
+ * ползунком и ждёт, что игра ей следует, а талант молча сдвигал её вверх.
+ * На их местах теперь таланты на ДЛИНУ привала — настоящую характеристику.
+ *
+ * Список нужен миграции 27 -> 28 и остаётся в коде навсегда: сейв
+ * двадцать седьмой версии может прийти когда угодно.
+ */
+export const REMOVED_TALENT_IDS: readonly string[] = [
+  'vigil-field-medicine',
+  'instinct-beast-sense',
+  'instinct-alertness',
+]
 export const AUTOSAVE_INTERVAL_MS = AUTOSAVE_INTERVAL_S * 1000
 // Потолок оффлайн-прогресса: дольше отсутствовать можно, но не оплачивается.
 export const OFFLINE_CAP_MS = OFFLINE_CAP_HOURS * 60 * 60 * 1000
@@ -1310,6 +1327,30 @@ export const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
       next.templeRun = run
     }
     return next
+  },
+  /**
+   * 27 -> 28. Порог привала стал ползунком, а таланты на порог удалены.
+   *
+   * ОЧКИ ВОЗВРАЩАЮТСЯ СВОБОДНЫМИ, А НЕ ПРОПАДАЮТ. Отдельного счётчика
+   * доступных очков в состоянии нет — они считаются как «заработано минус
+   * вложено», — поэтому достаточно убрать ранги удалённых талантов: очки
+   * освобождаются сами и вкладываются куда игрок захочет. Молча съесть
+   * шесть очков у ветерана нельзя ни при какой правке дерева.
+   *
+   * Порог заодно прижимается к шагу ползунка: старые пресеты (0/40/60/80 %)
+   * и так кратны десяти, но сейв мог быть правлен руками.
+   */
+  27: (raw) => {
+    const talents = { ...((raw.talents ?? {}) as Record<string, number>) }
+    for (const id of REMOVED_TALENT_IDS) delete talents[id]
+    return {
+      ...raw,
+      version: 28,
+      talents,
+      restHpThreshold: snapRestThreshold(
+        typeof raw.restHpThreshold === 'number' ? raw.restHpThreshold : REST_HP_THRESHOLD_DEFAULT,
+      ),
+    }
   },
   // 26 -> 27. Лестница покупок: у старого героя куплено ничего, разбор
   // добычи стоит на «не трогать». Прогресс не трогается вовсе — покупки

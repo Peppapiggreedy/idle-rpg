@@ -13,6 +13,7 @@ import { applyOfflineProgress } from '../game/save'
 import { sellItem } from '../game/loot'
 import type { UpgradePriority } from '../data/upgrade'
 import type { LootPolicy } from '../data/upgrades'
+import { snapRestThreshold } from '../data/balance'
 import { buyUpgrade } from '../game/upgrades'
 import { craft as craftAction } from '../game/crafting'
 import { recordDecision, resetTelemetry } from './telemetry'
@@ -350,10 +351,12 @@ export function resetTalentTree(): void {
 /** Порог ухода на привал по HP. 0 — не уходить: герой будет фармить до смерти. */
 export function setRestHpThreshold(share: number): void {
   recordDecision('rest-threshold')
-  // statsDirty: порог входит в конвейер базой стата restThreshold —
-  // без пересчёта талант на порог увидел бы старое значение.
+  // ПРИЖИМАЕТСЯ К ШАГУ ПОЛЗУНКА ЗДЕСЬ, а не в разметке: значение приходит и
+  // из миграции старого сейва, и из отладочных путей, и «0.5499999» в сейве
+  // читалось бы на экране как 55 % при шаге в десять.
+  // statsDirty: порог входит в конвейер базой стата restThreshold.
   state.update((s) =>
-    ensureStats({ ...s, restHpThreshold: Math.min(1, Math.max(0, share)), statsDirty: true }),
+    ensureStats({ ...s, restHpThreshold: snapRestThreshold(share), statsDirty: true }),
   )
 }
 

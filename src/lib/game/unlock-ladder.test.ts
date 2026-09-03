@@ -20,6 +20,13 @@ import {
   UNIQUE_RECIPE_LEVEL,
 } from '../data/balance'
 import { PROGRESSION } from '../data/progression'
+import { BRANCH_DEPTH, TALENTS, TALENT_BY_ID } from '../data/talents'
+import {
+  MAX_REST_THRESHOLD,
+  MIN_REST_DURATION_S,
+  REST_THRESHOLD_STEP,
+  snapRestThreshold,
+} from '../data/balance'
 import {
   availableLootPolicies,
   availableUpgrades,
@@ -251,5 +258,74 @@ describe('лестница покупок', () => {
       (u) => u.effect.kind === 'policy' && u.effect.policy === 'dust',
     )!
     expect(dust.level).toBeGreaterThan(ENCHANT_UNLOCK_LEVEL)
+  })
+})
+
+
+// ПОРОГ ПРИВАЛА — ПОЛЗУНОК, А НЕ ЧЕТЫРЕ ПРЕСЕТА.
+//
+// Между 40 % и 60 % разница в цене боя ощутима, а выбрать там было нечего;
+// «никогда» стояло в одном ряду с процентами, будто это такой же процент.
+describe('порог привала ползунком', () => {
+  it('шаг ползунка даёт одиннадцать положений от нуля до потолка', () => {
+    const steps: number[] = []
+    for (let v = 0; v <= MAX_REST_THRESHOLD + 1e-9; v += REST_THRESHOLD_STEP) {
+      steps.push(snapRestThreshold(v))
+    }
+    expect(steps).toEqual([0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1])
+  })
+
+  it('потолок — единица: ползунок обещает сто процентов и не врёт', () => {
+    expect(MAX_REST_THRESHOLD).toBe(1)
+    expect(snapRestThreshold(1)).toBe(1)
+    // И конвейер эту единицу пропускает, а не режет по дороге.
+    const state = ensureStats({ ...hero(50), restHpThreshold: 1, statsDirty: true })
+    expect(state.stats.restThreshold).toBe(1)
+  })
+
+  it('промежуточные значения прижимаются к ближайшему шагу', () => {
+    expect(snapRestThreshold(0.55)).toBe(0.6)
+    expect(snapRestThreshold(0.54)).toBe(0.5)
+    expect(snapRestThreshold(0.04)).toBe(0)
+    // За краями — прижимается к краям, а не уходит в минус или за потолок.
+    expect(snapRestThreshold(-1)).toBe(0)
+    expect(snapRestThreshold(5)).toBe(MAX_REST_THRESHOLD)
+  })
+
+  it('старые пресеты попадают в положения ползунка без сдвига', () => {
+    // Миграция обещает «старый пресет отображается в ближайшие 10 %»;
+    // у всех четырёх прежних значений ближайшее — они сами.
+    for (const preset of [0, 0.4, 0.6, 0.8]) {
+      expect(snapRestThreshold(preset), String(preset)).toBe(preset)
+    }
+  })
+
+  it('на месте таланта на порог — талант на ДЛИНУ привала', () => {
+    // Не «талант пропал»: этаж занят настоящей характеристикой, и глубина
+    // ветки не изменилась.
+    for (const branchId of ['warden-vigil', 'reaver-instinct']) {
+      const branch = TALENTS.filter((t) => t.branch === branchId)
+      expect(branch.reduce((sum, t) => sum + t.maxRank, 0), branchId).toBe(BRANCH_DEPTH)
+    }
+    const replaced = ['vigil-swift-camp', 'instinct-light-camp', 'instinct-restless']
+    for (const id of replaced) {
+      const talent = TALENT_BY_ID[id]
+      expect(talent, id).toBeDefined()
+      expect(talent.effect.kind).toBe('modifiers')
+      const mods = talent.effect.kind === 'modifiers' ? talent.effect.mods : []
+      expect(mods.map((m) => m.stat), id).toEqual(['restDuration'])
+      // Процентом, а не секундами: секунды уже заняты соседним талантом.
+      expect(mods[0].kind, id).toBe('percent')
+      expect(mods[0].value.lt(0), id).toBe(true)
+    }
+  })
+
+  it('привал не схлопывается в ноль от талантов', () => {
+    // Процент от суммы конвейера плюс соседние секундные таланты могли бы
+    // увести длину привала в ноль; пол держит MIN_REST_DURATION_S.
+    const maxed: Record<string, number> = {}
+    for (const t of TALENTS) if (t.branch === 'warden-vigil') maxed[t.id] = t.maxRank
+    const state = ensureStats({ ...hero(100), talents: maxed, statsDirty: true })
+    expect(state.stats.restDuration).toBeGreaterThanOrEqual(MIN_REST_DURATION_S)
   })
 })

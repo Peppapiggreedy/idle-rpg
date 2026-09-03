@@ -46,7 +46,6 @@ export const ICONS = {
   'talent-steady-breath': { file: 'lorc/magic-swirl.svg', author: 'Lorc' },
   'talent-deep-well': { file: 'delapouite/water-flask.svg', author: 'Delapouite' },
   'talent-quick-camp': { file: 'delapouite/camping-tent.svg', author: 'Delapouite' },
-  'talent-field-medicine': { file: 'delapouite/first-aid-kit.svg', author: 'Delapouite' },
   'talent-unbroken-focus': { file: 'lorc/sands-of-time.svg', author: 'Lorc' },
   // --- Таланты: шесть веток глубиной 61 ---
   'talent-double-strike': { file: 'lorc/sword-clash.svg', author: 'Lorc' },
