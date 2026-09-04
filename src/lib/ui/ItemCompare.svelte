@@ -13,6 +13,7 @@
   import { gameState } from '../stores/game'
   import { formatStatDelta, isImprovement, SHOWN_STAT_IDS, statNames } from './statFormat'
   import { RARITY_BY_ID } from '../data/rarity'
+  import { itemSlotLabel } from './itemText'
   import EnchantLine from './EnchantLine.svelte'
   import ItemMods from './ItemMods.svelte'
   import { rarityStyle } from './kit'
@@ -100,6 +101,13 @@
   <div class="head">
     <span class="name">{item.name}</span>
     <span class="tier">{RARITY_BY_ID[item.rarity].name} · {item.level} ур.</span>
+    <!-- КУДА ЭТО НАДЕВАЕТСЯ — И ХВАТ СЛОВОМ. Окно называло всё, кроме
+         главного про оружие: одноручное оно или двуручное. А разница между
+         ними — это вся сборка целиком: со вторым клинком, со щитом или без
+         второй руки вовсе. Узнать её можно было только надев.
+         Подпись строит общий `itemSlotLabel`, тот же, что подписывает
+         находку в сумке: двух ответов на один вопрос быть не должно. -->
+    <span class="where">{itemSlotLabel(item)}</span>
   </div>
 
   <!-- ПЕРВЫМИ СТРОКАМИ — обе оси. Обе считаются через estimateCombatRate на
@@ -168,6 +176,9 @@
   }
   .tier {
     color: var(--c-text-faint);
+  }
+  .where {
+    color: var(--c-text-muted);
   }
   .axes {
     display: flex;

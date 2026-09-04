@@ -38,6 +38,35 @@ export const SLOT_ICONS: Record<SlotId, IconName> = {
   trinket: 'slot-trinket',
 }
 
+/**
+ * МЕСТО СЛОТА НА КУКЛЕ — ДАННЫМИ, как и его иконка.
+ *
+ * Кукла перестала быть списком карточек и стала фигурой: голова сверху,
+ * талисман сбоку от неё, вниз по центру грудь и ноги, кисти сбоку, обе руки
+ * в нижнем ряду. Такую раскладку нельзя вывести из порядка `SLOT_IDS` — она
+ * анатомическая, — а расставлять её условиями `if (slot === 'head')` в
+ * компоненте значит завести восьмое такое условие на восьмом слоте.
+ *
+ * Колонок три, рядов четыре. Пустые клетки — это пустые клетки: у фигуры
+ * нет плеч в первом столбце, и рисовать там ячейку не надо.
+ *
+ * РУКИ СТОЯТ РЯДОМ (ряд 4, колонки 1 и 2) НАМЕРЕННО: двуручное оружие
+ * занимает обе, и показать это можно только соседством.
+ */
+export const SLOT_CELL: Record<SlotId, { col: number; row: number }> = {
+  head: { col: 2, row: 1 },
+  trinket: { col: 3, row: 1 },
+  chest: { col: 2, row: 2 },
+  hands: { col: 1, row: 3 },
+  legs: { col: 2, row: 3 },
+  mainHand: { col: 1, row: 4 },
+  offHand: { col: 2, row: 4 },
+}
+
+/** Ширина и высота сетки куклы — производные, чтобы CSS не знал чисел. */
+export const DOLL_COLS = Math.max(...Object.values(SLOT_CELL).map((c) => c.col))
+export const DOLL_ROWS = Math.max(...Object.values(SLOT_CELL).map((c) => c.row))
+
 // Вес слота в рулетке дропа: оружие падает реже брони.
 export const SLOT_DROP_WEIGHTS: Record<SlotId, number> = {
   mainHand: 20,

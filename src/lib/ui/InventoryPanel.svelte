@@ -444,6 +444,26 @@
             {upgradeLabel(share)}
           </span>
         {/if}
+        <!-- ПРОДАЖА — В УГЛУ САМОГО ЗНАЧКА. Разобрать полную сумку через
+             карточку выбранного — это выбрать вещь, отвести взгляд вниз,
+             прицелиться в кнопку, вернуться к сетке, и так пятнадцать раз;
+             мусора в сумке больше, чем находок, и дорога до кнопки стоила
+             дороже самого решения. Кнопка выбора не отменяет: карточка
+             ниже остаётся местом, где вещь читают и распыляют. -->
+        {#snippet corner()}
+          <button
+            class="sellbtn"
+            type="button"
+            title="Продать за {formatNumber(sellPrice(item))}"
+            aria-label="Продать «{item.name}» за {formatNumber(sellPrice(item))}"
+            onclick={(e: MouseEvent) => act(e, () => sellInventoryItem(item.id))}
+            onpointerdown={(e: PointerEvent) => e.stopPropagation()}
+            onkeydown={(e: KeyboardEvent) => e.stopPropagation()}
+            ondblclick={(e: MouseEvent) => e.stopPropagation()}
+          >
+            <Icon name="gold" size="sm" />
+          </button>
+        {/snippet}
       </IconSlot>
     {/each}
     {#each Array(emptySlots) as _, i (i)}
@@ -634,13 +654,36 @@
   /* Апгрейд обязан быть виден без наведения: ради этого мгновения лут
      и существует. Цвет — здоровья: «стало лучше», а не «тут урон». */
   /* Уровень вещи — единственное число на значке: без него «Редкий» третьего
-     уровня выглядел бы равным «Редкому» шестидесятого. */
+     уровня выглядел бы равным «Редкому» шестидесятого. Угол слева: правый
+     нижний занят кнопкой продажи. */
   .lvl {
     position: absolute;
-    right: var(--space-1);
+    left: var(--space-1);
     bottom: 0;
     font-size: var(--text-2xs);
     color: var(--c-text-faint);
+  }
+  /* Кнопка продажи в углу значка. Мелкая и приглушённая до наведения: она
+     стоит на КАЖДОЙ ячейке, и полтора десятка ярких монет перебили бы то
+     единственное, ради чего в сетку смотрят, — метку апгрейда. */
+  .sellbtn {
+    display: flex;
+    padding: 0;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--c-text-faint);
+    cursor: pointer;
+    opacity: 0.55;
+  }
+  .sellbtn:hover,
+  .sellbtn:focus-visible {
+    color: var(--c-gold);
+    opacity: 1;
+  }
+  .sellbtn:focus-visible {
+    outline: none;
+    box-shadow: var(--focus-ring);
   }
   /* Цена и нехватка — столбиком: строка «не хватает N» встаёт под кнопкой,
      а не растягивает ряд покупки в ширину. */

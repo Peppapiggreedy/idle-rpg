@@ -10,6 +10,8 @@
     slotLabel?: string
     // Редкость содержимого; без неё ячейка считается пустой.
     rarity?: Rarity
+    /** Слово в пустой ячейке. Пустая строка — ничего не рисовать вовсе:
+     *  на кукле пустоту называет сам значок слота, и «пусто» под ним лишнее. */
     emptyText?: string
     /** Значок слота рядом с подписью: чей это слот, видно и когда он пуст. */
     badge?: Snippet
@@ -24,6 +26,21 @@
      */
     compact?: boolean
     interactive?: boolean
+    /**
+     * ДЕЙСТВИЕ В УГЛУ ЯЧЕЙКИ — маленькая кнопка поверх значка, снизу справа.
+     * Заведено ради продажи: разобрать полную сумку, выбирая каждую находку
+     * и целясь в кнопку под сеткой, дольше, чем сама находка того стоит.
+     * Примитив по-прежнему не знает, ЧТО там за кнопка, — только где она.
+     */
+    corner?: Snippet
+    /**
+     * СЦЕПКА С СОСЕДНЕЙ ЯЧЕЙКОЙ: `'start'` — левая половина пары, `'end'` —
+     * правая. Пара рисуется одним широким блоком, но остаётся ДВУМЯ
+     * ячейками: у второй свои фокус, свой бросок и своя строка отказа.
+     * Так двуручное оружие занимает обе руки видимо, не отнимая у левой
+     * руки права объяснить, почему она занята.
+     */
+    join?: 'start' | 'end'
     /**
      * Роль ячейки в перетаскивании. Про сам инвентарь примитив по-прежнему
      * не знает — это чистое состояние вида:
@@ -61,6 +78,8 @@
     badge,
     active = false,
     compact = false,
+    corner,
+    join,
     interactive = false,
     drop,
     draggable = false,
@@ -89,6 +108,8 @@
   class="slot"
   class:filled={rarity !== undefined}
   class:compact
+  class:join-start={join === 'start'}
+  class:join-end={join === 'end'}
   class:active
   class:carried={drop === 'carried'}
   class:target={drop === 'target'}
@@ -122,10 +143,11 @@
   {/if}
   {#if rarity !== undefined}
     <div class="content">{@render children?.()}</div>
-  {:else}
+  {:else if emptyText}
     <span class="empty">{emptyText}</span>
   {/if}
   {#if footer}<div class="foot">{@render footer()}</div>{/if}
+  {#if corner}<div class="corner">{@render corner()}</div>{/if}
 </div>
 
 <style>
@@ -160,6 +182,27 @@
     align-items: center;
     justify-content: center;
     gap: 0;
+  }
+  /* Угол ячейки. Кнопка лежит ПОВЕРХ значка и не входит в поток, иначе
+     квадрат перестал бы быть квадратом на каждой второй ячейке. */
+  .corner {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    line-height: 0;
+  }
+  /* СЦЕПЛЕННАЯ ПАРА: две ячейки читаются одним широким блоком. Скругления
+     гасятся на стыке, границы половинок сходятся в один разделитель — но
+     ячеек по-прежнему ДВЕ: у второй свой фокус, свой бросок и своя строка
+     отказа. Прятать её было бы враньём — слот занят, а не исчез. */
+  .slot.join-start {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+  }
+  .slot.join-end {
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
   }
   .slot-head {
     display: flex;
