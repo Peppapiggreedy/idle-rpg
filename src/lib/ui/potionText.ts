@@ -9,7 +9,7 @@ const STAT_NAMES: Partial<Record<StatId, string>> = {
   strength: 'силы',
   agility: 'ловкости',
   intellect: 'интеллекта',
-  vitality: 'живучести',
+  vitality: 'выносливости',
   attackPower: 'силы атаки',
   maxHp: 'здоровья',
   maxMana: 'запаса ресурса',

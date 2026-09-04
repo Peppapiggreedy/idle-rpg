@@ -129,7 +129,7 @@ export interface StatBlock {
   strength: Decimal // сила: урон (через силу атаки)
   agility: Decimal // ловкость: скорость (haste) и шанс крита
   intellect: Decimal // интеллект: запас и восстановление маны
-  vitality: Decimal // живучесть: запас и восстановление здоровья
+  vitality: Decimal // выносливость: запас и восстановление здоровья
   attackPower: Decimal // сила атаки: вклад в удар через AP_NORMALIZATION
   weaponDamageMin: Decimal // нижняя граница урона оружия
   weaponDamageMax: Decimal // верхняя граница урона оружия
@@ -219,7 +219,7 @@ export function collectModifiers(state: GameState): StatModifier[] {
 
 /**
  * Во что разворачиваются атрибуты. Сила — урон, ловкость — скорость и криты,
- * интеллект — мана, живучесть — здоровье; ставки — в data/balance.ts.
+ * интеллект — мана, выносливость — здоровье; ставки — в data/balance.ts.
  *
  * Считается ЗДЕСЬ, внутри сбора модификаторов, а не отдельным шагом в
  * applyModifiers: вклад атрибута — это обычные flat-модификаторы с source

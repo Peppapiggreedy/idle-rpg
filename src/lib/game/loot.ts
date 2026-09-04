@@ -32,10 +32,10 @@ import { inventorySize, lootPolicyOf } from './upgrades'
 import type { BossLoot } from '../data/dungeons'
 
 // Реэкспорт для обратной совместимости импортов.
-export { INVENTORY_SIZE } from '../data/balance'
 export type { Rng } from './rng'
 
 // Взвешенная рулетка: чем больше weight тира, тем шире его отрезок на [0, 1).
+export { INVENTORY_SIZE } from '../data/balance'
 export function rollRarity(rng: Rng): RarityDef {
   const total = RARITIES.reduce((sum, r) => sum + r.weight, 0)
   let roll = rng() * total
@@ -145,8 +145,8 @@ export function armorMods(
   const source = `equipment:${slot}`
   const power = itemLevelScale(level).times(rarity.bonusMult)
   // Главный атрибут и общий довесок СЛИВАЮТСЯ, когда это один и тот же стат:
-  // две записи об одном стате читались бы в карточке как «+12 живучести,
-  // +4 живучести». Слияние идёт по совпадению стата, а какой стат довеском —
+  // две записи об одном стате читались бы в карточке как «+12 выносливости,
+  // +4 выносливости». Слияние идёт по совпадению стата, а какой стат довеском —
   // сказано в данных (ARMOR_BONUS_STAT). Раньше здесь стояло имя «vitality»
   // прямо в условии, и пятый атрибут молча вернул бы двойную строку.
   // БЮДЖЕТЫ СКЛАДЫВАЮТСЯ ДО умножения на power, а не после: иначе у

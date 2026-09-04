@@ -1290,12 +1290,12 @@ export const SHIELD_SCHEMA: EntitySchema<ShieldTemplate> = {
         )
       }
       // Щит НЕ оружие: урона он не даёт ни в каком виде, иначе стиль «щит»
-      // перестал бы быть платой за живучесть.
+      // перестал бы быть платой за выносливость.
       if (String(mod.stat).startsWith('offhandDamage') || String(mod.stat).startsWith('weaponDamage')) {
         report.add(
           where,
           `щит даёт урон статом «${mod.stat}» — щит не оружие, его вклад ` +
-            'это блок и живучесть (data/items.ts)',
+            'это блок и выносливость (data/items.ts)',
         )
       }
     }
