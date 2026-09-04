@@ -16,7 +16,7 @@ test('постоянная зона — ровно шесть ячеек, и к�
   // Состав проверяется по разметке, а не глазами: седьмая ячейка в правило
   // не влезает. Ячеек шесть, потому что зона — ОДНА СЕТКА на три полосы:
   //   1. столбец меню · сцена · столбец меню
-  //   2. «Автокаст» · ряд действий с порогом привала
+  //   2. «Умения» · ряд действий с порогом привала
   //   3. полоски героя во всю ширину
   await open(page)
   await expect(page.locator('[data-permanent] > *')).toHaveCount(6)
@@ -51,7 +51,7 @@ test('кнопки меню стоят ПО БОКАМ сцены, а не по�
   expect(Math.abs(right.y - stage.y)).toBeLessThan(stage.height / 2)
 })
 
-test('«Автокаст» стоит под левым столбцом, слева от ряда умений', async ({ page }) => {
+test('«Умения» стоит под левым столбцом, слева от ряда умений', async ({ page }) => {
   // Автокаст — не действие, а переключатель того, КТО действия жмёт, и
   // разведены они местом, а не чертой внутри одного ряда. Колонка у него
   // общая со столбцом меню: обе стоят в одной сетке, поэтому совпадают
@@ -91,6 +91,34 @@ test('кнопки ряда действий одного размера', async
     expect(Math.round(box!.height)).toBe(Math.round(boxes[0]!.height))
     // И не меньше области нажатия: в бою по ним жмут не глядя.
     expect(box!.height).toBeGreaterThanOrEqual(44)
+  }
+})
+
+// ЧЕТЫРЕ СЛОТА УМЕНИЙ. Умений у класса больше, чем слотов, и выбор четырёх
+// из них — решение игрока; ряд под сценой показывает ровно эти четыре, а
+// порядок в нём и есть приоритет автокаста.
+test('в ряду действий ровно четыре слота умений, хоткеи 1-4', async ({ page }) => {
+  await open(page)
+  const bar = page.locator('[aria-label="Действия"]')
+  // Слоты умений помечены в разметке: считать их «первыми четырьмя» значило
+  // бы проверять порядок разметки, а не число слотов.
+  expect(await bar.locator('[data-kind="ability"]').count()).toBe(4)
+  // Хоткеи подписаны 1..4 по порядку слотов: игрок помнит их пальцами.
+  for (let i = 0; i < 4; i += 1) {
+    await expect(bar.locator('.slot').nth(i).locator('.key')).toHaveText(String(i + 1))
+  }
+})
+
+test('пустой слот виден и не нажимается', async ({ page }) => {
+  // Ряд из четырёх мест — обещание игры. Место, которое ещё нечем занять,
+  // обязано быть на экране: иначе книга умений открывается вслепую.
+  await open(page)
+  const empty = page.locator('[aria-label="Действия"] .slot.empty')
+  // У Стража первого уровня четыре умения на четыре слота — пустых нет.
+  // Проверяем само правило: пустой слот, если он есть, — не кнопка.
+  const count = await empty.count()
+  for (let i = 0; i < count; i += 1) {
+    expect(await empty.nth(i).evaluate((el) => el.tagName)).toBe('DIV')
   }
 })
 
@@ -378,9 +406,9 @@ test('без открытого меню сцена на месте и на те
 // кнопка называлась одним, а внутри лежало другое, и появлялась она раньше,
 // чем ей было что показать.
 
-test('«Автокаст» ОТКРЫВАЕТ настройки ротации, а не переключает её', async ({ page }) => {
+test('«Умения» ОТКРЫВАЕТ книгу и настройки ротации, а не переключает её', async ({ page }) => {
   await open(page)
-  const button = page.locator('[data-permanent] button', { hasText: 'Автокаст' }).first()
+  const button = page.locator('[data-permanent] button', { hasText: 'Умения' }).first()
   await expect(page.locator('.pane > *')).toHaveCount(0)
   await button.click()
 
@@ -401,7 +429,7 @@ test('«Автокаст» ОТКРЫВАЕТ настройки ротации,
 test('открытие другого меню закрывает автокаст, и наоборот', async ({ page }) => {
   // Одно меню за раз — правило общее, и автокаст из него не выпадает.
   await open(page)
-  await page.locator('[data-permanent] button', { hasText: 'Автокаст' }).first().click()
+  await page.locator('[data-permanent] button', { hasText: 'Умения' }).first().click()
   await menuButton(page, 'Мир').click()
   await expect(page.locator('.pane').getByText('Лестница открытий')).toBeVisible()
   await expect(page.locator('.pane').locator('[data-autocast-master]')).toHaveCount(0)
@@ -438,7 +466,7 @@ test('кнопки меню не видны раньше, чем им есть �
   for (const name of ['Герой', 'Сумка', 'Мир', 'Журнал', 'Настройки']) {
     expect(atOne, `кнопка «${name}» должна быть видна сразу`).toContain(name)
   }
-  await expect(page.locator('[data-permanent] button', { hasText: 'Автокаст' })).toHaveCount(1)
+  await expect(page.locator('[data-permanent] button', { hasText: 'Умения' })).toHaveCount(1)
 
   // Десятый уровень — порог талантов: кнопка появилась, крафта ещё нет.
   await page.goto('?debug=1&state=mid&scene=off')

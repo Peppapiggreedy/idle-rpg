@@ -2,21 +2,31 @@
 // Своей формулы урона здесь НЕТ — умение это доля удара оружия, а удар
 // считает combat.ts. Текста для игрока тоже нет: наружу идут коды причин.
 import { Decimal } from './numbers'
-import { rollSwing } from './combat'
+import { absorbPool, rollSwing } from './combat'
 import { AUTOCAST_DELAY_MS, GCD_MS } from '../data/balance'
 import { ABILITIES, ABILITY_BY_ID, type AbilityDef } from '../data/abilities'
 import { abilitiesByPriority } from './rotation'
 import { talentAbilityEffect, talentExtraCharges } from './talents'
 import { punishResourceSpend } from './bossAbilities'
-import { abilitiesOf, pushEvent, type ActiveEffect, type GameState } from './state'
+import { abilitiesOf, pushEvent, rotationOf, type ActiveEffect, type GameState } from './state'
 import type { Rng } from './rng'
 import type { AttackEvent, CombatEvent } from '../types'
 
 export { ABILITIES, ABILITY_BY_ID } from '../data/abilities'
+// Запас щита считает combat.ts — он нижний слой и знает про статы; здесь
+// имя переэкспортировано, чтобы вызывающим не приходилось знать, где оно.
+export { absorbPool } from './combat'
 export type { AbilityDef, AbilityEffect, AbilityType } from '../data/abilities'
 
 // Почему кнопка не нажимается. Каждый случай отдельный код — текст рендерит UI.
-export type AbilityBlockReason = 'locked' | 'dead' | 'cooldown' | 'gcd' | 'no-mana'
+export type AbilityBlockReason =
+  | 'locked'
+  | 'dead'
+  | 'cooldown'
+  | 'gcd'
+  | 'no-mana'
+  | 'no-combo'
+  | 'target-healthy'
 
 export interface AbilityStatus {
   abilityId: string
@@ -89,6 +99,14 @@ export function abilityStatus(state: GameState, ability: AbilityDef): AbilitySta
   if (left <= 0) return blocked('cooldown')
   if (ability.triggersGcd && state.gcdMsLeft > 0) return blocked('gcd')
   if (ability.type === 'instant' && state.currentMana.lt(ability.manaCost)) return blocked('no-mana')
+  // ДЕТОНАТОРУ НЕЧЕГО СЪЕДАТЬ. Отказ, а не «нажмётся и пропадёт»: иначе
+  // умение встало бы в очередь на замах и списало ресурс впустую — ровно то,
+  // что автокаст делал бы систематически.
+  if (ability.detonate && pendingEffectDamage(state).lte(0)) return blocked('no-combo')
+  // ДОБИВАНИЕ ЖДЁТ СВОЕГО МОМЕНТА. Порог — из данных умения; автокаст его
+  // просто пропускает, пока цель выше порога, и это не особое правило
+  // автокаста, а тот же отказ, что видит игрок.
+  if (ability.execute && !targetLowEnough(state, ability)) return blocked('target-healthy')
   return { ...base, usable: true, reason: null }
 }
 
@@ -113,6 +131,27 @@ export function resetsRegenDelay(ability: AbilityDef): boolean {
  * потратил — откат пошёл.
  */
 function payFor(state: GameState, ability: AbilityDef): GameState {
+  // БЕСПЛАТНОЕ ПРИМЕНЕНИЕ. Тратится только на то, что вообще стоит ресурса:
+  // на нулевой цене заряд сгорал бы впустую. Пауза регенерации при этом не
+  // взводится — трата не состоялась.
+  if (state.freeCastsLeft > 0 && ability.manaCost.gt(0)) {
+    const running = cooldownLeft(state, ability) > 0
+    return punishResourceSpend(
+      {
+        ...state,
+        freeCastsLeft: state.freeCastsLeft - 1,
+        abilityCharges: {
+          ...state.abilityCharges,
+          [ability.id]: Math.max(0, chargesLeft(state, ability) - 1),
+        },
+        abilityCooldownsMs: running
+          ? state.abilityCooldownsMs
+          : { ...state.abilityCooldownsMs, [ability.id]: ability.cooldownSec * 1000 },
+        gcdMsLeft: ability.triggersGcd ? GCD_MS : state.gcdMsLeft,
+      },
+      new Decimal(0),
+    )
+  }
   const spends = resetsRegenDelay(ability)
   const running = cooldownLeft(state, ability) > 0
   const left = Math.max(0, chargesLeft(state, ability) - 1)
@@ -140,13 +179,30 @@ function payFor(state: GameState, ability: AbilityDef): GameState {
  * галкой. Нет такого — нечего и беречь.
  */
 export function autocastHeal(state: GameState): AbilityDef | null {
-  for (const ability of abilitiesOf(state.classId)) {
+  // ТОЛЬКО ИЗ РЯДА: лечение, не положенное в четвёрку, автокаст нажать не
+  // может — и беречь под него ману было бы обещанием, которого игра не держит.
+  for (const ability of abilitiesByPriority(rotationOf(state), true)) {
     if (!ability.heal) continue
     if (state.level.lt(ability.unlockLevel)) continue
-    if (!state.abilitySettings[ability.id]?.autocast) continue
     return ability
   }
   return null
+}
+
+/** Стоит ли автокасту клеймить эту цель: она ещё достаточно цела. */
+export function brandWorthIt(state: GameState, ability: AbilityDef): boolean {
+  if (!ability.brand) return true
+  if (state.monster.maxHp.lte(0)) return false
+  return state.monster.currentHp
+    .div(state.monster.maxHp)
+    .gte(ability.brand.autocastAboveHpShare)
+}
+
+/** Цель достаточно слаба для добивания: доля здоровья ниже порога из данных. */
+export function targetLowEnough(state: GameState, ability: AbilityDef): boolean {
+  if (!ability.execute) return true
+  if (state.monster.maxHp.lte(0)) return false
+  return state.monster.currentHp.div(state.monster.maxHp).lt(ability.execute.belowHpShare)
 }
 
 /** Пора ли лечиться: здоровье ниже порога автокаста из данных умения. */
@@ -201,6 +257,9 @@ function effectFrom(
 ): ActiveEffect | null {
   const effect = ability.effect ?? talentAbilityEffect(state.talents, ability.id)
   if (!effect) return null
+  // Умение поддержки бьёт нулём, и делить на ноль здесь нечего: эффекта у
+  // него нет, а талант, который его выдаст, обязан выдать и урон.
+  if (ability.weaponDamagePercent.lte(0)) return null
   return {
     abilityId: ability.id,
     // Урон тика снят от УЖЕ посчитанного удара умения, поделённого на его
@@ -225,7 +284,9 @@ export function strikeWithAbility(
   rng: Rng,
   emitAttack: (event: AttackEvent) => void,
 ): GameState {
-  const { amount, isCrit } = rollSwing(state.stats, rng, ability.weaponDamagePercent)
+  const roll = rollSwing(state.stats, rng, ability.weaponDamagePercent)
+  const isCrit = roll.isCrit
+  const amount = roll.amount.times(outgoingMultiplier(state))
   const monster = {
     ...state.monster,
     currentHp: Decimal.max(state.monster.currentHp.minus(amount), new Decimal(0)),
@@ -239,7 +300,7 @@ export function strikeWithAbility(
     timestamp: state.playtimeMs.toNumber(),
   })
   const effect = effectFrom(state, ability, amount)
-  return {
+  let after: GameState = {
     ...state,
     monster,
     abilityCasts: state.abilityCasts.plus(1),
@@ -252,6 +313,108 @@ export function strikeWithAbility(
       abilityId: ability.id,
       damage: amount,
       isCrit,
+    }),
+  }
+  // ДЕТОНАТОР СЪЕДАЕТ ЭФФЕКТ И БЬЁТ ЕГО ОСТАТКОМ. Берётся ЛЮБОЙ эффект по
+  // времени, висящий на мобе, а не «эффект такого-то умения»: связка описана
+  // данными, а логика про имена не знает.
+  if (ability.detonate) after = detonate(after, ability, emitAttack)
+  // ОСЛАБЛЕНИЕ ЦЕЛИ. Доля снимается с данных В МОМЕНТ применения: висящая
+  // метка не должна меняться задним числом от правки умения.
+  if (ability.weaken) {
+    after = {
+      ...after,
+      monsterWeaken: { damageShare: ability.weaken.damageShare, hitsLeft: ability.weaken.hits },
+    }
+  }
+  // КЛЕЙМО. Повторное наложение обновляет метку, а не копит вторую.
+  if (ability.brand) {
+    after = {
+      ...after,
+      monsterBrand: {
+        damageShare: ability.brand.damageShare,
+        msLeft: ability.brand.durationSec * 1000,
+      },
+    }
+  }
+  return applySelfFlags(after, ability)
+}
+
+/**
+ * Собственные метки героя: стойка и бесплатные применения. Общая точка для
+ * бьющих умений и для поддержки — иначе флаг работал бы у одних и молчал у
+ * других в зависимости от того, бьёт умение или нет.
+ */
+function applySelfFlags(state: GameState, ability: AbilityDef): GameState {
+  let next = state
+  if (ability.stance) {
+    next = {
+      ...next,
+      stance: {
+        damageShare: ability.stance.damageShare,
+        mitigationShare: ability.stance.mitigationShare,
+        msLeft: ability.stance.durationSec * 1000,
+      },
+    }
+  }
+  // БЕСПЛАТНЫЕ ПРИМЕНЕНИЯ ставятся ПОСЛЕ оплаты самого умения: иначе
+  // «Сосредоточение» съело бы одно из трёх на себя.
+  if (ability.freeCasts) next = { ...next, freeCastsLeft: ability.freeCasts.casts }
+  return next
+}
+
+/**
+ * МНОЖИТЕЛЬ ИСХОДЯЩЕГО УРОНА ГЕРОЯ. Две метки и обе временные: клеймо на
+ * ЦЕЛИ поднимает получаемый ею урон, стойка ГЕРОЯ его срезает. Считается в
+ * одном месте, потому что применяется в четырёх — автоатака, обе руки,
+ * умение и тик эффекта; четыре копии этой строки разъехались бы на первой
+ * же новой метке.
+ */
+export function outgoingMultiplier(state: GameState): Decimal {
+  let mult = new Decimal(1)
+  if (state.monsterBrand) mult = mult.times(1 + state.monsterBrand.damageShare)
+  if (state.stance) mult = mult.times(1 - state.stance.damageShare)
+  return mult
+}
+
+/** Сколько урона осталось во всех эффектах на мобе. */
+export function pendingEffectDamage(state: GameState): Decimal {
+  return state.activeEffects.reduce(
+    (sum, e) => sum.plus(e.damagePerTick.times(e.ticksLeft)),
+    new Decimal(0),
+  )
+}
+
+/** Съесть эффекты с моба и нанести их остаток сразу, с множителем из данных. */
+function detonate(
+  state: GameState,
+  ability: AbilityDef,
+  emitAttack: (event: AttackEvent) => void,
+): GameState {
+  const pending = pendingEffectDamage(state)
+  if (pending.lte(0)) return state
+  const burst = pending.times(ability.detonate!.multiplier).times(outgoingMultiplier(state))
+  const monster = {
+    ...state.monster,
+    currentHp: Decimal.max(state.monster.currentHp.minus(burst), new Decimal(0)),
+  }
+  emitAttack({
+    sourceId: 'hero',
+    targetId: monster.id,
+    amount: burst,
+    isCrit: false,
+    abilityId: ability.id,
+    timestamp: state.playtimeMs.toNumber(),
+  })
+  return {
+    ...state,
+    monster,
+    // Эффект СЪЕДЕН целиком: остаток ушёл в удар, тикать больше нечему.
+    activeEffects: [],
+    combatLog: pushEvent(state.combatLog, {
+      type: 'effect',
+      abilityId: ability.id,
+      damage: burst,
     }),
   }
 }
@@ -283,7 +446,25 @@ export function useAbility(
   // автоатака идёт своим чередом, умение её не сбивает и не ускоряет.
   // Лечение — тем же путём оплаты, только вместо удара возвращает здоровье.
   if (ability.heal) return healWithAbility(payFor(state, ability), ability)
+  // Поглощение — тоже поддержка: платит как все, но вместо удара вешает щит.
+  if (ability.absorb) return absorbWithAbility(payFor(state, ability), ability)
   return strikeWithAbility(payFor(state, ability), ability, rng, emitAttack)
+}
+
+function absorbWithAbility(state: GameState, ability: AbilityDef): GameState {
+  const pool = absorbPool(state, ability)
+  return applySelfFlags({
+    ...state,
+    // Повторное применение ЗАМЕНЯЕТ щит, а не копит второй: иначе умение с
+    // коротким откатом складывалось бы само с собой.
+    absorb: { left: pool, msLeft: ability.absorb!.durationSec * 1000 },
+    combatLog: pushEvent(state.combatLog, {
+      type: 'ability',
+      abilityId: ability.id,
+      damage: new Decimal(0),
+      isCrit: false,
+    }),
+  }, ability)
 }
 
 // Почему умение из очереди сорвётся на замахе. Код уходит в лог событием
@@ -322,11 +503,16 @@ export function consumeQueuedAbility(
  * onNextSwing: ставить в очередь то, что всё равно сорвётся, автокаст не станет.
  */
 export function autocastCandidates(state: GameState): AbilityDef[] {
-  return abilitiesByPriority(state.abilitySettings, true).filter((ability) => {
+  return abilitiesByPriority(rotationOf(state), true).filter((ability) => {
     if (state.currentMana.lt(ability.manaCost)) return false
     if (!passesReserve(state, ability)) return false
     // Лечение автокаст жмёт только когда оно нужно: порог — из данных умения.
     if (ability.heal && !healWanted(state, ability)) return false
+    // КЛЕЙМО НЕ ВЕШАЕТСЯ НА УМИРАЮЩЕГО. Двадцать секунд повышенного урона на
+    // мобе, которому осталось две, не окупаются — а ресурс тратят, и делали
+    // бы это систематически. Порог из данных умения; РУКАМИ игрок волен
+    // ставить клеймо когда угодно, это правило только для автокаста.
+    if (ability.brand && !brandWorthIt(state, ability)) return false
     // Очередь одна: пока в ней кто-то стоит, второе умение туда не ставим,
     // а повторное нажатие на стоящее в очереди её бы просто сняло.
     if (ability.type === 'onNextSwing' && state.queuedAbilityId !== null) return false
@@ -358,7 +544,7 @@ export function autocastStep(
   // ЛЕЧЕНИЕ ВПЕРЕДИ ЛЮБОГО УРОНА, когда оно нужно (см. healWanted): порядок
   // приоритетов игрока решает, что бить, а «выжить» стоит выше. Флаг из
   // данных, а не id: любое лечащее умение любого класса встанет так же.
-  const byPriority = abilitiesByPriority(state.abilitySettings, true)
+  const byPriority = abilitiesByPriority(rotationOf(state), true)
   const order = [
     ...byPriority.filter((a) => a.heal && ready.has(a.id)),
     ...byPriority.filter((a) => !(a.heal && ready.has(a.id))),
@@ -420,6 +606,34 @@ export function advanceCooldowns(state: GameState, dtMs: number): GameState {
     if (next !== leftMs || charges !== (state.abilityCharges[id] ?? max)) changed = true
   }
   const gcdMsLeft = Math.max(0, state.gcdMsLeft - dtMs)
-  if (!changed && gcdMsLeft === state.gcdMsLeft) return state
-  return { ...state, abilityCooldownsMs, abilityCharges, gcdMsLeft }
+  // ЩИТ ТИКАЕТ ТЕМ ЖЕ ИГРОВЫМ ВРЕМЕНЕМ, что откаты: множитель скорости из
+  // отладочной панели ускоряет и его. Своего таймера у щита нет — он живёт
+  // здесь, рядом с остальными обратными отсчётами умений.
+  const absorb = countdown(state.absorb, dtMs)
+  const monsterBrand = countdown(state.monsterBrand, dtMs)
+  const stance = countdown(state.stance, dtMs)
+  if (
+    !changed &&
+    gcdMsLeft === state.gcdMsLeft &&
+    absorb === state.absorb &&
+    monsterBrand === state.monsterBrand &&
+    stance === state.stance
+  ) {
+    return state
+  }
+  return {
+    ...state,
+    abilityCooldownsMs,
+    abilityCharges,
+    gcdMsLeft,
+    absorb,
+    monsterBrand,
+    stance,
+  }
+}
+
+/** Обратный отсчёт метки с длительностью; вышло время — метки нет. */
+function countdown<T extends { msLeft: number }>(mark: T | null, dtMs: number): T | null {
+  if (mark === null) return null
+  return mark.msLeft <= dtMs ? null : { ...mark, msLeft: mark.msLeft - dtMs }
 }

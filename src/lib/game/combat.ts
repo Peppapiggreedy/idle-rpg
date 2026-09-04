@@ -38,8 +38,8 @@ import {
 } from './rotation'
 import type { Monster } from '../types'
 import { SAFE_ZONE, ZONE_BY_ID, zoneSpawnVariants, type Zone } from '../data/zones'
-import { monsterFromTemplate, type AbilitySettings } from './state'
-import { ABILITY_BY_ID } from '../data/abilities'
+import { monsterFromTemplate, type AbilitySettings, type Rotation } from './state'
+import { ABILITY_BY_ID, type AbilityDef } from '../data/abilities'
 import { classById } from '../data/classes'
 import { blockReflectShare, blockResourceShare, doubleStrikeChance } from './talents'
 import { statsWithPotionPlan, statsWithoutPotions } from './potions'
@@ -187,6 +187,20 @@ export function armorReduction(armor: Decimal, heroLevel: number): number {
  * смягчённого удара (см. `expectedMonsterDamage`), потому что снимает
  * фиксированную величину, а не долю.
  */
+/**
+ * ЗАПАС ЩИТА ОТ ОДНОГО ПРИМЕНЕНИЯ. Растёт от брони и силы блока — обе доли
+ * берутся из данных умения, своих чисел в логике нет. Считается в момент
+ * применения: снаряжение потом сменится, а щит уже висит.
+ *
+ * Живёт ЗДЕСЬ, а не рядом с применением умения: модель боя считает то же
+ * число, и вторая копия формулы разъехалась бы с первой.
+ */
+export function absorbPool(state: GameState, ability: AbilityDef): Decimal {
+  const a = ability.absorb
+  if (!a) return new Decimal(0)
+  return state.stats.armor.times(a.armorShare).plus(state.stats.blockValue.times(a.blockShare))
+}
+
 export function mitigationShare(stats: StatBlock, heroLevel: number): number {
   const fromArmor = armorReduction(stats.armor, heroLevel)
   return 1 - (1 - fromArmor) * (1 - stats.damageReduction)
@@ -934,6 +948,9 @@ function rateKey(state: GameState, mode: PlayMode): string {
     identityOf(state.talents),
     identityOf(state.equipment),
     identityOf(state.abilitySettings),
+    // Состав и ПОРЯДОК ряда меняют ротацию так же, как галки: забудь его
+    // здесь — и мемо отдаст ответ для прежней четвёрки.
+    state.abilitySlots.join(','),
     identityOf(state.activePotions),
     state.holdManaForHeal ? 1 : 0,
     // Зона нужна только ручному режиму (травы для зелий), но стоит в ключе
@@ -1146,6 +1163,8 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
   const avgSwing = expectedSwingDamage(stats)
   const respawnSec = RESPAWN_DELAY_MS / 1000
   const settings = unlockedSettings(s)
+  // Ротация читает РЯД: состав и порядок слотов плюс галки по умениям.
+  const heroRotation: Rotation = { slots: s.abilitySlots, settings }
   // Ресурс из боя — уравнение с самим собой: удары умений тоже дают ярость,
   // а число умений зависит от ярости. Решаем ДВУМЯ проходами: сперва доход
   // от одних автоатак, потом — с учётом посчитанных мгновенных ударов.
@@ -1153,7 +1172,7 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
   const pause = resourcePause(s)
   // Лечащее умение этого плана: открытое уровнем и — у автокаста — отмеченное
   // галкой. Флаг из данных, не id: любое лечение любого класса ляжет сюда же.
-  const heal = abilitiesByPriority(settings, plan.onlyAutocast).find((a) => a.heal) ?? null
+  const heal = abilitiesByPriority(heroRotation, plan.onlyAutocast).find((a) => a.heal) ?? null
   const holdMana = heal && s.holdManaForHeal ? heal.manaCost : new Decimal(0)
   // Ресурс из боя — уравнение с самим собой: удары умений тоже дают ярость,
   // а число умений зависит от ярости. Решаем ДВУМЯ проходами: сперва доход
@@ -1161,14 +1180,14 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
   // Двух хватает: второй проход меняет ответ на проценты, третий — на доли.
   const planRotation = (refill: RestRefill | null, fixed: FixedCast[]): RotationRate => {
     const income = (extraHits = 0) => resourceIncome(s, extraHits)
-    let rot = rotationRate(stats, settings, plan, income(), pause, refill, fixed, holdMana)
+    let rot = rotationRate(stats, heroRotation, plan, income(), pause, refill, fixed, holdMana)
     if (classById(s.classId).resource.perSwingDealt.gt(0)) {
       // Умения «на следующий удар» ЗАМЕНЯЮТ автоатаку и лишнего удара не дают;
       // лечение удара не наносит вовсе.
       const extraHits = rot.casts
         .filter((c) => c.ability.type === 'instant' && !c.ability.heal)
         .reduce((sum, c) => sum + c.castsPerSecond, 0)
-      rot = rotationRate(stats, settings, plan, income(extraHits), pause, refill, fixed, holdMana)
+      rot = rotationRate(stats, heroRotation, plan, income(extraHits), pause, refill, fixed, holdMana)
     }
     return rot
   }
@@ -1181,8 +1200,82 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
   const autoDps = autoDamagePerSecond(stats, doubleChance)
   const avgIncoming = expectedMonsterDamage(s.monster, stats, s.level.toNumber())
 
+  /**
+   * ЧТО МЕТКИ УМЕНИЙ ДЕЛАЮТ С МОДЕЛЬЮ БОЯ.
+   *
+   * Клеймо, стойка, ослабление, щит и детонация не выражаются долей удара
+   * оружия, и без этой функции модель их просто НЕ ВИДИТ: Стена выглядела бы
+   * строго худшим умением, а поиск лучшей четвёрки — слепым.
+   *
+   * Все пять формул — ПЕРВОГО ПОРЯДКА и честно приблизительные: аптайм метки
+   * считается как «сколько времени она висит на длинном ряду боёв», а не
+   * посекундной симуляцией. Точность здесь не нужна и вредна: это модель,
+   * по которой сравнивают четвёрки, а настоящий бой считает тик.
+   *
+   * `fightSec` приходит из ПРЕДЫДУЩЕГО прохода — тем же приёмом, что и
+   * лечение: длина боя зависит от урона, урон от меток, метки от длины боя.
+   */
+  const abilityMods = (rot: RotationRate, fightSec: number) => {
+    let outgoing = new Decimal(1)
+    let incoming = 1
+    let absorbPerSecond = new Decimal(0)
+    let extraDps = new Decimal(0)
+    // Полный урон эффекта по времени, который может съесть детонатор, и как
+    // часто такой эффект вообще накладывают.
+    let dotRate = 0
+    let dotDamage = new Decimal(0)
+    for (const cast of rot.casts) {
+      const effect = cast.ability.effect
+      if (!effect) continue
+      dotRate += cast.castsPerSecond
+      dotDamage = expectedAbilityDamage(stats, effect.weaponDamagePercent).times(effect.ticks)
+    }
+    for (const cast of rot.casts) {
+      const a = cast.ability
+      const rate = cast.castsPerSecond
+      if (rate <= 0) continue
+      // КЛЕЙМО живёт на МОБЕ и умирает вместе с ним: дольше боя оно не висит,
+      // сколько бы секунд ни было в данных. Ровно поэтому оно окупается на
+      // боссе и едва окупается на рядовом мобе — модель обязана это видеть.
+      if (a.brand) {
+        const uptime = Math.min(1, rate * Math.min(a.brand.durationSec, fightSec))
+        outgoing = outgoing.times(1 + a.brand.damageShare * uptime)
+      }
+      // СТОЙКА живёт на ГЕРОЕ и боем не ограничена: её аптайм — это отношение
+      // длительности к откату, то есть просто «как часто её удаётся держать».
+      if (a.stance) {
+        const uptime = Math.min(1, rate * a.stance.durationSec)
+        outgoing = outgoing.times(1 - a.stance.damageShare * uptime)
+        incoming *= 1 - a.stance.mitigationShare * uptime
+      }
+      // ОСЛАБЛЕНИЕ считается ДОЛЕЙ ОСЛАБЛЕННЫХ УДАРОВ, а не времени: оно
+      // тратится ударами моба, а не секундами.
+      if (a.weaken) {
+        const share = Math.min(1, rate * a.weaken.hits * s.monster.swingTime)
+        incoming *= 1 - a.weaken.damageShare * share
+      }
+      // ЩИТ — это плоский запас за применение, значит поглощение в секунду.
+      if (a.absorb) absorbPerSecond = absorbPerSecond.plus(absorbPool(s, a).times(rate))
+      // ДЕТОНАЦИЯ добавляет только НАДБАВКУ: сам урон эффекта уже посчитан в
+      // ротации, а съеденный раньше срока он наносит тот же, только с
+      // множителем. Съесть можно не чаще, чем накладывают.
+      if (a.detonate && dotRate > 0) {
+        const eaten = Math.min(rate, dotRate)
+        extraDps = extraDps.plus(dotDamage.times(a.detonate.multiplier - 1).times(eaten))
+      }
+    }
+    return { outgoing, incoming, absorbPerSecond, extraDps: extraDps.times(critFactor(stats)) }
+  }
+  type AbilityMods = ReturnType<typeof abilityMods>
+  const NEUTRAL_MODS: AbilityMods = {
+    outgoing: new Decimal(1),
+    incoming: 1,
+    absorbPerSecond: new Decimal(0),
+    extraDps: new Decimal(0),
+  }
+
   // ОДИН ПРОХОД МОДЕЛИ БОЯ: от ротации до валовой потери за бой.
-  const evaluate = (rot: RotationRate) => {
+  const evaluate = (rot: RotationRate, mods: AbilityMods = NEUTRAL_MODS) => {
     // Поток ударов считается ОДИН раз и уходит и в перебой, и в длину боя, и в
     // урон проков: две копии этого расчёта разошлись бы на первой же правке.
     const stream = hitStream(stats, rot, doubleChance, procs)
@@ -1199,6 +1292,10 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
       .minus(replaced)
       .plus(procDps)
       .plus(reflectPerSecond(s, avgIncoming))
+      // Клеймо поднимает ВЕСЬ урон героя, стойка весь же срезает; детонация
+      // добавляет надбавку поверх — она уже с критом.
+      .times(mods.outgoing)
+      .plus(mods.extraDps)
     const perKill = damagePerKill(s, plan, stream)
     const damagePerSecond = raw.times(s.monster.maxHp.div(perKill))
     // Длина боя — СРЕДНЕЕ число ударов потока на убийство, дробное. Перебой
@@ -1221,7 +1318,16 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
     const monsterHitsPerCycle = avgIncoming.gt(0)
       ? Decimal.max(fightSec.div(s.monster.swingTime).minus(0.5), new Decimal(0))
       : new Decimal(0)
-    const incomingPerCycle = monsterHitsPerCycle.times(avgIncoming)
+    // ВХОДЯЩЕЕ РЕЖУТ ОСЛАБЛЕНИЕ И СТОЙКА (долей), а ЩИТ съедает плоскую
+    // величину за секунду. Ниже нуля не опускаемся: поглощать больше, чем
+    // прилетело, нельзя — иначе щит начал бы лечить.
+    const incomingPerCycle = Decimal.max(
+      monsterHitsPerCycle
+        .times(avgIncoming)
+        .times(mods.incoming)
+        .minus(mods.absorbPerSecond.times(fightSec)),
+      new Decimal(0),
+    )
     // Оберег лечит ТОЛЬКО в бою: он срабатывает от ударов, а в паузе респауна
     // герой не бьёт. Перелив через максимум модель не считает — она и не может:
     // в оценке нет текущего HP, а на длинной череде боёв перелив редок.
@@ -1291,6 +1397,11 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
   // без привалов и лечения, затем с посчитанной длиной цикла и темпом
   // лечения; второй проход меняет ответ на проценты, третий — на доли.
   let pass = evaluate(planRotation(null, []))
+  // ВТОРОЙ ПРОХОД ПО МЕТКАМ. Первый посчитал длину боя без них — теперь она
+  // известна, и клеймо знает, сколько секунд оно проживёт на мобе.
+  const firstFight = pass.fightSec.toNumber()
+  let mods = abilityMods(pass.rot, firstFight)
+  pass = evaluate(pass.rot, mods)
   // ПЕРВЫЙ ПРОХОД — ЭТО ЧИСТАЯ ПРОПУСКНАЯ СПОСОБНОСТЬ УРОНА, и она нужна
   // наружу отдельным числом: см. `sustainedDamagePerSecond` в CombatRate.
   const sustainedDamagePerSecond = pass.damagePerSecond
@@ -1306,7 +1417,9 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
       ? [{ ability: heal, castsPerSecond: healCastsPerSecond(healing, pass.killCycleSec.toNumber()) }]
       : []
   if (refill || fixed.length > 0) {
-    pass = evaluate(planRotation(refill, fixed))
+    const replanned = planRotation(refill, fixed)
+    mods = abilityMods(replanned, pass.fightSec.toNumber())
+    pass = evaluate(replanned, mods)
     healing = healFor(pass)
     ;({ netLossPerSec, cycle } = cycleFor(pass, healing))
   }

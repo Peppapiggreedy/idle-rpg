@@ -4,6 +4,7 @@
   // а бой идёт в любом разделе. Здесь только то, что настраивают редко.
   import {
     abilitiesByPriority,
+    rotationOf,
     abilityStatus,
     expectedAbilityDamage,
     formatNumber,
@@ -19,12 +20,13 @@
   import { abilityReasonText } from './abilityText'
   import { resourceWords } from './resource'
   import { Button, NumberText, Panel, Tag } from './kit'
+  import AbilityBook from './AbilityBook.svelte'
 
   // Ресурс называется так, как у класса: у изувера умения стоят ярость.
   const resource = $derived(resourceWords($gameState.classId))
 
   // Порядок в списке = порядок приоритета: сверху то, что автокаст жмёт первым.
-  const ordered = $derived(abilitiesByPriority($gameState.abilitySettings, false))
+  const ordered = $derived(abilitiesByPriority(rotationOf($gameState), false))
   const statuses = $derived(ordered.map((a) => abilityStatus($gameState, a)))
   // Есть ли у класса лечение — от этого зависит, показывать ли резерв под него.
   const healAbility = $derived(ordered.find((a) => a.heal) ?? null)
@@ -41,6 +43,11 @@
     for (const ability of ordered) setAbilityAutocast(ability.id, next)
   }
 </script>
+
+<!-- КНИГА ПЕРВОЙ, НАСТРОЙКИ ВТОРЫМИ. Сперва решают, ЧЕМ играть, и только
+     потом — что из этого игра жмёт сама. Обратный порядок заставлял бы
+     настраивать автокаст на умения, которые ещё не выбраны. -->
+<AbilityBook />
 
 <Panel title="Автокаст" subtitle="что игра жмёт сама, в каком порядке и сколько бережёт">
   <div class="master" data-autocast-master>

@@ -13,6 +13,7 @@ import { ensureStats } from './stats'
 import { autocastCandidates, autocastStep, passesReserve } from './abilities'
 import { estimateCombatRate } from './combat'
 import { abilitiesByPriority, rotationRate, PLAN } from './rotation'
+import { rotationOf } from './state'
 import { applyOfflineProgress } from './save'
 import { stateInZone, zoneRate } from './zones'
 import {
@@ -57,15 +58,15 @@ function run(state: GameState, ms: number, rng = NO_LUCK): GameState {
 describe('выбор умения автокастом', () => {
   it('берёт первое доступное по приоритету', () => {
     const s = hero(10)
-    expect(autocastCandidates(s)[0].id).toBe(abilitiesByPriority(s.abilitySettings, true)[0].id)
-    // Переставили приоритеты — сменился и выбор.
+    expect(autocastCandidates(s)[0].id).toBe(abilitiesByPriority(rotationOf(s), true)[0].id)
+    // ПЕРЕСТАВИЛИ СЛОТЫ — сменился и выбор. Порядок ряда и есть приоритет:
+    // другого рычага для этого в игре нет.
     const flipped: GameState = {
       ...s,
-      abilitySettings: {
-        ...s.abilitySettings,
-        [QUICK.id]: { ...s.abilitySettings[QUICK.id], autocast: true, priority: 9 },
-        [BLOW.id]: { ...s.abilitySettings[BLOW.id], autocast: true, priority: 0 },
-      },
+      abilitySlots: [BLOW.id, ...s.abilitySlots.filter((id) => id !== BLOW.id)].slice(
+        0,
+        s.abilitySlots.length,
+      ),
     }
     expect(autocastCandidates(flipped)[0].id).toBe(BLOW.id)
   })
@@ -74,7 +75,7 @@ describe('выбор умения автокастом', () => {
     const s = hero(10, 0, {
       abilitySettings: {
         ...defaultAbilitySettings(),
-        [QUICK.id]: { autocast: false, priority: 0, reserve: 0 },
+        [QUICK.id]: { autocast: false, reserve: 0 },
       },
     })
     expect(autocastCandidates(s).map((a) => a.id)).not.toContain(QUICK.id)
@@ -228,11 +229,11 @@ describe('честная разница авто и ручной игры', () =
     // Это следствие правила, а не поблажка: см. REGEN_DELAY_S в balance.ts.
     const onlyBlow = {
       ...manualOnlySettings(),
-      [BLOW.id]: { autocast: true, priority: 0, reserve: 0 },
+      [BLOW.id]: { autocast: true, reserve: 0 },
     }
     const s = stateInZone(hero(16, 120, { abilitySettings: onlyBlow }), ZONES[2])
-    const auto = rotationRate(s.stats, s.abilitySettings, PLAN.auto)
-    const manual = rotationRate(s.stats, s.abilitySettings, PLAN.autocastByHand)
+    const auto = rotationRate(s.stats, rotationOf(s), PLAN.auto)
+    const manual = rotationRate(s.stats, rotationOf(s), PLAN.autocastByHand)
     for (const cast of auto.casts) {
       const same = manual.casts.find((c) => c.ability.id === cast.ability.id)!
       // Урон одного каста одинаков: множителя на авто нет, отличается ТЕМП.

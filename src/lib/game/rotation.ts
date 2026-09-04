@@ -10,10 +10,10 @@
 // Больше никаких множителей и штрафов.
 import { Decimal } from './numbers'
 import { critFactor, expectedAbilityDamage } from './combat'
-import { ABILITIES, type AbilityDef } from '../data/abilities'
+import { ABILITY_BY_ID, type AbilityDef } from '../data/abilities'
 import { AUTOCAST_DELAY_MS, REGEN_TICK_S } from '../data/balance'
 import type { StatBlock } from './stats'
-import type { AbilitySettings } from './state'
+import type { AbilitySettings, Rotation } from './state'
 
 export type PlayMode = 'auto' | 'manual'
 
@@ -80,21 +80,32 @@ export interface RestRefill {
 }
 
 /**
- * Умения, отсортированные по приоритету игрока (меньше число — раньше).
- * `onlyAutocast` оставляет только отмеченные галкой — это набор, который герой
- * применяет сам. Ручная игра распоряжается всеми умениями.
+ * УМЕНИЯ В ПОРЯДКЕ РЯДА ДЕЙСТВИЙ. Порядок слотов И ЕСТЬ приоритет: первый
+ * слот жмётся первым, и второго числа приоритета в игре нет.
+ *
+ * Отсюда же следует, что НЕПОЛОЖЕННОЕ В РЯД УМЕНИЕ НЕ УЧАСТВУЕТ НИ В ЧЁМ —
+ * ни в автокасте, ни в ручной игре, ни в модели: кнопки у него на экране
+ * нет, и обещать в расчёте то, чего игрок нажать не может, нельзя.
+ *
+ * `onlyAutocast` оставляет только отмеченные галкой — это набор, который
+ * герой применяет сам; ручная игра распоряжается всем рядом.
  */
 export function abilitiesByPriority(
-  settings: AbilitySettings,
+  rotation: Rotation,
   onlyAutocast: boolean,
 ): AbilityDef[] {
-  // Умения ЧУЖОГО класса в настройках не лежат, поэтому фильтр по наличию
-  // настройки и есть фильтр по классу — второго списка заводить не нужно.
-  return ABILITIES.filter(
-    (a) => settings[a.id] !== undefined && (!onlyAutocast || settings[a.id]?.autocast),
-  ).sort(
-    (a, b) => (settings[a.id]?.priority ?? 0) - (settings[b.id]?.priority ?? 0),
-  )
+  const out: AbilityDef[] = []
+  for (const id of rotation.slots) {
+    if (id === null) continue
+    const ability = ABILITY_BY_ID[id]
+    // Умения ЧУЖОГО класса и запертые уровнем в настройках не лежат, поэтому
+    // фильтр по наличию настройки и есть фильтр по доступности.
+    const setting = rotation.settings[id]
+    if (!ability || setting === undefined) continue
+    if (onlyAutocast && !setting.autocast) continue
+    out.push(ability)
+  }
+  return out
 }
 
 /**
@@ -104,7 +115,7 @@ export function abilitiesByPriority(
  */
 export function rotationRate(
   stats: StatBlock,
-  settings: AbilitySettings,
+  rotation: Rotation,
   plan: RotationPlan,
   /**
    * Сколько ресурса приходит в секунду. По умолчанию — реген из статов
@@ -124,7 +135,7 @@ export function rotationRate(
   /** Сколько маны боевые умения оставляют нетронутой («беречь на лечение»). */
   reserveMana: Decimal = NO_MANA,
 ): RotationRate {
-  const rate = castPlan(stats, settings, plan, income, pauseSec, refill, fixed, reserveMana)
+  const rate = castPlan(stats, rotation, plan, income, pauseSec, refill, fixed, reserveMana)
   if (plan.delayed) return rate
   // Игрок в ЛЮБОЙ момент может повторить то, что делает автокаст: подождать
   // и ударить позже. Значит игра руками не бывает хуже авто. Когда мана
@@ -132,7 +143,7 @@ export function rotationRate(
   // Это не поблажка руке, а определение: ручная игра — лучшая из доступных.
   const delayed = castPlan(
     stats,
-    settings,
+    rotation,
     { ...plan, delayed: true },
     income,
     pauseSec,
@@ -231,7 +242,7 @@ function dutyCycle(
 
 function castPlan(
   stats: StatBlock,
-  settings: AbilitySettings,
+  rotation: Rotation,
   plan: RotationPlan,
   income: Decimal,
   pauseSec: number,
@@ -242,8 +253,8 @@ function castPlan(
   // Сперва — чего ротация хочет, если о мане не думать: это упирается в
   // кулдауны, GCD и очередь замаха. Потом — сколько из этого выдерживает
   // ресурс с правилом задержки и запасом с привала.
-  const desired = fundPlan(stats, settings, plan, UNLIMITED_MANA, fixed)
-  const duty = dutyCycle(stats, settings, desired, income, pauseSec, refill, reserveMana)
+  const desired = fundPlan(stats, rotation, plan, UNLIMITED_MANA, fixed)
+  const duty = dutyCycle(stats, rotation.settings, desired, income, pauseSec, refill, reserveMana)
   if (duty.gte(1)) return desired
   // Долю применяем ко ВСЕЙ ротации разом, а не отдаём бюджет по приоритету.
   // Так герой и играет: жмёт всё, что доступно, а когда запас кончился —
@@ -269,7 +280,7 @@ const UNLIMITED_MANA = new Decimal(Number.MAX_SAFE_INTEGER)
 
 function fundPlan(
   stats: StatBlock,
-  settings: AbilitySettings,
+  rotation: Rotation,
   plan: RotationPlan,
   budget: Decimal,
   fixed: FixedCast[],
@@ -305,7 +316,7 @@ function fundPlan(
     })
   }
 
-  for (const ability of abilitiesByPriority(settings, plan.onlyAutocast)) {
+  for (const ability of abilitiesByPriority(rotation, plan.onlyAutocast)) {
     // Лечение жмётся не по кулдауну, а по здоровью — его темп приходит
     // снаружи (fixed), здесь оно пропускается.
     if (ability.heal) continue

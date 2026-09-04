@@ -1,5 +1,5 @@
 {
-  "version": 29,
+  "version": 28,
   "classId": "warden",
   "materials": {},
   "activePotions": [],
@@ -29,19 +29,19 @@
         {
           "stat": "offhandDamageMin",
           "kind": "base",
-          "value": "37",
+          "value": "37.24",
           "source": "equipment:offHand"
         },
         {
           "stat": "offhandDamageMax",
           "kind": "base",
-          "value": "74",
+          "value": "74.47999999999999",
           "source": "equipment:offHand"
         },
         {
           "stat": "agility",
           "kind": "flat",
-          "value": "80",
+          "value": "79.80000000000001",
           "source": "equipment:offHand"
         }
       ]
@@ -63,19 +63,13 @@
         {
           "stat": "blockValue",
           "kind": "base",
-          "value": "99",
-          "source": "equipment:offHand"
-        },
-        {
-          "stat": "armor",
-          "kind": "flat",
-          "value": "577",
+          "value": "98.95200000000001",
           "source": "equipment:offHand"
         },
         {
           "stat": "vitality",
           "kind": "flat",
-          "value": "33",
+          "value": "32.984",
           "source": "equipment:offHand"
         }
       ]
@@ -97,19 +91,13 @@
         {
           "stat": "blockValue",
           "kind": "base",
-          "value": "80",
-          "source": "equipment:offHand"
-        },
-        {
-          "stat": "armor",
-          "kind": "flat",
-          "value": "466",
+          "value": "79.80000000000001",
           "source": "equipment:offHand"
         },
         {
           "stat": "vitality",
           "kind": "flat",
-          "value": "27",
+          "value": "26.6",
           "source": "equipment:offHand"
         }
       ]
@@ -122,15 +110,9 @@
       "level": 20,
       "mods": [
         {
-          "stat": "armor",
-          "kind": "flat",
-          "value": "222",
-          "source": "equipment:chest"
-        },
-        {
           "stat": "vitality",
           "kind": "flat",
-          "value": "30",
+          "value": "30.299999999999997",
           "source": "equipment:chest"
         }
       ]
@@ -143,21 +125,15 @@
       "level": 20,
       "mods": [
         {
-          "stat": "armor",
-          "kind": "flat",
-          "value": "276",
-          "source": "equipment:hands"
-        },
-        {
           "stat": "agility",
           "kind": "flat",
-          "value": "25",
+          "value": "25.048000000000002",
           "source": "equipment:hands"
         },
         {
           "stat": "vitality",
           "kind": "flat",
-          "value": "13",
+          "value": "12.524000000000001",
           "source": "equipment:hands"
         }
       ]
@@ -170,15 +146,9 @@
       "level": 21,
       "mods": [
         {
-          "stat": "armor",
-          "kind": "flat",
-          "value": "286",
-          "source": "equipment:legs"
-        },
-        {
           "stat": "vitality",
           "kind": "flat",
-          "value": "39",
+          "value": "39.06",
           "source": "equipment:legs"
         }
       ]
@@ -200,19 +170,19 @@
         {
           "stat": "weaponDamageMin",
           "kind": "base",
-          "value": "91",
+          "value": "91.12400000000001",
           "source": "equipment:mainHand"
         },
         {
           "stat": "weaponDamageMax",
           "kind": "base",
-          "value": "182",
+          "value": "182.24800000000002",
           "source": "equipment:mainHand"
         },
         {
           "stat": "strength",
           "kind": "flat",
-          "value": "58",
+          "value": "57.98800000000001",
           "source": "equipment:mainHand"
         }
       ]
@@ -270,19 +240,19 @@
         {
           "stat": "weaponDamageMin",
           "kind": "base",
-          "value": "136",
+          "value": "135.65999999999997",
           "source": "equipment:mainHand"
         },
         {
           "stat": "weaponDamageMax",
           "kind": "base",
-          "value": "271",
+          "value": "271.31999999999994",
           "source": "equipment:mainHand"
         },
         {
           "stat": "strength",
           "kind": "flat",
-          "value": "74",
+          "value": "74.47999999999999",
           "source": "equipment:mainHand"
         }
       ]
@@ -296,15 +266,9 @@
       "level": 21,
       "mods": [
         {
-          "stat": "armor",
-          "kind": "flat",
-          "value": "286",
-          "source": "equipment:head"
-        },
-        {
           "stat": "vitality",
           "kind": "flat",
-          "value": "39",
+          "value": "39.06",
           "source": "equipment:head"
         }
       ]
@@ -317,21 +281,15 @@
       "level": 28,
       "mods": [
         {
-          "stat": "armor",
-          "kind": "flat",
-          "value": "234",
-          "source": "equipment:chest"
-        },
-        {
           "stat": "agility",
           "kind": "flat",
-          "value": "21",
+          "value": "21.28",
           "source": "equipment:chest"
         },
         {
           "stat": "vitality",
           "kind": "flat",
-          "value": "11",
+          "value": "10.64",
           "source": "equipment:chest"
         }
       ]
@@ -344,15 +302,9 @@
       "level": 28,
       "mods": [
         {
-          "stat": "armor",
-          "kind": "flat",
-          "value": "363",
-          "source": "equipment:hands"
-        },
-        {
           "stat": "vitality",
           "kind": "flat",
-          "value": "49",
+          "value": "49.476",
           "source": "equipment:hands"
         }
       ]
@@ -365,15 +317,9 @@
       "level": 28,
       "mods": [
         {
-          "stat": "armor",
-          "kind": "flat",
-          "value": "234",
-          "source": "equipment:legs"
-        },
-        {
           "stat": "vitality",
           "kind": "flat",
-          "value": "32",
+          "value": "31.92",
           "source": "equipment:legs"
         }
       ]
@@ -386,15 +332,9 @@
       "level": 22,
       "mods": [
         {
-          "stat": "armor",
-          "kind": "flat",
-          "value": "364",
-          "source": "equipment:trinket"
-        },
-        {
           "stat": "vitality",
           "kind": "flat",
-          "value": "50",
+          "value": "49.70400000000001",
           "source": "equipment:trinket"
         }
       ]
@@ -415,78 +355,45 @@
   "abilityCooldownsMs": {},
   "regenDelayMsLeft": 0,
   "restHpThreshold": 0.6,
-  "holdManaForHeal": true,
-  "upgradePriority": "balance",
-  "purchasedUpgradeIds": [],
-  "lootPolicy": "keep",
-  "abilitySlots": [
-    "quick-strike",
-    "rending-wound",
-    "mend-wounds",
-    "shattering-blow"
-  ],
   "abilitySettings": {
     "quick-strike": {
       "autocast": true,
+      "priority": 0,
       "reserve": 0
     },
     "rending-wound": {
       "autocast": true,
-      "reserve": 0
-    },
-    "mend-wounds": {
-      "autocast": true,
-      "reserve": 0
-    },
-    "shield-shove": {
-      "autocast": true,
+      "priority": 1,
       "reserve": 0
     },
     "shattering-blow": {
       "autocast": true,
-      "reserve": 0
-    },
-    "rupture": {
-      "autocast": true,
-      "reserve": 0
-    },
-    "bulwark": {
-      "autocast": true,
-      "reserve": 0
-    },
-    "mercy": {
-      "autocast": true,
-      "reserve": 0
-    },
-    "brand": {
-      "autocast": true,
-      "reserve": 0
-    },
-    "focus": {
-      "autocast": true,
-      "reserve": 0
-    },
-    "stance": {
-      "autocast": true,
+      "priority": 2,
       "reserve": 0
     }
   },
   "itemSeq": 13,
   "gold": "13400000",
-  "level": "32",
-  "currentXp": "3993",
-  "currentHp": "1584",
-  "currentMana": "205",
+  "level": "60",
+  "currentXp": "2281",
+  "currentHp": "1460",
+  "currentMana": "155",
   "heroState": "alive",
   "reviveMsLeft": 0,
   "talents": {
-    "wrath-honed-edge": 6,
-    "wrath-keen-eye": 6,
-    "wrath-savage-blows": 6,
-    "wrath-frenzy": 5
+    "vigil-steady-breath": 6,
+    "vigil-clear-mind": 6,
+    "vigil-deep-well": 6,
+    "vigil-quick-camp": 6,
+    "vigil-trophy-spirit": 1,
+    "vigil-learning": 6
   },
   "talentResets": 2,
   "totalTicks": "0",
   "playtimeMs": "0",
-  "abilityCasts": "0"
+  "abilityCasts": "0",
+  "holdManaForHeal": true,
+  "upgradePriority": "balance",
+  "purchasedUpgradeIds": [],
+  "lootPolicy": "keep"
 }

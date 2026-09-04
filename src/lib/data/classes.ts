@@ -109,7 +109,26 @@ export const CLASSES: ClassDef[] = [
       decayShare: new Decimal(0),
     },
     baseMods: [],
-    abilityIds: ['quick-strike', 'rending-wound', 'mend-wounds', 'shattering-blow'],
+    /**
+     * ПОРЯДОК ЗДЕСЬ — ЭТО ЧЕТВЁРКА ПО УМОЛЧАНИЮ: первые `ABILITY_SLOTS` имён
+     * встают в ряд действий новичку. Поэтому новые умения дописываются В
+     * КОНЕЦ, а не по уровню открытия: иначе состав по умолчанию менялся бы
+     * от каждой правки набора. Книга сортирует список по уровню сама — это
+     * вопрос чтения, а не состава.
+     */
+    abilityIds: [
+      'quick-strike',
+      'rending-wound',
+      'mend-wounds',
+      'shattering-blow',
+      'shield-shove',
+      'rupture',
+      'bulwark',
+      'mercy',
+      'brand',
+      'focus',
+      'stance',
+    ],
     branchIds: ['warden-wrath', 'warden-bulwark', 'warden-vigil'],
     // ОДНА БЕЛАЯ ВЕЩЬ И БОЛЬШЕ НИЧЕГО — см. комментарий у изувера ниже.
     startingEquipment: [{ slot: 'mainHand', templateId: 'bastard', kind: 'weapon', rarity: 'common' }],

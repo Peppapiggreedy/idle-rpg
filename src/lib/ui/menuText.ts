@@ -16,5 +16,9 @@ export const MENU_LOOK: Record<MenuId, MenuLook> = {
   craft: { title: 'Крафт', icon: 'profession-smithing' },
   log: { title: 'Журнал', icon: 'log' },
   settings: { title: 'Настройки', icon: 'stat-swingTime' },
-  autocast: { title: 'Автокаст', icon: 'autocast-on' },
+  // КНОПКА НАЗЫВАЕТСЯ «УМЕНИЯ», А НЕ «АВТОКАСТ». За ней теперь две панели:
+  // книга умений (выбор четвёрки) и настройки автокаста этой четвёрки.
+  // «Автокаст» стало бы неправдой ровно в том смысле, в каком правило и
+  // запрещает: кнопка обязана содержать то, что обещает именем.
+  autocast: { title: 'Умения', icon: 'autocast-on' },
 }

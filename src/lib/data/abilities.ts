@@ -34,6 +34,105 @@ export interface AbilityHeal {
   autocastBelowHpShare: number
 }
 
+/**
+ * СВЯЗКА: умение работает только вместе с другим.
+ *
+ * Данными, а не веткой по id: «Разрыв» съедает кровотечение «Рваной раны», и
+ * без неё в четвёрке он бесполезен. Интерфейс ОБЯЗАН сказать это прямо — иначе
+ * игрок выясняет связку опытом, а четвёрка из одиннадцати выбирается вслепую.
+ */
+export interface AbilityCombo {
+  /** Без какого умения в ряду это не работает. */
+  needsAbilityId: string
+}
+
+/**
+ * ОСЛАБЛЕНИЕ ЦЕЛИ: следующие её удары слабее. Флаг с payload'ом, как лечение,
+ * а не свой тип умения: «дешёвый защитный удар» — это роль, а не механика.
+ */
+export interface AbilityWeaken {
+  /** На какую долю слабее удар противника, 0..1. */
+  damageShare: number
+  /** Сколько ближайших ударов ослаблено. */
+  hits: number
+}
+
+/**
+ * ДЕТОНАТОР: съедает эффект по времени с цели и наносит его ОСТАТОК сразу,
+ * с множителем. Своей цели умение не выбирает и своего эффекта не знает —
+ * берёт то, что на мобе уже висит; поэтому связка описывается ДАННЫМИ
+ * (`combo`), а не веткой по id в логике.
+ */
+export interface AbilityDetonate {
+  /** Множитель к оставшемуся урону эффекта. */
+  multiplier: number
+}
+
+/**
+ * ПОГЛОЩЕНИЕ: щит на несколько секунд. Величина растёт ОТ БРОНИ И СИЛЫ
+ * БЛОКА — так у щита появляется второй адрес, кроме самого блока, и
+ * защитная сборка получает умение, которое её усиливает.
+ */
+export interface AbilityAbsorb {
+  /** Доля брони героя в запасе щита. */
+  armorShare: number
+  /** Доля силы блока в запасе щита. */
+  blockShare: number
+  durationSec: number
+}
+
+/**
+ * ДОБИВАНИЕ: умение доступно только когда цель ниже порога здоровья. Дёшево,
+ * множитель большой — в бою на 8–15 секунд срабатывает один раз и укорачивает
+ * ХВОСТ боя, то есть бьёт прямо по темпу.
+ */
+export interface AbilityExecute {
+  /** Доступно, пока здоровье цели ниже этой доли запаса, 0..1. */
+  belowHpShare: number
+}
+
+/**
+ * КЛЕЙМО: цель получает больше урона какое-то время. Против рядового моба,
+ * живущего 8–15 секунд, окупается едва; против босса — сильно. Это первое
+ * умение, из-за которого четвёрку осмысленно менять ПЕРЕД боссом.
+ */
+export interface AbilityBrand {
+  /** На какую долю больше урона получает цель, 0..1 и выше. */
+  damageShare: number
+  durationSec: number
+  /**
+   * АВТОКАСТ НЕ КЛЕЙМИТ УМИРАЮЩЕГО. Порог здоровья цели, выше которого
+   * автокаст вообще берётся за клеймо: на мобе, который и так вот-вот умрёт,
+   * оно не окупается, а ресурс тратит — и делал бы это систематически.
+   * Руками игрок волен ставить его когда угодно.
+   */
+  autocastAboveHpShare: number
+}
+
+/**
+ * СОСРЕДОТОЧЕНИЕ: следующие несколько умений ничего не стоят. Ценность
+ * целиком зависит от того, насколько дорога остальная четвёрка: с дешёвой —
+ * почти ноль, с дорогой — много. Экономика ресурса как козырь.
+ */
+export interface AbilityFreeCasts {
+  /** Сколько ближайших применений бесплатны. */
+  casts: number
+}
+
+/**
+ * СТОЙКА: длинный собственный эффект — урон ниже, смягчение выше. Занимает
+ * слот постоянно и обменивает одну ось на другую прямо, без обиняков.
+ * Длительность примерно равна откату: автокаст просто поддерживает её, и
+ * новых механизмов для этого не нужно.
+ */
+export interface AbilityStance {
+  /** На какую долю ниже свой урон, 0..1. */
+  damageShare: number
+  /** На какую долю выше смягчение входящего, 0..1. */
+  mitigationShare: number
+  durationSec: number
+}
+
 export interface AbilityDef {
   id: string
   name: string
@@ -51,6 +150,22 @@ export interface AbilityDef {
   effect?: AbilityEffect
   /** Лечащее умение: см. AbilityHeal. Только у мгновенных. */
   heal?: AbilityHeal
+  /** Связка с другим умением: см. AbilityCombo. Нет поля — умение самостоятельно. */
+  combo?: AbilityCombo
+  /** Ослабляет следующие удары цели: см. AbilityWeaken. */
+  weaken?: AbilityWeaken
+  /** Съедает эффект по времени с цели: см. AbilityDetonate. */
+  detonate?: AbilityDetonate
+  /** Поглощает урон героя: см. AbilityAbsorb. */
+  absorb?: AbilityAbsorb
+  /** Добивание: см. AbilityExecute. */
+  execute?: AbilityExecute
+  /** Клеймо на цель: см. AbilityBrand. */
+  brand?: AbilityBrand
+  /** Бесплатные применения: см. AbilityFreeCasts. */
+  freeCasts?: AbilityFreeCasts
+  /** Стойка: см. AbilityStance. */
+  stance?: AbilityStance
 }
 
 export const ABILITIES: AbilityDef[] = [
@@ -110,6 +225,22 @@ export const ABILITIES: AbilityDef[] = [
     heal: { maxHpShare: new Decimal(0.25), autocastBelowHpShare: 0.55 },
   },
   {
+    // ТОЛЧОК ЩИТОМ. Конкурирует со «Скорым выпадом» за одну и ту же нишу
+    // дешёвого заполнителя — и это первый выбор в игре: урон или сохранность.
+    // Урона вдвое меньше, зато следующий удар противника слабее. Числа
+    // черновые: под бюджет их сводит стадия 5.
+    id: 'shield-shove',
+    icon: 'ability-shield-shove',
+    name: 'Толчок щитом',
+    type: 'instant',
+    unlockLevel: 2,
+    manaCost: new Decimal(7),
+    cooldownSec: 8,
+    weaponDamagePercent: new Decimal(0.3),
+    triggersGcd: true,
+    weaken: { damageShare: 0.4, hits: 1 },
+  },
+  {
     id: 'shattering-blow',
     icon: 'ability-shattering-blow',
     name: 'Сокрушение',
@@ -119,6 +250,104 @@ export const ABILITIES: AbilityDef[] = [
     cooldownSec: 12,
     weaponDamagePercent: new Decimal(5.0),
     triggersGcd: false,
+  },
+  {
+    // РАЗРЫВ. Съедает кровотечение с цели и наносит его остаток сразу с
+    // множителем. БЕЗ «РВАНОЙ РАНЫ» В ЧЕТВЁРКЕ БЕСПОЛЕЗЕН, и связка названа
+    // данными (`combo`) — интерфейс обязан сказать это прямо, а логика
+    // берёт с моба ЛЮБОЙ эффект по времени, а не «эффект такого-то умения».
+    id: 'rupture',
+    icon: 'ability-rupture',
+    name: 'Разрыв',
+    type: 'onNextSwing',
+    unlockLevel: 10,
+    manaCost: new Decimal(20),
+    cooldownSec: 8,
+    weaponDamagePercent: new Decimal(1.2),
+    triggersGcd: false,
+    detonate: { multiplier: 1.5 },
+    combo: { needsAbilityId: 'rending-wound' },
+  },
+  {
+    // СТЕНА. Поглощает урон несколько секунд, и запас щита растёт ОТ БРОНИ И
+    // СИЛЫ БЛОКА: у щита появляется второй адрес, кроме самого блока. Бьёт
+    // нулём — это поддержка, как и лечение, и схема знает про это отдельно.
+    id: 'bulwark',
+    icon: 'ability-bulwark',
+    name: 'Стена',
+    type: 'instant',
+    unlockLevel: 12,
+    manaCost: new Decimal(28),
+    cooldownSec: 25,
+    weaponDamagePercent: new Decimal(0),
+    triggersGcd: true,
+    absorb: { armorShare: 0.5, blockShare: 4, durationSec: 8 },
+  },
+  {
+    // МИЛОСТЬ. Доступна только на добивании: в бою на 8–15 секунд срабатывает
+    // один раз и укорачивает хвост. Дёшево и с большим множителем — это не
+    // прибавка к урону, а срезанный конец боя.
+    id: 'mercy',
+    icon: 'ability-mercy',
+    name: 'Милость',
+    type: 'instant',
+    unlockLevel: 14,
+    manaCost: new Decimal(16),
+    cooldownSec: 12,
+    weaponDamagePercent: new Decimal(1.1),
+    triggersGcd: true,
+    execute: { belowHpShare: 0.25 },
+  },
+  {
+    // КЛЕЙМО. Двадцать секунд повышенного урона: рядовому мобу оно едва
+    // окупается, боссу — сильно. Ради него четвёрку и меняют перед данжем.
+    // ТИП СМЕНЁН С onNextSwing НА instant, и это не косметика. Очередь на
+    // замах ОДНА, и в ней уже стоят «Рваная рана» и «Сокрушение»: клеймо
+    // конкурировало с ними за один и тот же замах, а платой за него был не
+    // ресурс, а ЧУЖОЙ удар. При двух заходах усиления (+0.25 → +0.4 → +0.55)
+    // оно так и не вошло ни в одну верхнюю четвёрку — потому что дело было не
+    // в числе. Мгновенным оно платит общей задержкой, как и положено метке:
+    // повесил и бьёшь дальше своим.
+    id: 'brand',
+    icon: 'ability-brand',
+    name: 'Клеймо',
+    type: 'instant',
+    unlockLevel: 16,
+    manaCost: new Decimal(18),
+    cooldownSec: 20,
+    weaponDamagePercent: new Decimal(1.0),
+    triggersGcd: true,
+    brand: { damageShare: 0.55, durationSec: 20, autocastAboveHpShare: 0.5 },
+  },
+  {
+    // СОСРЕДОТОЧЕНИЕ. Само по себе не бьёт почти ничего: его ценность — цена
+    // ТРЁХ следующих умений, то есть чужая. С дешёвой четвёркой это пустышка,
+    // с дорогой — козырь.
+    id: 'focus',
+    icon: 'ability-focus',
+    name: 'Сосредоточение',
+    type: 'instant',
+    unlockLevel: 18,
+    manaCost: new Decimal(0),
+    cooldownSec: 45,
+    weaponDamagePercent: new Decimal(0.5),
+    triggersGcd: true,
+    freeCasts: { casts: 3 },
+  },
+  {
+    // ГЛУХАЯ СТОЙКА. Прямой обмен одной оси на другую, и он должен быть
+    // ЗАМЕТНЫМ: половина смягчения за четверть урона. Длительность равна
+    // откату — автокаст поддерживает её без единого нового правила.
+    id: 'stance',
+    icon: 'ability-stance',
+    name: 'Глухая стойка',
+    type: 'instant',
+    unlockLevel: 20,
+    manaCost: new Decimal(15),
+    cooldownSec: 30,
+    weaponDamagePercent: new Decimal(0.6),
+    triggersGcd: true,
+    stance: { damageShare: 0.3, mitigationShare: 0.15, durationSec: 30 },
   },
 
   // --- Умения Изувера ---

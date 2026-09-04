@@ -33,6 +33,7 @@ import type { ProfessionDef, RecipeDef } from '../recipes'
 import type { RarityDef } from '../rarity'
 import type { SoundCue } from '../sounds'
 import {
+  ABILITY_UNLOCK_GRID,
   SOUND_GAIN_MAX_DB,
   SOUND_MIN_VARIATIONS,
   SOUND_PITCH_MAX_SEMITONES,
@@ -433,11 +434,182 @@ export const ABILITY_SCHEMA: EntitySchema<AbilityDef> = {
         'data/abilities.ts',
         report,
       )
-    } else {
+    } else if (!ability.absorb) {
+      // ПОДДЕРЖКА МОЖЕТ НЕ БИТЬ, БОЕВОЕ УМЕНИЕ — ОБЯЗАНО. Поддержка это две
+      // вещи и ровно две: лечение и поглощение. Список назван здесь ПОИМЁННО
+      // намеренно: новый флаг, который тоже не бьёт, обязан появиться в этой
+      // строке — иначе умение с нулевым уроном проедет молча.
       report.need(
         toNumber(ability.weaponDamagePercent) > 0,
         where,
-        'урон умения — доля удара оружия (weaponDamagePercent), и она обязана быть положительной (data/abilities.ts)',
+        'урон умения — доля удара оружия (weaponDamagePercent), и она обязана быть положительной; ноль — только у поддержки (heal или absorb) (data/abilities.ts)',
+      )
+    }
+    // ОСЛАБЛЕНИЕ: доля и число ударов.
+    if (ability.weaken) {
+      checkNumber(
+        ability.weaken,
+        {
+          field: 'weaken.damageShare',
+          get: (w) => w.damageShare,
+          min: 0,
+          exclusiveMin: true,
+          max: 1,
+          why: 'доля, на которую слабее удар противника',
+        },
+        where,
+        'data/abilities.ts',
+        report,
+      )
+      checkNumber(
+        ability.weaken,
+        { field: 'weaken.hits', get: (w) => w.hits, min: 1, integer: true },
+        where,
+        'data/abilities.ts',
+        report,
+      )
+    }
+    // ДЕТОНАТОР: множитель и НАЗВАННАЯ СВЯЗКА. Умение, которое съедает
+    // чужой эффект, обязано сказать игроку, чей именно, — иначе связку
+    // выясняют опытом.
+    if (ability.detonate) {
+      checkNumber(
+        ability.detonate,
+        {
+          field: 'detonate.multiplier',
+          get: (d) => d.multiplier,
+          min: 0,
+          exclusiveMin: true,
+          why: 'множитель к оставшемуся урону съеденного эффекта',
+        },
+        where,
+        'data/abilities.ts',
+        report,
+      )
+      report.need(
+        ability.combo !== undefined,
+        where,
+        'детонатор обязан назвать связку (combo): без неё игрок выясняет её опытом (data/abilities.ts)',
+      )
+    }
+    // ПОГЛОЩЕНИЕ: обе доли и длительность.
+    if (ability.absorb) {
+      for (const spec of [
+        { field: 'absorb.armorShare', get: (a: typeof ability.absorb) => a!.armorShare },
+        { field: 'absorb.blockShare', get: (a: typeof ability.absorb) => a!.blockShare },
+        { field: 'absorb.durationSec', get: (a: typeof ability.absorb) => a!.durationSec },
+      ]) {
+        checkNumber(
+          ability.absorb,
+          { field: spec.field, get: spec.get, min: 0, why: 'запас щита и его длительность' },
+          where,
+          'data/abilities.ts',
+          report,
+        )
+      }
+      report.need(
+        ability.absorb.durationSec > 0,
+        where,
+        'поглощение без длительности не поглощает ничего (data/abilities.ts)',
+      )
+    }
+    // ДОБИВАНИЕ: порог — доля запаса цели.
+    if (ability.execute) {
+      checkNumber(
+        ability.execute,
+        {
+          field: 'execute.belowHpShare',
+          get: (e) => e.belowHpShare,
+          min: 0,
+          exclusiveMin: true,
+          max: 1,
+          why: 'доля запаса цели, ниже которой добивание доступно',
+        },
+        where,
+        'data/abilities.ts',
+        report,
+      )
+    }
+    // КЛЕЙМО: прибавка, длительность и порог, ниже которого автокаст не берётся.
+    if (ability.brand) {
+      checkNumber(
+        ability.brand,
+        {
+          field: 'brand.damageShare',
+          get: (b) => b.damageShare,
+          min: 0,
+          exclusiveMin: true,
+          why: 'доля, на которую цель получает больше урона',
+        },
+        where,
+        'data/abilities.ts',
+        report,
+      )
+      checkNumber(
+        ability.brand,
+        { field: 'brand.durationSec', get: (b) => b.durationSec, min: 0, exclusiveMin: true },
+        where,
+        'data/abilities.ts',
+        report,
+      )
+      checkNumber(
+        ability.brand,
+        {
+          field: 'brand.autocastAboveHpShare',
+          get: (b) => b.autocastAboveHpShare,
+          min: 0,
+          max: 1,
+          why: 'порог здоровья цели, выше которого автокаст берётся за клеймо',
+        },
+        where,
+        'data/abilities.ts',
+        report,
+      )
+    }
+    // БЕСПЛАТНЫЕ ПРИМЕНЕНИЯ: их целое число, и оно больше нуля.
+    if (ability.freeCasts) {
+      checkNumber(
+        ability.freeCasts,
+        { field: 'freeCasts.casts', get: (f) => f.casts, min: 1, integer: true },
+        where,
+        'data/abilities.ts',
+        report,
+      )
+      report.need(
+        toNumber(ability.manaCost) === 0,
+        where,
+        'умение, дающее бесплатные применения, само обязано быть бесплатным: иначе оно платит за собственную скидку (data/abilities.ts)',
+      )
+    }
+    // СТОЙКА: обе доли и длительность. Обмен обязан быть ОБМЕНОМ — обе доли
+    // положительны, иначе это просто усиление или просто штраф.
+    if (ability.stance) {
+      for (const spec of [
+        { field: 'stance.damageShare', get: (v: typeof ability.stance) => v!.damageShare },
+        { field: 'stance.mitigationShare', get: (v: typeof ability.stance) => v!.mitigationShare },
+      ]) {
+        checkNumber(
+          ability.stance,
+          { field: spec.field, get: spec.get, min: 0, exclusiveMin: true, max: 1 },
+          where,
+          'data/abilities.ts',
+          report,
+        )
+      }
+      checkNumber(
+        ability.stance,
+        { field: 'stance.durationSec', get: (v) => v.durationSec, min: 0, exclusiveMin: true },
+        where,
+        'data/abilities.ts',
+        report,
+      )
+    }
+    // СВЯЗКА ССЫЛАЕТСЯ НА СУЩЕСТВУЮЩЕЕ УМЕНИЕ ТОГО ЖЕ КЛАССА.
+    if (ability.combo) {
+      report.need(
+        _content.abilities.some((a) => a.id === ability.combo!.needsAbilityId),
+        where,
+        `связка ссылается на неизвестное умение ${ability.combo.needsAbilityId} (data/abilities.ts)`,
       )
     }
     if (!ability.effect) return
@@ -1835,6 +2007,28 @@ export const CLASS_SCHEMA: EntitySchema<ClassDef> = {
       where,
       'ни одного умения первого уровня — на старте у класса пустая панель (data/abilities.ts)',
     )
+    /**
+     * СЕТКА РАЗБЛОКИРОВОК БЕЗ ДЫР — И ТОЛЬКО У ГОТОВЫХ КЛАССОВ.
+     *
+     * Первый уровень плюс каждый чётный до двадцатого, по ОДНОМУ умению на
+     * ступень: `ABILITY_UNLOCK_GRID`. Это обещание игроку — «дальше будет
+     * ещё», — и дыра в нём означает уровень без награды.
+     *
+     * Превью-класс сюда НЕ ВХОДИТ, и это названная причина, а не поблажка:
+     * Изувер ждёт своего набора (см. `docs/BERSERKER-CATCHUP.md`), его три
+     * умения стоят на 1/4/8, и требовать от него полную сетку значило бы
+     * требовать наполнения, которого задача ему намеренно не даёт.
+     */
+    if (hero.status === 'ready') {
+      const levels = ownAbilities.map((a) => toNumber(a.unlockLevel)).sort((a, b) => a - b)
+      report.need(
+        levels.join(',') === ABILITY_UNLOCK_GRID.join(','),
+        where,
+        `сетка разблокировок ${levels.join('/')} не совпадает с ` +
+          `${ABILITY_UNLOCK_GRID.join('/')}: у готового класса на каждой ступени ` +
+          'ровно одно умение, и выше двадцатого не заперто ничего (data/abilities.ts)',
+      )
+    }
     // Ветки: без них дерево талантов у класса пустое.
     report.need(
       Array.isArray(hero.branchIds) && hero.branchIds.length > 0,

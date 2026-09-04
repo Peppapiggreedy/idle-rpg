@@ -13,6 +13,7 @@ import { RARITY_BY_ID } from '../data/rarity'
 import { ARMOR_NOUNS, SHIELD_BY_ID, WEAPON_BY_ID } from '../data/items'
 import { armorMods, shieldMods, weaponMods } from './loot'
 import {
+  ABILITY_SLOTS,
   AUTOCAST_DELAY_MS,
   REGEN_TICK_S,
   REST_HP_THRESHOLD_DEFAULT,
@@ -101,7 +102,40 @@ export interface GameState {
   // автоатаку. Одновременно только одно; null — очередь пуста.
   queuedAbilityId: string | null
   activeEffects: ActiveEffect[] // эффекты на текущем мобе (урон по времени)
-  // Настройки автокаста по умениям: включено ли и в каком порядке применять.
+  /**
+   * ОСЛАБЛЕНИЕ ТЕКУЩЕГО МОБА: сколько его ближайших ударов слабее и насколько.
+   * Живёт на КОНКРЕТНОМ мобе, как и эффекты: смерть, респаун и загрузка сейва
+   * его снимают. Доля снята в момент применения — если умение переделают,
+   * уже висящее ослабление не изменится задним числом.
+   */
+  monsterWeaken: MonsterWeaken | null
+  /**
+   * КЛЕЙМО НА ТЕКУЩЕМ МОБЕ: на какую долю он получает больше урона и сколько
+   * миллисекунд осталось. Живёт на конкретном мобе, как и остальные метки.
+   */
+  monsterBrand: MonsterBrand | null
+  /**
+   * СТОЙКА ГЕРОЯ: длинный собственный эффект — свой урон ниже, смягчение
+   * входящего выше. Прямой обмен одной оси на другую.
+   */
+  stance: HeroStance | null
+  /**
+   * БЕСПЛАТНЫЕ ПРИМЕНЕНИЯ: сколько ближайших умений не стоят ресурса.
+   * Обычный счётчик, а не Decimal: это штуки, и их единицы.
+   */
+  freeCastsLeft: number
+  /**
+   * ЩИТ ГЕРОЯ: сколько урона он ещё поглотит и сколько миллисекунд держится.
+   * Величина посчитана в момент применения от брони и силы блока — потом
+   * снаряжение может смениться, а щит уже висит.
+   */
+  absorb: HeroAbsorb | null
+  /**
+   * РЯД ДЕЙСТВИЙ: какие умения герой носит и в каком порядке. Индекс — и
+   * место кнопки под сценой, и приоритет автокаста. `null` — пустой слот.
+   */
+  abilitySlots: AbilitySlots
+  // Настройки автокаста по умениям: включено ли и сколько ресурса беречь.
   abilitySettings: AbilitySettings
   // Задержка реакции автокаста ПО КАЖДОМУ умению, мс. Пока умение недоступно,
   // его таймер взведён; как только стало доступно — тикает, и по нулю умение
@@ -203,6 +237,31 @@ export interface ActiveEffect {
   msToNextTick: number
 }
 
+/** Ослабление моба: см. поле `monsterWeaken`. */
+export interface MonsterWeaken {
+  damageShare: number
+  hitsLeft: number
+}
+
+/** Щит героя: см. поле `absorb`. */
+export interface HeroAbsorb {
+  left: Decimal
+  msLeft: number
+}
+
+/** Клеймо на мобе: см. поле `monsterBrand`. */
+export interface MonsterBrand {
+  damageShare: number
+  msLeft: number
+}
+
+/** Стойка героя: см. поле `stance`. */
+export interface HeroStance {
+  damageShare: number
+  mitigationShare: number
+  msLeft: number
+}
+
 /**
  * Действующее зелье. Модификаторы НЕ снимаются с него слепком: они живут в
  * данных рецепта, и правка баланса зелья действует сразу, а не со следующего
@@ -215,10 +274,17 @@ export interface ActivePotion {
   msLeft: number
 }
 
-// Настройка автокаста одного умения. priority: меньше число — выше в списке.
+/**
+ * Настройка автокаста одного умения.
+ *
+ * ПОЛЯ ПРИОРИТЕТА ЗДЕСЬ НЕТ, И ЭТО ГЛАВНОЕ В ЭТОМ ТИПЕ. Порядок задаёт РЯД
+ * ДЕЙСТВИЙ (`abilitySlots`): первый слот жмётся первым. Числом приоритета
+ * порядок жил здесь до четырёх слотов, и два источника одного и того же
+ * разъехались бы на первой перестановке — игрок двигает кнопку в ряду, а
+ * автокаст читает старое число.
+ */
 export interface AbilitySetting {
   autocast: boolean
-  priority: number
   // Резерв: не жать умение, если маны меньше этой доли от запаса. Это и есть
   // рычаг «урон против автономности»: нулевой резерв выжимает весь урон и
   // не даёт регенерации запуститься, высокий — бережёт окна под неё.
@@ -227,7 +293,25 @@ export interface AbilitySetting {
 
 export type AbilitySettings = Record<string, AbilitySetting>
 
-/** Настройки по умолчанию: автокаст включён, приоритет — порядок из данных. */
+/**
+ * СОСТАВ И ПОРЯДОК ЧЕТВЁРКИ. Длина всегда `ABILITY_SLOTS`; `null` — пустой
+ * слот. Индекс И ЕСТЬ приоритет автокаста.
+ */
+export type AbilitySlots = (string | null)[]
+
+/** Что читает ротация: состав ряда плюс галки и резервы по умениям. */
+export interface Rotation {
+  slots: readonly (string | null)[]
+  settings: AbilitySettings
+}
+
+export const rotationOf = (state: GameState): Rotation => ({
+  slots: state.abilitySlots,
+  settings: state.abilitySettings,
+})
+
+/** Настройки по умолчанию: автокаст включён, резерв нулевой. Порядок здесь
+ *  не задаётся — он живёт в `abilitySlots`. */
 /** Умения класса в порядке кнопок; неизвестный класс отдаёт умения дефолтного. */
 export function abilitiesOf(classId: string): AbilityDef[] {
   const hero = classById(classId)
@@ -236,14 +320,63 @@ export function abilitiesOf(classId: string): AbilityDef[] {
 
 export function defaultAbilitySettings(classId: string = DEFAULT_CLASS.id): AbilitySettings {
   return Object.fromEntries(
-    abilitiesOf(classId).map((a, index) => [a.id, { autocast: true, priority: index, reserve: 0 }]),
+    abilitiesOf(classId).map((a) => [a.id, { autocast: true, reserve: 0 }]),
   )
+}
+
+/**
+ * ЧЕТВЁРКА ПО УМОЛЧАНИЮ: первые умения класса в порядке данных, сколько
+ * влезет. Пустая панель у героя недопустима — ни у новичка, ни у
+ * вернувшегося со старым сейвом.
+ *
+ * УРОВЕНЬ ЗДЕСЬ НИ ПРИ ЧЁМ, И ЭТО НЕ НЕДОСМОТР. Запертое умение стоит в ряду
+ * ЗАПЕРТОЙ КНОПКОЙ с уровнем открытия — так было и до четырёх слотов, и это
+ * та самая «кнопка видна с причиной», которую обещает правило умений. Ставь
+ * фильтр по уровню — и новичок увидел бы три пустых квадрата вместо трёх
+ * обещаний.
+ */
+export function defaultAbilitySlots(classId: string = DEFAULT_CLASS.id): AbilitySlots {
+  return fillAbilitySlots(new Array(ABILITY_SLOTS).fill(null), classId)
+}
+
+/**
+ * ДОЛОЖИТЬ В ПУСТЫЕ СЛОТЫ УМЕНИЯ КЛАССА. Пустой ряд у героя недопустим:
+ * сейв прошлой версии, чужие имена в слотах, ряд короче нынешнего — всё это
+ * приводится к четвёрке здесь, в одной точке.
+ *
+ * Как только слоты заняты, функция молчит: состав выбирает игрок, и
+ * подменять его выбор игра не вправе. Функция ЧИСТАЯ и идемпотентная.
+ */
+export function fillAbilitySlots(
+  slots: readonly (string | null)[],
+  classId: string,
+): AbilitySlots {
+  const next: AbilitySlots = [...slots]
+  // Длина ряда — свойство игры, а не сейва: короткий массив дополняем,
+  // длинный (ряд когда-то ужали) обрезаем.
+  while (next.length < ABILITY_SLOTS) next.push(null)
+  next.length = ABILITY_SLOTS
+  const own = new Set(abilitiesOf(classId).map((a) => a.id))
+  // Чужое или неизвестное имя в слоте — не «пустой слот», а мусор: чистим,
+  // иначе оно займёт место и ряд молча станет короче.
+  for (let i = 0; i < next.length; i += 1) {
+    if (next[i] !== null && !own.has(next[i] as string)) next[i] = null
+  }
+  const taken = new Set(next.filter((id): id is string => id !== null))
+  for (const ability of abilitiesOf(classId)) {
+    if (taken.has(ability.id)) continue
+    const free = next.indexOf(null)
+    if (free === -1) break
+    next[free] = ability.id
+    taken.add(ability.id)
+  }
+  return next
 }
 
 /** Все галки автокаста сняты — герой бьёт только автоатакой. */
 export function manualOnlySettings(classId: string = DEFAULT_CLASS.id): AbilitySettings {
   return Object.fromEntries(
-    abilitiesOf(classId).map((a, index) => [a.id, { autocast: false, priority: index, reserve: 0 }]),
+    abilitiesOf(classId).map((a) => [a.id, { autocast: false, reserve: 0 }]),
   )
 }
 
@@ -397,6 +530,12 @@ export function createInitialState(
     questProgress: { done: {}, counter: 0 },
     queuedAbilityId: null,
     activeEffects: [],
+    monsterWeaken: null,
+    monsterBrand: null,
+    stance: null,
+    freeCastsLeft: 0,
+    absorb: null,
+    abilitySlots: defaultAbilitySlots(hero.id),
     abilitySettings: defaultAbilitySettings(hero.id),
     autocastReadyMs: {},
     heroState: 'alive',

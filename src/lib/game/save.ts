@@ -9,9 +9,11 @@ import {
   createInitialState,
   abilitiesOf,
   defaultAbilitySettings,
+  fillAbilitySlots,
   emptyEquipment,
   spawnMonster,
   type AbilitySettings,
+  type AbilitySlots,
   type Equipment,
   type GameState,
   type ActivePotion,
@@ -25,6 +27,7 @@ import { ensureStats, STAT_IDS, type ModifierKind, type StatId, type StatModifie
 import { SLOT_IDS, type SlotId } from '../data/slots'
 import type { Grip } from '../data/items'
 import {
+  ABILITY_SLOTS,
   INVENTORY_SIZE,
   AUTOSAVE_INTERVAL_S,
   GCD_MS,
@@ -98,7 +101,7 @@ const OFFLINE_LOOT_SALT = 0x9e37_79b9
 /** Все хваты одним списком: сейв принимает только их. */
 const GRIPS: Grip[] = ['one', 'two', 'shield']
 
-export const SAVE_VERSION = 28
+export const SAVE_VERSION = 29
 
 /**
  * ТАЛАНТЫ, УДАЛЁННЫЕ ИЗ ДЕРЕВА, — списком и с причиной.
@@ -151,7 +154,6 @@ export interface SavedItem {
 
 export interface SavedAbilitySetting {
   autocast: boolean
-  priority: number
   /** Резерв маны, доля 0..1. Настройка игрока — значит, часть прогресса. */
   reserve: number
 }
@@ -250,6 +252,12 @@ export interface SavePayloadV21 {
   // стали бы способом мгновенно запустить реген.
   regenDelayMsLeft: number
   // Настройки автокаста: галка и приоритет по каждому умению.
+  /**
+   * СОСТАВ И ПОРЯДОК РЯДА ДЕЙСТВИЙ — выбор игрока, значит прогресс. `null` —
+   * пустой слот. Порядок и есть приоритет автокаста; отдельного числа
+   * приоритета в сейве больше нет (v29).
+   */
+  abilitySlots: (string | null)[]
   abilitySettings: Record<string, SavedAbilitySetting>
   itemSeq: number
   totalTicks: string
@@ -329,7 +337,7 @@ export function payloadFromState(state: GameState, lastTimestamp: number): SaveP
   const abilitySettings: Record<string, SavedAbilitySetting> = {}
   for (const ability of ABILITIES) {
     const setting = state.abilitySettings[ability.id]
-    if (setting) abilitySettings[ability.id] = { ...setting }
+    if (setting) abilitySettings[ability.id] = { autocast: setting.autocast, reserve: setting.reserve }
   }
   // Нулевые ранги в сейв не пишем — это мусор, а не прогресс. Дерево берётся
   // ПО КЛАССУ: чужих веток у героя нет, и увозить их в сейве незачем.
@@ -399,6 +407,7 @@ export function payloadFromState(state: GameState, lastTimestamp: number): SaveP
     upgradePriority: state.upgradePriority,
     purchasedUpgradeIds: [...state.purchasedUpgradeIds],
     lootPolicy: state.lootPolicy,
+    abilitySlots: [...state.abilitySlots],
     abilitySettings,
     itemSeq: state.itemSeq,
     gold: state.gold.toString(),
@@ -532,6 +541,27 @@ function msFromSaved(raw: unknown, max: number): number {
 
 // Настройки автокаста из сейва: чужие умения игнорируем, пропущенные
 // добираем дефолтами — иначе новое умение осталось бы без настройки.
+/**
+ * ЧЕТВЁРКА ИЗ СЕЙВА. Пустой панели у вернувшегося игрока быть не должно ни
+ * при каком содержимом сейва: что бы ни лежало в поле, пустые слоты
+ * дозаполняются открытыми умениями его класса (`fillAbilitySlots`).
+ */
+function abilitySlotsFromSaved(raw: unknown, classId: string): AbilitySlots {
+  const slots: AbilitySlots = Array.isArray(raw)
+    ? raw.map((id) => (typeof id === 'string' ? id : null))
+    : []
+  // Дубли в ряду — правка руками: одно умение в двух слотах дало бы два
+  // кулдауна на одном откате.
+  const seen = new Set<string>()
+  for (let i = 0; i < slots.length; i += 1) {
+    const id = slots[i]
+    if (id === null) continue
+    if (seen.has(id)) slots[i] = null
+    else seen.add(id)
+  }
+  return fillAbilitySlots(slots, classId)
+}
+
 function abilitySettingsFromSaved(raw: unknown, classId: string): AbilitySettings {
   // Настройки — ТОЛЬКО по умениям своего класса: чужие в сейве означают
   // правку руками, и пускать их в ротацию нельзя.
@@ -541,13 +571,9 @@ function abilitySettingsFromSaved(raw: unknown, classId: string): AbilitySetting
   for (const ability of abilitiesOf(classId)) {
     const entry = saved[ability.id]
     if (typeof entry !== 'object' || entry === null) continue
-    const { autocast, priority, reserve } = entry as Record<string, unknown>
+    const { autocast, reserve } = entry as Record<string, unknown>
     settings[ability.id] = {
       autocast: typeof autocast === 'boolean' ? autocast : settings[ability.id].autocast,
-      priority:
-        typeof priority === 'number' && Number.isFinite(priority)
-          ? priority
-          : settings[ability.id].priority,
       // Резерв появился позже галки и приоритета: в старом сейве его нет,
       // и ноль — то самое поведение, к которому игрок привык.
       reserve:
@@ -818,10 +844,18 @@ export function stateFromPayload(p: SavePayloadV21): GameState {
     // мана «недокапала», прогрессом не считаются.
     regenTickMsLeft: REGEN_TICK_S * 1000,
     abilityCooldownsMs: cooldownsFromSaved(p.abilityCooldownsMs),
+    abilitySlots: abilitySlotsFromSaved(p.abilitySlots, hero.id),
     abilitySettings: abilitySettingsFromSaved(p.abilitySettings, hero.id),
     // Очередь и эффекты были на прежнем мобе — при загрузке начинаем чисто.
     queuedAbilityId: null,
     activeEffects: [],
+    // Боевые метки живут на конкретном мобе и на конкретной секунде боя:
+    // после загрузки нет ни того, ни другой.
+    monsterWeaken: null,
+    monsterBrand: null,
+    stance: null,
+    freeCastsLeft: 0,
+    absorb: null,
     autocastReadyMs: {},
     itemSeq: typeof p.itemSeq === 'number' ? p.itemSeq : 0,
   }
@@ -1348,6 +1382,34 @@ export const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
    * Порог заодно прижимается к шагу ползунка: старые пресеты (0/40/60/80 %)
    * и так кратны десяти, но сейв мог быть правлен руками.
    */
+  /**
+   * v28 → v29: ЧЕТВЁРКА СЛОТОВ ВМЕСТО ЧИСЛА ПРИОРИТЕТА.
+   *
+   * Порядок автокаста жил числом `priority` в настройке каждого умения;
+   * теперь порядок — это сам ряд действий. Выбор игрока переносится как есть:
+   * ряд собирается ПО ЕГО ПРИОРИТЕТУ, первыми — те, что он поставил выше.
+   * Числа приоритета из настроек убираем: два источника одного порядка
+   * разъехались бы на первой перестановке.
+   *
+   * Умения, не влезшие в четыре слота, остаются открытыми и лежат в книге —
+   * потерять их нельзя, они возвращаются одним перетаскиванием.
+   */
+  28: (raw) => {
+    const saved = (raw.abilitySettings ?? {}) as Record<string, { priority?: unknown }>
+    const ordered = Object.keys(saved)
+      .filter((id) => id in ABILITY_BY_ID)
+      .sort((a, b) => {
+        const pa = typeof saved[a]?.priority === 'number' ? (saved[a].priority as number) : 0
+        const pb = typeof saved[b]?.priority === 'number' ? (saved[b].priority as number) : 0
+        return pa - pb
+      })
+    const abilitySettings: Record<string, unknown> = {}
+    for (const [id, value] of Object.entries(saved)) {
+      const { autocast, reserve } = (value ?? {}) as Record<string, unknown>
+      abilitySettings[id] = { autocast, reserve }
+    }
+    return { ...raw, version: 29, abilitySlots: ordered.slice(0, ABILITY_SLOTS), abilitySettings }
+  },
   27: (raw) => {
     const talents = { ...((raw.talents ?? {}) as Record<string, number>) }
     for (const id of REMOVED_TALENT_IDS) delete talents[id]

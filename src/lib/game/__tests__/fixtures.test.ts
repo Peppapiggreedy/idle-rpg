@@ -554,8 +554,12 @@ describe('фикстуры сейвов', () => {
   it('save-v10: настройки автокаста переживают загрузку', () => {
     const s = loadFixture('save-v10.json')
     expect(s.abilitySettings['rending-wound'].autocast).toBe(false)
-    expect(s.abilitySettings['rending-wound'].priority).toBe(0)
-    expect(s.abilitySettings['quick-strike'].priority).toBe(2)
+    // ПОРЯДОК ПЕРЕЕХАЛ ИЗ ЧИСЛА В РЯД (сейв v29). В v10 у «Рваной раны»
+    // приоритет 0, у «Сокрушения» 1, у «Скорого выпада» 2 — ряд обязан
+    // повторить именно этот порядок, иначе миграция потеряла выбор игрока.
+    expect(s.abilitySlots[0]).toBe('rending-wound')
+    expect(s.abilitySlots[1]).toBe('shattering-blow')
+    expect(s.abilitySlots[2]).toBe('quick-strike')
     expect(s.gold.toNumber()).toBe(140000)
   })
 
@@ -564,11 +568,12 @@ describe('фикстуры сейвов', () => {
     const s = stateFromPayload(
       migrateSave({ ...raw, abilitySettings: { 'quick-strike': { autocast: false, priority: 5 } } })!,
     )
-    // Резерв появился позже галки и приоритета: в старом сейве его нет,
-    // и ноль — то самое поведение, к которому игрок привык.
+    // Резерв появился позже галки: в старом сейве его нет, и ноль — то самое
+    // поведение, к которому игрок привык. ПРИОРИТЕТА В НАСТРОЙКЕ БОЛЬШЕ НЕТ
+    // (сейв v29) — порядок переехал в ряд слотов, и число из старого сейва
+    // читается миграцией именно туда.
     expect(s.abilitySettings['quick-strike']).toEqual({
       autocast: false,
-      priority: 5,
       reserve: 0,
     })
     // Остальные умения получили дефолтные настройки, а не исчезли.

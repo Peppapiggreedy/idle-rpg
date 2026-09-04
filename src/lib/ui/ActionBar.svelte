@@ -16,7 +16,6 @@
   // в неактивную вкладку — Svelte размонтирует компонент, и хоткеи умрут
   // по всей игре.
   import {
-    abilitiesByPriority,
     abilityStatus,
     expectedAbilityDamage,
     formatNumber,
@@ -24,8 +23,9 @@
     type AbilityDef,
     type PotionSlot,
   } from '../game'
-  import { GCD_MS } from '../data/balance'
-  import { activateAbility, drinkPotion, gameState } from '../stores/game'
+  import { ABILITY_BY_ID } from '../data/abilities'
+  import { ABILITY_SLOTS, GCD_MS } from '../data/balance'
+  import { activateAbility, drinkPotion, gameState, swapAbilitySlots } from '../stores/game'
   import { abilityReasonText } from './abilityText'
   import { potionEffectText, potionReasonText } from './potionText'
   import { resourceWords } from './resource'
@@ -34,9 +34,21 @@
 
   const resource = $derived(resourceWords($gameState.classId))
 
-  // Порядок кнопок = порядок приоритета: слева то, что автокаст жмёт первым.
-  const ordered = $derived(abilitiesByPriority($gameState.abilitySettings, false))
-  const statuses = $derived(ordered.map((a) => abilityStatus($gameState, a)))
+  /**
+   * РЯД — ЭТО СЛОТЫ, А НЕ СПИСОК УМЕНИЙ. Их всегда `ABILITY_SLOTS`, и пустой
+   * слот рисуется пустым квадратом: место под кнопку видно ДО того, как
+   * игрок пойдёт в книгу за умением, и хоткей у него уже есть.
+   *
+   * ПОРЯДОК СЛОТОВ И ЕСТЬ ПРИОРИТЕТ АВТОКАСТА: слева то, что жмётся первым.
+   */
+  const slots = $derived(
+    $gameState.abilitySlots.map((id) => (id === null ? null : (ABILITY_BY_ID[id] ?? null))),
+  )
+  const statuses = $derived(slots.map((a) => (a ? abilityStatus($gameState, a) : null)))
+
+  // Перетаскивание внутри ряда: взяли слот, бросили на другой — поменялись
+  // местами. Откаты при этом НЕ трогаются: они живут на умении.
+  let dragFrom = $state<number | null>(null)
 
   const potions = $derived(potionSlots($gameState))
 
@@ -46,8 +58,10 @@
   function hotkey(index: number): string {
     return String(index + 1)
   }
+  // Зелья продолжают счёт ОТ ЧИСЛА СЛОТОВ, а не от числа занятых: пустой
+  // слот не должен сдвигать клавишу зелья — игрок помнит её пальцами.
   function potionKey(index: number): string {
-    return String(ordered.length + index + 1)
+    return String(ABILITY_SLOTS + index + 1)
   }
 
   function onKey(event: KeyboardEvent) {
@@ -55,10 +69,11 @@
     const target = event.target as HTMLElement | null
     if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return
     if (event.metaKey || event.ctrlKey || event.altKey) return
-    const index = ordered.findIndex((_, i) => event.key === hotkey(i))
+    const index = slots.findIndex((_, i) => event.key === hotkey(i))
     if (index !== -1) {
       event.preventDefault()
-      activateAbility(ordered[index].id)
+      const ability = slots[index]
+      if (ability) activateAbility(ability.id)
       return
     }
     const potion = potions.findIndex((_, i) => event.key === potionKey(i))
@@ -79,7 +94,7 @@
   }
 
   function abilityTooltip(ability: AbilityDef, index: number): string {
-    const status = statuses[index]
+    const status = statuses[index]!
     const parts = [
       `${ability.name} (${hotkey(index)})`,
       `${formatNumber(ability.manaCost)} ${resource.genitive} · кулдаун ${ability.cooldownSec}с`,
@@ -114,17 +129,35 @@
 <svelte:window onkeydown={onKey} />
 
 <div class="bar" role="group" aria-label="Действия">
-  {#each ordered as ability, i (ability.id)}
-    {@const status = statuses[i]}
-    <Tooltip text={abilityTooltip(ability, i)} width="wide">
+  {#each slots as ability, i (i)}
+    {#if ability === null}
+      <!-- ПУСТОЙ СЛОТ ВИДЕН. Ряд из четырёх мест — обещание игры, и место,
+           которое ещё нечем занять, обязано быть на экране: иначе книга
+           умений открывается вслепую, а хоткей 3 нажимается в пустоту. -->
+      <div class="slot empty" data-kind="ability" aria-label="Пустой слот {i + 1}">
+        <span class="key">{hotkey(i)}</span>
+      </div>
+    {:else}
+      {@const status = statuses[i]!}
+      <Tooltip text={abilityTooltip(ability, i)} width="wide">
       <button
         type="button"
         class="slot"
         class:queued={status.queued}
         class:blocked={!status.usable}
         disabled={!status.usable}
+        data-kind="ability"
+        draggable="true"
         aria-label={ability.name}
         onclick={() => activateAbility(ability.id)}
+        ondragstart={() => (dragFrom = i)}
+        ondragover={(e: DragEvent) => dragFrom !== null && e.preventDefault()}
+        ondrop={(e: DragEvent) => {
+          e.preventDefault()
+          if (dragFrom !== null) swapAbilitySlots(dragFrom, i)
+          dragFrom = null
+        }}
+        ondragend={() => (dragFrom = null)}
       >
         <span class="fill" style="height: {Math.min(100, status.cooldownFraction * 100)}%"></span>
         {#if ability.triggersGcd && gcdFraction > 0 && status.cooldownMsLeft <= 0}
@@ -140,7 +173,8 @@
           <span class="timer">🔒{ability.unlockLevel}</span>
         {/if}
       </button>
-    </Tooltip>
+      </Tooltip>
+    {/if}
   {/each}
 
   <!-- Зелья — те же квадраты того же ряда. Отдельного угла экрана у них нет:
@@ -150,6 +184,7 @@
       <button
         type="button"
         class="slot"
+        data-kind="potion"
         class:queued={slot.active}
         class:blocked={!slot.usable}
         disabled={!slot.usable}
@@ -212,6 +247,12 @@
   }
   .slot.blocked {
     opacity: 0.55;
+  }
+  /* Пустой слот: то же место, тот же размер, но пунктиром и без содержимого.
+     Нажимать в нём нечего — это `div`, а не кнопка. */
+  .slot.empty {
+    border-style: dashed;
+    opacity: 0.5;
   }
   .slot.queued {
     border-color: var(--c-xp);
