@@ -6,7 +6,7 @@ import { pushEvent, type GameState } from './state'
 import type { Item } from '../types'
 import { RARITIES, RARITY_BY_ID, type RarityDef } from '../data/rarity'
 import { DROP_CHANCE, LOOT_ADJECTIVES, SHIELD_SHARE, itemSellPrice } from '../data/loot'
-import { SLOT_DROP_WEIGHTS, SLOT_IDS, type SlotId } from '../data/slots'
+import { SLOT_DEFENSE, SLOT_DROP_WEIGHTS, SLOT_IDS, type SlotId } from '../data/slots'
 import {
   ARMOR_ATTRIBUTES,
   ARMOR_BASE_DEFENSE,
@@ -160,7 +160,13 @@ export function armorMods(
   return grained([
     // БРОНЯ ЕСТЬ У КАЖДОЙ ЧАСТИ БРОНИ, и она не разыгрывается: главный
     // атрибут — вопрос везения, а защита — то, ради чего броню и носят.
-    { stat: 'armor' as const, kind: 'flat' as const, value: ARMOR_BASE_DEFENSE.times(power), source },
+    // НО ЧАСТЬ БРОНИ — НЕ ВСЁ, ЧТО НЕ РУКА. Признак лежит в данных
+    // (`SLOT_DEFENSE` в data/slots.ts): талисман — украшение, и брони у него
+    // нет. Раньше условия здесь не было вовсе, и талисман защищал наравне
+    // со шлемом.
+    ...(SLOT_DEFENSE[slot]
+      ? [{ stat: 'armor' as const, kind: 'flat' as const, value: ARMOR_BASE_DEFENSE.times(power), source }]
+      : []),
     ...[...budget].map(([stat, value]) => ({
       stat,
       kind: 'flat' as const,
@@ -201,7 +207,11 @@ export function averageArmorMods(slot: ArmorSlot, rarity: RarityDef, level = 1):
     // Броня — та же и в матожидании: она не разыгрывается вовсе, поэтому
     // «средняя» часть брони несёт ровно столько же защиты, сколько любая
     // конкретная. Округления здесь по-прежнему нет — см. комментарий выше.
-    { stat: 'armor' as const, kind: 'flat' as const, value: ARMOR_BASE_DEFENSE.times(power), source },
+    // Флаг тот же, что и у настоящей вещи: эталон обязан носить ровно то,
+    // что носит игрок, иначе модель разойдётся с игрой на 15 % брони.
+    ...(SLOT_DEFENSE[slot]
+      ? [{ stat: 'armor' as const, kind: 'flat' as const, value: ARMOR_BASE_DEFENSE.times(power), source }]
+      : []),
     ...ARMOR_ATTRIBUTES.map((attr) => ({
       stat: attr,
       kind: 'flat' as const,

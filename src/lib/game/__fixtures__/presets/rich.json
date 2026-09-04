@@ -124,7 +124,7 @@
         {
           "stat": "armor",
           "kind": "flat",
-          "value": "222",
+          "value": "278",
           "source": "equipment:chest"
         },
         {
@@ -145,7 +145,7 @@
         {
           "stat": "armor",
           "kind": "flat",
-          "value": "276",
+          "value": "344",
           "source": "equipment:hands"
         },
         {
@@ -172,7 +172,7 @@
         {
           "stat": "armor",
           "kind": "flat",
-          "value": "286",
+          "value": "358",
           "source": "equipment:legs"
         },
         {
@@ -298,7 +298,7 @@
         {
           "stat": "armor",
           "kind": "flat",
-          "value": "286",
+          "value": "358",
           "source": "equipment:head"
         },
         {
@@ -319,7 +319,7 @@
         {
           "stat": "armor",
           "kind": "flat",
-          "value": "234",
+          "value": "293",
           "source": "equipment:chest"
         },
         {
@@ -346,7 +346,7 @@
         {
           "stat": "armor",
           "kind": "flat",
-          "value": "363",
+          "value": "454",
           "source": "equipment:hands"
         },
         {
@@ -367,7 +367,7 @@
         {
           "stat": "armor",
           "kind": "flat",
-          "value": "234",
+          "value": "293",
           "source": "equipment:legs"
         },
         {
@@ -385,12 +385,6 @@
       "slot": "trinket",
       "level": 22,
       "mods": [
-        {
-          "stat": "armor",
-          "kind": "flat",
-          "value": "364",
-          "source": "equipment:trinket"
-        },
         {
           "stat": "vitality",
           "kind": "flat",

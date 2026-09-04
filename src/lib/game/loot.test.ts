@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { Decimal } from './numbers'
 import { INVENTORY_SIZE } from '../data/balance'
+import { SLOT_DEFENSE } from '../data/slots'
 import {
   armorMods,
   averageArmorMods,
@@ -514,7 +515,7 @@ describe('модификаторы брони', () => {
   })
 
   it('броня есть у каждой части брони и не зависит от главного атрибута', () => {
-    for (const slot of ['head', 'chest', 'hands', 'legs', 'trinket'] as const) {
+    for (const slot of ['head', 'chest', 'hands', 'legs'] as const) {
       for (const primary of ARMOR_ATTRIBUTES) {
         const armor = armorMods(slot, rarity, 7, primary).filter((m) => m.stat === 'armor')
         expect(armor, `${slot}/${primary}`).toHaveLength(1)
@@ -524,6 +525,23 @@ describe('модификаторы брони', () => {
         expect(armor[0].value.eq(armor[0].value.round()), `${slot}/${primary}`).toBe(true)
       }
     }
+  })
+
+  it('ТАЛИСМАН БРОНИ НЕ НЕСЁТ: он не часть брони и не щит', () => {
+    // Правило игры называет ровно двух носителей брони. Условия в генераторе
+    // не было вовсе — броню получало всё, что не рука, — и талисман нёс
+    // 15 % брони эталонного комплекта. Признак теперь в данных.
+    expect(SLOT_DEFENSE.trinket, 'талисман помечен как носитель брони').toBe(false)
+    for (const primary of ARMOR_ATTRIBUTES) {
+      const armor = armorMods('trinket', rarity, 7, primary).filter((m) => m.stat === 'armor')
+      expect(armor, `trinket/${primary}`).toHaveLength(0)
+    }
+    // Атрибуты у талисмана остаются: он украшение, а не пустышка.
+    expect(armorMods('trinket', rarity, 7, 'strength').length).toBeGreaterThan(0)
+    // Эталон прогона обязан носить ТО ЖЕ САМОЕ: разойдись он с игрой, модель
+    // считала бы по пяти частям брони там, где игрок носит четыре.
+    expect(averageArmorMods('trinket', rarity, 7).filter((m) => m.stat === 'armor')).toHaveLength(0)
+    expect(averageArmorMods('head', rarity, 7).filter((m) => m.stat === 'armor')).toHaveLength(1)
   })
 
   it('средняя броня прогона слита по тому же признаку', () => {
