@@ -102,6 +102,27 @@ export interface Content {
   spriteIconNames: readonly string[]
   /** Числа баланса, у которых есть допустимый диапазон. */
   balance: BalanceNumbers
+  /**
+   * ЧТО ГЕНЕРАТОРЫ РЕАЛЬНО КЛАДУТ НА ВЕЩЬ — по одному образцу на слот брони,
+   * на каждый щит и на каждое оружие. Собирается в content.ts теми же
+   * `armorMods` / `shieldMods` / `weaponMods` из `game/loot.ts`, что и в игре:
+   * броня не лежит в шаблоне отдельным полем, её кладёт генератор, и
+   * проверить её можно только по результату.
+   */
+  /**
+   * УРОВЕНЬ, НА КОТОРОМ МЕХАНИКА ОТКРЫВАЕТСЯ НА САМОМ ДЕЛЕ. Лестница
+   * открытий называет свой уровень отдельным полем, и эти два числа обязаны
+   * совпадать: разъедутся — лестница будет обещать травничество на сороковом,
+   * а собирать травы игрок начнёт на пятидесятом, и никто этого не заметит.
+   * Механики, у которой ещё нет кода, здесь нет вовсе — сверять нечего.
+   */
+  mechanicLevels: Readonly<Record<string, number>>
+  generatedMods: ReadonlyArray<{
+    /** Кого описывает строка: «броня head», «щит buckler». Идёт в текст замечания. */
+    what: string
+    wear: 'armor' | 'shield' | 'weapon'
+    mods: ReadonlyArray<{ stat: string; kind: string; value: number }>
+  }>
 }
 
 export interface BalanceNumbers {
@@ -127,6 +148,10 @@ export interface BalanceNumbers {
   goldFromLoot: number
   /** Ступени штрафа опыта за отставание: gap <= maxGap -> share. */
   xpGapPenalty: ReadonlyArray<{ maxGap: number; share: number }>
+  armorBaseDefense: number
+  shieldBaseDefense: number
+  armorCurveK: number
+  armorMaxReduction: number
 }
 
 // ---------------------------------------------------------------------------
@@ -2566,6 +2591,14 @@ function checkBalance(content: Content, report: Report): void {
     { field: 'TTK_DRIFT_MAX', get: (x) => x.ttkDriftMax, min: 0, exclusiveMin: true, max: 1, why: 'это доля разброса' },
     { field: 'GOLD_SOURCE_SHARE.monsters', get: (x) => x.goldFromMonsters, min: 0, exclusiveMin: true, max: 1, why: 'это доля крана золота' },
     { field: 'GOLD_SOURCE_SHARE.loot', get: (x) => x.goldFromLoot, min: 0, exclusiveMin: true, max: 1, why: 'это доля крана золота' },
+    // БРОНЯ. Границы широкие нарочно: это ручки настройки, и крутить их —
+    // законная работа. Проверка ловит не «неправильное число», а бессмыслицу:
+    // ноль защиты на броне, ноль в знаменателе кривой и стопроцентное
+    // снижение, при котором мобы перестают бить вовсе.
+    { field: 'ARMOR_BASE_DEFENSE', get: (x) => x.armorBaseDefense, min: 0, exclusiveMin: true, max: 1000, why: 'бюджет брони на единицу силы вещи; ноль означал бы броню, которая не защищает' },
+    { field: 'SHIELD_BASE_DEFENSE', get: (x) => x.shieldBaseDefense, min: 0, exclusiveMin: true, max: 1000, why: 'щит — тоже броня, и без неё он теряет половину смысла' },
+    { field: 'ARMOR_CURVE.k', get: (x) => x.armorCurveK, min: 0, exclusiveMin: true, max: 10_000, why: 'знаменатель кривой снижения; ноль дал бы стопроцентное снижение от одной единицы брони' },
+    { field: 'ARMOR_CURVE.maxReduction', get: (x) => x.armorMaxReduction, min: 0, exclusiveMin: true, max: 0.99, why: 'доля срезаемого урона; единица означала бы бессмертие в броне' },
   ]
   for (const rule of rules) checkNumber(b, rule, where, 'data/balance.ts', report)
   // ДОЛИ КРАНА ЗОЛОТА ОБЯЗАНЫ ДАВАТЬ ЕДИНИЦУ. Они делят одно и то же число
@@ -2790,12 +2823,101 @@ function checkScene(content: Content, report: Report): void {
   )
 }
 
+/**
+ * БРОНЯ ЕСТЬ У КАЖДОЙ ЧАСТИ БРОНИ И У КАЖДОГО ЩИТА, И ЕЁ НЕТ У ОРУЖИЯ.
+ *
+ * Проверяется по РЕЗУЛЬТАТУ генератора, а не по шаблону: брони в шаблоне нет
+ * вовсе — её кладут `armorMods` и `shieldMods` из общей константы, и «часть
+ * брони без брони» получилась бы не опечаткой в данных, а выпавшей строкой
+ * в генераторе. Шаблон такую поломку не показал бы никак.
+ *
+ * У ОРУЖИЯ БРОНИ БЫТЬ НЕ ДОЛЖНО, и это не придирка: броня — плата за слот,
+ * который не бьёт. Оружие с бронёй сделало бы двуручное строго лучше связки
+ * «одноручное + щит», то есть убило бы выбор, ради которого щит и заведён.
+ */
+function checkArmorPoints(content: Content, report: Report): void {
+  for (const entry of content.generatedMods) {
+    const points = entry.mods.filter((m) => m.stat === 'armor')
+    if (entry.wear === 'weapon') {
+      report.need(
+        points.length === 0,
+        entry.what,
+        'оружие несёт броню — броня это плата за слот, который не бьёт; ' +
+          'с ней двуручное стало бы строго лучше связки «одноручное + щит» ' +
+          '(game/loot.ts, weaponMods)',
+      )
+      continue
+    }
+    if (points.length !== 1) {
+      report.add(
+        entry.what,
+        `строк брони ${points.length}, а обязана быть ровно одна: броня не ` +
+          'разыгрывается и не складывается из двух источников (game/loot.ts)',
+      )
+      continue
+    }
+    const [armor] = points
+    report.need(
+      armor.kind === 'flat',
+      entry.what,
+      `броня помечена kind: '${armor.kind}' — на вещах она плоская, как и всё ` +
+        'остальное: процент считался бы от чужой экипировки (game/loot.ts)',
+    )
+    report.need(
+      armor.value > 0,
+      entry.what,
+      `броня ${armor.value} — часть брони без защиты не отличима от пустого слота ` +
+        '(ARMOR_BASE_DEFENSE / SHIELD_BASE_DEFENSE в data/items.ts)',
+    )
+    report.need(
+      Number.isInteger(armor.value),
+      entry.what,
+      `броня ${armor.value} — дробная, а считается штуками: ITEM_STAT_GRAIN ` +
+        "называет её 'whole' (data/items.ts), округляет grained в game/loot.ts",
+    )
+  }
+}
+
+/**
+ * ЛЕСТНИЦА ОТКРЫТИЙ НЕ ВРЁТ ПРО УРОВНИ. Ступень называет уровень сама, а
+ * механика за ней — своим порогом; совпадать они обязаны, и держать это
+ * глазами нельзя: числа лежат в разных файлах и двигаются порознь.
+ */
+function checkProgressionLevels(content: Content, report: Report): void {
+  for (const step of content.progression) {
+    for (const unlock of step.unlocks ?? []) {
+      if (unlock.kind === 'dungeon') {
+        const dungeon = content.dungeons.find((d) => d.id === unlock.id)
+        if (!dungeon) continue
+        report.need(
+          dungeon.unlockRequirement === step.level,
+          `ступень ${step.id}`,
+          `обещает данж «${unlock.id}» на ${step.level} уровне, а сам данж ` +
+            `открывается на ${dungeon.unlockRequirement} (data/dungeons.ts против ` +
+            'data/progression.ts)',
+        )
+        continue
+      }
+      const level = content.mechanicLevels[unlock.id]
+      if (level === undefined) continue
+      report.need(
+        level === step.level,
+        `ступень ${step.id}`,
+        `обещает механику «${unlock.id}» на ${step.level} уровне, а открывается ` +
+          `она на ${level} (data/progression.ts против порога самой механики)`,
+      )
+    }
+  }
+}
+
 export function checkContent(content: Content): ContentIssue[] {
   const report = new Report()
   for (const schema of SCHEMAS) runSchema(schema, content, report)
   checkReachable(content, report)
   checkInstanceEntrances(content, report)
   checkBalance(content, report)
+  checkArmorPoints(content, report)
+  checkProgressionLevels(content, report)
   checkUnlockLevels(content, report)
   checkScene(content, report)
   return report.issues

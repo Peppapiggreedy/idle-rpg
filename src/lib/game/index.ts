@@ -21,13 +21,14 @@ export {
   isEquipped,
   isUpgrade,
   upgradeShare,
+  axesOf,
   compareItem,
-  farmRateWith,
   equipStatus,
   unequipStatus,
   changesAnything,
 } from './equipment'
 export type {
+  Axes,
   EquipPreview,
   EquipComparison,
   EquipStatus,

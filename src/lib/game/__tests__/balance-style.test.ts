@@ -170,18 +170,25 @@ describe('стиль боя', () => {
       )
     const dual = stress('dual')
     const shield = stress('shield')
-    // МЕРИТСЯ ПРИВАЛ, А НЕ ВЕСЬ ПРОСТОЙ, и разница принципиальна. Простой —
-    // это привалы ПЛЮС смерти, и в зоне не по себе вторая половина говорит не
-    // о живучести, а об уроне: щит бьёт вдвое слабее, схватка тянется вдвое
-    // дольше, и герой не доживает до конца. Замер: со щитом привал 13.6% и
-    // смерти 10.9% при 52 убийствах в час, с двумя клинками привал 17.9% и
-    // смерти 13.4% при 65 убийствах.
+    // МЕРИТСЯ ВЕСЬ ПРОСТОЙ — ПРИВАЛЫ ПЛЮС СМЕРТИ, и это пришлось поменять
+    // вместе с появлением брони.
     //
-    // ЖИВУЧЕСТЬ ВИДНА ИМЕННО В ПРИВАЛЕ: щит смягчает удар, значит HP тает
-    // медленнее, значит отдыхать приходится реже. А то, что за это заплачено
-    // уроном, проверяется отдельно — по урону в секунду, ниже.
+    // РАНЬШЕ ЗДЕСЬ СТОЯЛ ОДИН ПРИВАЛ, и довод был такой: в зоне не по себе
+    // смерть говорит не о живучести, а об уроне — щит бьёт вдвое слабее,
+    // схватка тянется вдвое дольше, и герой не доживает до конца. Замер того
+    // времени: со щитом привал 13.6 % и смерти 10.9 %, с двумя клинками
+    // 17.9 % и 13.4 %.
+    //
+    // БРОНЯ ЭТОТ ДОВОД ПЕРЕВЕРНУЛА. Щит теперь несёт броню — самую крупную
+    // единицу смягчения из всех, — и в тяжёлой зоне он не «доживает хуже», а
+    // ЗАМЕТНО ЛУЧШЕ: замер 32.0 % смертей против 45.2 % у двух клинков.
+    // Привал же перестал быть мерой живучести ровно потому, что до порога
+    // привала надо ДОЖИТЬ: у двух клинков он выходит МЕНЬШЕ (3.8 % против
+    // 5.8 %) не оттого, что они крепче, а оттого, что они гибнут раньше, чем
+    // успевают устать. Честная мера покупки — сколько всего времени герой
+    // простоял, и по ней щит выигрывает и без натяжек.
     const idle = (runs: SimResult[]) =>
-      runs.reduce((sum, r) => sum + r.restShare, 0) / runs.length
+      runs.reduce((sum, r) => sum + r.restShare + (1 - r.uptime), 0) / runs.length
     header(
       `Герой ${stressBuild.level} уровня со связкой ${BALANCE_PRESET.stressWeaponLevel} уровня в зоне ` +
         `${ZONES.find((z) => z.id === stressZoneId)!.name} — не по себе. ${weaponHours} ч.`,
@@ -193,16 +200,16 @@ describe('стиль боя', () => {
     ] as const) {
       log(`${STYLE_NAMES[style].padEnd(21)} ${meanKills(runs).toFixed(0).padStart(9)}   ${pct(idle(runs)).padStart(7)}   ${pct(runs.reduce((a, r) => a + 1 - r.uptime, 0) / runs.length).padStart(7)}`)
     }
-    // Привал обязан заметно упасть, а не просто «не вырасти»: щит покупает
+    // Простой обязан заметно упасть, а не просто «не вырасти»: щит покупает
     // живучесть, и покупка должна быть видна.
     expect(
       dump(
-        `balance/style/shield-cost/zone-${stressZoneId}/weapon-level-${String(BALANCE_PRESET.stressWeaponLevel).padStart(3, '0')}/style-shield/rest-share`,
+        `balance/style/shield-cost/zone-${stressZoneId}/weapon-level-${String(BALANCE_PRESET.stressWeaponLevel).padStart(3, '0')}/style-shield/idle-share`,
         idle(shield),
       ),
     ).toBeLessThan(
       dump(
-        `balance/style/shield-cost/zone-${stressZoneId}/weapon-level-${String(BALANCE_PRESET.stressWeaponLevel).padStart(3, '0')}/style-dual/rest-share`,
+        `balance/style/shield-cost/zone-${stressZoneId}/weapon-level-${String(BALANCE_PRESET.stressWeaponLevel).padStart(3, '0')}/style-dual/idle-share`,
         idle(dual),
       ) * 0.9,
     )

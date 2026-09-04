@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest'
 import {
   MENU_IDS,
   MENU_SIDE,
+  MENU_UNLOCK_LEVEL,
   isTextMode,
+  menuUnlocked,
   menusOn,
   sanitizeUiSettings,
   type UiSettings,
 } from './ui'
-import { SOUND_DEFAULT_VOLUMES } from '../data/balance'
+import { CRAFT_UNLOCK_LEVEL, SOUND_DEFAULT_VOLUMES, TALENT_FIRST_LEVEL } from '../data/balance'
 
 describe('настройки интерфейса: разбор сохранённого', () => {
   it('пустое и мусорное значение дают настройки по умолчанию', () => {
@@ -72,10 +74,20 @@ describe('текстовый режим', () => {
 })
 
 describe('меню', () => {
-  it('меню ровно семь, порядок фиксирован и без повторов', () => {
+  it('меню восемь: семь кнопок в столбцах и автокаст в ряду действий', () => {
     // Было четыре раздела и две выдвижки — два разных паттерна на одну
-    // задачу. Стало семь одинаковых кнопок.
-    expect(MENU_IDS).toEqual(['hero', 'bag', 'world', 'talents', 'craft', 'log', 'settings'])
+    // задачу. Стало семь одинаковых кнопок в двух столбцах плюс автокаст:
+    // он настраивает ряд умений и стоит вплотную к нему, а не в столбце.
+    expect(MENU_IDS).toEqual([
+      'hero',
+      'bag',
+      'world',
+      'talents',
+      'craft',
+      'log',
+      'settings',
+      'autocast',
+    ])
     expect(new Set(MENU_IDS).size).toBe(MENU_IDS.length)
   })
 
@@ -88,8 +100,38 @@ describe('меню', () => {
   })
 
   it('у каждого меню есть сторона, и лишних сторон нет', () => {
-    for (const id of MENU_IDS) expect(MENU_SIDE[id]).toMatch(/^(left|right)$/)
+    for (const id of MENU_IDS) expect(MENU_SIDE[id]).toMatch(/^(left|right|row)$/)
     expect(Object.keys(MENU_SIDE).sort()).toEqual([...MENU_IDS].sort())
+    // Сторона `row` ровно одна: это исключение, а не третий столбец.
+    expect(MENU_IDS.filter((id) => MENU_SIDE[id] === 'row')).toEqual(['autocast'])
+  })
+
+  it('ЗАКРЫТОЕ НЕ ВИДНО ВОВСЕ — и это про сами кнопки, а не только панели', () => {
+    // Игрок первого уровня видел «Таланты» и «Крафт» и открывал пустоту.
+    // Порог — тот же, по которому механика открывается на самом деле.
+    expect(menusOn('left', 1)).toEqual(['hero', 'bag', 'world'])
+    expect(menusOn('left', TALENT_FIRST_LEVEL)).toEqual(['hero', 'bag', 'world', 'talents'])
+    expect(menusOn('left', CRAFT_UNLOCK_LEVEL)).toEqual([
+      'hero',
+      'bag',
+      'world',
+      'talents',
+      'craft',
+    ])
+    // Справа порогов нет: журнал и настройки осмысленны с первой секунды.
+    expect(menusOn('right', 1)).toEqual(['log', 'settings'])
+    // И автокаст тоже: одно умение у героя есть с первого уровня.
+    expect(menuUnlocked('autocast', 1)).toBe(true)
+  })
+
+  it('порог кнопки берётся из данных, а не пишется числом', () => {
+    // Иначе он разъедется с порогом самой механики, и кнопка начнёт врать
+    // молча — ровно так, как врал «0 шанс блока».
+    expect(MENU_UNLOCK_LEVEL.talents).toBe(TALENT_FIRST_LEVEL)
+    expect(MENU_UNLOCK_LEVEL.craft).toBe(CRAFT_UNLOCK_LEVEL)
+    // У остальных порога нет вовсе — их видно сразу.
+    const gated = Object.keys(MENU_UNLOCK_LEVEL).sort()
+    expect(gated).toEqual(['craft', 'talents'])
   })
 
   it('открытое меню не хранится в настройках машины', () => {

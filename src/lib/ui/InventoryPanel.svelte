@@ -30,11 +30,13 @@
   import EnchantLine from './EnchantLine.svelte'
   import ItemCompare from './ItemCompare.svelte'
   import { RARITY_BY_ID } from '../data/rarity'
+  import { SLOT_ICONS } from '../data/slots'
   import { UPGRADE_PRIORITIES, type UpgradePriority } from '../data/upgrade'
-  import type { LootPolicy } from '../data/upgrades'
+  import type { GoldUpgradeDef, LootPolicy } from '../data/upgrades'
+  import { plural } from './plural'
   import { availableLootPolicies, availableUpgrades, inventorySize, lootPolicyOf } from '../game/upgrades'
   import type { UpgradeBlockReason } from '../game/upgrades'
-  import { Button, IconSlot, NumberText, Panel, Tag } from './kit'
+  import { Button, IconSlot, NumberText, Panel, Tag, rarityStyle } from './kit'
   import { combatKey, createMemo } from './memo'
   import { Icon } from './icons'
 
@@ -76,7 +78,7 @@
   // лежат сами правила («какие оси смотреть»), и они молчат.
   const PRIORITY_NAME: Record<UpgradePriority, string> = {
     damage: 'Урон',
-    survival: 'Выживание',
+    survival: 'Живучесть',
     balance: 'Баланс',
   }
   // ПОКУПКИ И РАЗБОР. Названия положений и причины отказов — текст для
@@ -94,6 +96,19 @@
     sell: 'Лишнее уходит в золото сразу. Лучшее хоть по одной оси остаётся.',
     dust: 'Лишнее уходит в пыль сразу. Лучшее хоть по одной оси остаётся.',
   }
+  /**
+   * ОПИСАНИЕ ПОКУПКИ СТРОИТСЯ ИЗ ДАННЫХ там, где в нём есть ЧИСЛО. В
+   * data/upgrades.ts у пяти ступеней стояло «Ещё четыре места в сумке»
+   * словом, а число мест лежало рядом в `effect.slots` — две правды об одном,
+   * и разъехаться им ничто не мешало. Число теперь одно, и берётся оно из
+   * эффекта; всё остальное описание — как записано в данных.
+   */
+  function upgradeText(def: GoldUpgradeDef): string {
+    if (def.effect.kind !== 'bag') return def.description
+    const n = def.effect.slots
+    return `Ещё ${n} ${plural(n, 'место', 'места', 'мест')} в сумке.`
+  }
+
   const UPGRADE_REASON: Record<UpgradeBlockReason, string> = {
     owned: 'Уже куплено',
     level: 'Откроется позже',
@@ -101,8 +116,8 @@
   }
 
   const PRIORITY_HINT: Record<UpgradePriority, string> = {
-    damage: 'Апгрейд — то, что поднимает убийства в секунду. Остальное разбирается.',
-    survival: 'Апгрейд — то, что удешевляет бой. Остальное разбирается.',
+    damage: 'Апгрейд — то, что поднимает урон в секунду. Остальное разбирается.',
+    survival: 'Апгрейд — то, что поднимает живучесть. Остальное разбирается.',
     balance: 'Апгрейд — то, что лучше хоть по одной оси. Лишнее — только хуже по обеим.',
   }
 
@@ -188,6 +203,20 @@
   /** Сумка как цель броска: надетое, брошенное сюда, снимается. */
   const bagDrop = $derived(bagOutcome($gameState, $carriedItem))
 
+  /**
+   * ВЫБРАННАЯ НАХОДКА — та самая, что сейчас в руке и взята из сумки.
+   *
+   * Второго состояния «выбрано» не заводится: выбор вещи в сумке И есть
+   * «взять в руку». Иначе их стало бы два — подсвеченные слоты у одного,
+   * раскрытая карточка у другого, — и игрок читал бы про одну вещь, а нёс
+   * другую.
+   */
+  const carried = $derived(
+    $carriedItem?.from === 'bag'
+      ? ($gameState.inventory.find((i) => i.id === $carriedItem.itemId) ?? null)
+      : null,
+  )
+
   function equipNow(id: string): void {
     const item = $gameState.inventory.find((i) => i.id === id)
     if (item && equipStatus($gameState, item).canEquip) equipInventoryItem(id)
@@ -238,11 +267,18 @@
 <svelte:window
   onkeydown={(e) => e.key === 'Escape' && unpinCompare()}
   onpointerdown={(e) => {
-    // Клик ВНЕ карточки закрывает прикреплённое окно — но НЕ роняет вещь из
-    // руки. Разница принципиальна: слоты куклы лежат вне сумки, и нажатие по
-    // ним приходит сюда РАНЬШЕ, чем к самому слоту. Роняя здесь несомое, мы
-    // отменяли бы ровно то действие, ради которого игрок и нажал на слот.
-    if (pinned && !(e.target as HTMLElement)?.closest?.('[data-item-card]')) unpinCompare()
+    // НАЖАТИЕ МИМО СНИМАЕТ ВЫБОР — но «мимо» надо понимать точно, и это не
+    // придирка. Слоты куклы лежат ВНЕ сумки, и нажатие по ним приходит сюда
+    // РАНЬШЕ, чем к самому слоту: роняя здесь несомое, мы отменяли бы ровно
+    // то действие, ради которого игрок на слот и нажал. Поэтому «своими»
+    // считаются три места — сетка сумки, карточка выбранного и кукла, — а
+    // всё остальное снимает и окно сравнения, и вещь из руки.
+    const el = e.target as HTMLElement | null
+    if (el?.closest?.('[data-item-card], [data-chosen], [data-doll]')) {
+      if (pinned && !el.closest('[data-item-card]')) unpinCompare()
+      return
+    }
+    dismiss()
   }}
 />
 
@@ -314,16 +350,31 @@
             <Icon name={row.def.icon} />
             <div class="shop-text">
               <b>{row.def.name}</b>
-              <span class="shop-desc">{row.def.description}</span>
+              <span class="shop-desc">{upgradeText(row.def)}</span>
             </div>
-            <Button
-              size="sm"
-              variant={row.canBuy ? 'primary' : 'ghost'}
-              disabled={!row.canBuy}
-              onclick={() => buyGoldUpgrade(row.def.id)}
-            >
-              {row.canBuy ? `${formatNumber(row.cost)} золота` : UPGRADE_REASON[row.reason!]}
-            </Button>
+            <!-- ЦЕНА ВИДНА ВСЕГДА, И ОСОБЕННО КОГДА ЗОЛОТА НЕ ХВАТАЕТ.
+                 Раньше на месте цены появлялось «Не хватает золота», и
+                 покупка, к которой игрок идёт, переставала называть, СКОЛЬКО
+                 до неё идти: цену он видел только в тот момент, когда она уже
+                 не нужна. Теперь цена на кнопке всегда, а нехватка — строкой
+                 рядом и числом. -->
+            <div class="shop-buy">
+              <Button
+                size="sm"
+                variant={row.canBuy ? 'primary' : 'ghost'}
+                disabled={!row.canBuy}
+                onclick={() => buyGoldUpgrade(row.def.id)}
+              >
+                {formatNumber(row.cost)} золота
+              </Button>
+              {#if !row.canBuy}
+                <span class="deny" data-deny>
+                  {row.reason === 'gold'
+                    ? `Не хватает ${formatNumber(row.short)}`
+                    : UPGRADE_REASON[row.reason!]}
+                </span>
+              {/if}
+            </div>
           </li>
         {/each}
       </ul>
@@ -353,15 +404,15 @@
     {#each sorted as item (item.id)}
       {@const share = shares.get(item.id)}
       <IconSlot
-        slotLabel={itemSlotLabel(item)}
+        compact
         rarity={item.rarity}
-        active={compare?.id === item.id}
+        active={carried?.id === item.id}
         interactive
         draggable
         drop={$carriedItem?.from === 'bag' && $carriedItem.itemId === item.id
           ? 'carried'
           : undefined}
-        ariaLabel="{item.name}: {itemSlotLabel(item)}"
+        ariaLabel="{item.name}: {itemSlotLabel(item)}, {RARITY_BY_ID[item.rarity].name}, {item.level} ур."
         onmouseenter={(e: MouseEvent) => track(e, item.id)}
         onmousemove={(e: MouseEvent) => track(e, item.id)}
         onmouseleave={() => unhover(item.id)}
@@ -382,77 +433,90 @@
         }}
         ondragend={() => releaseItem()}
       >
-        <span class="name">{item.name}</span>
-        <!-- Уровень вещи — её главная сила: без него «Редкий» 3-го уровня
-             выглядел бы равным «Редкому» 60-го. -->
-        <Tag rarity={item.rarity} label="{RARITY_BY_ID[item.rarity].name} · {item.level} ур." />
+        <!-- ЗНАЧОК ПРЕДМЕТА — ВСЯ ЯЧЕЙКА. Что это за вещь, говорит сам значок
+             (он же значок слота), редкость — рамка, а насколько она сильна —
+             уровень числом. Всё остальное про находку показывается ВЫБРАННОЙ:
+             сравнение под курсором и карточка выбранного ниже. -->
+        <Icon name={SLOT_ICONS[item.slot]} size="lg" />
+        <span class="lvl">{item.level}</span>
         {#if upgradeLabel(share)}
-          <span class="upgrade" data-upgrade>Апгрейд {upgradeLabel(share)}</span>
+          <span class="upgrade" data-upgrade title="Апгрейд {upgradeLabel(share)}">
+            {upgradeLabel(share)}
+          </span>
         {/if}
-        {#if item.grip}
-          <span class="grip">{GRIP_TEXT[item.grip]}</span>
-        {/if}
-        <ItemMods mods={item.mods} />
-        <EnchantLine {item} />
-
-        {#snippet footer()}
-          {@const dis = disenchantStatus($gameState, item.id)}
-          {#if confirming === item.id}
-            <span class="warn">
-              На вещи «{enchantOf(item)?.name}» — она исчезнет вместе с ней.
-            </span>
-            <Button
-              size="sm"
-              variant="primary"
-              onclick={(e: MouseEvent) => {
-                act(e, () => disenchantInventoryItem(item.id))
-                confirming = null
-              }}
-            >
-              Всё равно распылить
-            </Button>
-            <Button size="sm" onclick={() => (confirming = null)}>Отмена</Button>
-          {:else}
-            {@const eq = equipStatus($gameState, item)}
-            <Button
-              size="sm"
-              variant="primary"
-              disabled={!eq.canEquip}
-              title={eq.reason ? EQUIP_BLOCK_TEXT[eq.reason] : ''}
-              onclick={(e: MouseEvent) => act(e, () => equipInventoryItem(item.id))}
-            >
-              Надеть
-            </Button>
-            <Button size="sm" onclick={(e: MouseEvent) => act(e, () => sellInventoryItem(item.id))}>
-              Продать за {formatNumber(sellPrice(item))}
-            </Button>
-            {#if dis.reason !== 'locked'}
-              <Button
-                size="sm"
-                disabled={!dis.canDisenchant}
-                title={dis.reason ? DISENCHANT_REASON[dis.reason] : 'Предмет исчезнет навсегда'}
-                onclick={(e: MouseEvent) =>
-                  item.enchantId
-                    ? (confirming = item.id)
-                    : act(e, () => disenchantInventoryItem(item.id))}
-              >
-                Распылить · {formatNumber(dis.dust)} пыли
-              </Button>
-            {/if}
-            <!-- Причина СТРОКОЙ, а не только подсказкой кнопки: на телефоне
-                 наведения нет вовсе, и выключенная кнопка без объяснения
-                 читается как поломка. -->
-            {#if eq.reason}
-              <span class="deny">{EQUIP_BLOCK_TEXT[eq.reason]}</span>
-            {/if}
-          {/if}
-        {/snippet}
       </IconSlot>
     {/each}
     {#each Array(emptySlots) as _, i (i)}
       <IconSlot emptyText="—" />
     {/each}
   </div>
+
+  <!-- КАРТОЧКА ВЫБРАННОГО. Нажал находку — тут её описание, и в ту же
+       секунду на кукле подсвечен её слот. Место постоянное, а не под
+       курсором: на телефоне наведения нет вовсе, а кнопки «Продать» и
+       «Распылить» обязаны быть там, куда можно попасть пальцем.
+       Окно сравнения под курсором рядом осталось — оно про мышь и про
+       быстрый взгляд, а не про действие. -->
+  {#if carried}
+    {@const dis = disenchantStatus($gameState, carried.id)}
+    {@const eq = equipStatus($gameState, carried)}
+    <section class="chosen" data-chosen style={rarityStyle(carried.rarity)}>
+      <header class="chosen-head">
+        <Icon name={SLOT_ICONS[carried.slot]} size="lg" />
+        <div class="chosen-title">
+          <b>{carried.name}</b>
+          <Tag
+            rarity={carried.rarity}
+            label="{RARITY_BY_ID[carried.rarity].name} · {carried.level} ур."
+          />
+        </div>
+        <span class="chosen-slot">{itemSlotLabel(carried)}</span>
+      </header>
+      {#if carried.grip}<span class="grip">{GRIP_TEXT[carried.grip]}</span>{/if}
+      <ItemMods mods={carried.mods} />
+      <EnchantLine item={carried} />
+      <!-- ОТКАЗ — СЛОВАМИ И ЗАРАНЕЕ, ровно как у слота куклы: игрок читает
+           причину до попытки, а не после неё. -->
+      {#if eq.reason}
+        <span class="deny" data-deny>{EQUIP_BLOCK_TEXT[eq.reason]}</span>
+      {/if}
+      <div class="chosen-actions">
+        {#if confirming === carried.id}
+          <span class="warn">
+            На вещи «{enchantOf(carried)?.name}» — она исчезнет вместе с ней.
+          </span>
+          <Button
+            size="sm"
+            variant="primary"
+            onclick={(e: MouseEvent) => {
+              act(e, () => disenchantInventoryItem(carried.id))
+              confirming = null
+            }}
+          >
+            Всё равно распылить
+          </Button>
+          <Button size="sm" onclick={() => (confirming = null)}>Отмена</Button>
+        {:else}
+          <Button size="sm" onclick={(e: MouseEvent) => act(e, () => sellInventoryItem(carried.id))}>
+            Продать за {formatNumber(sellPrice(carried))}
+          </Button>
+          {#if dis.reason !== 'locked'}
+            <Button
+              size="sm"
+              disabled={!dis.canDisenchant}
+              title={dis.reason ? DISENCHANT_REASON[dis.reason] : 'Предмет исчезнет навсегда'}
+              onclick={(e: MouseEvent) =>
+                carried.enchantId
+                  ? (confirming = carried.id)
+                  : act(e, () => disenchantInventoryItem(carried.id))}
+            >
+              Распылить · {formatNumber(dis.dust)} пыли
+            </Button>
+          {/if}
+        {/if}
+      </div>
+    </section>
+  {/if}
 
   {#if compareItemOf && compare}
     <ItemCompare item={compareItemOf} x={compare.x} y={compare.y} />
@@ -461,9 +525,10 @@
   {#snippet footer()}
     <p class="hint">Надетый предмет продать нельзя — сперва сними его в «Экипировке».</p>
     <p class="hint">
-      Находку можно перетащить на слот куклы, нажать её и затем нажать слот
-      либо задержать на ней нажатие — наденется сразу. Надетое, брошенное
-      обратно в сумку, снимается.
+      Находку можно перетащить на слот куклы, нажать её и затем нажать
+      подсвеченный слот либо задержать на ней нажатие — наденется сразу.
+      Надетое, брошенное обратно в сумку, снимается. Кнопки «Надеть» нет:
+      её заменяет подсвеченный слот.
     </p>
   {/snippet}
 </Panel>
@@ -537,9 +602,12 @@
     color: var(--c-text-dim);
     font-size: var(--text-xs);
   }
+  /* СЕТКА ИКОНОК. Колонка узкая — по значку, а не по карточке: полтора
+     десятка карточек со списком статов не помещались ни на телефон, ни в
+     ширину меню, и находку приходилось искать чтением, а не взглядом. */
   .grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(3.5rem, 1fr));
     gap: var(--space-2);
     border: 1px solid transparent;
     border-radius: var(--radius-md);
@@ -563,19 +631,67 @@
     font-size: var(--text-xs);
     color: var(--c-warning);
   }
-  .name {
-    font-weight: var(--weight-bold);
-  }
   /* Апгрейд обязан быть виден без наведения: ради этого мгновения лут
      и существует. Цвет — здоровья: «стало лучше», а не «тут урон». */
+  /* Уровень вещи — единственное число на значке: без него «Редкий» третьего
+     уровня выглядел бы равным «Редкому» шестидесятого. */
+  .lvl {
+    position: absolute;
+    right: var(--space-1);
+    bottom: 0;
+    font-size: var(--text-2xs);
+    color: var(--c-text-faint);
+  }
+  /* Цена и нехватка — столбиком: строка «не хватает N» встаёт под кнопкой,
+     а не растягивает ряд покупки в ширину. */
+  .shop-buy {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: var(--space-1);
+  }
+  .chosen {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    margin-top: var(--space-2);
+    padding: var(--space-2);
+    border: 1px solid color-mix(in srgb, var(--rarity-color) 70%, transparent);
+    border-radius: var(--radius-md);
+    background: color-mix(in srgb, var(--rarity-color) var(--tint-weak), var(--c-surface-sunken));
+  }
+  .chosen-head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+  .chosen-title {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    align-items: flex-start;
+  }
+  .chosen-slot {
+    margin-left: auto;
+    font-size: var(--text-2xs);
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-wide);
+    color: var(--c-text-faint);
+  }
+  .chosen-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+  }
+  /* Метка апгрейда на значке — угловой ярлычок: в компактной ячейке слов
+     нет вовсе, а «на сколько лучше» остаётся числом. */
   .upgrade {
-    align-self: flex-start;
+    position: absolute;
+    left: var(--space-1);
+    top: 0;
     font-size: var(--text-2xs);
     font-weight: var(--weight-bold);
     color: var(--c-heal);
-    border: 1px solid var(--c-heal);
-    border-radius: var(--radius-sm);
-    padding: 0 var(--space-1);
   }
   .hint {
     margin: 0;

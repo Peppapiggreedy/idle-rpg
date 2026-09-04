@@ -8,7 +8,7 @@
 //
 // Текста для игрока здесь нет: наружу идут числа и состояния, подписи рисует UI.
 import { Decimal } from './numbers'
-import { estimateCombatRate, expectedMonsterDamage } from './combat'
+import { estimateCombatRate, expectedMonsterDamage, mitigationShare } from './combat'
 import { levelGapDamageMult, MIN_REST_DURATION_S, REST_FOOD_SPEEDUP } from '../data/balance'
 import { zoneSpawnVariants, type Zone } from '../data/zones'
 import type { StatBlock } from './stats'
@@ -126,7 +126,7 @@ export function maxMonsterHit(zone: Zone, stats: StatBlock, heroLevel: number): 
     // зоне, где герой не переживает и одного удара.
     const worst = template.damageMax
       .times(levelGapDamageMult(heroLevel, template.level))
-      .times(1 - stats.damageReduction)
+      .times(1 - mitigationShare(stats, heroLevel))
     return Decimal.max(max, Decimal.max(hit, worst))
   }, new Decimal(0))
 }
@@ -164,7 +164,7 @@ export function fightLoss(state: GameState, template: MonsterTemplate): Decimal 
   // стандартное отклонение (max - min) / sqrt(12).
   const spread = template.damageMax
     .minus(template.damageMin)
-    .times(1 - state.stats.damageReduction)
+    .times(1 - mitigationShare(state.stats, state.level.toNumber()))
   const sigmaHit = spread.div(Math.sqrt(12))
   // Сумма независимых ударов: отклонение растёт как корень из их числа.
   const sigmaFight = sigmaHit.times(Math.sqrt(hits))

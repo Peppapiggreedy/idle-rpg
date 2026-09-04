@@ -20,6 +20,12 @@
       "level": 8,
       "mods": [
         {
+          "stat": "armor",
+          "kind": "flat",
+          "value": "93",
+          "source": "equipment:hands"
+        },
+        {
           "stat": "agility",
           "kind": "flat",
           "value": "8",
@@ -34,12 +40,45 @@
       ]
     },
     {
+      "id": "item-3",
+      "name": "Сумрачный Наруч",
+      "rarity": "uncommon",
+      "slot": "hands",
+      "level": 8,
+      "mods": [
+        {
+          "stat": "armor",
+          "kind": "flat",
+          "value": "117",
+          "source": "equipment:hands"
+        },
+        {
+          "stat": "strength",
+          "kind": "flat",
+          "value": "11",
+          "source": "equipment:hands"
+        },
+        {
+          "stat": "vitality",
+          "kind": "flat",
+          "value": "5",
+          "source": "equipment:hands"
+        }
+      ]
+    },
+    {
       "id": "item-4",
       "name": "Звёздный Нагрудник",
       "rarity": "common",
       "slot": "chest",
       "level": 8,
       "mods": [
+        {
+          "stat": "armor",
+          "kind": "flat",
+          "value": "93",
+          "source": "equipment:chest"
+        },
         {
           "stat": "agility",
           "kind": "flat",
@@ -62,26 +101,11 @@
       "level": 8,
       "mods": [
         {
-          "stat": "strength",
+          "stat": "armor",
           "kind": "flat",
-          "value": "8",
+          "value": "93",
           "source": "equipment:chest"
         },
-        {
-          "stat": "vitality",
-          "kind": "flat",
-          "value": "4",
-          "source": "equipment:chest"
-        }
-      ]
-    },
-    {
-      "id": "item-10",
-      "name": "Звёздный Панцирь",
-      "rarity": "common",
-      "slot": "chest",
-      "level": 8,
-      "mods": [
         {
           "stat": "strength",
           "kind": "flat",
@@ -134,22 +158,28 @@
     },
     "offHand": null,
     "head": {
-      "id": "item-9",
-      "name": "Сумрачный Капюшон",
-      "rarity": "uncommon",
+      "id": "item-2",
+      "name": "Гремящий Капюшон",
+      "rarity": "common",
       "slot": "head",
       "level": 8,
       "mods": [
         {
-          "stat": "agility",
+          "stat": "armor",
           "kind": "flat",
-          "value": "11",
+          "value": "93",
+          "source": "equipment:head"
+        },
+        {
+          "stat": "intellect",
+          "kind": "flat",
+          "value": "8",
           "source": "equipment:head"
         },
         {
           "stat": "vitality",
           "kind": "flat",
-          "value": "5",
+          "value": "4",
           "source": "equipment:head"
         }
       ]
@@ -161,6 +191,12 @@
       "slot": "chest",
       "level": 8,
       "mods": [
+        {
+          "stat": "armor",
+          "kind": "flat",
+          "value": "93",
+          "source": "equipment:chest"
+        },
         {
           "stat": "strength",
           "kind": "flat",
@@ -183,6 +219,12 @@
       "level": 8,
       "mods": [
         {
+          "stat": "armor",
+          "kind": "flat",
+          "value": "93",
+          "source": "equipment:hands"
+        },
+        {
           "stat": "intellect",
           "kind": "flat",
           "value": "8",
@@ -203,6 +245,12 @@
       "slot": "legs",
       "level": 8,
       "mods": [
+        {
+          "stat": "armor",
+          "kind": "flat",
+          "value": "117",
+          "source": "equipment:legs"
+        },
         {
           "stat": "intellect",
           "kind": "flat",
@@ -265,8 +313,8 @@
   "gold": "4820",
   "level": "10",
   "currentXp": "488",
-  "currentHp": "299",
-  "currentMana": "85",
+  "currentHp": "293",
+  "currentMana": "103",
   "heroState": "alive",
   "reviveMsLeft": 0,
   "talents": {},

@@ -137,14 +137,21 @@ export interface ResetStatus {
   canReset: boolean
   reason: ResetBlockReason | null
   cost: Decimal
+  /** Сколько золота не хватает. Ноль — хватает. */
+  short: Decimal
 }
 
 /** Порядок фиксирован: сперва то, что не лечится золотом. */
 export function resetStatus(state: GameState): ResetStatus {
   const cost = resetCost(state)
-  if (spentPoints(state.talents) <= 0) return { canReset: false, reason: 'nothing-spent', cost }
-  if (state.gold.lt(cost)) return { canReset: false, reason: 'gold', cost }
-  return { canReset: true, reason: null, cost }
+  // СКОЛЬКО НЕ ХВАТАЕТ — числом, а не словом. «Не хватает золота» не говорит,
+  // сколько ещё копить, и цель превращается в стену без расстояния до неё.
+  const short = Decimal.max(cost.minus(state.gold), new Decimal(0))
+  if (spentPoints(state.talents) <= 0) {
+    return { canReset: false, reason: 'nothing-spent', cost, short }
+  }
+  if (short.gt(0)) return { canReset: false, reason: 'gold', cost, short }
+  return { canReset: true, reason: null, cost, short }
 }
 
 export function canResetTalents(state: GameState): boolean {

@@ -22,7 +22,7 @@
   import EnchantLine from './EnchantLine.svelte'
   import { EQUIP_BLOCK_TEXT, GRIP_TEXT, UNEQUIP_BLOCK_TEXT } from './itemText'
   import { RARITY_BY_ID } from '../data/rarity'
-  import { Button, IconSlot, Panel, Tag } from './kit'
+  import { IconSlot, Panel, Tag } from './kit'
   import { Icon } from './icons'
 
   // Двуручное занимает обе руки: левая не пуста, она ЗАНЯТА — и разницу
@@ -115,7 +115,7 @@
     </p>
   {/if}
 
-  <div class="grid">
+  <div class="grid" data-doll>
     {#each SLOT_IDS as slot (slot)}
       {@const item = $gameState.equipment[slot]}
       {@const outcome = outcomes.get(slot)!}
@@ -168,13 +168,16 @@
           {#if outcome.fits && !outcome.allowed && outcome.reason}
             <span class="deny" data-deny>{EQUIP_BLOCK_TEXT[outcome.reason]}</span>
           {/if}
+          <!-- КНОПКИ «СНЯТЬ» ЗДЕСЬ НЕТ, и это не забывчивость. Снять вещь
+               можно тремя жестами — двойным щелчком, долгим нажатием и
+               броском в сумку, — и все три проверены браузерными тестами.
+               Кнопка была четвёртым способом сделать то же самое и занимала
+               место в каждой из семи ячеек; вместе с ней ушла и причина, по
+               которой кукла выглядела списком кнопок, а не куклой.
+               ОТКАЗ ПРИ ЭТОМ ОСТАЛСЯ СЛОВАМИ: полная сумка по-прежнему
+               объясняет себя строкой. -->
           {#if item}
             {@const un = unequipStatus($gameState, slot)}
-            <Button size="sm" disabled={!un.canUnequip} onclick={() => unequipSlot(slot)}>
-              Снять
-            </Button>
-            <!-- Причина СТРОКОЙ, как в сумке: на телефоне подсказки по
-                 наведению нет, и запертая кнопка без слов читается как поломка. -->
             {#if un.reason}
               <span class="deny" data-deny>{UNEQUIP_BLOCK_TEXT[un.reason]}</span>
             {/if}
@@ -214,8 +217,10 @@
     </p>
     <p class="unarmed">
       Надеть находку можно тремя способами: перетащить из сумки, нажать её и
-      затем нажать слот, либо задержать нажатие на ней. С клавиатуры — Tab до
-      слота и Enter. Двойной щелчок или долгое нажатие по надетому снимает его.
+      затем нажать подсвеченный слот, либо задержать нажатие на ней. С
+      клавиатуры — Tab до слота и Enter. Снять — двойным щелчком, долгим
+      нажатием или броском в сумку. Кнопок «Надеть» и «Снять» нет: каждая из
+      них была четвёртым способом сделать то же самое.
     </p>
   {/snippet}
 </Panel>

@@ -262,9 +262,9 @@ describe('автонадевание', () => {
     // входит ещё и аптайм, то есть живучесть, и без него броня никогда не
     // считалась бы апгрейдом (см. комментарий у farmRate в equipment.ts).
     expect(share).toBeCloseTo(
-      cmp.withItem.killsPerSecond
-        .minus(cmp.current.killsPerSecond)
-        .div(cmp.current.killsPerSecond)
+      cmp.withItem.axisDamage
+        .minus(cmp.current.axisDamage)
+        .div(cmp.current.axisDamage)
         .toNumber(),
       9,
     )

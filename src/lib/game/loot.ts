@@ -9,12 +9,14 @@ import { DROP_CHANCE, LOOT_ADJECTIVES, SHIELD_SHARE, itemSellPrice } from '../da
 import { SLOT_DROP_WEIGHTS, SLOT_IDS, type SlotId } from '../data/slots'
 import {
   ARMOR_ATTRIBUTES,
+  ARMOR_BASE_DEFENSE,
   ARMOR_BASE_PRIMARY,
   ARMOR_BASE_VITALITY,
   ARMOR_BONUS_STAT,
   ARMOR_NOUNS,
   itemStatValue,
   ONE_HANDED,
+  SHIELD_BASE_DEFENSE,
   SHIELDS,
   WEAPONS,
   type ArmorSlot,
@@ -122,6 +124,10 @@ export function shieldMods(template: ShieldTemplate, rarity: RarityDef, level = 
   return grained([
     { stat: 'blockChance', kind: 'base', value: template.blockChance, source },
     { stat: 'blockValue', kind: 'base', value: template.blockValue.times(power), source },
+    // БРОНЯ ЩИТА. Плоская прибавка, как и всё на выпадающих вещах, и растёт
+    // той же `power`: блок снимает фиксированную величину и обесценивается с
+    // ростом урона мобов, а броня режет ДОЛЮ и не обесценивается никогда.
+    { stat: 'armor', kind: 'flat', value: SHIELD_BASE_DEFENSE.times(power), source },
     // Тот же разговор, что и у оружия: побочные статы щита только плоские.
     ...template.extra.map((mod) => ({ ...mod, value: mod.value.times(power), source })),
   ])
@@ -152,14 +158,17 @@ export function armorMods(
     budget.set(stat, (budget.get(stat) ?? new Decimal(0)).plus(value))
   add(primary, ARMOR_BASE_PRIMARY)
   add(ARMOR_BONUS_STAT, ARMOR_BASE_VITALITY)
-  return grained(
-    [...budget].map(([stat, value]) => ({
+  return grained([
+    // БРОНЯ ЕСТЬ У КАЖДОЙ ЧАСТИ БРОНИ, и она не разыгрывается: главный
+    // атрибут — вопрос везения, а защита — то, ради чего броню и носят.
+    { stat: 'armor' as const, kind: 'flat' as const, value: ARMOR_BASE_DEFENSE.times(power), source },
+    ...[...budget].map(([stat, value]) => ({
       stat,
       kind: 'flat' as const,
       value: value.times(power),
       source,
     })),
-  )
+  ])
 }
 
 /**
@@ -189,12 +198,18 @@ export function averageArmorMods(slot: ArmorSlot, rarity: RarityDef, level = 1):
   const share = ARMOR_BASE_PRIMARY.div(ARMOR_ATTRIBUTES.length)
   // Довесок прибавляется тому стату, который назван довеском В ДАННЫХ, —
   // ровно как в armorMods выше, и по тому же признаку совпадения.
-  return ARMOR_ATTRIBUTES.map((attr) => ({
-    stat: attr,
-    kind: 'flat' as const,
-    value: (attr === ARMOR_BONUS_STAT ? share.plus(ARMOR_BASE_VITALITY) : share).times(power),
-    source,
-  }))
+  return [
+    // Броня — та же и в матожидании: она не разыгрывается вовсе, поэтому
+    // «средняя» часть брони несёт ровно столько же защиты, сколько любая
+    // конкретная. Округления здесь по-прежнему нет — см. комментарий выше.
+    { stat: 'armor' as const, kind: 'flat' as const, value: ARMOR_BASE_DEFENSE.times(power), source },
+    ...ARMOR_ATTRIBUTES.map((attr) => ({
+      stat: attr,
+      kind: 'flat' as const,
+      value: (attr === ARMOR_BONUS_STAT ? share.plus(ARMOR_BASE_VITALITY) : share).times(power),
+      source,
+    })),
+  ]
 }
 
 // Бросок дропа с убитого моба: null — не повезло. itemSeq нумерует id предметов.

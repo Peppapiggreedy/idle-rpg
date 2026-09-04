@@ -141,7 +141,7 @@ describe('пустой слот в сравнении', () => {
     expect(state.equipment.chest).toBeNull()
     // Оценка и правда не выросла — и это НЕ повод оставить слот пустым.
     const cmp = compareItem(state, vitality)
-    expect(cmp.withItem.killsPerSecond.gte(cmp.current.killsPerSecond)).toBe(true)
+    expect(cmp.withItem.axisDamage.gte(cmp.current.axisDamage)).toBe(true)
     expect(cmp.isUpgrade).toBe(true)
     // А поверх уже надетого то же самое правило не действует: там сравнивать
     // есть с чем, и порог остаётся строгим.

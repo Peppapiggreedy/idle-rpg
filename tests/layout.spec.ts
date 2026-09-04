@@ -3,7 +3,7 @@ import { SCENE_MINI_MAX_PX, SCENE_MINI_MIN_PX } from '../src/lib/data/render.js'
 
 // Компоновка экрана. Проверяется то, что ломается молча и чего не видно
 // на картинке: состав постоянной зоны, равенство кнопок действий, живучесть
-// хоткеев и правила семи меню: одно за раз, Esc и повторное нажатие
+// хоткеев и правила восьми меню: одно за раз, Esc и повторное нажатие
 // закрывают, ряд действий жив при любом открытом меню.
 
 async function open(page: Page, width = 1280): Promise<void> {
@@ -196,7 +196,9 @@ test('на мобильном ряд действий скроллится, а �
 // ровно до первого открытия инспектора.
 test('названий закрытых ступеней нет в разметке страницы', async ({ page }) => {
   await open(page)
-  await page.locator('nav[aria-label^="Меню"] button', { hasText: 'Таланты' }).first().click()
+  // Лестница открытий живёт в «Мире»: она про то, что откроется дальше В
+  // МИРЕ, и стоит рядом с картой зон, а не в талантах.
+  await page.locator('nav[aria-label^="Меню"] button', { hasText: 'Мир' }).first().click()
   const ladder = page.locator('section', { hasText: 'Лестница открытий' }).first()
   await expect(ladder).toBeVisible()
   const html = await page.content()
@@ -370,4 +372,103 @@ test('без открытого меню сцена на месте и на те
     await expect(page.locator('[data-compact="1"]')).toHaveCount(0)
     await expect(page.locator('.battle')).toHaveCount(1)
   }
+})
+
+// КАЖДАЯ КНОПКА СОДЕРЖИТ ТО, ЧТО ОБЕЩАЕТ. Общая беда прежней раскладки:
+// кнопка называлась одним, а внутри лежало другое, и появлялась она раньше,
+// чем ей было что показать.
+
+test('«Автокаст» ОТКРЫВАЕТ настройки ротации, а не переключает её', async ({ page }) => {
+  await open(page)
+  const button = page.locator('[data-permanent] button', { hasText: 'Автокаст' }).first()
+  await expect(page.locator('.pane > *')).toHaveCount(0)
+  await button.click()
+
+  // Внутри: общий выключатель, список умений с приоритетом и «беречь ману».
+  const pane = page.locator('.pane')
+  await expect(pane.locator('[data-autocast-master]')).toBeVisible()
+  await expect(pane.getByText('Использовать автоматически').first()).toBeVisible()
+  await expect(pane.getByText('Беречь', { exact: false }).first()).toBeVisible()
+
+  // Ведёт себя как остальные меню: повторное нажатие и Esc закрывают.
+  await button.click()
+  await expect(page.locator('.pane > *')).toHaveCount(0)
+  await button.click()
+  await page.keyboard.press('Escape')
+  await expect(page.locator('.pane > *')).toHaveCount(0)
+})
+
+test('открытие другого меню закрывает автокаст, и наоборот', async ({ page }) => {
+  // Одно меню за раз — правило общее, и автокаст из него не выпадает.
+  await open(page)
+  await page.locator('[data-permanent] button', { hasText: 'Автокаст' }).first().click()
+  await menuButton(page, 'Мир').click()
+  await expect(page.locator('.pane').getByText('Лестница открытий')).toBeVisible()
+  await expect(page.locator('.pane').locator('[data-autocast-master]')).toHaveCount(0)
+})
+
+test('«Таланты» — только три ветки: ни умений, ни лестницы', async ({ page }) => {
+  await open(page)
+  await menuButton(page, 'Таланты').click()
+  const pane = page.locator('.pane')
+  await expect(pane.locator('section', { hasText: 'Таланты' }).first()).toBeVisible()
+  await expect(pane.locator('[data-autocast-master]')).toHaveCount(0)
+  await expect(pane.getByText('Лестница открытий')).toHaveCount(0)
+})
+
+test('«Мир» содержит лестницу открытий', async ({ page }) => {
+  await open(page)
+  await menuButton(page, 'Мир').click()
+  await expect(page.locator('.pane').getByText('Лестница открытий')).toBeVisible()
+})
+
+test('кнопки меню не видны раньше, чем им есть что показать', async ({ page }) => {
+  // «Закрытое не видно вовсе» было записано про панели, но не применено к
+  // самим кнопкам: игрок первого уровня открывал пустоту.
+  const names = async () =>
+    (await page.locator('nav[aria-label^="Меню"] button').allInnerTexts()).join(' ')
+
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await page.goto('?debug=1&state=fresh&scene=off')
+  await expect(page.locator('html')).toHaveAttribute('data-ready', 'preset')
+  const atOne = await names()
+  expect(atOne, 'на первом уровне «Таланты» показывать нечего').not.toContain('Таланты')
+  expect(atOne, 'на первом уровне «Крафт» показывать нечего').not.toContain('Крафт')
+  // А то, что осмысленно с первой секунды, на месте.
+  for (const name of ['Герой', 'Сумка', 'Мир', 'Журнал', 'Настройки']) {
+    expect(atOne, `кнопка «${name}» должна быть видна сразу`).toContain(name)
+  }
+  await expect(page.locator('[data-permanent] button', { hasText: 'Автокаст' })).toHaveCount(1)
+
+  // Десятый уровень — порог талантов: кнопка появилась, крафта ещё нет.
+  await page.goto('?debug=1&state=mid&scene=off')
+  await expect(page.locator('html')).toHaveAttribute('data-ready', 'preset')
+  const atTen = await names()
+  expect(atTen).toContain('Таланты')
+  expect(atTen).not.toContain('Крафт')
+
+  // Тридцать второй — обе на месте.
+  await page.goto('?debug=1&state=rich&scene=off')
+  await expect(page.locator('html')).toHaveAttribute('data-ready', 'preset')
+  const atThirty = await names()
+  expect(atThirty).toContain('Таланты')
+  expect(atThirty).toContain('Крафт')
+})
+
+test('карточка героя: два числа крупно, остальное под «Деталями»', async ({ page }) => {
+  await open(page)
+  await menuButton(page, 'Герой').click()
+  const summary = page.locator('[data-hero-summary]')
+  await expect(summary).toBeVisible()
+  // Ровно две плитки: одно число врёт, трёх никто не читает.
+  await expect(summary.locator('.tile')).toHaveCount(2)
+  await expect(summary).toContainText('Урон в секунду')
+
+  // Детали свёрнуты по умолчанию и раскрываются кнопкой.
+  const details = page.locator('.pane').getByText('Время замаха')
+  await expect(details).toHaveCount(0)
+  await page.locator('.pane').getByRole('button', { name: 'Детали' }).click()
+  await expect(details.first()).toBeVisible()
+  await page.locator('.pane').getByRole('button', { name: 'Свернуть детали' }).click()
+  await expect(details).toHaveCount(0)
 })

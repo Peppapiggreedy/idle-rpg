@@ -115,8 +115,10 @@ for (const preset of PRESETS) {
   }
 }
 
-// ВСЕ СЕМЬ МЕНЮ. Раньше здесь было четыре раздела по индексу вкладки;
-// теперь меню открываются по названию кнопки — оно и есть их имя.
+// ВСЕ ВОСЕМЬ МЕНЮ. Раньше здесь было четыре раздела по индексу вкладки;
+// теперь меню открываются по названию кнопки — оно и есть их имя. Семь
+// стоят в столбцах, восьмое — «Автокаст» — в ряду действий, который оно
+// настраивает; снимается оно так же, как остальные.
 const SECTIONS = [
   { menu: 'Герой', name: 'hero' },
   { menu: 'Сумка', name: 'bag' },
@@ -125,6 +127,7 @@ const SECTIONS = [
   { menu: 'Крафт', name: 'craft' },
   { menu: 'Журнал', name: 'log' },
   { menu: 'Настройки', name: 'settings' },
+  { menu: 'Автокаст', name: 'autocast' },
 ] as const
 // Узкий и широкий: между ними лежит единственный брейкпоинт игры.
 const SECTION_WIDTHS = [390, 1280] as const
@@ -317,33 +320,30 @@ test('левая рука под двуручным объясняет, поче
 // сравнение раскрывалось ВНУТРИ карточки, и «Продать» с «Распылить» уезжали
 // из-под курсора ровно тогда, когда игрок к ним тянулся. Картинка такое не
 // ловит — это измерение, а не вид.
-test('карточка предмета при наведении не двигает свои кнопки', async ({ page }) => {
+test('ячейка сумки при наведении не меняет ни размер, ни место', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 })
   await openPreset(page, 'rich', true)
   await openMenu(page, 'Сумка')
-  const card = page.locator('.slot').filter({ has: page.locator('button', { hasText: 'Продать' }) }).first()
+  const card = page.locator('.grid > .slot.filled').first()
   await expect(card).toBeVisible()
-  // Карточку СНАЧАЛА докручиваем целиком в окно, а уже потом меряем. Иначе
-  // hover() докрутит её сам — и «сдвиг кнопки» окажется прокруткой страницы
-  // на те пиксели, на которые карточка не влезала. Координаты boundingBox
-  // считаются от окна, а не от документа, и меряют не то, что заявлено.
+  // Ячейку СНАЧАЛА докручиваем целиком в окно, а уже потом меряем. Иначе
+  // hover() докрутит её сам — и «сдвиг» окажется прокруткой страницы на те
+  // пиксели, на которые ячейка не влезала. Координаты boundingBox считаются
+  // от окна, а не от документа, и меряют не то, что заявлено.
   await card.scrollIntoViewIfNeeded()
-  const sell = card.locator('button', { hasText: 'Продать' })
-  const before = await sell.boundingBox()
-  const cardBefore = await card.boundingBox()
+  const before = await card.boundingBox()
 
   await card.hover()
   // Окно сравнения появилось — значит наведение сработало, и тест меряет
   // именно тот случай, ради которого написан.
   await expect(page.locator('[data-item-compare]')).toBeVisible()
 
-  const after = await sell.boundingBox()
-  const cardAfter = await card.boundingBox()
+  const after = await card.boundingBox()
   expect(after?.y).toBeCloseTo(before?.y ?? -1, 0)
   expect(after?.x).toBeCloseTo(before?.x ?? -1, 0)
-  expect(cardAfter?.height).toBeCloseTo(cardBefore?.height ?? -1, 0)
+  expect(after?.height).toBeCloseTo(before?.height ?? -1, 0)
 
-  // И окно НЕ ЛОВИТ МЫШЬ: кнопка под ним обязана нажиматься.
+  // И окно НЕ ЛОВИТ МЫШЬ: то, что под ним, обязано нажиматься.
   const box = page.locator('[data-item-compare]')
   await expect(box).toHaveCSS('pointer-events', 'none')
 })
@@ -351,6 +351,8 @@ test('карточка предмета при наведении не двиг�
 test('кнопки меню держат 44px на нажатие', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 720 })
   await openPreset(page, 'rich', true)
+  // Пресет rich — 32 уровень: открыты все семь кнопок столбцов. На первом
+  // уровне их пять, и это не поломка, а лестница открытий.
   const tabs = page.locator('nav[aria-label^="Меню"] button')
   const count = await tabs.count()
   expect(count).toBe(7)
@@ -358,6 +360,9 @@ test('кнопки меню держат 44px на нажатие', async ({ pag
     const box = await tabs.nth(i).boundingBox()
     expect(box?.height ?? 0).toBeGreaterThanOrEqual(44)
   }
+  // Восьмая кнопка — «Автокаст» в ряду действий — та же область нажатия.
+  const auto = page.locator('[data-permanent] button', { hasText: 'Автокаст' }).first()
+  expect((await auto.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44)
 })
 
 test('витрина интерфейса', async ({ page }) => {

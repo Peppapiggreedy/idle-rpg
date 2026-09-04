@@ -76,6 +76,7 @@ export function statNames(classId: string | undefined | null): Record<StatId, st
     hpRegen: 'Восст. здоровья (бой)',
     hpRegenOutOfCombat: 'Восст. здоровья (отдых)',
     manaRegen: `Восст. ${resource.genitive}`,
+    armor: 'Броня',
     damageReduction: 'Снижение урона',
   }
 }

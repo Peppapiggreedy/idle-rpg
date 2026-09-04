@@ -15,9 +15,15 @@ export function actionButtons(page: Page) {
   return page.locator('[aria-label="Действия"] button.slot')
 }
 
-/** Открыть меню по названию кнопки. Меню семь, паттерн один. */
+/**
+ * Открыть меню по названию кнопки. Меню восемь, паттерн один.
+ *
+ * Семь кнопок стоят в двух столбцах по бокам сцены, восьмая — «Автокаст» —
+ * в ряду действий, который она и настраивает. Поэтому локатор ищет кнопку
+ * ПО ПОДПИСИ где угодно в постоянной зоне, а не только в столбцах.
+ */
 export async function openMenu(page: Page, name: string): Promise<void> {
-  await page.locator('nav[aria-label^="Меню"] button', { hasText: name }).first().click()
+  await page.locator('[data-permanent] button', { hasText: name }).first().click()
   await expect(page.locator('.pane > *').first()).toBeVisible()
 }
 

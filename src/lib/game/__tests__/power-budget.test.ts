@@ -51,6 +51,17 @@ describe('бюджет силы Стража на потолке', () => {
   // ЛЕСТНИЦА ИСТОЧНИКОВ, каждый поверх предыдущего, в порядке появления в игре.
   const ref = referenceBuild(LEVEL_CAP, DEFAULT_CLASS.id)
   const geared = buildSimState({ ...ref, talents: {} }, zone.id, SEED)
+  // ГЕРОЙ БЕЗ БРОНИ — тот же комплект с обнулённой строкой брони, а не голый:
+  // снимать вещи целиком значило бы мерить заодно атрибуты, урон оружия и
+  // блок. Броня — первая ступень лестницы источников, и мерится она так же,
+  // как остальные: снятием ровно одного источника.
+  const unarmoredEq = { ...geared.equipment }
+  for (const slot of SLOT_IDS) {
+    const item = unarmoredEq[slot]
+    if (!item) continue
+    unarmoredEq[slot] = { ...item, mods: item.mods.filter((m) => m.stat !== 'armor') }
+  }
+  const unarmored = ensureStats({ ...geared, equipment: unarmoredEq, statsDirty: true })
   const points = branchPoints(LEVEL_CAP)
   const branches = BRANCHES.filter((b) => b.classId === DEFAULT_CLASS.id).map((b) => ({
     id: b.id,
@@ -83,6 +94,12 @@ describe('бюджет силы Стража на потолке', () => {
   })
 
   const sources = [
+    {
+      id: 'armor' as const,
+      name: 'броня комплекта',
+      from: () => rate(unarmored),
+      to: () => rate(geared),
+    },
     {
       id: 'talents' as const,
       name: `таланты (${points} очков, ${talented.id})`,

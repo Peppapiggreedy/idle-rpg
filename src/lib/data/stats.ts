@@ -29,6 +29,7 @@ export const STAT_ICONS: Record<StatId | 'swingTime', IconName> = {
   hpRegen: 'stat-hpRegen',
   hpRegenOutOfCombat: 'stat-hpRegenOutOfCombat',
   manaRegen: 'stat-manaRegen',
+  armor: 'stat-armor',
   damageReduction: 'stat-damageReduction',
   swingTime: 'stat-swingTime',
 }

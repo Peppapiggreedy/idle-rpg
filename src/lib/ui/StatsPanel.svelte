@@ -2,7 +2,7 @@
   import {
     Decimal,
     attackPowerContribution,
-    estimateCombatRate,
+    axesOf,
     explainStat,
     explainSwingTime,
     expectedSwingDamage,
@@ -13,8 +13,10 @@
     type StatModifier,
   } from '../game'
   import { TALENT_BY_ID } from '../data/talents'
+  import { TYPICAL_FIGHT_SEC } from '../data/balance'
   import { gameState } from '../stores/game'
-  import { Panel } from './kit'
+  import { heroDetailsOpen, toggleHeroDetails } from '../stores/ui'
+  import { Button, NumberText, Panel } from './kit'
   import { STAT_ICONS } from '../data/stats'
   import { resourceWords } from './resource'
   import { PERCENT_STATS, SECONDS_STATS, SHOWN_STAT_IDS, statNames } from './statFormat'
@@ -31,7 +33,7 @@
   const STAT_NAMES = $derived(statNames($gameState.classId))
 
   // 'swingTime' — производная строка, не модифицируемый стат.
-  type RowId = StatId | 'swingTime' | 'swingDamage' | 'dps'
+  type RowId = StatId | 'swingTime' | 'swingDamage' | 'dps' | 'vitality'
 
   let openStat = $state<RowId | null>(null)
 
@@ -44,7 +46,17 @@
   const apPart = $derived(attackPowerContribution($gameState.stats))
   const avgSwing = $derived(expectedSwingDamage($gameState.stats))
   const crit = $derived(critFactor($gameState.stats))
-  const dps = $derived(estimateCombatRate($gameState).damagePerSecond)
+  // ДВЕ ОСИ, ТЕ ЖЕ САМЫЕ. Крупные числа карточки — это ровно то, чем игра
+  // сравнивает находки: урон в секунду по эталонному противнику и живучесть.
+  // Второй пары чисел «насколько я хорош» в игре нет — иначе карточка героя
+  // и подсказка сравнения спорили бы на одном экране.
+  const axes = $derived(axesOf($gameState))
+  // Строка деталей называет РОВНО ТО, что в ней разложено: удар, криты, замах.
+  // Раньше здесь стояло полное «в секунду» из модели боя (с умениями, проками
+  // и перебоем), а разложение показывало три множителя автоатаки — числа не
+  // сходились, и сойтись не могли.
+  const autoDps = $derived(avgSwing.times(crit).div(swing.swingTime))
+
   const formatSeconds = (v: number) => `${v.toFixed(2)}с`
   const formatPercent = (v: number) => `${(v * 100).toFixed(0)}%`
 
@@ -84,7 +96,31 @@
   }
 </script>
 
-<Panel title="Статы" subtitle="нажми строку — покажу, из чего сложилось">
+<!-- ДВА ЧИСЛА КРУПНО, ОСТАЛЬНОЕ ПОД «ДЕТАЛЯМИ».
+     Именно два, а не одно: одним числом «лучше» уже мерили, и двуручное
+     било связку одноручное+щит ровно потому, что живучесть в это число не
+     входила. Остальные три десятка строк нужны редко и раз в час —
+     им место в свёрнутом списке. -->
+<Panel title="Герой">
+  <div class="big" data-hero-summary>
+    <div class="tile">
+      <span class="tile-name">Урон в секунду</span>
+      <span class="tile-value">{axes.damage.toNumber().toFixed(2)}</span>
+    </div>
+    <div class="tile">
+      <span class="tile-name">Живучесть</span>
+      <span class="tile-value"><NumberText value={axes.vitality} /></span>
+    </div>
+  </div>
+
+  <div class="details-row">
+    <Button size="sm" variant="ghost" onclick={toggleHeroDetails}>
+      {$heroDetailsOpen ? 'Свернуть детали' : 'Детали'}
+    </Button>
+    <span class="details-hint">нажми строку — покажу, из чего сложилось</span>
+  </div>
+
+  {#if $heroDetailsOpen}
   <ul>
     <li>
       <button type="button" class="stat-row" onclick={() => toggle('swingDamage')}>
@@ -108,15 +144,29 @@
     </li>
     <li>
       <button type="button" class="stat-row" onclick={() => toggle('dps')}>
-        <span class="name">Урон в секунду</span>
-        <span class="value">{dps.toNumber().toFixed(2)}</span>
+        <span class="name">Урон автоатаки в секунду</span>
+        <span class="value">{autoDps.toNumber().toFixed(2)}</span>
       </button>
       {#if openStat === 'dps'}
         <div class="breakdown">
           <span>{formatNumber(avgSwing)} средний удар</span>
           <span>· ×{crit.toNumber().toFixed(2)} за криты ({formatPercent($gameState.stats.critChance)} × {$gameState.stats.critMultiplier.toNumber().toFixed(1)})</span>
           <span>· / {formatSeconds(swing.swingTime)} замах</span>
-          <span>= {dps.toNumber().toFixed(2)}</span>
+          <span>= {autoDps.toNumber().toFixed(2)}</span>
+        </div>
+      {/if}
+    </li>
+    <li>
+      <button type="button" class="stat-row" onclick={() => toggle('vitality')}>
+        <span class="name">Живучесть</span>
+        <span class="value"><NumberText value={axes.vitality} /></span>
+      </button>
+      {#if openStat === 'vitality'}
+        <div class="breakdown">
+          <span>{formatNumber($gameState.stats.maxHp)} запас</span>
+          <span>· + {formatNumber($gameState.stats.hpRegen.times(TYPICAL_FIGHT_SEC))} реген за схватку ({formatNumber($gameState.stats.hpRegen)}/с × {TYPICAL_FIGHT_SEC}с)</span>
+          <span>· / {formatPercent(1 - axes.mitigation)} доходит после брони и блока</span>
+          <span>= <NumberText value={axes.vitality} /></span>
         </div>
       {/if}
     </li>
@@ -164,9 +214,50 @@
       </li>
     {/each}
   </ul>
+  {/if}
 </Panel>
 
 <style>
+  /* Два числа крупно. Ширина плитки — доля строки, а не число: на телефоне
+     они встают друг под друга сами. */
+  .big {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+    margin-bottom: var(--space-3);
+  }
+  .tile {
+    flex: 1 1 8rem;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    padding: var(--space-3);
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius-md);
+    background: var(--c-surface-sunken);
+  }
+  .tile-name {
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-wide);
+    color: var(--c-text-faint);
+  }
+  .tile-value {
+    font-size: var(--text-xl);
+    font-weight: var(--weight-bold);
+    font-variant-numeric: tabular-nums;
+  }
+  .details-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+    margin-bottom: var(--space-2);
+  }
+  .details-hint {
+    font-size: var(--text-xs);
+    color: var(--c-text-faint);
+  }
   ul {
     list-style: none;
     margin: 0;

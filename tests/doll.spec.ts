@@ -29,13 +29,17 @@ const targets = (page: Page) => doll(page).locator('.slot[data-drop="target"]')
  * Имя нужно потому, что СЧИТАТЬ КАРТОЧКИ БЕСПОЛЕЗНО: слоты пресета заняты,
  * и надевание меняет вещь местами со снятой — в сумке остаётся столько же.
  * Первый заход теста мерил именно это и был зелёным на неработающем коде.
+ *
+ * Берётся имя ИЗ ПОДПИСИ ЯЧЕЙКИ, а не из её текста: сумка — сетка значков, и
+ * текста в ячейке больше нет вовсе. Подпись при этом не украшение — по ней
+ * ячейку находит и читалка с экрана.
  */
 async function carryFitting(page: Page): Promise<{ card: Locator; name: string }> {
   const cards = bagCards(page)
   const count = await cards.count()
   for (let i = 0; i < count; i += 1) {
     const card = cards.nth(i)
-    const name = (await card.locator('.name').innerText()).trim()
+    const name = ((await card.getAttribute('aria-label')) ?? '').split(':')[0].trim()
     await card.click()
     const target = targets(page)
     const fits = (await target.count()) === 1 && (await target.locator('[data-deny]').count()) === 0
@@ -76,7 +80,7 @@ test('наведение на подсвеченный слот показыва
   const axes = page.locator('[data-axes]')
   await expect(axes).toBeVisible()
   await expect(axes).toContainText('Урон')
-  await expect(axes).toContainText('Выживание')
+  await expect(axes).toContainText('Живучесть')
   await expect(axes).toContainText(/\d|с нуля|без изменений/)
 })
 
@@ -182,4 +186,43 @@ test('надетое, брошенное в сумку, снимается', asy
   const before = await bagCards(page).count()
   await doll(page).locator('.slot.filled').first().dragTo(bag(page).locator('.grid').first())
   await expect(bagCards(page)).toHaveCount(before + 1)
+})
+
+test('сумка — сетка ЗНАЧКОВ: в ячейке нет ни имени, ни списка статов', async ({ page }) => {
+  // Ради этого стадия и затевалась. Полтора десятка карточек со списком
+  // модификаторов не помещались ни на телефон, ни в ширину меню, и находку
+  // приходилось искать чтением. Теперь в ячейке значок, уровень и метка
+  // апгрейда — всё остальное показывается ВЫБРАННОЙ вещью.
+  await openDoll(page)
+  const card = bagCards(page).first()
+  await expect(card.locator('.name')).toHaveCount(0)
+  await expect(card.locator('svg')).toHaveCount(1)
+  // Ячейка квадратная: сетка значков обязана оставаться сеткой.
+  const box = (await card.boundingBox())!
+  expect(Math.abs(box.width - box.height)).toBeLessThan(2)
+})
+
+test('нажатие показывает карточку выбранного, нажатие мимо — убирает', async ({ page }) => {
+  await openDoll(page)
+  const { name } = await carryFitting(page)
+  const chosen = page.locator('[data-chosen]')
+  await expect(chosen).toBeVisible()
+  await expect(chosen).toContainText(name)
+  // Действия над находкой живут ЗДЕСЬ, а не в ячейке: на телефоне это
+  // единственное место, куда можно попасть пальцем.
+  await expect(chosen.getByRole('button', { name: /Продать/ })).toBeVisible()
+
+  // Нажатие мимо сетки снимает выбор — и вместе с ним подсветку слотов.
+  await page.locator('h2, h3').first().click({ force: true })
+  await expect(chosen).toHaveCount(0)
+  await expect(targets(page)).toHaveCount(0)
+})
+
+test('кнопок «Надеть» и «Снять» нет ни в сумке, ни на кукле', async ({ page }) => {
+  // Каждая из них была ЧЕТВЁРТЫМ способом сделать то же самое: надеть можно
+  // тремя жестами, снять — тремя, и все шесть проверены тестами выше.
+  await openDoll(page)
+  await carryFitting(page)
+  await expect(page.getByRole('button', { name: 'Надеть' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Снять' })).toHaveCount(0)
 })

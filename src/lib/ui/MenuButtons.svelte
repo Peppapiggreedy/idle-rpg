@@ -14,14 +14,19 @@
 
   interface Props {
     side: MenuSide
+    /** Уровень героя: кнопка, до которой он не дорос, не показывается. */
+    level?: number
     /** Точка на кнопке: есть что посмотреть. Ключ — id меню. */
     marks?: Partial<Record<MenuId, boolean>>
     /** Приписка под названием: счётчик сумки и такое же. */
     notes?: Partial<Record<MenuId, string>>
   }
-  let { side, marks = {}, notes = {} }: Props = $props()
+  let { side, level = Number.POSITIVE_INFINITY, marks = {}, notes = {} }: Props = $props()
 
-  const ids = $derived(menusOn(side))
+  // ЗАКРЫТОЕ НЕ ВИДНО ВОВСЕ — И ЭТО ОТНОСИТСЯ К КНОПКАМ, а не только к
+  // панелям за ними. Порог берёт `menusOn` из данных меню; своих чисел
+  // здесь нет.
+  const ids = $derived(menusOn(side, level))
 </script>
 
 <nav class="menus {side}" aria-label={side === 'left' ? 'Меню: где меняешь' : 'Меню: где читаешь'}>

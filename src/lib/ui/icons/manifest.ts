@@ -169,6 +169,7 @@ export const ICONS = {
   'stat-hpRegenOutOfCombat': { file: 'lorc/campfire.svg', author: 'Lorc' },
   'stat-manaRegen': { file: 'delapouite/star-formation.svg', author: 'Delapouite' },
   'stat-damageReduction': { file: 'lorc/bordered-shield.svg', author: 'Lorc' },
+  'stat-armor': { file: 'delapouite/abdominal-armor.svg', author: 'Delapouite' },
   'stat-swingTime': { file: 'lorc/hourglass.svg', author: 'Lorc' },
   // Левая рука и щит. Своя иконка у КАЖДОГО стата: в панели статов они стоят
   // рядом со статами правой руки, и повтор картинки читался бы как ошибка.

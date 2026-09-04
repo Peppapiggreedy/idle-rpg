@@ -14,6 +14,7 @@ import {
   createInitialState,
   defaultAbilitySettings,
   manualOnlySettings,
+  monsterFromTemplate,
   spawnMonster,
   emptyEquipment,
   startingEquipment,
@@ -25,8 +26,8 @@ import { ensureStats, type StatModifier } from './stats'
 import { tick } from './tick'
 import { averageArmorMods, sellItem, sellPrice, shieldMods, weaponMods } from './loot'
 import { zoneSafety } from './rest'
-import { equipItem, upgradeShare } from './equipment'
-import { estimateZoneTtk, type TtkEstimate } from './combat'
+import { equipItem, equipmentWith, upgradeShare } from './equipment'
+import { estimateCombatRate, estimateZoneTtk, type TtkEstimate } from './combat'
 
 import {
   intendedZone,
@@ -49,6 +50,7 @@ import {
   zoneForMonsterLevel,
   type Zone,
 } from '../data/zones'
+import { buildMonster } from '../data/monsters'
 import { BRANCHES, talentsInBranch, type BranchId } from '../data/talents'
 import { DUNGEONS } from '../data/dungeons'
 import { DEFAULT_CLASS, classById } from '../data/classes'
@@ -248,24 +250,42 @@ export const BALANCE_PRESET = {
   // Броня одна на все стили, поэтому нормализацию она не трогает.
   weaponBuild: { level: 58, gear: 'average', gearLevel: 81 } as SimBuild,
   /**
-   * Уровень голых связок в замерах стилей. Подобран по длине боя: 10 даёт
-   * 18.8 замаха двуручника на убийство (считая силу с брони) при нуле
-   * смертей у всех трёх связок.
+   * Уровень голых связок в замерах стилей. Подобран по длине боя ПРИ НУЛЕ
+   * СМЕРТЕЙ у всех трёх связок — второе условие тут главное: мёртвый герой
+   * меряет не удар, а везение.
+   *
+   * БЫЛО 10 (18.8 замаха двуручника на убийство). С появлением брони бой на
+   * этом уровне стал смертельным: урон мобов поднят вдвое с лишним, связки
+   * без щита смягчают меньше эталона, и минутная схватка перестала
+   * переживаться — замер дал 4.9 смерти в час у двуручного против 0.3 у двух
+   * одноручных, а разброс итога подскочил до 12.5 % при потолке 5. Разброс
+   * при этом мерил СМЕРТНОСТЬ: медленное оружие бьёт теми же числами, но
+   * реже, и длина его схватки гуляет сильнее — на минутном бою эта разница
+   * стала стоить жизни.
+   *
+   * 35 даёт 10.4 замаха на убийство — по-прежнему длинный бой, в котором
+   * перебой добивающего удара не решает ничего, — и ноль смертей у всех трёх
+   * связок. Замер разброса на нём: 2.5 %.
    */
-  weaponLevel: 10,
+  weaponLevel: 35,
   // Урон за ману считается по умениям «на следующий удар».
   manaAbilities: ['rending-wound', 'shattering-blow'],
   // Порог расхождения итога между связками с равным уроном оружия в секунду.
   //
-  // 0.05 вместо прежних 0.03, и лишние два пункта — цена ПРИВАЛА, а не
+  // 0.06 вместо прежних 0.03, и лишние три пункта — цена ПРИВАЛА, а не
   // послабление нормализации. Пока бой стоил пары HP, герой не отдыхал вовсе,
   // и итог был чистым уроном. Теперь между боями стоит пауза фиксированной
   // длины, а цикл фарма квантуется ЦЕЛЫМИ боями: связки с разной длиной
-  // замаха попадают в разное число боёв на привал (замер: 63.6 привала в час
-  // у двуручного против 66.0 у двух одноручных) и в разную долю прерванного
+  // замаха попадают в разное число боёв на привал и в разную долю прерванного
   // замаха. Сам удар нормализован по-прежнему — это проверяет отдельный тест
   // на expectedSwingDamage, куда привал не входит.
-  weaponSpreadLimit: 0.05,
+  //
+  // ТРЕТИЙ ПУНКТ ДОБАВИЛА БРОНЯ, точнее поднятый под неё урон мобов. Шум
+  // этого теста — квантование привалом, и он растёт ровно с ЧАСТОТОЙ
+  // привалов: было 63.6 против 66.0 в час (разброс 3-4 %), стало 78.2 против
+  // 73.8 (разброс 5.0 %). Порог поднят на ту же величину, на какую вырос шум,
+  // а не «чтобы прошло».
+  weaponSpreadLimit: 0.06,
   // Сравнение стилей идёт по СРЕДНЕМУ нескольких сидов. Один сид даёт разброс
   // до шести процентов на пустом месте: спавн выдаёт разные пулы мобов, и
   // измерялась бы удача, а не нормализация.
@@ -735,7 +755,13 @@ export function buildSimState(build: SimBuild, zoneId: string, seed: number): Ga
   const zone = zoneById(zoneId)
   const level = new Decimal(build.level ?? 1)
   const weapon = build.weapon === null ? null : build.weapon ? simWeaponItem(build.weapon) : null
-  const base = createInitialState(seed, build.classId ?? DEFAULT_CLASS.id)
+  // saveId ИДЁТ ОТ СИДА, а не по умолчанию: по умолчанию он берётся из
+  // `randomSeed()`, то есть из часов, — и всё, что от него зависит, перестаёт
+  // быть воспроизводимым. Зависит от него ВОЛНА ХРАМА (`templeSeed(saveId,
+  // wave)` в game/temple.ts), и замер глубины забега честно выдавал на одном
+  // и том же коммите то 18 этажей, то 20: прибор мерил часы. Прогон обязан
+  // быть повторяемым, иначе контракт на нём не поставишь.
+  const base = createInitialState(seed, build.classId ?? DEFAULT_CLASS.id, seed)
   const state: GameState = {
     ...base,
     level,
@@ -821,29 +847,20 @@ export function reachableZones(state: GameState, level: number): Zone[] {
 }
 
 /**
- * ЗОНА, КУДА ГЕРОЙ СОБИРАЕТСЯ, — следующая ступень лестницы за той, где он
- * стоит; стоит на последней — она же и есть.
+ * ЗОНЫ, ПОД КОТОРУЮ ГЕРОЙ ОДЕВАЕТСЯ, БОЛЬШЕ НЕТ, и это стоит записать, потому
+ * что она здесь была.
  *
- * Ради неё вся стадия. `equipUpgrades` оценивал находку по темпу В ТЕКУЩЕЙ
- * зоне, а текущая — это та, куда `playerZoneId` пустил героя, то есть
- * заведомо безопасная. Там живучесть не стоит НИЧЕГО: герой не гибнет и без
- * неё, аптайм единица, и нагрудник с живучестью проигрывает любой тряпке с
- * силой атаки. Итог замкнутый: слабые вещи → глубже нельзя → находки
- * отстают → вещи ещё слабее. На сиде 4242 герой приходил на десятый уровень
- * с 309 HP в семи вещах без единой живучести и досиживал на лугу до
- * двенадцатого.
+ * `aimZoneId` возвращала следующую ступень лестницы, и `equipUpgrades` мерила
+ * находки по ней, а не по текущей зоне. Костыль был нужен ровно потому, что
+ * мера «лучше» смотрела в зону: в безопасной зоне аптайм равен единице, цена
+ * боя почти ноль, и нагрудник проигрывал любой тряпке с силой атаки — герой
+ * приходил на десятый уровень с 309 HP в семи вещах без единой живучести.
  *
- * Живой игрок так не делает: он надевает панцирь, потому что «пригодится
- * дальше». «Дальше» — это ровно следующая ступень, и оценка идёт по ней.
- * Второй метрики при этом не заводится: та же `estimateCombatRate`, другой
- * аргумент зоны.
+ * Теперь обе оси считаются против ЭТАЛОННОГО противника уровня героя и от
+ * зоны не зависят вовсе (`axesOf` в game/equipment.ts). Смотреть вперёд стало
+ * нечем и незачем: живучесть стоит одинаково в любой зоне, потому что мерится
+ * не «сколько я тут гибну», а «сколько урона я держу».
  */
-export function aimZoneId(state: GameState, level: number): string {
-  const ladder = reachableZones(state, level)
-  const here = ladder.findIndex((zone) => zone.id === state.currentZoneId)
-  if (here < 0) return ladder.length > 0 ? ladder[ladder.length - 1].id : state.currentZoneId
-  return ladder[here + 1]?.id ?? state.currentZoneId
-}
 
 export function playerZoneId(state: GameState, level: number): string {
   const reachable = reachableZones(state, level)
@@ -1092,7 +1109,37 @@ export function simulate(options: SimOptions): SimResult {
  * вещи: в игре решение принимает человек, и отнимать его — значит вернуть
  * автонадевание через заднюю дверь.
  */
-export function equipUpgrades(state: GameState, aimZone?: string): GameState {
+/**
+ * ОДНО ЧИСЛО, ПО КОТОРОМУ ПРИБОР РЕШАЕТ, — темп убийств против трёх ролей той
+ * зоны, где герой стоит. Это МОДЕЛЬ (`estimateCombatRate`), а не оси игрока:
+ * в ней и урон, и аптайм, значит и живучесть, и она даёт ОДИН ответ там, где
+ * две оси дают два.
+ *
+ * Три роли, а не одна: цикл фарма квантуется целыми боями, и на единственном
+ * противнике мелкая прибавка к живучести перекидывает число боёв до привала с
+ * двух на три, давая скачок темпа на треть.
+ */
+function modelRate(state: GameState): Decimal {
+  const zone = zoneById(state.currentZoneId)
+  const level = Math.round(averageMonsterLevel(zone))
+  let sum = new Decimal(0)
+  for (const archetype of zone.monsterPool) {
+    const monster = monsterFromTemplate(buildMonster(archetype, level, zone.rewardMultiplier))
+    sum = sum.plus(estimateCombatRate({ ...state, monster }).killsPerSecond)
+  }
+  return sum.div(zone.monsterPool.length)
+}
+
+/** Состояние с надетой вещью — без изменения сумки: только для оценки. */
+function withItem(state: GameState, item: Item): GameState {
+  return ensureStats({
+    ...state,
+    equipment: equipmentWith(state.equipment, item).equipment,
+    statsDirty: true,
+  })
+}
+
+export function equipUpgrades(state: GameState): GameState {
   // ПРИОРИТЕТ У МОДЕЛИ ТОТ ЖЕ, ЧТО У ИГРОКА, и берётся он из состояния —
   // отдельного правила для прогона нет и заводить его нельзя. Герой прогона
   // строится теми же `createInitialState`/`buildSimState`, а там умолчание
@@ -1108,18 +1155,34 @@ export function equipUpgrades(state: GameState, aimZone?: string): GameState {
   // По одному предмету за проход: надевание меняет статы, и следующая вещь
   // сравнивается уже с новым набором.
   for (let guard = 0; guard < SLOT_IDS.length + 1; guard += 1) {
-    // ОЦЕНКА ИДЁТ ПРОТИВ ЗОНЫ, КУДА ГЕРОЙ СОБИРАЕТСЯ (aimZoneId), а не той, где
-    // он стоит: подробности у самой aimZoneId. Подменяется РОВНО зона —
-    // `upgradeShare` берёт из состояния `currentZoneId` и по нему выбирает
-    // моба; всё остальное (статы, сумка, уровень) то же самое. Не задана —
-    // текущая, как было: так эту функцию зовут пресеты и тесты стартового
-    // комплекта, и им нужна оценка «здесь и сейчас».
-    const facing =
-      aimZone && aimZone !== next.currentZoneId ? { ...next, currentZoneId: aimZone } : next
+    // ЗОНЫ ЗДЕСЬ БОЛЬШЕ НЕТ, И ЭТО НЕ УПРОЩЕНИЕ. Раньше оценка шла против зоны,
+    // КУДА герой собирается (`aimZoneId`), потому что мера «лучше» смотрела
+    // на текущую зону: в безопасной зоне живучесть не стоила ничего, и модель
+    // не надевала брони вовсе. Костыль лечил не ту болезнь — теперь обе оси
+    // считаются против ЭТАЛОННОГО противника уровня героя и от зоны не
+    // зависят вовсе (см. axesOf в game/equipment.ts), и подменять зону нечем
+    // и незачем.
+    // ЧЕМ РЕШАЕТ ПРИБОР — НЕ ТЕМ, ЧТО ЧИТАЕТ ИГРОК, и это не двоемыслие, а та
+    // самая граница из data/upgrade.ts. Игроку показываются ДВЕ ОСИ: они
+    // просты, не зависят от зоны и отвечают на вопрос «в чём эта вещь лучше».
+    // Приборy же нужен ОДИН ответ на вопрос «что надеть», а из двух чисел
+    // одного ответа не выходит: вещь, меняющая урон на живучесть, лучше по
+    // одной оси и хуже по другой, и «лучше хотя бы по одной» разрешает
+    // перекладывать броню на урон и обратно бесконечно. Замер: прогон полного
+    // пути дал 5.8 смерти в час при контракте «путь идёт без смертей».
+    //
+    // Одно число, которое такой ответ даёт, в игре уже есть — МОДЕЛЬ:
+    // `killsPerSecond` из `estimateCombatRate` против мобов той зоны, где
+    // герой стоит. В ней и урон, и аптайм, то есть и живучесть, — ровно то,
+    // чем меряются прогноз зоны, оффлайн и все контракты.
+    const rank = (candidate: GameState) => modelRate(candidate)
+    const before = rank(next)
     const candidates = next.inventory
-      .map((item) => ({ item, share: upgradeShare(facing, item) }))
+      .map((item) => ({ item, share: upgradeShare(next, item) }))
       .filter((c): c is { item: Item; share: number } => c.share !== null)
-      .sort((a, b) => b.share - a.share)
+      .map((c) => ({ item: c.item, gain: rank(withItem(next, c.item)).minus(before).toNumber() }))
+      .filter((c) => c.gain > 0)
+      .sort((a, b) => b.gain - a.gain)
     // ОТКАЗ ПО ОДНОЙ ВЕЩИ — НЕ КОНЕЦ РАЗБОРА. Раньше проход брал ровно
     // лучшего кандидата и, получив отказ, возвращался ни с чем — навсегда,
     // потому что на следующей находке повторялось то же самое.
@@ -1253,7 +1316,7 @@ export function simulateRun(options: RunOptions = {}): RunResult {
     // сумку каждый тик — это не только не про игру, но и минуты машинного
     // времени на прогон, потому что каждая примерка гоняет оценку боя.
     if (state.inventory !== prev.inventory) {
-      state = equipUpgrades(state, aimZoneId(state, state.level.toNumber()))
+      state = equipUpgrades(state)
     }
 
     if (state.level.gt(prev.level)) {
