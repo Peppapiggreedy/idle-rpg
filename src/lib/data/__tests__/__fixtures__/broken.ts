@@ -1130,5 +1130,69 @@ export function brokenCases(): BrokenCase[] {
       },
       expect: ['щит', 'вторую руку', 'data/recipes.ts'],
     },
+    // БРОНЯ. Ломается не шаблон, а РЕЗУЛЬТАТ генератора: в шаблоне брони нет
+    // вовсе, её кладёт game/loot.ts общей константой — значит и пропасть она
+    // может только там, и ловить её надо по сгенерированной вещи.
+    {
+      title: 'у части брони пропала броня',
+      content: {
+        ...real,
+        generatedMods: real.generatedMods.map((entry) =>
+          entry.wear === 'armor'
+            ? { ...entry, mods: entry.mods.filter((m) => m.stat !== 'armor') }
+            : entry,
+        ),
+      },
+      expect: ['броня', 'ровно одна', 'game/loot.ts'],
+    },
+    {
+      title: 'у щита пропала броня',
+      content: {
+        ...real,
+        generatedMods: real.generatedMods.map((entry) =>
+          entry.wear === 'shield'
+            ? { ...entry, mods: entry.mods.filter((m) => m.stat !== 'armor') }
+            : entry,
+        ),
+      },
+      expect: ['щит', 'ровно одна', 'game/loot.ts'],
+    },
+    {
+      title: 'броня на предмете дробная',
+      content: {
+        ...real,
+        generatedMods: real.generatedMods.map((entry) =>
+          entry.wear === 'armor'
+            ? {
+                ...entry,
+                mods: entry.mods.map((m) => (m.stat === 'armor' ? { ...m, value: 12.5 } : m)),
+              }
+            : entry,
+        ),
+      },
+      expect: ['броня', 'штуками', 'data/items.ts'],
+    },
+    {
+      title: 'оружие несёт броню',
+      content: {
+        ...real,
+        generatedMods: real.generatedMods.map((entry) =>
+          entry.wear === 'weapon'
+            ? { ...entry, mods: [...entry.mods, { stat: 'armor', kind: 'flat', value: 30 }] }
+            : entry,
+        ),
+      },
+      expect: ['оружие', 'не бьёт', 'game/loot.ts'],
+    },
+    {
+      title: 'кривая брони со стопроцентным потолком',
+      content: { ...real, balance: { ...real.balance, armorMaxReduction: 1 } },
+      expect: ['ARMOR_CURVE.maxReduction', 'бессмертие', 'data/balance.ts'],
+    },
+    {
+      title: 'у брони нулевой бюджет защиты',
+      content: { ...real, balance: { ...real.balance, armorBaseDefense: 0 } },
+      expect: ['ARMOR_BASE_DEFENSE', 'не защищает', 'data/balance.ts'],
+    },
   ]
 }

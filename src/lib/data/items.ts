@@ -201,6 +201,9 @@ export const ITEM_STAT_GRAIN: Record<StatId, 'whole' | 'fraction'> = {
   offhandDamageMin: 'whole',
   offhandDamageMax: 'whole',
   blockValue: 'whole',
+  // БРОНЯ СЧИТАЕТСЯ ШТУКАМИ: «броня 412» — число, а не доля. В долю его
+  // переводит формула (`armorReduction`), и там уже никаких округлений.
+  armor: 'whole',
   maxHp: 'whole',
   maxMana: 'whole',
   weaponSpeed: 'fraction',
@@ -228,6 +231,26 @@ export const ITEM_STAT_GRAIN: Record<StatId, 'whole' | 'fraction'> = {
 export function itemStatValue(stat: StatId, value: Decimal): Decimal {
   return ITEM_STAT_GRAIN[stat] === 'whole' ? value.round() : value
 }
+
+/**
+ * БРОНЯ НА ПРЕДМЕТЕ БРОНИ — бюджет в очках на единицу силы вещи. Растёт с
+ * уровнем и тиром той же `power`, что и атрибуты: своей кривой у брони нет,
+ * иначе она разъехалась бы с остальным снаряжением на первой правке.
+ *
+ * Число подобрано под цель «полный актуальный комплект даёт 45-55 % снижения
+ * на любом уровне» вместе с `ARMOR_CURVE.k` — замер в docs/UI-POLISH.md.
+ */
+export const ARMOR_BASE_DEFENSE = new Decimal(44)
+
+/**
+ * БРОНЯ ЩИТА. Щит — тоже броня, и это половина его смысла: блок снимает
+ * фиксированную величину и потому обесценивается с ростом урона мобов, а
+ * броня режет долю и не обесценивается никогда.
+ *
+ * Больше, чем у одной части брони: щит занимает руку, то есть стоит игроку
+ * второго оружия, — и платить за это должен заметно.
+ */
+export const SHIELD_BASE_DEFENSE = new Decimal(70)
 
 export const ARMOR_BASE_PRIMARY = new Decimal(4)
 export const ARMOR_BASE_VITALITY = new Decimal(2)

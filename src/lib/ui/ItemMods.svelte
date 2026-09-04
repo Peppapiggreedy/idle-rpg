@@ -26,6 +26,7 @@
     attackPower: 'сила атаки',
     weaponDamageMin: 'урон оружия (мин)',
     weaponDamageMax: 'урон оружия (макс)',
+    armor: 'броня',
     maxHp: 'здоровье',
     maxMana: resource.name.toLowerCase(),
     weaponSpeed: 'скорость',

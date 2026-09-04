@@ -20,6 +20,12 @@
       "level": 8,
       "mods": [
         {
+          "stat": "armor",
+          "kind": "flat",
+          "value": "93",
+          "source": "equipment:hands"
+        },
+        {
           "stat": "agility",
           "kind": "flat",
           "value": "8",
@@ -40,6 +46,12 @@
       "slot": "chest",
       "level": 8,
       "mods": [
+        {
+          "stat": "armor",
+          "kind": "flat",
+          "value": "93",
+          "source": "equipment:chest"
+        },
         {
           "stat": "agility",
           "kind": "flat",
@@ -62,6 +74,12 @@
       "level": 8,
       "mods": [
         {
+          "stat": "armor",
+          "kind": "flat",
+          "value": "93",
+          "source": "equipment:chest"
+        },
+        {
           "stat": "strength",
           "kind": "flat",
           "value": "8",
@@ -82,6 +100,12 @@
       "slot": "chest",
       "level": 8,
       "mods": [
+        {
+          "stat": "armor",
+          "kind": "flat",
+          "value": "93",
+          "source": "equipment:chest"
+        },
         {
           "stat": "strength",
           "kind": "flat",
@@ -141,6 +165,12 @@
       "level": 8,
       "mods": [
         {
+          "stat": "armor",
+          "kind": "flat",
+          "value": "117",
+          "source": "equipment:head"
+        },
+        {
           "stat": "agility",
           "kind": "flat",
           "value": "11",
@@ -161,6 +191,12 @@
       "slot": "chest",
       "level": 8,
       "mods": [
+        {
+          "stat": "armor",
+          "kind": "flat",
+          "value": "93",
+          "source": "equipment:chest"
+        },
         {
           "stat": "strength",
           "kind": "flat",
@@ -183,6 +219,12 @@
       "level": 8,
       "mods": [
         {
+          "stat": "armor",
+          "kind": "flat",
+          "value": "93",
+          "source": "equipment:hands"
+        },
+        {
           "stat": "intellect",
           "kind": "flat",
           "value": "8",
@@ -203,6 +245,12 @@
       "slot": "legs",
       "level": 8,
       "mods": [
+        {
+          "stat": "armor",
+          "kind": "flat",
+          "value": "117",
+          "source": "equipment:legs"
+        },
         {
           "stat": "intellect",
           "kind": "flat",

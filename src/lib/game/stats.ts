@@ -74,6 +74,10 @@ export type StatId =
   | 'hpRegenOutOfCombat'
   | 'manaRegen'
   | 'damageReduction'
+  // БРОНЯ. Не доля, а очки: доля считается нелинейно от них и от уровня
+  // героя (см. armorReduction в combat.ts). Прямой процент здесь был бы
+  // ошибкой — два источника легко перевалили бы за сто.
+  | 'armor'
 
 export const STAT_IDS: StatId[] = [
   'strength',
@@ -102,6 +106,7 @@ export const STAT_IDS: StatId[] = [
   'hpRegenOutOfCombat',
   'manaRegen',
   'damageReduction',
+  'armor',
 ]
 
 export type ModifierKind = 'base' | 'flat' | 'percent' | 'multiplier'
@@ -150,6 +155,7 @@ export interface StatBlock {
   hpRegenOutOfCombat: Decimal // вне боя (пауза респауна)
   manaRegen: Decimal
   damageReduction: number // доля 0..1
+  armor: Decimal // очки брони; в долю их переводит armorReduction
 }
 
 // Все источники модификаторов персонажа. Новые системы (экипировка, таланты,
@@ -291,6 +297,7 @@ export function applyModifiers(mods: StatModifier[]): StatBlock {
     offhandSwingTime: computeSwingTime(offhandSpeed, haste),
     blockChance: computeStat('blockChance', mods).toNumber(),
     blockValue: computeStat('blockValue', mods),
+    armor: computeStat('armor', mods),
     // Границы у этих четырёх — не вкусовщина, а защита от вырожденных
     // значений: левая рука сильнее правой, мгновенный привал вместо привала,
     // отрицательная пауза регенерации и порог, с которого не выйти.

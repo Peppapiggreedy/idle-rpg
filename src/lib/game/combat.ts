@@ -16,6 +16,7 @@ import type { GameState } from './state'
 import type { StatBlock } from './stats'
 import {
   AP_NORMALIZATION,
+  ARMOR_CURVE,
   AUTOCAST_DELAY_MS,
   AUTOCAST_MAX_LOSS,
   FIGHT_COST_SPREAD,
@@ -156,8 +157,42 @@ export function expectedAbilityDamage(stats: StatBlock, weaponDamagePercent: Dec
   return expectedSwingDamage(stats).times(weaponDamagePercent)
 }
 
+/**
+ * СНИЖЕНИЕ ВХОДЯЩЕГО ОТ БРОНИ — доля 0..1.
+ *
+ *     снижение = броня / (броня + K × уровень героя)
+ *
+ * Нелинейная нарочно: у линейной каждая единица брони стоит одинаково, и
+ * сборка на броню упирается в сто процентов. Здесь каждая следующая единица
+ * дешевеет, а потолок (`ARMOR_CURVE.maxReduction`) стоит ниже единицы.
+ *
+ * Уровень ГЕРОЯ в знаменателе, а не моба: разница уровней уже учтена
+ * `levelGapDamageMult`, и второй раз считать её нельзя. Числа — в данных.
+ */
+export function armorReduction(armor: Decimal, heroLevel: number): number {
+  const points = Math.max(0, armor.toNumber())
+  if (points <= 0) return 0
+  const denominator = points + ARMOR_CURVE.k * Math.max(1, heroLevel)
+  return Math.min(ARMOR_CURVE.maxReduction, points / denominator)
+}
+
+/**
+ * ОБЩЕЕ СМЯГЧЕНИЕ ДО БЛОКА: броня и плоское снижение (таланты, зачарования)
+ * складываются МУЛЬТИПЛИКАТИВНО, а не сложением.
+ *
+ * Сложением два источника легко переваливают за сто процентов, и урон
+ * становится отрицательным; умножением — никогда: каждый следующий источник
+ * режет ОСТАТОК. Блок сюда не входит — он вычитается плоским числом уже из
+ * смягчённого удара (см. `expectedMonsterDamage`), потому что снимает
+ * фиксированную величину, а не долю.
+ */
+export function mitigationShare(stats: StatBlock, heroLevel: number): number {
+  const fromArmor = armorReduction(stats.armor, heroLevel)
+  return 1 - (1 - fromArmor) * (1 - stats.damageReduction)
+}
+
 // Урон моба по герою: бросок из диапазона, штраф за разрыв уровней, затем
-// срез на damageReduction.
+// смягчение бронёй и damageReduction.
 // damageMultiplier — ярость босса: до неё единица, дальше растёт (см. dungeons.ts).
 //
 // УРОВЕНЬ ГЕРОЯ ПРИХОДИТ ПАРАМЕТРОМ, а не берётся из статов: конвейер статов
@@ -174,7 +209,7 @@ export function rollMonsterDamage(
   return raw
     .times(damageMultiplier)
     .times(levelGapDamageMult(heroLevel, monster.level))
-    .times(1 - stats.damageReduction)
+    .times(1 - mitigationShare(stats, heroLevel))
 }
 
 /**
@@ -199,7 +234,7 @@ export function expectedMonsterDamage(
     .plus(monster.damageMax)
     .div(2)
     .times(levelGapDamageMult(heroLevel, monster.level))
-    .times(1 - stats.damageReduction)
+    .times(1 - mitigationShare(stats, heroLevel))
   if (stats.blockChance <= 0 || stats.blockValue.lte(0)) return incoming
   return incoming.minus(Decimal.min(stats.blockValue, incoming).times(stats.blockChance))
 }

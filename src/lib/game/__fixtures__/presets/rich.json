@@ -67,6 +67,12 @@
           "source": "equipment:offHand"
         },
         {
+          "stat": "armor",
+          "kind": "flat",
+          "value": "577",
+          "source": "equipment:offHand"
+        },
+        {
           "stat": "vitality",
           "kind": "flat",
           "value": "33",
@@ -95,6 +101,12 @@
           "source": "equipment:offHand"
         },
         {
+          "stat": "armor",
+          "kind": "flat",
+          "value": "466",
+          "source": "equipment:offHand"
+        },
+        {
           "stat": "vitality",
           "kind": "flat",
           "value": "27",
@@ -110,6 +122,12 @@
       "level": 20,
       "mods": [
         {
+          "stat": "armor",
+          "kind": "flat",
+          "value": "222",
+          "source": "equipment:chest"
+        },
+        {
           "stat": "vitality",
           "kind": "flat",
           "value": "30",
@@ -124,6 +142,12 @@
       "slot": "hands",
       "level": 20,
       "mods": [
+        {
+          "stat": "armor",
+          "kind": "flat",
+          "value": "276",
+          "source": "equipment:hands"
+        },
         {
           "stat": "agility",
           "kind": "flat",
@@ -145,6 +169,12 @@
       "slot": "legs",
       "level": 21,
       "mods": [
+        {
+          "stat": "armor",
+          "kind": "flat",
+          "value": "286",
+          "source": "equipment:legs"
+        },
         {
           "stat": "vitality",
           "kind": "flat",
@@ -266,6 +296,12 @@
       "level": 21,
       "mods": [
         {
+          "stat": "armor",
+          "kind": "flat",
+          "value": "286",
+          "source": "equipment:head"
+        },
+        {
           "stat": "vitality",
           "kind": "flat",
           "value": "39",
@@ -280,6 +316,12 @@
       "slot": "chest",
       "level": 28,
       "mods": [
+        {
+          "stat": "armor",
+          "kind": "flat",
+          "value": "234",
+          "source": "equipment:chest"
+        },
         {
           "stat": "agility",
           "kind": "flat",
@@ -302,6 +344,12 @@
       "level": 28,
       "mods": [
         {
+          "stat": "armor",
+          "kind": "flat",
+          "value": "363",
+          "source": "equipment:hands"
+        },
+        {
           "stat": "vitality",
           "kind": "flat",
           "value": "49",
@@ -317,6 +365,12 @@
       "level": 28,
       "mods": [
         {
+          "stat": "armor",
+          "kind": "flat",
+          "value": "234",
+          "source": "equipment:legs"
+        },
+        {
           "stat": "vitality",
           "kind": "flat",
           "value": "32",
@@ -331,6 +385,12 @@
       "slot": "trinket",
       "level": 22,
       "mods": [
+        {
+          "stat": "armor",
+          "kind": "flat",
+          "value": "364",
+          "source": "equipment:trinket"
+        },
         {
           "stat": "vitality",
           "kind": "flat",

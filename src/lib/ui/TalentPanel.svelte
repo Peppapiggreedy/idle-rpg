@@ -47,6 +47,7 @@
     attackPower: 'силы атаки',
     weaponDamageMin: 'урона оружия (мин)',
     weaponDamageMax: 'урона оружия (макс)',
+    armor: 'брони',
     maxHp: 'здоровья',
     maxMana: resource.genitive,
     weaponSpeed: 'скорости оружия',

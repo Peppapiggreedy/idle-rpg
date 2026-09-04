@@ -33,6 +33,7 @@ import {
   ITEM_STAT_GRAIN,
   SHIELDS,
   WEAPONS,
+  type AttributeId,
 } from '../data/items'
 import { itemLevelScale } from '../data/balance'
 import type { Item } from '../types'
@@ -111,14 +112,18 @@ describe('rollLoot', () => {
 
   it('главный атрибут брони не привязан к слоту — его решает бросок', () => {
     const helm = (roll: number) => rollLoot(seqRng([0, 0, 0.35, 0, 0, roll]), 1)!
-    expect(helm(0.1).mods[0].stat).toBe('strength')
-    expect(helm(0.3).mods[0].stat).toBe('agility')
-    expect(helm(0.6).mods[0].stat).toBe('intellect')
+    // Броня в счёт не идёт: она есть у КАЖДОЙ части брони и не разыгрывается
+    // вовсе — вопрос везения тут только атрибут. Поэтому смотрим на атрибуты,
+    // а не на позицию в массиве: строка брони стоит первой как главная.
+    const attrs = (roll: number) => helm(roll).mods.filter((m) => m.stat !== 'armor')
+    expect(attrs(0.1)[0].stat).toBe('strength')
+    expect(attrs(0.3)[0].stat).toBe('agility')
+    expect(attrs(0.6)[0].stat).toBe('intellect')
     // Выпавшая живучесть сливается с общим довеском в одну строку.
-    const vit = helm(0.9)
-    expect(vit.mods).toHaveLength(1)
-    expect(vit.mods[0]).toMatchObject({ stat: 'vitality', kind: 'flat' })
-    expect(vit.mods[0].value.toNumber()).toBe(6) // 4 главных + 2 довеска
+    const vit = attrs(0.9)
+    expect(vit).toHaveLength(1)
+    expect(vit[0]).toMatchObject({ stat: 'vitality', kind: 'flat' })
+    expect(vit[0].value.toNumber()).toBe(6) // 4 главных + 2 довеска
   })
 
   it('предмет наследует уровень моба, и сила растёт от него линейно', () => {
@@ -491,17 +496,34 @@ describe('модификаторы брони', () => {
   })
 
   it('довесок идёт тому стату, который назван довеском В ДАННЫХ', () => {
+    // Строка брони к этому правилу не относится: она не атрибут и слиться ни
+    // с чем не может. Считаем атрибуты.
+    const attrs = (primary: AttributeId) =>
+      armorMods('head', rarity, 1, primary).filter((m) => m.stat !== 'armor')
     // Главный атрибут совпал с довеском — одна строка на удвоенный бюджет.
-    const merged = armorMods('head', rarity, 1, ARMOR_BONUS_STAT)
+    const merged = attrs(ARMOR_BONUS_STAT)
     expect(merged).toHaveLength(1)
     expect(merged[0].stat).toBe(ARMOR_BONUS_STAT)
     expect(merged[0].value.eq(ARMOR_BASE_PRIMARY.plus(ARMOR_BASE_VITALITY))).toBe(true)
 
     // Не совпал — две строки, и вторая именно у довеска.
     const other = ARMOR_ATTRIBUTES.find((a) => a !== ARMOR_BONUS_STAT)!
-    const split = armorMods('head', rarity, 1, other)
+    const split = attrs(other)
     expect(split).toHaveLength(2)
     expect(split.map((m) => m.stat)).toEqual([other, ARMOR_BONUS_STAT])
+  })
+
+  it('броня есть у каждой части брони и не зависит от главного атрибута', () => {
+    for (const slot of ['head', 'chest', 'hands', 'legs', 'trinket'] as const) {
+      for (const primary of ARMOR_ATTRIBUTES) {
+        const armor = armorMods(slot, rarity, 7, primary).filter((m) => m.stat === 'armor')
+        expect(armor, `${slot}/${primary}`).toHaveLength(1)
+        expect(armor[0].kind, `${slot}/${primary}`).toBe('flat')
+        expect(armor[0].value.gt(0), `${slot}/${primary}`).toBe(true)
+        // Целое: броня считается штуками (ITEM_STAT_GRAIN в data/items.ts).
+        expect(armor[0].value.eq(armor[0].value.round()), `${slot}/${primary}`).toBe(true)
+      }
+    }
   })
 
   it('средняя броня прогона слита по тому же признаку', () => {
@@ -509,7 +531,8 @@ describe('модификаторы брони', () => {
     const seen = avg.map((m) => m.stat)
     expect(new Set(seen).size).toBe(seen.length)
     const bonus = avg.find((m) => m.stat === ARMOR_BONUS_STAT)!
-    const plain = avg.find((m) => m.stat !== ARMOR_BONUS_STAT)!
+    // Броня не атрибут: она у всех одинакова и с довеском не сравнивается.
+    const plain = avg.find((m) => m.stat !== ARMOR_BONUS_STAT && m.stat !== 'armor')!
     // Довесок делает свой стат тяжелее ровно на ARMOR_BASE_VITALITY.
     expect(bonus.value.minus(plain.value).eq(ARMOR_BASE_VITALITY)).toBe(true)
   })
