@@ -45,6 +45,15 @@
     {#if dungeon && boss && run}
       <Tag tone="damage" label="босс {run.bossIndex + 1} из {dungeon.bosses.length}" />
     {/if}
+    <!-- МЕТКИ НА ЦЕЛИ ВИДНЫ. Кровотечение — не только урон, но и ЗАРЯД для
+         детонатора, а ослабление объясняет, почему следующий удар мягче.
+         Спрятанная метка превращает связку в тайное знание. -->
+    {#if $gameState.activeEffects.length > 0}
+      <Tag tone="damage" label="кровотечение" />
+    {/if}
+    {#if $gameState.monsterWeaken}
+      <Tag label="ослаблен" />
+    {/if}
   </div>
 
   <StatBar

@@ -16,7 +16,13 @@ export { ABILITIES, ABILITY_BY_ID } from '../data/abilities'
 export type { AbilityDef, AbilityEffect, AbilityType } from '../data/abilities'
 
 // Почему кнопка не нажимается. Каждый случай отдельный код — текст рендерит UI.
-export type AbilityBlockReason = 'locked' | 'dead' | 'cooldown' | 'gcd' | 'no-mana'
+export type AbilityBlockReason =
+  | 'locked'
+  | 'dead'
+  | 'cooldown'
+  | 'gcd'
+  | 'no-mana'
+  | 'no-combo'
 
 export interface AbilityStatus {
   abilityId: string
@@ -89,6 +95,10 @@ export function abilityStatus(state: GameState, ability: AbilityDef): AbilitySta
   if (left <= 0) return blocked('cooldown')
   if (ability.triggersGcd && state.gcdMsLeft > 0) return blocked('gcd')
   if (ability.type === 'instant' && state.currentMana.lt(ability.manaCost)) return blocked('no-mana')
+  // ДЕТОНАТОРУ НЕЧЕГО СЪЕДАТЬ. Отказ, а не «нажмётся и пропадёт»: иначе
+  // умение встало бы в очередь на замах и списало ресурс впустую — ровно то,
+  // что автокаст делал бы систематически.
+  if (ability.detonate && pendingEffectDamage(state).lte(0)) return blocked('no-combo')
   return { ...base, usable: true, reason: null }
 }
 
@@ -202,6 +212,9 @@ function effectFrom(
 ): ActiveEffect | null {
   const effect = ability.effect ?? talentAbilityEffect(state.talents, ability.id)
   if (!effect) return null
+  // Умение поддержки бьёт нулём, и делить на ноль здесь нечего: эффекта у
+  // него нет, а талант, который его выдаст, обязан выдать и урон.
+  if (ability.weaponDamagePercent.lte(0)) return null
   return {
     abilityId: ability.id,
     // Урон тика снят от УЖЕ посчитанного удара умения, поделённого на его
@@ -240,7 +253,7 @@ export function strikeWithAbility(
     timestamp: state.playtimeMs.toNumber(),
   })
   const effect = effectFrom(state, ability, amount)
-  return {
+  let after: GameState = {
     ...state,
     monster,
     abilityCasts: state.abilityCasts.plus(1),
@@ -253,6 +266,61 @@ export function strikeWithAbility(
       abilityId: ability.id,
       damage: amount,
       isCrit,
+    }),
+  }
+  // ДЕТОНАТОР СЪЕДАЕТ ЭФФЕКТ И БЬЁТ ЕГО ОСТАТКОМ. Берётся ЛЮБОЙ эффект по
+  // времени, висящий на мобе, а не «эффект такого-то умения»: связка описана
+  // данными, а логика про имена не знает.
+  if (ability.detonate) after = detonate(after, ability, emitAttack)
+  // ОСЛАБЛЕНИЕ ЦЕЛИ. Доля снимается с данных В МОМЕНТ применения: висящая
+  // метка не должна меняться задним числом от правки умения.
+  if (ability.weaken) {
+    after = {
+      ...after,
+      monsterWeaken: { damageShare: ability.weaken.damageShare, hitsLeft: ability.weaken.hits },
+    }
+  }
+  return after
+}
+
+/** Сколько урона осталось во всех эффектах на мобе. */
+export function pendingEffectDamage(state: GameState): Decimal {
+  return state.activeEffects.reduce(
+    (sum, e) => sum.plus(e.damagePerTick.times(e.ticksLeft)),
+    new Decimal(0),
+  )
+}
+
+/** Съесть эффекты с моба и нанести их остаток сразу, с множителем из данных. */
+function detonate(
+  state: GameState,
+  ability: AbilityDef,
+  emitAttack: (event: AttackEvent) => void,
+): GameState {
+  const pending = pendingEffectDamage(state)
+  if (pending.lte(0)) return state
+  const burst = pending.times(ability.detonate!.multiplier)
+  const monster = {
+    ...state.monster,
+    currentHp: Decimal.max(state.monster.currentHp.minus(burst), new Decimal(0)),
+  }
+  emitAttack({
+    sourceId: 'hero',
+    targetId: monster.id,
+    amount: burst,
+    isCrit: false,
+    abilityId: ability.id,
+    timestamp: state.playtimeMs.toNumber(),
+  })
+  return {
+    ...state,
+    monster,
+    // Эффект СЪЕДЕН целиком: остаток ушёл в удар, тикать больше нечему.
+    activeEffects: [],
+    combatLog: pushEvent(state.combatLog, {
+      type: 'effect',
+      abilityId: ability.id,
+      damage: burst,
     }),
   }
 }
@@ -284,7 +352,36 @@ export function useAbility(
   // автоатака идёт своим чередом, умение её не сбивает и не ускоряет.
   // Лечение — тем же путём оплаты, только вместо удара возвращает здоровье.
   if (ability.heal) return healWithAbility(payFor(state, ability), ability)
+  // Поглощение — тоже поддержка: платит как все, но вместо удара вешает щит.
+  if (ability.absorb) return absorbWithAbility(payFor(state, ability), ability)
   return strikeWithAbility(payFor(state, ability), ability, rng, emitAttack)
+}
+
+/**
+ * Запас щита от ЭТОГО применения. Растёт от брони и силы блока — числа обе
+ * доли берут из данных умения, своих в логике нет. Считается в момент
+ * применения: снаряжение потом сменится, а щит уже висит.
+ */
+export function absorbPool(state: GameState, ability: AbilityDef): Decimal {
+  const a = ability.absorb
+  if (!a) return new Decimal(0)
+  return state.stats.armor.times(a.armorShare).plus(state.stats.blockValue.times(a.blockShare))
+}
+
+function absorbWithAbility(state: GameState, ability: AbilityDef): GameState {
+  const pool = absorbPool(state, ability)
+  return {
+    ...state,
+    // Повторное применение ЗАМЕНЯЕТ щит, а не копит второй: иначе умение с
+    // коротким откатом складывалось бы само с собой.
+    absorb: { left: pool, msLeft: ability.absorb!.durationSec * 1000 },
+    combatLog: pushEvent(state.combatLog, {
+      type: 'ability',
+      abilityId: ability.id,
+      damage: new Decimal(0),
+      isCrit: false,
+    }),
+  }
 }
 
 // Почему умение из очереди сорвётся на замахе. Код уходит в лог событием
@@ -421,6 +518,15 @@ export function advanceCooldowns(state: GameState, dtMs: number): GameState {
     if (next !== leftMs || charges !== (state.abilityCharges[id] ?? max)) changed = true
   }
   const gcdMsLeft = Math.max(0, state.gcdMsLeft - dtMs)
-  if (!changed && gcdMsLeft === state.gcdMsLeft) return state
-  return { ...state, abilityCooldownsMs, abilityCharges, gcdMsLeft }
+  // ЩИТ ТИКАЕТ ТЕМ ЖЕ ИГРОВЫМ ВРЕМЕНЕМ, что откаты: множитель скорости из
+  // отладочной панели ускоряет и его. Своего таймера у щита нет — он живёт
+  // здесь, рядом с остальными обратными отсчётами умений.
+  const absorb =
+    state.absorb === null
+      ? null
+      : state.absorb.msLeft <= dtMs
+        ? null
+        : { ...state.absorb, msLeft: state.absorb.msLeft - dtMs }
+  if (!changed && gcdMsLeft === state.gcdMsLeft && absorb === state.absorb) return state
+  return { ...state, abilityCooldownsMs, abilityCharges, gcdMsLeft, absorb }
 }

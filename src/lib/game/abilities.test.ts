@@ -94,8 +94,10 @@ describe('данные умений', () => {
     for (const a of ABILITIES) {
       expect(a.manaCost.gt(0)).toBe(true)
       expect(a.cooldownSec).toBeGreaterThan(0)
-      // Лечение бьёт нулём, боевое умение — положительной долей удара.
-      expect(a.weaponDamagePercent.gt(0), a.id).toBe(!a.heal)
+      // ПОДДЕРЖКА БЬЁТ НУЛЁМ, БОЕВОЕ УМЕНИЕ — положительной долей удара.
+      // Поддержки ровно две: лечение и поглощение; список назван поимённо,
+      // чтобы новый флаг с нулевым уроном не проехал молча.
+      expect(a.weaponDamagePercent.gt(0), a.id).toBe(!a.heal && !a.absorb)
     }
   })
 

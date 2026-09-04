@@ -46,6 +46,41 @@ export interface AbilityCombo {
   needsAbilityId: string
 }
 
+/**
+ * ОСЛАБЛЕНИЕ ЦЕЛИ: следующие её удары слабее. Флаг с payload'ом, как лечение,
+ * а не свой тип умения: «дешёвый защитный удар» — это роль, а не механика.
+ */
+export interface AbilityWeaken {
+  /** На какую долю слабее удар противника, 0..1. */
+  damageShare: number
+  /** Сколько ближайших ударов ослаблено. */
+  hits: number
+}
+
+/**
+ * ДЕТОНАТОР: съедает эффект по времени с цели и наносит его ОСТАТОК сразу,
+ * с множителем. Своей цели умение не выбирает и своего эффекта не знает —
+ * берёт то, что на мобе уже висит; поэтому связка описывается ДАННЫМИ
+ * (`combo`), а не веткой по id в логике.
+ */
+export interface AbilityDetonate {
+  /** Множитель к оставшемуся урону эффекта. */
+  multiplier: number
+}
+
+/**
+ * ПОГЛОЩЕНИЕ: щит на несколько секунд. Величина растёт ОТ БРОНИ И СИЛЫ
+ * БЛОКА — так у щита появляется второй адрес, кроме самого блока, и
+ * защитная сборка получает умение, которое её усиливает.
+ */
+export interface AbilityAbsorb {
+  /** Доля брони героя в запасе щита. */
+  armorShare: number
+  /** Доля силы блока в запасе щита. */
+  blockShare: number
+  durationSec: number
+}
+
 export interface AbilityDef {
   id: string
   name: string
@@ -65,6 +100,12 @@ export interface AbilityDef {
   heal?: AbilityHeal
   /** Связка с другим умением: см. AbilityCombo. Нет поля — умение самостоятельно. */
   combo?: AbilityCombo
+  /** Ослабляет следующие удары цели: см. AbilityWeaken. */
+  weaken?: AbilityWeaken
+  /** Съедает эффект по времени с цели: см. AbilityDetonate. */
+  detonate?: AbilityDetonate
+  /** Поглощает урон героя: см. AbilityAbsorb. */
+  absorb?: AbilityAbsorb
 }
 
 export const ABILITIES: AbilityDef[] = [
@@ -124,6 +165,22 @@ export const ABILITIES: AbilityDef[] = [
     heal: { maxHpShare: new Decimal(0.25), autocastBelowHpShare: 0.55 },
   },
   {
+    // ТОЛЧОК ЩИТОМ. Конкурирует со «Скорым выпадом» за одну и ту же нишу
+    // дешёвого заполнителя — и это первый выбор в игре: урон или сохранность.
+    // Урона вдвое меньше, зато следующий удар противника слабее. Числа
+    // черновые: под бюджет их сводит стадия 5.
+    id: 'shield-shove',
+    icon: 'ability-shield-shove',
+    name: 'Толчок щитом',
+    type: 'instant',
+    unlockLevel: 2,
+    manaCost: new Decimal(7),
+    cooldownSec: 6,
+    weaponDamagePercent: new Decimal(0.8),
+    triggersGcd: true,
+    weaken: { damageShare: 0.35, hits: 1 },
+  },
+  {
     id: 'shattering-blow',
     icon: 'ability-shattering-blow',
     name: 'Сокрушение',
@@ -133,6 +190,38 @@ export const ABILITIES: AbilityDef[] = [
     cooldownSec: 12,
     weaponDamagePercent: new Decimal(5.0),
     triggersGcd: false,
+  },
+  {
+    // РАЗРЫВ. Съедает кровотечение с цели и наносит его остаток сразу с
+    // множителем. БЕЗ «РВАНОЙ РАНЫ» В ЧЕТВЁРКЕ БЕСПОЛЕЗЕН, и связка названа
+    // данными (`combo`) — интерфейс обязан сказать это прямо, а логика
+    // берёт с моба ЛЮБОЙ эффект по времени, а не «эффект такого-то умения».
+    id: 'rupture',
+    icon: 'ability-rupture',
+    name: 'Разрыв',
+    type: 'onNextSwing',
+    unlockLevel: 10,
+    manaCost: new Decimal(20),
+    cooldownSec: 8,
+    weaponDamagePercent: new Decimal(1.2),
+    triggersGcd: false,
+    detonate: { multiplier: 1.5 },
+    combo: { needsAbilityId: 'rending-wound' },
+  },
+  {
+    // СТЕНА. Поглощает урон несколько секунд, и запас щита растёт ОТ БРОНИ И
+    // СИЛЫ БЛОКА: у щита появляется второй адрес, кроме самого блока. Бьёт
+    // нулём — это поддержка, как и лечение, и схема знает про это отдельно.
+    id: 'bulwark',
+    icon: 'ability-bulwark',
+    name: 'Стена',
+    type: 'instant',
+    unlockLevel: 12,
+    manaCost: new Decimal(28),
+    cooldownSec: 25,
+    weaponDamagePercent: new Decimal(0),
+    triggersGcd: true,
+    absorb: { armorShare: 0.5, blockShare: 4, durationSec: 8 },
   },
 
   // --- Умения Изувера ---

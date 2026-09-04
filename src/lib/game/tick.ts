@@ -75,6 +75,7 @@ function heroDies(state: GameState, rng: Rng): GameState {
     reviveMsLeft: reviveMs,
     queuedAbilityId: null,
     activeEffects: [],
+    monsterWeaken: null,
     combatLog: pushEvent(state.combatLog, { type: 'death', reviveMs }),
   }
   // СМЕРТЬ В ХРАМЕ ЗАСЧИТЫВАЕТСЯ. Это завершение забега С РЕЗУЛЬТАТОМ, а не
@@ -159,6 +160,7 @@ const applyRevive: TickStep = (s, ctx) => {
     // Умения не переживают смерть: очередь и эффекты были на прежнем мобе.
     queuedAbilityId: null,
     activeEffects: [],
+    monsterWeaken: null,
   }
 }
 
@@ -654,6 +656,10 @@ const applyMonsterAttack: TickStep = (s, ctx) => {
   let currentMana = s.currentMana
   let combatLog = s.combatLog
   let died = false
+  // Метки живут ЛОКАЛЬНО в цикле ударов: за один жирный тик моб может ударить
+  // дважды, и ослабление обязано сойти после первого же удара.
+  let weaken = s.monsterWeaken
+  let absorb = s.absorb
   while (monsterSwing >= 1 - SWING_EPS && !died) {
     monsterSwing = Math.max(0, monsterSwing - 1)
     // Формула входящего урона (бросок из диапазона + damageReduction) — в combat.ts.
@@ -668,13 +674,31 @@ const applyMonsterAttack: TickStep = (s, ctx) => {
     // Блок — отдельное событие в шине: его подхватят и визуал, и звук.
     // Бросок делается ВСЕГДА, когда щит есть: иначе поток случайности
     // зависел бы от того, попал моб или нет.
-    const { amount, blocked } = rollBlock(s.stats, raw, ctx.rng)
+    // ОСЛАБЛЕНИЕ БЬЁТ ПО САМОМУ УДАРУ, до блока и до смягчения: «следующий
+    // удар слабее» — это про удар противника, а не про то, как герой его
+    // держит. Иначе доля считалась бы от уже срезанного числа и обещание
+    // «на треть слабее» стало бы неправдой.
+    const softened = weaken && weaken.hitsLeft > 0 ? raw.times(1 - weaken.damageShare) : raw
+    if (weaken && weaken.hitsLeft > 0) {
+      weaken = weaken.hitsLeft > 1 ? { ...weaken, hitsLeft: weaken.hitsLeft - 1 } : null
+    }
+    const { amount: hit, blocked } = rollBlock(s.stats, softened, ctx.rng)
+    // ЩИТ СЪЕДАЕТ ОСТАТОК ПОСЛЕДНИМ, уже после блока и смягчения: он
+    // поглощает то, что дошло бы до полоски, и его запас тратится ровно на
+    // столько, сколько дошло.
+    let amount = hit
+    if (absorb && absorb.left.gt(0)) {
+      const eaten = Decimal.min(absorb.left, amount)
+      amount = amount.minus(eaten)
+      const left = absorb.left.minus(eaten)
+      absorb = left.gt(0) ? { ...absorb, left } : null
+    }
     currentHp = Decimal.max(currentHp.minus(amount), new Decimal(0))
     // Два флага живучести, оба срабатывают ТОЛЬКО на удачном блоке; числа
     // приходят из payload талантов, а не из логики.
     let reflected: Decimal | undefined
     if (blocked) {
-      const absorbed = raw.minus(amount)
+      const absorbed = softened.minus(hit)
       if (reflectShare > 0 && absorbed.gt(0)) {
         reflected = absorbed.times(reflectShare)
         const hpAfter = monster.currentHp.minus(reflected)
@@ -699,7 +723,7 @@ const applyMonsterAttack: TickStep = (s, ctx) => {
       ? pushEvent(combatLog, {
           type: 'block',
           damage: amount,
-          blocked: raw.minus(amount),
+          blocked: softened.minus(hit),
           ...(reflected ? { reflected } : {}),
           monsterName: s.monster.name,
         })
@@ -723,6 +747,8 @@ const applyMonsterAttack: TickStep = (s, ctx) => {
     currentMana,
     monster: { ...monster, swingProgress: monsterSwing },
     combatLog,
+    monsterWeaken: weaken,
+    absorb,
   }
   if (!died) return next
   // Смерть героя: 30 игровых секунд простоя, награды не капают.
@@ -734,6 +760,7 @@ const applyMonsterAttack: TickStep = (s, ctx) => {
     reviveMsLeft: reviveMs,
     queuedAbilityId: null,
     activeEffects: [],
+    monsterWeaken: null,
     combatLog: pushEvent(next.combatLog, { type: 'death', reviveMs }),
   }
   // Смерть в данже выкидывает наружу: лут за убитых боссов уже в сумке,
@@ -846,6 +873,7 @@ const applyRespawn: TickStep = (s, ctx) => {
     respawnMsLeft: 0,
     monster,
     activeEffects: [], // эффекты были на прежнем мобе
+    monsterWeaken: null,
     combatLog: pushEvent(s.combatLog, { type: 'spawn', monsterName: monster.name }),
   }
 }

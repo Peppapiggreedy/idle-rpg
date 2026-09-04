@@ -90,7 +90,19 @@
       "autocast": true,
       "reserve": 0
     },
+    "shield-shove": {
+      "autocast": true,
+      "reserve": 0
+    },
     "shattering-blow": {
+      "autocast": true,
+      "reserve": 0
+    },
+    "rupture": {
+      "autocast": true,
+      "reserve": 0
+    },
+    "bulwark": {
       "autocast": true,
       "reserve": 0
     }

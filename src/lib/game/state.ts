@@ -103,6 +103,19 @@ export interface GameState {
   queuedAbilityId: string | null
   activeEffects: ActiveEffect[] // эффекты на текущем мобе (урон по времени)
   /**
+   * ОСЛАБЛЕНИЕ ТЕКУЩЕГО МОБА: сколько его ближайших ударов слабее и насколько.
+   * Живёт на КОНКРЕТНОМ мобе, как и эффекты: смерть, респаун и загрузка сейва
+   * его снимают. Доля снята в момент применения — если умение переделают,
+   * уже висящее ослабление не изменится задним числом.
+   */
+  monsterWeaken: MonsterWeaken | null
+  /**
+   * ЩИТ ГЕРОЯ: сколько урона он ещё поглотит и сколько миллисекунд держится.
+   * Величина посчитана в момент применения от брони и силы блока — потом
+   * снаряжение может смениться, а щит уже висит.
+   */
+  absorb: HeroAbsorb | null
+  /**
    * РЯД ДЕЙСТВИЙ: какие умения герой носит и в каком порядке. Индекс — и
    * место кнопки под сценой, и приоритет автокаста. `null` — пустой слот.
    */
@@ -207,6 +220,18 @@ export interface ActiveEffect {
   damagePerTick: Decimal
   ticksLeft: number
   msToNextTick: number
+}
+
+/** Ослабление моба: см. поле `monsterWeaken`. */
+export interface MonsterWeaken {
+  damageShare: number
+  hitsLeft: number
+}
+
+/** Щит героя: см. поле `absorb`. */
+export interface HeroAbsorb {
+  left: Decimal
+  msLeft: number
 }
 
 /**
@@ -477,6 +502,8 @@ export function createInitialState(
     questProgress: { done: {}, counter: 0 },
     queuedAbilityId: null,
     activeEffects: [],
+    monsterWeaken: null,
+    absorb: null,
     abilitySlots: defaultAbilitySlots(hero.id),
     abilitySettings: defaultAbilitySettings(hero.id),
     autocastReadyMs: {},

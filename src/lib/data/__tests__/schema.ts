@@ -433,11 +433,91 @@ export const ABILITY_SCHEMA: EntitySchema<AbilityDef> = {
         'data/abilities.ts',
         report,
       )
-    } else {
+    } else if (!ability.absorb) {
+      // ПОДДЕРЖКА МОЖЕТ НЕ БИТЬ, БОЕВОЕ УМЕНИЕ — ОБЯЗАНО. Поддержка это две
+      // вещи и ровно две: лечение и поглощение. Список назван здесь ПОИМЁННО
+      // намеренно: новый флаг, который тоже не бьёт, обязан появиться в этой
+      // строке — иначе умение с нулевым уроном проедет молча.
       report.need(
         toNumber(ability.weaponDamagePercent) > 0,
         where,
-        'урон умения — доля удара оружия (weaponDamagePercent), и она обязана быть положительной (data/abilities.ts)',
+        'урон умения — доля удара оружия (weaponDamagePercent), и она обязана быть положительной; ноль — только у поддержки (heal или absorb) (data/abilities.ts)',
+      )
+    }
+    // ОСЛАБЛЕНИЕ: доля и число ударов.
+    if (ability.weaken) {
+      checkNumber(
+        ability.weaken,
+        {
+          field: 'weaken.damageShare',
+          get: (w) => w.damageShare,
+          min: 0,
+          exclusiveMin: true,
+          max: 1,
+          why: 'доля, на которую слабее удар противника',
+        },
+        where,
+        'data/abilities.ts',
+        report,
+      )
+      checkNumber(
+        ability.weaken,
+        { field: 'weaken.hits', get: (w) => w.hits, min: 1, integer: true },
+        where,
+        'data/abilities.ts',
+        report,
+      )
+    }
+    // ДЕТОНАТОР: множитель и НАЗВАННАЯ СВЯЗКА. Умение, которое съедает
+    // чужой эффект, обязано сказать игроку, чей именно, — иначе связку
+    // выясняют опытом.
+    if (ability.detonate) {
+      checkNumber(
+        ability.detonate,
+        {
+          field: 'detonate.multiplier',
+          get: (d) => d.multiplier,
+          min: 0,
+          exclusiveMin: true,
+          why: 'множитель к оставшемуся урону съеденного эффекта',
+        },
+        where,
+        'data/abilities.ts',
+        report,
+      )
+      report.need(
+        ability.combo !== undefined,
+        where,
+        'детонатор обязан назвать связку (combo): без неё игрок выясняет её опытом (data/abilities.ts)',
+      )
+    }
+    // ПОГЛОЩЕНИЕ: обе доли и длительность.
+    if (ability.absorb) {
+      for (const spec of [
+        { field: 'absorb.armorShare', get: (a: typeof ability.absorb) => a!.armorShare },
+        { field: 'absorb.blockShare', get: (a: typeof ability.absorb) => a!.blockShare },
+        { field: 'absorb.durationSec', get: (a: typeof ability.absorb) => a!.durationSec },
+      ]) {
+        checkNumber(
+          ability.absorb,
+          { field: spec.field, get: spec.get, min: 0, why: 'запас щита и его длительность' },
+          where,
+          'data/abilities.ts',
+          report,
+        )
+      }
+      report.need(
+        ability.absorb.durationSec > 0,
+        where,
+        'поглощение без длительности не поглощает ничего (data/abilities.ts)',
+      )
+    }
+    // СВЯЗКА ССЫЛАЕТСЯ НА СУЩЕСТВУЮЩЕЕ УМЕНИЕ ТОГО ЖЕ КЛАССА.
+    if (ability.combo) {
+      report.need(
+        _content.abilities.some((a) => a.id === ability.combo!.needsAbilityId),
+        where,
+        `связка ссылается на неизвестное умение ${ability.combo.needsAbilityId} (data/abilities.ts)`,
       )
     }
     if (!ability.effect) return

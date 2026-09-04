@@ -849,6 +849,10 @@ export function stateFromPayload(p: SavePayloadV21): GameState {
     // Очередь и эффекты были на прежнем мобе — при загрузке начинаем чисто.
     queuedAbilityId: null,
     activeEffects: [],
+    // Боевые метки живут на конкретном мобе и на конкретной секунде боя:
+    // после загрузки нет ни того, ни другой.
+    monsterWeaken: null,
+    absorb: null,
     autocastReadyMs: {},
     itemSeq: typeof p.itemSeq === 'number' ? p.itemSeq : 0,
   }
