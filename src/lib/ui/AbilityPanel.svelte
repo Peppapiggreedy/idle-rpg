@@ -4,6 +4,7 @@
   // а бой идёт в любом разделе. Здесь только то, что настраивают редко.
   import {
     abilitiesByPriority,
+    rotationOf,
     abilityStatus,
     expectedAbilityDamage,
     formatNumber,
@@ -24,7 +25,7 @@
   const resource = $derived(resourceWords($gameState.classId))
 
   // Порядок в списке = порядок приоритета: сверху то, что автокаст жмёт первым.
-  const ordered = $derived(abilitiesByPriority($gameState.abilitySettings, false))
+  const ordered = $derived(abilitiesByPriority(rotationOf($gameState), false))
   const statuses = $derived(ordered.map((a) => abilityStatus($gameState, a)))
   // Есть ли у класса лечение — от этого зависит, показывать ли резерв под него.
   const healAbility = $derived(ordered.find((a) => a.heal) ?? null)

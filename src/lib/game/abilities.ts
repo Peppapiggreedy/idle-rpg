@@ -8,7 +8,7 @@ import { ABILITIES, ABILITY_BY_ID, type AbilityDef } from '../data/abilities'
 import { abilitiesByPriority } from './rotation'
 import { talentAbilityEffect, talentExtraCharges } from './talents'
 import { punishResourceSpend } from './bossAbilities'
-import { abilitiesOf, pushEvent, type ActiveEffect, type GameState } from './state'
+import { abilitiesOf, pushEvent, rotationOf, type ActiveEffect, type GameState } from './state'
 import type { Rng } from './rng'
 import type { AttackEvent, CombatEvent } from '../types'
 
@@ -140,10 +140,11 @@ function payFor(state: GameState, ability: AbilityDef): GameState {
  * галкой. Нет такого — нечего и беречь.
  */
 export function autocastHeal(state: GameState): AbilityDef | null {
-  for (const ability of abilitiesOf(state.classId)) {
+  // ТОЛЬКО ИЗ РЯДА: лечение, не положенное в четвёрку, автокаст нажать не
+  // может — и беречь под него ману было бы обещанием, которого игра не держит.
+  for (const ability of abilitiesByPriority(rotationOf(state), true)) {
     if (!ability.heal) continue
     if (state.level.lt(ability.unlockLevel)) continue
-    if (!state.abilitySettings[ability.id]?.autocast) continue
     return ability
   }
   return null
@@ -322,7 +323,7 @@ export function consumeQueuedAbility(
  * onNextSwing: ставить в очередь то, что всё равно сорвётся, автокаст не станет.
  */
 export function autocastCandidates(state: GameState): AbilityDef[] {
-  return abilitiesByPriority(state.abilitySettings, true).filter((ability) => {
+  return abilitiesByPriority(rotationOf(state), true).filter((ability) => {
     if (state.currentMana.lt(ability.manaCost)) return false
     if (!passesReserve(state, ability)) return false
     // Лечение автокаст жмёт только когда оно нужно: порог — из данных умения.
@@ -358,7 +359,7 @@ export function autocastStep(
   // ЛЕЧЕНИЕ ВПЕРЕДИ ЛЮБОГО УРОНА, когда оно нужно (см. healWanted): порядок
   // приоритетов игрока решает, что бить, а «выжить» стоит выше. Флаг из
   // данных, а не id: любое лечащее умение любого класса встанет так же.
-  const byPriority = abilitiesByPriority(state.abilitySettings, true)
+  const byPriority = abilitiesByPriority(rotationOf(state), true)
   const order = [
     ...byPriority.filter((a) => a.heal && ready.has(a.id)),
     ...byPriority.filter((a) => !(a.heal && ready.has(a.id))),

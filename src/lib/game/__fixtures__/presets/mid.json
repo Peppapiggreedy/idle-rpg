@@ -1,5 +1,5 @@
 {
-  "version": 28,
+  "version": 29,
   "classId": "warden",
   "materials": {},
   "activePotions": [],
@@ -287,25 +287,27 @@
   "upgradePriority": "balance",
   "purchasedUpgradeIds": [],
   "lootPolicy": "keep",
+  "abilitySlots": [
+    "quick-strike",
+    "rending-wound",
+    "mend-wounds",
+    "shattering-blow"
+  ],
   "abilitySettings": {
     "quick-strike": {
       "autocast": true,
-      "priority": 0,
       "reserve": 0
     },
     "rending-wound": {
       "autocast": true,
-      "priority": 1,
       "reserve": 0
     },
     "mend-wounds": {
       "autocast": true,
-      "priority": 2,
       "reserve": 0
     },
     "shattering-blow": {
       "autocast": true,
-      "priority": 3,
       "reserve": 0
     }
   },

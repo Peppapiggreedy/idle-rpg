@@ -20,7 +20,7 @@ import { recordDecision, resetTelemetry } from './telemetry'
 import { equipItem, unequipItem } from '../game/equipment'
 import { currentZone, travelToZone as travelAction } from '../game/zones'
 import { useAbility as useAbilityAction } from '../game/abilities'
-import { abilitiesByPriority } from '../game/rotation'
+import { ABILITY_BY_ID } from '../data/abilities'
 import { investTalent as investTalentAction, resetTalents as resetTalentsAction } from '../game/talents'
 import { drinkPotion as drinkPotionAction } from '../game/potions'
 import { disenchantItem, enchantItem } from '../game/enchanting'
@@ -464,22 +464,54 @@ export function setAbilityAutocast(abilityId: string, autocast: boolean): void {
   })
 }
 
-/** Стрелки вверх/вниз: меняет умение приоритетом с соседом по списку. */
-export function moveAbilityPriority(abilityId: string, direction: -1 | 1): void {
+/**
+ * ПЕРЕСТАВИТЬ ДВА СЛОТА МЕСТАМИ. Порядок слотов — это приоритет автокаста,
+ * поэтому перестановка кнопок и есть смена приоритета; второго действия для
+ * этого в игре нет.
+ *
+ * ОТКАТЫ ЖИВУТ НА УМЕНИИ, а не на слоте, и здесь это видно: меняются местами
+ * ИМЕНА, а `abilityCooldownsMs` и `abilityCharges` не трогаются вовсе. Иначе
+ * перестановка стала бы бесплатным сбросом отката.
+ */
+export function swapAbilitySlots(from: number, to: number): void {
   recordDecision('autocast')
   state.update((s) => {
-    const order = abilitiesByPriority(s.abilitySettings, false)
-    const index = order.findIndex((a) => a.id === abilityId)
-    const target = index + direction
-    if (index === -1 || target < 0 || target >= order.length) return s
-    const swapped = [...order]
-    ;[swapped[index], swapped[target]] = [swapped[target], swapped[index]]
-    // Приоритеты переписываем по новому порядку: 0, 1, 2… без дыр.
-    const abilitySettings = { ...s.abilitySettings }
-    swapped.forEach((ability, priority) => {
-      abilitySettings[ability.id] = { ...abilitySettings[ability.id], priority }
-    })
-    return { ...s, abilitySettings }
+    if (from === to) return s
+    const slots = [...s.abilitySlots]
+    if (from < 0 || to < 0 || from >= slots.length || to >= slots.length) return s
+    ;[slots[from], slots[to]] = [slots[to], slots[from]]
+    return { ...s, abilitySlots: slots }
+  })
+}
+
+/** Стрелки вверх/вниз в настройках автокаста: обмен с соседним слотом. */
+export function moveAbilityPriority(abilityId: string, direction: -1 | 1): void {
+  const s = get(state)
+  const index = s.abilitySlots.indexOf(abilityId)
+  if (index === -1) return
+  swapAbilitySlots(index, index + direction)
+}
+
+/**
+ * ПОЛОЖИТЬ УМЕНИЕ В СЛОТ (перетаскивание из книги или в ряду).
+ *
+ * Если умение уже лежит в другом слоте — слоты МЕНЯЮТСЯ МЕСТАМИ, а не
+ * дублируются: одно умение в двух слотах дало бы два кулдауна на одном
+ * откате. `null` очищает слот.
+ */
+export function setAbilitySlot(index: number, abilityId: string | null): void {
+  recordDecision('autocast')
+  state.update((s) => {
+    if (index < 0 || index >= s.abilitySlots.length) return s
+    if (abilityId !== null && s.abilitySettings[abilityId] === undefined) return s
+    // Запертое уровнем в ряд не кладём: кнопка была бы, а нажать нечего.
+    const ability = abilityId === null ? null : ABILITY_BY_ID[abilityId]
+    if (ability && s.level.lt(ability.unlockLevel)) return s
+    const slots = [...s.abilitySlots]
+    const already = abilityId === null ? -1 : slots.indexOf(abilityId)
+    if (already !== -1) slots[already] = slots[index]
+    slots[index] = abilityId
+    return { ...s, abilitySlots: slots }
   })
 }
 

@@ -13,6 +13,8 @@ import {
   abilitiesOf,
   createInitialState,
   defaultAbilitySettings,
+  defaultAbilitySlots,
+  fillAbilitySlots,
   manualOnlySettings,
   monsterFromTemplate,
   spawnMonster,
@@ -21,6 +23,7 @@ import {
   type AbilitySettings,
   type Equipment,
   type GameState,
+  type AbilitySlots,
 } from './state'
 import { ensureStats, type StatModifier } from './stats'
 import { tick } from './tick'
@@ -54,7 +57,7 @@ import { buildMonster } from '../data/monsters'
 import { BRANCHES, talentsInBranch, type BranchId } from '../data/talents'
 import { DUNGEONS } from '../data/dungeons'
 import { DEFAULT_CLASS, classById } from '../data/classes'
-import { TALENT_FIRST_LEVEL } from '../data/balance'
+import { ABILITY_SLOTS, TALENT_FIRST_LEVEL } from '../data/balance'
 import type { AttackEvent, Item, Rarity } from '../types'
 
 /** Оружие для прогона. `bare` снимает побочные статы шаблона и оставляет
@@ -735,18 +738,33 @@ function buildEquipment(build: SimBuild, weapon: Item | null): Equipment {
   return equipment
 }
 
-function settingsFor(autocast: SimBuild['autocast'], classId: string): AbilitySettings {
-  if (autocast === undefined || autocast === 'all') return defaultAbilitySettings(classId)
-  if (autocast === 'none') return manualOnlySettings(classId)
+/**
+ * ЧЕТВЁРКА И ГАЛКИ ПРОГОНА. Список `autocast` задаёт И СОСТАВ, И ПОРЯДОК:
+ * порядок слотов — это приоритет, и задать его иначе нельзя. Что не попало
+ * в список, доезжает в свободные слоты выключенным — так прибор меряет
+ * ровно ту ротацию, которую просили, но кнопки в ряду у героя те же.
+ */
+function loadoutFor(
+  autocast: SimBuild['autocast'],
+  classId: string,
+): { slots: AbilitySlots; settings: AbilitySettings } {
+  if (autocast === undefined || autocast === 'all') {
+    return { slots: defaultAbilitySlots(classId), settings: defaultAbilitySettings(classId) }
+  }
+  if (autocast === 'none') {
+    return { slots: defaultAbilitySlots(classId), settings: manualOnlySettings(classId) }
+  }
   const settings = manualOnlySettings(classId)
-  autocast.forEach((id, index) => {
-    if (settings[id]) settings[id] = { ...settings[id], autocast: true, priority: index }
+  for (const id of autocast) {
+    if (settings[id]) settings[id] = { ...settings[id], autocast: true }
+  }
+  // Названные — в начало ряда и в заданном порядке; остальное доезжает следом
+  // в пустые слоты, если они ещё есть.
+  const slots: AbilitySlots = new Array(ABILITY_SLOTS).fill(null)
+  autocast.slice(0, ABILITY_SLOTS).forEach((id, index) => {
+    if (settings[id]) slots[index] = id
   })
-  // Невыбранные умения уходят в конец списка приоритетов.
-  ABILITIES.filter((a) => settings[a.id] && !autocast.includes(a.id)).forEach((a, index) => {
-    settings[a.id] = { ...settings[a.id], autocast: false, priority: autocast.length + index }
-  })
-  return settings
+  return { slots: fillAbilitySlots(slots, classId), settings }
 }
 
 /** Стартовое состояние прогона: билд разложен по тем же источникам статов,
@@ -762,6 +780,7 @@ export function buildSimState(build: SimBuild, zoneId: string, seed: number): Ga
   // и том же коммите то 18 этажей, то 20: прибор мерил часы. Прогон обязан
   // быть повторяемым, иначе контракт на нём не поставишь.
   const base = createInitialState(seed, build.classId ?? DEFAULT_CLASS.id, seed)
+  const loadout = loadoutFor(build.autocast, base.classId)
   const state: GameState = {
     ...base,
     level,
@@ -773,7 +792,8 @@ export function buildSimState(build: SimBuild, zoneId: string, seed: number): Ga
     // прибор мерил бы героя, запертого в четырёх стартовых зонах.
     unlockedZoneIds: unlockedByLevel(level.toNumber()),
     equipment: buildEquipment(build, weapon),
-    abilitySettings: settingsFor(build.autocast, base.classId),
+    abilitySlots: loadout.slots,
+    abilitySettings: loadout.settings,
     // Прогон меряет ЗАДАННЫЙ билд: автонадевание подменило бы его на середине.
     restHpThreshold: build.restThreshold ?? base.restHpThreshold,
     currentZoneId: zone.id,

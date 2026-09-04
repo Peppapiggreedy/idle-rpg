@@ -13,7 +13,7 @@
   // фиолетовым — фиолетовым он становился, когда в очередь вставало умение.
   // Цвет обязан различать СМЫСЛ полосы, а не её настроение: замах всегда
   // цвета взаимодействия, а про умение в очереди говорит подпись.
-  import { abilitiesByPriority } from '../game'
+  import { abilitiesByPriority, rotationOf } from '../game'
   import { gameState } from '../stores/game'
   import { StatBar } from './kit'
 
@@ -26,7 +26,7 @@
   // что следующий удар будет ЗАМЕНЁН, а не просто «что-то нажато».
   const queued = $derived(
     $gameState.queuedAbilityId
-      ? abilitiesByPriority($gameState.abilitySettings, false).find(
+      ? abilitiesByPriority(rotationOf($gameState), false).find(
           (a) => a.id === $gameState.queuedAbilityId,
         )
       : undefined,

@@ -38,7 +38,7 @@ import {
 } from './rotation'
 import type { Monster } from '../types'
 import { SAFE_ZONE, ZONE_BY_ID, zoneSpawnVariants, type Zone } from '../data/zones'
-import { monsterFromTemplate, type AbilitySettings } from './state'
+import { monsterFromTemplate, type AbilitySettings, type Rotation } from './state'
 import { ABILITY_BY_ID } from '../data/abilities'
 import { classById } from '../data/classes'
 import { blockReflectShare, blockResourceShare, doubleStrikeChance } from './talents'
@@ -934,6 +934,9 @@ function rateKey(state: GameState, mode: PlayMode): string {
     identityOf(state.talents),
     identityOf(state.equipment),
     identityOf(state.abilitySettings),
+    // Состав и ПОРЯДОК ряда меняют ротацию так же, как галки: забудь его
+    // здесь — и мемо отдаст ответ для прежней четвёрки.
+    state.abilitySlots.join(','),
     identityOf(state.activePotions),
     state.holdManaForHeal ? 1 : 0,
     // Зона нужна только ручному режиму (травы для зелий), но стоит в ключе
@@ -1146,6 +1149,8 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
   const avgSwing = expectedSwingDamage(stats)
   const respawnSec = RESPAWN_DELAY_MS / 1000
   const settings = unlockedSettings(s)
+  // Ротация читает РЯД: состав и порядок слотов плюс галки по умениям.
+  const heroRotation: Rotation = { slots: s.abilitySlots, settings }
   // Ресурс из боя — уравнение с самим собой: удары умений тоже дают ярость,
   // а число умений зависит от ярости. Решаем ДВУМЯ проходами: сперва доход
   // от одних автоатак, потом — с учётом посчитанных мгновенных ударов.
@@ -1153,7 +1158,7 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
   const pause = resourcePause(s)
   // Лечащее умение этого плана: открытое уровнем и — у автокаста — отмеченное
   // галкой. Флаг из данных, не id: любое лечение любого класса ляжет сюда же.
-  const heal = abilitiesByPriority(settings, plan.onlyAutocast).find((a) => a.heal) ?? null
+  const heal = abilitiesByPriority(heroRotation, plan.onlyAutocast).find((a) => a.heal) ?? null
   const holdMana = heal && s.holdManaForHeal ? heal.manaCost : new Decimal(0)
   // Ресурс из боя — уравнение с самим собой: удары умений тоже дают ярость,
   // а число умений зависит от ярости. Решаем ДВУМЯ проходами: сперва доход
@@ -1161,14 +1166,14 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
   // Двух хватает: второй проход меняет ответ на проценты, третий — на доли.
   const planRotation = (refill: RestRefill | null, fixed: FixedCast[]): RotationRate => {
     const income = (extraHits = 0) => resourceIncome(s, extraHits)
-    let rot = rotationRate(stats, settings, plan, income(), pause, refill, fixed, holdMana)
+    let rot = rotationRate(stats, heroRotation, plan, income(), pause, refill, fixed, holdMana)
     if (classById(s.classId).resource.perSwingDealt.gt(0)) {
       // Умения «на следующий удар» ЗАМЕНЯЮТ автоатаку и лишнего удара не дают;
       // лечение удара не наносит вовсе.
       const extraHits = rot.casts
         .filter((c) => c.ability.type === 'instant' && !c.ability.heal)
         .reduce((sum, c) => sum + c.castsPerSecond, 0)
-      rot = rotationRate(stats, settings, plan, income(extraHits), pause, refill, fixed, holdMana)
+      rot = rotationRate(stats, heroRotation, plan, income(extraHits), pause, refill, fixed, holdMana)
     }
     return rot
   }

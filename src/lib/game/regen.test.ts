@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest'
 import { Decimal } from './numbers'
 import { STEP_MS } from './loop'
-import { createInitialState, manualOnlySettings, tick, type GameState } from './tick'
+import { createInitialState, manualOnlySettings, rotationOf, tick, type GameState } from './tick'
 import { ensureStats } from './stats'
 import { resetsRegenDelay, useAbility } from './abilities'
 import { estimateCombatRate } from './combat'
@@ -92,8 +92,8 @@ describe('резерв маны — рычаг «урон против авто�
     hero({
       abilitySettings: {
         ...manualOnlySettings(),
-        [QUICK.id]: { autocast: true, priority: 0, reserve },
-        [BLOW.id]: { autocast: true, priority: 1, reserve },
+        [QUICK.id]: { autocast: true, reserve },
+        [BLOW.id]: { autocast: true, reserve },
       },
     })
 
@@ -137,10 +137,10 @@ describe('модель знает про правило', () => {
     const s = hero({
       abilitySettings: {
         ...manualOnlySettings(),
-        [QUICK.id]: { autocast: true, priority: 0, reserve: 0 },
+        [QUICK.id]: { autocast: true, reserve: 0 },
       },
     })
-    const rate = rotationRate(s.stats, s.abilitySettings, PLAN.auto)
+    const rate = rotationRate(s.stats, rotationOf(s), PLAN.auto)
     const cast = rate.casts.find((c) => c.ability.id === QUICK.id)!
     const cooldownLimited = 1 / QUICK.cooldownSec
     expect(cast.castsPerSecond).toBeLessThan(cooldownLimited)
@@ -152,7 +152,7 @@ describe('модель знает про правило', () => {
     const small = hero({
       abilitySettings: {
         ...manualOnlySettings(),
-        [QUICK.id]: { autocast: true, priority: 0, reserve: 0 },
+        [QUICK.id]: { autocast: true, reserve: 0 },
       },
     })
     const big = ensureStats({
@@ -161,8 +161,8 @@ describe('модель знает про правило', () => {
       level: new Decimal(40),
       statsDirty: true,
     })
-    const rateSmall = rotationRate(small.stats, small.abilitySettings, PLAN.auto)
-    const rateBig = rotationRate(big.stats, big.abilitySettings, PLAN.auto)
+    const rateSmall = rotationRate(small.stats, rotationOf(small), PLAN.auto)
+    const rateBig = rotationRate(big.stats, rotationOf(big), PLAN.auto)
     const share = (r: ReturnType<typeof rotationRate>) =>
       r.casts.find((c) => c.ability.id === QUICK.id)!.castsPerSecond
     expect(share(rateBig)).toBeGreaterThan(share(rateSmall))

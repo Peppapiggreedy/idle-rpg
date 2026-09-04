@@ -980,9 +980,12 @@ export {
   createInitialState,
   manualOnlySettings,
   defaultAbilitySettings,
+  defaultAbilitySlots,
+  fillAbilitySlots,
+  rotationOf,
   spawnMonster,
   monsterFromTemplate,
   emptyEquipment,
 } from './state'
-export type { GameState, Equipment } from './state'
+export type { GameState, Equipment, AbilitySlots, Rotation } from './state'
 export { RESPAWN_DELAY_MS } from '../data/balance'
