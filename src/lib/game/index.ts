@@ -13,6 +13,7 @@ export {
 } from './tick'
 export type { GameState, Equipment, AbilitySlots, Rotation } from './tick'
 export { defaultAbilitySlots, fillAbilitySlots, rotationOf } from './tick'
+export { abilitiesOf } from './state'
 export { xpToNextLevel, applyXp, MAX_LEVELUPS_PER_CALL } from './formulas'
 export type { XpResult } from './formulas'
 export { rollRarity, rollLoot, rollSlot, sellItem, sellPrice, INVENTORY_SIZE } from './loot'

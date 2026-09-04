@@ -20,3 +20,45 @@ export function abilityReasonText(
   if (reason === 'locked') return `Откроется на ${unlockLevel} уровне`
   return reason === 'no-mana' ? `Не хватает ${resource.genitive}` : fixed[reason]
 }
+
+/**
+ * РОЛЬ УМЕНИЯ СЛОВАМИ. Игрок выбирает четыре из одиннадцати, и «1.8 урона
+ * оружия» для этого выбора бесполезно: сравнивать надо не числа, а ЗАЧЕМ
+ * умение нужно. Числа книга показывает рядом — они не заменяют роль.
+ *
+ * Текст для игрока, поэтому здесь, а не в данных. Полнота проверяется
+ * тестом: новое умение без роли — это кнопка без объяснения.
+ */
+export const ABILITY_ROLE: Record<string, string> = {
+  'quick-strike': 'Дешёвый заполнитель: бьёт часто и почти ничего не стоит.',
+  'rending-wound': 'Кровотечение: бьёт сразу и добавляет урон следом.',
+  'mend-wounds': 'Лечение: возвращает долю запаса и спасает цикл от привала.',
+  'shattering-blow': 'Козырь урона: дорогой и редкий удар, зато самый крупный.',
+  // --- Изувер ---
+  'gut-rip': 'Дешёвый заполнитель: бьёт часто и почти ничего не стоит.',
+  'blood-frenzy': 'Кровотечение: бьёт сразу и добавляет урон следом.',
+  'skull-splitter': 'Козырь урона: дорогой и редкий удар, зато самый крупный.',
+}
+
+/**
+ * СОСТОЯНИЕ СВЯЗКИ ДЛЯ ЭТОГО РЯДА. Чистая функция: и книга, и подсказка
+ * кнопки обязаны отвечать на вопрос «связка работает?» одинаково.
+ *   'none'    — умение самостоятельное;
+ *   'ready'   — нужное умение стоит в ряду прямо сейчас;
+ *   'missing' — не стоит, и умение работать не будет.
+ */
+export type ComboState = 'none' | 'ready' | 'missing'
+
+export function comboState(
+  ability: { combo?: { needsAbilityId: string } },
+  slots: readonly (string | null)[],
+): ComboState {
+  if (!ability.combo) return 'none'
+  return slots.includes(ability.combo.needsAbilityId) ? 'ready' : 'missing'
+}
+
+/** Что написать про связку. Имя нужного умения подставляет вызывающий. */
+export function comboText(state: ComboState, needsName: string): string {
+  if (state === 'ready') return `Работает в паре: «${needsName}» в ряду.`
+  return `Без «${needsName}» в ряду не работает.`
+}

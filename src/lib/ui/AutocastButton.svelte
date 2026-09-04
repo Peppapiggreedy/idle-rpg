@@ -20,6 +20,7 @@
   import { openMenu, toggleMenu } from '../stores/ui'
   import { Tooltip } from './kit'
   import { Icon } from './icons'
+  import { MENU_LOOK } from './menuText'
 
   const ordered = $derived(abilitiesByPriority(rotationOf($gameState), false))
   const autocastOn = $derived(
@@ -30,8 +31,8 @@
 
 <Tooltip
   text={autocastOn
-    ? 'Автокаст включён: игра жмёт умения сама. Нажми — откроются настройки: что жать, в каком порядке и сколько ресурса беречь.'
-    : 'Автокаст выключен: умения жмёшь ты. Нажми — откроются настройки ротации.'}
+    ? 'Автокаст включён: игра жмёт умения сама. Нажми — книга умений и настройки ротации: чем играть, в каком порядке и сколько ресурса беречь.'
+    : 'Автокаст выключен: умения жмёшь ты. Нажми — книга умений и настройки ротации.'}
   width="wide"
 >
   <button
@@ -40,11 +41,11 @@
     class:on={autocastOn}
     class:open
     aria-pressed={open}
-    aria-label="Автокаст"
+    aria-label={MENU_LOOK.autocast.title}
     onclick={() => toggleMenu('autocast')}
   >
     <Icon name={autocastOn ? 'autocast-on' : 'autocast-off'} size="lg" />
-    <span class="caption">Автокаст</span>
+    <span class="caption">{MENU_LOOK.autocast.title}</span>
   </button>
 </Tooltip>
 

@@ -34,6 +34,18 @@ export interface AbilityHeal {
   autocastBelowHpShare: number
 }
 
+/**
+ * СВЯЗКА: умение работает только вместе с другим.
+ *
+ * Данными, а не веткой по id: «Разрыв» съедает кровотечение «Рваной раны», и
+ * без неё в четвёрке он бесполезен. Интерфейс ОБЯЗАН сказать это прямо — иначе
+ * игрок выясняет связку опытом, а четвёрка из одиннадцати выбирается вслепую.
+ */
+export interface AbilityCombo {
+  /** Без какого умения в ряду это не работает. */
+  needsAbilityId: string
+}
+
 export interface AbilityDef {
   id: string
   name: string
@@ -51,6 +63,8 @@ export interface AbilityDef {
   effect?: AbilityEffect
   /** Лечащее умение: см. AbilityHeal. Только у мгновенных. */
   heal?: AbilityHeal
+  /** Связка с другим умением: см. AbilityCombo. Нет поля — умение самостоятельно. */
+  combo?: AbilityCombo
 }
 
 export const ABILITIES: AbilityDef[] = [
