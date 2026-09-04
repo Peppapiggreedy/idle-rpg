@@ -26,7 +26,7 @@
   import { ABILITY_BY_ID } from '../data/abilities'
   import { ABILITY_SLOTS, GCD_MS } from '../data/balance'
   import { activateAbility, drinkPotion, gameState, swapAbilitySlots } from '../stores/game'
-  import { abilityReasonText } from './abilityText'
+  import { abilityLines, abilityReasonText } from './abilityText'
   import { potionEffectText, potionReasonText } from './potionText'
   import { resourceWords } from './resource'
   import { Tooltip } from './kit'
@@ -93,23 +93,21 @@
     return parts.join('\n')
   }
 
+  // ОПИСАНИЕ БЕРЁТСЯ У ОБЩЕЙ СБОРКИ, а не пишется здесь. Раньше эта функция
+  // была одной из ТРЁХ независимых, и все три знали только четыре поля из
+  // шестнадцати: семь флагов умения игрок не видел нигде.
   function abilityTooltip(ability: AbilityDef, index: number): string {
     const status = statuses[index]!
     const parts = [
       `${ability.name} (${hotkey(index)})`,
-      `${formatNumber(ability.manaCost)} ${resource.genitive} · кулдаун ${ability.cooldownSec}с`,
-      ability.heal
-        ? `Лечит: ${Math.round(ability.heal.maxHpShare.toNumber() * 100)}% запаса ≈ ${formatNumber($gameState.stats.maxHp.times(ability.heal.maxHpShare))} здоровья. Автокаст жмёт при здоровье ниже ${Math.round(ability.heal.autocastBelowHpShare * 100)}%.`
-        : `Урон: ${Math.round(ability.weaponDamagePercent.toNumber() * 100)}% удара оружия ≈ ${formatNumber(expectedAbilityDamage($gameState.stats, ability.weaponDamagePercent))}`,
-      ability.type === 'onNextSwing'
-        ? `Заменяет следующую автоатаку; ${resource.genitive} спишется в момент удара. Нажми ещё раз — снимется.`
-        : 'Бьёт сразу, тратит общую задержку. Замах автоатаки не сбивает.',
+      ...abilityLines(ability, {
+        resource,
+        stats: $gameState.stats,
+        comboName: ability.combo
+          ? (ABILITY_BY_ID[ability.combo.needsAbilityId]?.name ?? '?')
+          : undefined,
+      }),
     ]
-    if (ability.effect) {
-      parts.push(
-        `Затем ${ability.effect.ticks} раз по ${Math.round(ability.effect.weaponDamagePercent.toNumber() * 100)}% каждые ${ability.effect.tickIntervalSec}с`,
-      )
-    }
     if (status.queued) parts.push('В очереди на следующий замах — нажми, чтобы снять')
     else if (status.reason) {
       parts.push(abilityReasonText(status.reason, resource, ability.unlockLevel))

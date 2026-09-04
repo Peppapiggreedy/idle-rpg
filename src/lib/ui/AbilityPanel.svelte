@@ -2,13 +2,8 @@
   // Настройки умений: что автокаст жмёт сам и в каком порядке.
   // Сами КНОПКИ умений живут в ActionBar рядом со сценой — они нужны в бою,
   // а бой идёт в любом разделе. Здесь только то, что настраивают редко.
-  import {
-    abilitiesByPriority,
-    rotationOf,
-    abilityStatus,
-    expectedAbilityDamage,
-    formatNumber,
-  } from '../game'
+  import { abilitiesByPriority, rotationOf, abilityStatus, formatNumber } from '../game'
+  import { ABILITY_BY_ID, type AbilityDef } from '../data/abilities'
   import { AUTOCAST_DELAY_MS, REGEN_DELAY_S, RESERVE_PRESETS } from '../data/balance'
   import {
     gameState,
@@ -17,13 +12,23 @@
     setAbilityReserve,
     setHoldManaForHeal,
   } from '../stores/game'
-  import { abilityReasonText } from './abilityText'
+  import { abilityLines, abilityReasonText } from './abilityText'
   import { resourceWords } from './resource'
   import { Button, NumberText, Panel, Tag } from './kit'
   import AbilityBook from './AbilityBook.svelte'
 
   // Ресурс называется так, как у класса: у изувера умения стоят ярость.
   const resource = $derived(resourceWords($gameState.classId))
+
+  // Одна сборка на всю игру: та же, что в книге и в подсказке кнопки.
+  const describe = (ability: AbilityDef) =>
+    abilityLines(ability, {
+      resource,
+      stats: $gameState.stats,
+      comboName: ability.combo
+        ? (ABILITY_BY_ID[ability.combo.needsAbilityId]?.name ?? '?')
+        : undefined,
+    })
 
   // Порядок в списке = порядок приоритета: сверху то, что автокаст жмёт первым.
   const ordered = $derived(abilitiesByPriority(rotationOf($gameState), false))
@@ -87,29 +92,9 @@
             </Button>
           </span>
         </div>
-        <p class="effect">
-          {#if ability.heal}
-            Лечит {Math.round(ability.heal.maxHpShare.toNumber() * 100)}% запаса ≈
-            <NumberText value={$gameState.stats.maxHp.times(ability.heal.maxHpShare)} />
-            · автокаст жмёт при здоровье ниже
-            {Math.round(ability.heal.autocastBelowHpShare * 100)}%, раньше любого урона
-          {:else}
-            {Math.round(ability.weaponDamagePercent.toNumber() * 100)}% удара оружия ≈
-            <NumberText
-              value={expectedAbilityDamage($gameState.stats, ability.weaponDamagePercent)}
-            />
-            {#if ability.effect}
-              · затем {ability.effect.ticks} раз по
-              {Math.round(ability.effect.weaponDamagePercent.toNumber() * 100)}% каждые
-              {ability.effect.tickIntervalSec}с
-            {/if}
-          {/if}
-        </p>
-        <p class="kind">
-          {ability.type === 'onNextSwing'
-            ? `Заменяет следующую автоатаку; ${resource.name.toLowerCase()} спишется в момент удара.`
-            : 'Бьёт сразу, тратит общую задержку. Замах автоатаки не сбивает.'}
-        </p>
+        <!-- ОПИСАНИЕ — ОБЩЕЙ СБОРКОЙ. Здесь была одна из трёх независимых
+             формулировок, и знала она четыре поля из шестнадцати. -->
+        <p class="effect">{describe(ability).join(' · ')}</p>
         <label class="auto">
           <input
             type="checkbox"
@@ -237,15 +222,11 @@
     margin-left: auto;
   }
   .effect,
-  .kind,
   .reason,
   .hint {
     margin: 0;
     font-size: var(--text-xs);
     color: var(--c-text-muted);
-  }
-  .kind {
-    color: var(--c-text-faint);
   }
   .reason {
     color: var(--c-warning);

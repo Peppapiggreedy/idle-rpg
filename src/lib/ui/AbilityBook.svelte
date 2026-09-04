@@ -15,14 +15,20 @@
   // всегда в бою, и такой запрет был бы запретом навсегда.
   import { ABILITY_BY_ID } from '../data/abilities'
   import type { AbilityDef } from '../game'
-  import { abilitiesOf, expectedAbilityDamage, formatNumber } from '../game'
+  import { abilitiesOf } from '../game'
   import { gameState, setAbilitySlot } from '../stores/game'
-  import { ABILITY_ROLE, comboState, comboText } from './abilityText'
+  import { ABILITY_ROLE, abilityLines, comboState, comboText } from './abilityText'
   import { resourceWords } from './resource'
   import { Icon } from './icons'
   import { Panel, Tag } from './kit'
 
   const resource = $derived(resourceWords($gameState.classId))
+
+  // Та же сборка, что в подсказке кнопки и в настройках автокаста. Связку
+  // книга показывает ОТДЕЛЬНОЙ строкой (она красится и зависит от ряда),
+  // поэтому имя связки сюда не передаётся — иначе строка была бы дважды.
+  const describe = (ability: AbilityDef) =>
+    abilityLines(ability, { resource, stats: $gameState.stats })
   const all = $derived(abilitiesOf($gameState.classId))
   const slots = $derived($gameState.abilitySlots)
   const level = $derived($gameState.level.toNumber())
@@ -107,15 +113,13 @@
           </span>
           <!-- РОЛЬ СЛОВАМИ — первое, что читается. -->
           <span class="role">{ABILITY_ROLE[ability.id] ?? ''}</span>
-          <span class="numbers">
-            {formatNumber(ability.manaCost)}
-            {resource.genitive} · откат {ability.cooldownSec}с ·
-            {#if ability.heal}
-              лечит {Math.round(ability.heal.maxHpShare.toNumber() * 100)}% запаса
-            {:else}
-              ≈ {formatNumber(expectedAbilityDamage($gameState.stats, ability.weaponDamagePercent))}
-            {/if}
-          </span>
+          <!-- ЧИСЛА — ОБЩЕЙ СБОРКОЙ, а не своей формулировкой. Здесь стояло
+               четыре поля из шестнадцати, и выбирать четвёрку из одиннадцати
+               приходилось вслепую: порога добивания, длительности клейма и
+               запаса щита игрок не видел нигде. -->
+          {#each describe(ability) as line (line)}
+            <span class="numbers">{line}</span>
+          {/each}
           <!-- СВЯЗКА НАЗВАНА ПРЯМО. Без этой строки игрок выясняет её опытом. -->
           {#if combo !== 'none'}
             <span class="combo" class:ready={combo === 'ready'} data-combo={combo}>
