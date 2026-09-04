@@ -124,6 +124,10 @@ export const CLASSES: ClassDef[] = [
       'shield-shove',
       'rupture',
       'bulwark',
+      'mercy',
+      'brand',
+      'focus',
+      'stance',
     ],
     branchIds: ['warden-wrath', 'warden-bulwark', 'warden-vigil'],
     // ОДНА БЕЛАЯ ВЕЩЬ И БОЛЬШЕ НИЧЕГО — см. комментарий у изувера ниже.

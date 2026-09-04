@@ -81,6 +81,58 @@ export interface AbilityAbsorb {
   durationSec: number
 }
 
+/**
+ * ДОБИВАНИЕ: умение доступно только когда цель ниже порога здоровья. Дёшево,
+ * множитель большой — в бою на 8–15 секунд срабатывает один раз и укорачивает
+ * ХВОСТ боя, то есть бьёт прямо по темпу.
+ */
+export interface AbilityExecute {
+  /** Доступно, пока здоровье цели ниже этой доли запаса, 0..1. */
+  belowHpShare: number
+}
+
+/**
+ * КЛЕЙМО: цель получает больше урона какое-то время. Против рядового моба,
+ * живущего 8–15 секунд, окупается едва; против босса — сильно. Это первое
+ * умение, из-за которого четвёрку осмысленно менять ПЕРЕД боссом.
+ */
+export interface AbilityBrand {
+  /** На какую долю больше урона получает цель, 0..1 и выше. */
+  damageShare: number
+  durationSec: number
+  /**
+   * АВТОКАСТ НЕ КЛЕЙМИТ УМИРАЮЩЕГО. Порог здоровья цели, выше которого
+   * автокаст вообще берётся за клеймо: на мобе, который и так вот-вот умрёт,
+   * оно не окупается, а ресурс тратит — и делал бы это систематически.
+   * Руками игрок волен ставить его когда угодно.
+   */
+  autocastAboveHpShare: number
+}
+
+/**
+ * СОСРЕДОТОЧЕНИЕ: следующие несколько умений ничего не стоят. Ценность
+ * целиком зависит от того, насколько дорога остальная четвёрка: с дешёвой —
+ * почти ноль, с дорогой — много. Экономика ресурса как козырь.
+ */
+export interface AbilityFreeCasts {
+  /** Сколько ближайших применений бесплатны. */
+  casts: number
+}
+
+/**
+ * СТОЙКА: длинный собственный эффект — урон ниже, смягчение выше. Занимает
+ * слот постоянно и обменивает одну ось на другую прямо, без обиняков.
+ * Длительность примерно равна откату: автокаст просто поддерживает её, и
+ * новых механизмов для этого не нужно.
+ */
+export interface AbilityStance {
+  /** На какую долю ниже свой урон, 0..1. */
+  damageShare: number
+  /** На какую долю выше смягчение входящего, 0..1. */
+  mitigationShare: number
+  durationSec: number
+}
+
 export interface AbilityDef {
   id: string
   name: string
@@ -106,6 +158,14 @@ export interface AbilityDef {
   detonate?: AbilityDetonate
   /** Поглощает урон героя: см. AbilityAbsorb. */
   absorb?: AbilityAbsorb
+  /** Добивание: см. AbilityExecute. */
+  execute?: AbilityExecute
+  /** Клеймо на цель: см. AbilityBrand. */
+  brand?: AbilityBrand
+  /** Бесплатные применения: см. AbilityFreeCasts. */
+  freeCasts?: AbilityFreeCasts
+  /** Стойка: см. AbilityStance. */
+  stance?: AbilityStance
 }
 
 export const ABILITIES: AbilityDef[] = [
@@ -222,6 +282,65 @@ export const ABILITIES: AbilityDef[] = [
     weaponDamagePercent: new Decimal(0),
     triggersGcd: true,
     absorb: { armorShare: 0.5, blockShare: 4, durationSec: 8 },
+  },
+  {
+    // МИЛОСТЬ. Доступна только на добивании: в бою на 8–15 секунд срабатывает
+    // один раз и укорачивает хвост. Дёшево и с большим множителем — это не
+    // прибавка к урону, а срезанный конец боя.
+    id: 'mercy',
+    icon: 'ability-mercy',
+    name: 'Милость',
+    type: 'instant',
+    unlockLevel: 14,
+    manaCost: new Decimal(10),
+    cooldownSec: 6,
+    weaponDamagePercent: new Decimal(4.0),
+    triggersGcd: true,
+    execute: { belowHpShare: 0.25 },
+  },
+  {
+    // КЛЕЙМО. Двадцать секунд повышенного урона: рядовому мобу оно едва
+    // окупается, боссу — сильно. Ради него четвёрку и меняют перед данжем.
+    id: 'brand',
+    icon: 'ability-brand',
+    name: 'Клеймо',
+    type: 'onNextSwing',
+    unlockLevel: 16,
+    manaCost: new Decimal(22),
+    cooldownSec: 20,
+    weaponDamagePercent: new Decimal(1.0),
+    triggersGcd: false,
+    brand: { damageShare: 0.25, durationSec: 20, autocastAboveHpShare: 0.5 },
+  },
+  {
+    // СОСРЕДОТОЧЕНИЕ. Само по себе не бьёт почти ничего: его ценность — цена
+    // ТРЁХ следующих умений, то есть чужая. С дешёвой четвёркой это пустышка,
+    // с дорогой — козырь.
+    id: 'focus',
+    icon: 'ability-focus',
+    name: 'Сосредоточение',
+    type: 'instant',
+    unlockLevel: 18,
+    manaCost: new Decimal(0),
+    cooldownSec: 45,
+    weaponDamagePercent: new Decimal(0.5),
+    triggersGcd: true,
+    freeCasts: { casts: 3 },
+  },
+  {
+    // ГЛУХАЯ СТОЙКА. Прямой обмен одной оси на другую, и он должен быть
+    // ЗАМЕТНЫМ: половина смягчения за четверть урона. Длительность равна
+    // откату — автокаст поддерживает её без единого нового правила.
+    id: 'stance',
+    icon: 'ability-stance',
+    name: 'Глухая стойка',
+    type: 'instant',
+    unlockLevel: 20,
+    manaCost: new Decimal(15),
+    cooldownSec: 30,
+    weaponDamagePercent: new Decimal(0.6),
+    triggersGcd: true,
+    stance: { damageShare: 0.25, mitigationShare: 0.2, durationSec: 30 },
   },
 
   // --- Умения Изувера ---

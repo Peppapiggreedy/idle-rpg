@@ -7,7 +7,14 @@ import { describe, expect, it } from 'vitest'
 import { Decimal } from './numbers'
 import { createInitialState, tick } from './tick'
 import { ensureStats } from './stats'
-import { abilityStatus, absorbPool, pendingEffectDamage, useAbility } from './abilities'
+import {
+  abilityStatus,
+  absorbPool,
+  autocastCandidates,
+  outgoingMultiplier,
+  pendingEffectDamage,
+  useAbility,
+} from './abilities'
 import { createRng } from './rng'
 import { ABILITY_BY_ID } from '../data/abilities'
 import { DEFAULT_CLASS } from '../data/classes'
@@ -173,5 +180,135 @@ describe('ТОЛЧОК ЩИТОМ ослабляет следующий удар
       soft = tick(soft, 200, createRng(33), () => {})
     }
     expect(soft.currentHp.gt(bare.currentHp)).toBe(true)
+  })
+})
+
+// --- ПОЗДНИЕ ЧЕТЫРЕ: ситуации вместо прибавок --------------------------------
+
+const MERCY = 'mercy'
+const BRAND = 'brand'
+const FOCUS = 'focus'
+const STANCE = 'stance'
+
+/** Здоровье моба долей запаса — без этого ни добивание, ни клеймо не проверить. */
+function atHpShare(state: GameState, share: number): GameState {
+  return { ...state, monster: { ...state.monster, currentHp: state.monster.maxHp.times(share) } }
+}
+
+describe('МИЛОСТЬ доступна только на добивании', () => {
+  const mercy = ABILITY_BY_ID[MERCY]
+  const threshold = mercy.execute!.belowHpShare
+
+  it('выше порога — отказ с НАЗВАННОЙ причиной', () => {
+    const s = atHpShare(withDummy(hero()), threshold + 0.2)
+    const status = abilityStatus(s, mercy)
+    expect(status.usable).toBe(false)
+    expect(status.reason).toBe('target-healthy')
+  })
+
+  it('ниже порога — доступна', () => {
+    const s = atHpShare(withDummy(hero()), threshold / 2)
+    expect(abilityStatus(s, mercy).usable).toBe(true)
+  })
+
+  it('автокаст просто пропускает её, пока цель цела', () => {
+    const healthy = atHpShare(withDummy(hero()), 0.9)
+    expect(autocastCandidates(healthy).map((a) => a.id)).not.toContain(MERCY)
+    const dying = atHpShare(withDummy(hero()), threshold / 2)
+    // Умение должно стоять в ряду, иначе автокаст его не увидит по построению.
+    const inBar: GameState = { ...dying, abilitySlots: [MERCY, null, null, null] }
+    expect(autocastCandidates(inBar).map((a) => a.id)).toContain(MERCY)
+  })
+})
+
+describe('КЛЕЙМО поднимает получаемый урон и не вешается на умирающего', () => {
+  const brand = ABILITY_BY_ID[BRAND]
+
+  it('метка живёт заданное время и множит урон героя', () => {
+    const plain = withDummy(hero())
+    const marked: GameState = {
+      ...plain,
+      monsterBrand: { damageShare: brand.brand!.damageShare, msLeft: 20_000 },
+    }
+    expect(outgoingMultiplier(marked).gt(outgoingMultiplier(plain))).toBe(true)
+    expect(outgoingMultiplier(marked).eq(1 + brand.brand!.damageShare)).toBe(true)
+  })
+
+  it('автокаст не клеймит цель ниже порога окупаемости', () => {
+    const bar: (string | null)[] = [BRAND, null, null, null]
+    const dying: GameState = {
+      ...atHpShare(withDummy(hero()), brand.brand!.autocastAboveHpShare / 2),
+      abilitySlots: bar,
+    }
+    expect(autocastCandidates(dying).map((a) => a.id)).not.toContain(BRAND)
+    const fresh: GameState = { ...atHpShare(withDummy(hero()), 0.95), abilitySlots: bar }
+    expect(autocastCandidates(fresh).map((a) => a.id)).toContain(BRAND)
+  })
+
+  it('РУКАМИ клеймо ставится когда угодно: правило только для автокаста', () => {
+    const dying = atHpShare(withDummy(hero()), 0.05)
+    expect(abilityStatus(dying, brand).usable).toBe(true)
+  })
+})
+
+describe('СОСРЕДОТОЧЕНИЕ делает бесплатными ровно три применения', () => {
+  const focus = ABILITY_BY_ID[FOCUS]
+
+  it('после применения счётчик равен числу из данных', () => {
+    const s = useAbility(withDummy(hero()), FOCUS, createRng(1), () => {})
+    expect(s.freeCastsLeft).toBe(focus.freeCasts!.casts)
+  })
+
+  it('три следующих платных умения не стоят ресурса, четвёртое стоит', () => {
+    let s = useAbility(withDummy(hero()), FOCUS, createRng(1), () => {})
+    const mana = s.currentMana
+    // Жмём одно и то же дешёвое умение, снимая откат руками: проверяется
+    // счётчик применений, а не таймеры.
+    for (let i = 0; i < 3; i += 1) {
+      s = useAbility({ ...s, abilityCooldownsMs: {}, abilityCharges: {}, gcdMsLeft: 0 }, 'quick-strike', createRng(2), () => {})
+    }
+    expect(s.currentMana.eq(mana)).toBe(true)
+    expect(s.freeCastsLeft).toBe(0)
+    const after = useAbility(
+      { ...s, abilityCooldownsMs: {}, abilityCharges: {}, gcdMsLeft: 0 },
+      'quick-strike',
+      createRng(2),
+      () => {},
+    )
+    expect(after.currentMana.lt(mana)).toBe(true)
+  })
+})
+
+describe('ГЛУХАЯ СТОЙКА меняет одну ось на другую', () => {
+  const stance = ABILITY_BY_ID[STANCE]
+
+  it('свой урон падает ровно на долю из данных', () => {
+    const s = useAbility(withDummy(hero()), STANCE, createRng(1), () => {})
+    expect(s.stance).not.toBeNull()
+    expect(outgoingMultiplier(s).eq(1 - stance.stance!.damageShare)).toBe(true)
+  })
+
+  it('входящий урон смягчается: полоска проседает меньше', () => {
+    const base = withDummy(hero())
+    const guarded: GameState = {
+      ...base,
+      stance: { damageShare: 0.25, mitigationShare: 0.5, msLeft: 60_000 },
+    }
+    let bare = base
+    let held = guarded
+    for (let i = 0; i < 40; i += 1) {
+      bare = tick(bare, 200, createRng(44), () => {})
+      held = tick(held, 200, createRng(44), () => {})
+    }
+    expect(held.currentHp.gt(bare.currentHp)).toBe(true)
+  })
+
+  it('стойка сходит по истечении срока', () => {
+    const s = useAbility(withDummy(hero()), STANCE, createRng(1), () => {})
+    let later = s
+    for (let i = 0; i < 200 && later.stance !== null; i += 1) {
+      later = tick(later, 1000, createRng(5), () => {})
+    }
+    expect(later.stance).toBeNull()
   })
 })

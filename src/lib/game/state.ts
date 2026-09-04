@@ -110,6 +110,21 @@ export interface GameState {
    */
   monsterWeaken: MonsterWeaken | null
   /**
+   * КЛЕЙМО НА ТЕКУЩЕМ МОБЕ: на какую долю он получает больше урона и сколько
+   * миллисекунд осталось. Живёт на конкретном мобе, как и остальные метки.
+   */
+  monsterBrand: MonsterBrand | null
+  /**
+   * СТОЙКА ГЕРОЯ: длинный собственный эффект — свой урон ниже, смягчение
+   * входящего выше. Прямой обмен одной оси на другую.
+   */
+  stance: HeroStance | null
+  /**
+   * БЕСПЛАТНЫЕ ПРИМЕНЕНИЯ: сколько ближайших умений не стоят ресурса.
+   * Обычный счётчик, а не Decimal: это штуки, и их единицы.
+   */
+  freeCastsLeft: number
+  /**
    * ЩИТ ГЕРОЯ: сколько урона он ещё поглотит и сколько миллисекунд держится.
    * Величина посчитана в момент применения от брони и силы блока — потом
    * снаряжение может смениться, а щит уже висит.
@@ -231,6 +246,19 @@ export interface MonsterWeaken {
 /** Щит героя: см. поле `absorb`. */
 export interface HeroAbsorb {
   left: Decimal
+  msLeft: number
+}
+
+/** Клеймо на мобе: см. поле `monsterBrand`. */
+export interface MonsterBrand {
+  damageShare: number
+  msLeft: number
+}
+
+/** Стойка героя: см. поле `stance`. */
+export interface HeroStance {
+  damageShare: number
+  mitigationShare: number
   msLeft: number
 }
 
@@ -503,6 +531,9 @@ export function createInitialState(
     queuedAbilityId: null,
     activeEffects: [],
     monsterWeaken: null,
+    monsterBrand: null,
+    stance: null,
+    freeCastsLeft: 0,
     absorb: null,
     abilitySlots: defaultAbilitySlots(hero.id),
     abilitySettings: defaultAbilitySettings(hero.id),

@@ -852,6 +852,9 @@ export function stateFromPayload(p: SavePayloadV21): GameState {
     // Боевые метки живут на конкретном мобе и на конкретной секунде боя:
     // после загрузки нет ни того, ни другой.
     monsterWeaken: null,
+    monsterBrand: null,
+    stance: null,
+    freeCastsLeft: 0,
     absorb: null,
     autocastReadyMs: {},
     itemSeq: typeof p.itemSeq === 'number' ? p.itemSeq : 0,

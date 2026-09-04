@@ -33,6 +33,7 @@ import type { ProfessionDef, RecipeDef } from '../recipes'
 import type { RarityDef } from '../rarity'
 import type { SoundCue } from '../sounds'
 import {
+  ABILITY_UNLOCK_GRID,
   SOUND_GAIN_MAX_DB,
   SOUND_MIN_VARIATIONS,
   SOUND_PITCH_MAX_SEMITONES,
@@ -510,6 +511,97 @@ export const ABILITY_SCHEMA: EntitySchema<AbilityDef> = {
         ability.absorb.durationSec > 0,
         where,
         'поглощение без длительности не поглощает ничего (data/abilities.ts)',
+      )
+    }
+    // ДОБИВАНИЕ: порог — доля запаса цели.
+    if (ability.execute) {
+      checkNumber(
+        ability.execute,
+        {
+          field: 'execute.belowHpShare',
+          get: (e) => e.belowHpShare,
+          min: 0,
+          exclusiveMin: true,
+          max: 1,
+          why: 'доля запаса цели, ниже которой добивание доступно',
+        },
+        where,
+        'data/abilities.ts',
+        report,
+      )
+    }
+    // КЛЕЙМО: прибавка, длительность и порог, ниже которого автокаст не берётся.
+    if (ability.brand) {
+      checkNumber(
+        ability.brand,
+        {
+          field: 'brand.damageShare',
+          get: (b) => b.damageShare,
+          min: 0,
+          exclusiveMin: true,
+          why: 'доля, на которую цель получает больше урона',
+        },
+        where,
+        'data/abilities.ts',
+        report,
+      )
+      checkNumber(
+        ability.brand,
+        { field: 'brand.durationSec', get: (b) => b.durationSec, min: 0, exclusiveMin: true },
+        where,
+        'data/abilities.ts',
+        report,
+      )
+      checkNumber(
+        ability.brand,
+        {
+          field: 'brand.autocastAboveHpShare',
+          get: (b) => b.autocastAboveHpShare,
+          min: 0,
+          max: 1,
+          why: 'порог здоровья цели, выше которого автокаст берётся за клеймо',
+        },
+        where,
+        'data/abilities.ts',
+        report,
+      )
+    }
+    // БЕСПЛАТНЫЕ ПРИМЕНЕНИЯ: их целое число, и оно больше нуля.
+    if (ability.freeCasts) {
+      checkNumber(
+        ability.freeCasts,
+        { field: 'freeCasts.casts', get: (f) => f.casts, min: 1, integer: true },
+        where,
+        'data/abilities.ts',
+        report,
+      )
+      report.need(
+        toNumber(ability.manaCost) === 0,
+        where,
+        'умение, дающее бесплатные применения, само обязано быть бесплатным: иначе оно платит за собственную скидку (data/abilities.ts)',
+      )
+    }
+    // СТОЙКА: обе доли и длительность. Обмен обязан быть ОБМЕНОМ — обе доли
+    // положительны, иначе это просто усиление или просто штраф.
+    if (ability.stance) {
+      for (const spec of [
+        { field: 'stance.damageShare', get: (v: typeof ability.stance) => v!.damageShare },
+        { field: 'stance.mitigationShare', get: (v: typeof ability.stance) => v!.mitigationShare },
+      ]) {
+        checkNumber(
+          ability.stance,
+          { field: spec.field, get: spec.get, min: 0, exclusiveMin: true, max: 1 },
+          where,
+          'data/abilities.ts',
+          report,
+        )
+      }
+      checkNumber(
+        ability.stance,
+        { field: 'stance.durationSec', get: (v) => v.durationSec, min: 0, exclusiveMin: true },
+        where,
+        'data/abilities.ts',
+        report,
       )
     }
     // СВЯЗКА ССЫЛАЕТСЯ НА СУЩЕСТВУЮЩЕЕ УМЕНИЕ ТОГО ЖЕ КЛАССА.
@@ -1915,6 +2007,28 @@ export const CLASS_SCHEMA: EntitySchema<ClassDef> = {
       where,
       'ни одного умения первого уровня — на старте у класса пустая панель (data/abilities.ts)',
     )
+    /**
+     * СЕТКА РАЗБЛОКИРОВОК БЕЗ ДЫР — И ТОЛЬКО У ГОТОВЫХ КЛАССОВ.
+     *
+     * Первый уровень плюс каждый чётный до двадцатого, по ОДНОМУ умению на
+     * ступень: `ABILITY_UNLOCK_GRID`. Это обещание игроку — «дальше будет
+     * ещё», — и дыра в нём означает уровень без награды.
+     *
+     * Превью-класс сюда НЕ ВХОДИТ, и это названная причина, а не поблажка:
+     * Изувер ждёт своего набора (см. `docs/BERSERKER-CATCHUP.md`), его три
+     * умения стоят на 1/4/8, и требовать от него полную сетку значило бы
+     * требовать наполнения, которого задача ему намеренно не даёт.
+     */
+    if (hero.status === 'ready') {
+      const levels = ownAbilities.map((a) => toNumber(a.unlockLevel)).sort((a, b) => a - b)
+      report.need(
+        levels.join(',') === ABILITY_UNLOCK_GRID.join(','),
+        where,
+        `сетка разблокировок ${levels.join('/')} не совпадает с ` +
+          `${ABILITY_UNLOCK_GRID.join('/')}: у готового класса на каждой ступени ` +
+          'ровно одно умение, и выше двадцатого не заперто ничего (data/abilities.ts)',
+      )
+    }
     // Ветки: без них дерево талантов у класса пустое.
     report.need(
       Array.isArray(hero.branchIds) && hero.branchIds.length > 0,

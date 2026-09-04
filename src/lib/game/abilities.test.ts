@@ -92,7 +92,10 @@ describe('данные умений', () => {
     const ids = CLASSES.flatMap((c) => c.abilityIds)
     expect(new Set(ids).size).toBe(ids.length)
     for (const a of ABILITIES) {
-      expect(a.manaCost.gt(0)).toBe(true)
+      // ЦЕНА ПОЛОЖИТЕЛЬНА У ВСЕХ, КРОМЕ ТОГО, КТО РАЗДАЁТ БЕСПЛАТНЫЕ
+      // ПРИМЕНЕНИЯ: «Сосредоточение» само стоит ноль, иначе оно платило бы
+      // за собственную скидку. Это требование схемы, а не случайность.
+      expect(a.manaCost.gt(0), a.id).toBe(!a.freeCasts)
       expect(a.cooldownSec).toBeGreaterThan(0)
       // ПОДДЕРЖКА БЬЁТ НУЛЁМ, БОЕВОЕ УМЕНИЕ — положительной долей удара.
       // Поддержки ровно две: лечение и поглощение; список назван поимённо,

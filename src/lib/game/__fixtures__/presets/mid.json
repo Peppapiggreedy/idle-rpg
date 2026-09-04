@@ -321,6 +321,22 @@
     "bulwark": {
       "autocast": true,
       "reserve": 0
+    },
+    "mercy": {
+      "autocast": true,
+      "reserve": 0
+    },
+    "brand": {
+      "autocast": true,
+      "reserve": 0
+    },
+    "focus": {
+      "autocast": true,
+      "reserve": 0
+    },
+    "stance": {
+      "autocast": true,
+      "reserve": 0
     }
   },
   "itemSeq": 14,

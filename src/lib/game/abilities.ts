@@ -23,6 +23,7 @@ export type AbilityBlockReason =
   | 'gcd'
   | 'no-mana'
   | 'no-combo'
+  | 'target-healthy'
 
 export interface AbilityStatus {
   abilityId: string
@@ -99,6 +100,10 @@ export function abilityStatus(state: GameState, ability: AbilityDef): AbilitySta
   // умение встало бы в очередь на замах и списало ресурс впустую — ровно то,
   // что автокаст делал бы систематически.
   if (ability.detonate && pendingEffectDamage(state).lte(0)) return blocked('no-combo')
+  // ДОБИВАНИЕ ЖДЁТ СВОЕГО МОМЕНТА. Порог — из данных умения; автокаст его
+  // просто пропускает, пока цель выше порога, и это не особое правило
+  // автокаста, а тот же отказ, что видит игрок.
+  if (ability.execute && !targetLowEnough(state, ability)) return blocked('target-healthy')
   return { ...base, usable: true, reason: null }
 }
 
@@ -123,6 +128,27 @@ export function resetsRegenDelay(ability: AbilityDef): boolean {
  * потратил — откат пошёл.
  */
 function payFor(state: GameState, ability: AbilityDef): GameState {
+  // БЕСПЛАТНОЕ ПРИМЕНЕНИЕ. Тратится только на то, что вообще стоит ресурса:
+  // на нулевой цене заряд сгорал бы впустую. Пауза регенерации при этом не
+  // взводится — трата не состоялась.
+  if (state.freeCastsLeft > 0 && ability.manaCost.gt(0)) {
+    const running = cooldownLeft(state, ability) > 0
+    return punishResourceSpend(
+      {
+        ...state,
+        freeCastsLeft: state.freeCastsLeft - 1,
+        abilityCharges: {
+          ...state.abilityCharges,
+          [ability.id]: Math.max(0, chargesLeft(state, ability) - 1),
+        },
+        abilityCooldownsMs: running
+          ? state.abilityCooldownsMs
+          : { ...state.abilityCooldownsMs, [ability.id]: ability.cooldownSec * 1000 },
+        gcdMsLeft: ability.triggersGcd ? GCD_MS : state.gcdMsLeft,
+      },
+      new Decimal(0),
+    )
+  }
   const spends = resetsRegenDelay(ability)
   const running = cooldownLeft(state, ability) > 0
   const left = Math.max(0, chargesLeft(state, ability) - 1)
@@ -158,6 +184,22 @@ export function autocastHeal(state: GameState): AbilityDef | null {
     return ability
   }
   return null
+}
+
+/** Стоит ли автокасту клеймить эту цель: она ещё достаточно цела. */
+export function brandWorthIt(state: GameState, ability: AbilityDef): boolean {
+  if (!ability.brand) return true
+  if (state.monster.maxHp.lte(0)) return false
+  return state.monster.currentHp
+    .div(state.monster.maxHp)
+    .gte(ability.brand.autocastAboveHpShare)
+}
+
+/** Цель достаточно слаба для добивания: доля здоровья ниже порога из данных. */
+export function targetLowEnough(state: GameState, ability: AbilityDef): boolean {
+  if (!ability.execute) return true
+  if (state.monster.maxHp.lte(0)) return false
+  return state.monster.currentHp.div(state.monster.maxHp).lt(ability.execute.belowHpShare)
 }
 
 /** Пора ли лечиться: здоровье ниже порога автокаста из данных умения. */
@@ -239,7 +281,9 @@ export function strikeWithAbility(
   rng: Rng,
   emitAttack: (event: AttackEvent) => void,
 ): GameState {
-  const { amount, isCrit } = rollSwing(state.stats, rng, ability.weaponDamagePercent)
+  const roll = rollSwing(state.stats, rng, ability.weaponDamagePercent)
+  const isCrit = roll.isCrit
+  const amount = roll.amount.times(outgoingMultiplier(state))
   const monster = {
     ...state.monster,
     currentHp: Decimal.max(state.monster.currentHp.minus(amount), new Decimal(0)),
@@ -280,7 +324,54 @@ export function strikeWithAbility(
       monsterWeaken: { damageShare: ability.weaken.damageShare, hitsLeft: ability.weaken.hits },
     }
   }
-  return after
+  // КЛЕЙМО. Повторное наложение обновляет метку, а не копит вторую.
+  if (ability.brand) {
+    after = {
+      ...after,
+      monsterBrand: {
+        damageShare: ability.brand.damageShare,
+        msLeft: ability.brand.durationSec * 1000,
+      },
+    }
+  }
+  return applySelfFlags(after, ability)
+}
+
+/**
+ * Собственные метки героя: стойка и бесплатные применения. Общая точка для
+ * бьющих умений и для поддержки — иначе флаг работал бы у одних и молчал у
+ * других в зависимости от того, бьёт умение или нет.
+ */
+function applySelfFlags(state: GameState, ability: AbilityDef): GameState {
+  let next = state
+  if (ability.stance) {
+    next = {
+      ...next,
+      stance: {
+        damageShare: ability.stance.damageShare,
+        mitigationShare: ability.stance.mitigationShare,
+        msLeft: ability.stance.durationSec * 1000,
+      },
+    }
+  }
+  // БЕСПЛАТНЫЕ ПРИМЕНЕНИЯ ставятся ПОСЛЕ оплаты самого умения: иначе
+  // «Сосредоточение» съело бы одно из трёх на себя.
+  if (ability.freeCasts) next = { ...next, freeCastsLeft: ability.freeCasts.casts }
+  return next
+}
+
+/**
+ * МНОЖИТЕЛЬ ИСХОДЯЩЕГО УРОНА ГЕРОЯ. Две метки и обе временные: клеймо на
+ * ЦЕЛИ поднимает получаемый ею урон, стойка ГЕРОЯ его срезает. Считается в
+ * одном месте, потому что применяется в четырёх — автоатака, обе руки,
+ * умение и тик эффекта; четыре копии этой строки разъехались бы на первой
+ * же новой метке.
+ */
+export function outgoingMultiplier(state: GameState): Decimal {
+  let mult = new Decimal(1)
+  if (state.monsterBrand) mult = mult.times(1 + state.monsterBrand.damageShare)
+  if (state.stance) mult = mult.times(1 - state.stance.damageShare)
+  return mult
 }
 
 /** Сколько урона осталось во всех эффектах на мобе. */
@@ -299,7 +390,7 @@ function detonate(
 ): GameState {
   const pending = pendingEffectDamage(state)
   if (pending.lte(0)) return state
-  const burst = pending.times(ability.detonate!.multiplier)
+  const burst = pending.times(ability.detonate!.multiplier).times(outgoingMultiplier(state))
   const monster = {
     ...state.monster,
     currentHp: Decimal.max(state.monster.currentHp.minus(burst), new Decimal(0)),
@@ -370,7 +461,7 @@ export function absorbPool(state: GameState, ability: AbilityDef): Decimal {
 
 function absorbWithAbility(state: GameState, ability: AbilityDef): GameState {
   const pool = absorbPool(state, ability)
-  return {
+  return applySelfFlags({
     ...state,
     // Повторное применение ЗАМЕНЯЕТ щит, а не копит второй: иначе умение с
     // коротким откатом складывалось бы само с собой.
@@ -381,7 +472,7 @@ function absorbWithAbility(state: GameState, ability: AbilityDef): GameState {
       damage: new Decimal(0),
       isCrit: false,
     }),
-  }
+  }, ability)
 }
 
 // Почему умение из очереди сорвётся на замахе. Код уходит в лог событием
@@ -425,6 +516,11 @@ export function autocastCandidates(state: GameState): AbilityDef[] {
     if (!passesReserve(state, ability)) return false
     // Лечение автокаст жмёт только когда оно нужно: порог — из данных умения.
     if (ability.heal && !healWanted(state, ability)) return false
+    // КЛЕЙМО НЕ ВЕШАЕТСЯ НА УМИРАЮЩЕГО. Двадцать секунд повышенного урона на
+    // мобе, которому осталось две, не окупаются — а ресурс тратят, и делали
+    // бы это систематически. Порог из данных умения; РУКАМИ игрок волен
+    // ставить клеймо когда угодно, это правило только для автокаста.
+    if (ability.brand && !brandWorthIt(state, ability)) return false
     // Очередь одна: пока в ней кто-то стоит, второе умение туда не ставим,
     // а повторное нажатие на стоящее в очереди её бы просто сняло.
     if (ability.type === 'onNextSwing' && state.queuedAbilityId !== null) return false
@@ -521,12 +617,31 @@ export function advanceCooldowns(state: GameState, dtMs: number): GameState {
   // ЩИТ ТИКАЕТ ТЕМ ЖЕ ИГРОВЫМ ВРЕМЕНЕМ, что откаты: множитель скорости из
   // отладочной панели ускоряет и его. Своего таймера у щита нет — он живёт
   // здесь, рядом с остальными обратными отсчётами умений.
-  const absorb =
-    state.absorb === null
-      ? null
-      : state.absorb.msLeft <= dtMs
-        ? null
-        : { ...state.absorb, msLeft: state.absorb.msLeft - dtMs }
-  if (!changed && gcdMsLeft === state.gcdMsLeft && absorb === state.absorb) return state
-  return { ...state, abilityCooldownsMs, abilityCharges, gcdMsLeft, absorb }
+  const absorb = countdown(state.absorb, dtMs)
+  const monsterBrand = countdown(state.monsterBrand, dtMs)
+  const stance = countdown(state.stance, dtMs)
+  if (
+    !changed &&
+    gcdMsLeft === state.gcdMsLeft &&
+    absorb === state.absorb &&
+    monsterBrand === state.monsterBrand &&
+    stance === state.stance
+  ) {
+    return state
+  }
+  return {
+    ...state,
+    abilityCooldownsMs,
+    abilityCharges,
+    gcdMsLeft,
+    absorb,
+    monsterBrand,
+    stance,
+  }
+}
+
+/** Обратный отсчёт метки с длительностью; вышло время — метки нет. */
+function countdown<T extends { msLeft: number }>(mark: T | null, dtMs: number): T | null {
+  if (mark === null) return null
+  return mark.msLeft <= dtMs ? null : { ...mark, msLeft: mark.msLeft - dtMs }
 }

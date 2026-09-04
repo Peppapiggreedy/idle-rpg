@@ -47,6 +47,7 @@ import {
   advanceCooldowns,
   autocastStep,
   consumeQueuedAbility,
+  outgoingMultiplier,
   queuedAbilityDropReason,
 } from './abilities'
 import { finishRest, needsRest, startRest } from './rest'
@@ -76,6 +77,7 @@ function heroDies(state: GameState, rng: Rng): GameState {
     queuedAbilityId: null,
     activeEffects: [],
     monsterWeaken: null,
+    monsterBrand: null,
     combatLog: pushEvent(state.combatLog, { type: 'death', reviveMs }),
   }
   // СМЕРТЬ В ХРАМЕ ЗАСЧИТЫВАЕТСЯ. Это завершение забега С РЕЗУЛЬТАТОМ, а не
@@ -161,6 +163,7 @@ const applyRevive: TickStep = (s, ctx) => {
     queuedAbilityId: null,
     activeEffects: [],
     monsterWeaken: null,
+    monsterBrand: null,
   }
 }
 
@@ -321,7 +324,11 @@ const applyCombat: TickStep = (s, ctx) => {
     }
     swung = { ...swung, queuedAbilityId: null }
     // Формула удара живёт в combat.ts — здесь только применение результата.
-    const { amount, isCrit } = rollSwing(swung.stats, ctx.rng)
+    const swingRoll = rollSwing(swung.stats, ctx.rng)
+    const isCrit = swingRoll.isCrit
+    // Метки на цели и на герое множат ЛЮБОЙ его урон — считает их одна
+    // функция, а не четыре копии по местам применения.
+    const amount = swingRoll.amount.times(outgoingMultiplier(swung))
     const hpLeft = monster.currentHp.minus(amount)
     monster = { ...monster, currentHp: Decimal.max(hpLeft, new Decimal(0)) }
     combatLog = pushEvent(combatLog, { type: 'hit', damage: amount, isCrit })
@@ -339,7 +346,8 @@ const applyCombat: TickStep = (s, ctx) => {
       i > 0 && ctx.killedMonster === null;
       i -= 1
     ) {
-      const extra = rollSwing(swung.stats, ctx.rng)
+      const roll = rollSwing(swung.stats, ctx.rng)
+      const extra = { ...roll, amount: roll.amount.times(outgoingMultiplier(swung)) }
       const afterExtra = monster.currentHp.minus(extra.amount)
       monster = { ...monster, currentHp: Decimal.max(afterExtra, new Decimal(0)) }
       combatLog = pushEvent(combatLog, {
@@ -601,7 +609,9 @@ const applyOffhandCombat: TickStep = (s, ctx) => {
   let combatLog = s.combatLog
   while (progress >= 1 - SWING_EPS && ctx.killedMonster === null) {
     progress = Math.max(0, progress - 1)
-    const { amount, isCrit } = rollSwing(s.stats, ctx.rng, new Decimal(1), 'off')
+    const offRoll = rollSwing(s.stats, ctx.rng, new Decimal(1), 'off')
+    const isCrit = offRoll.isCrit
+    const amount = offRoll.amount.times(outgoingMultiplier(s))
     const hpLeft = monster.currentHp.minus(amount)
     monster = { ...monster, currentHp: Decimal.max(hpLeft, new Decimal(0)) }
     combatLog = pushEvent(combatLog, { type: 'hit', damage: amount, isCrit })
@@ -619,7 +629,8 @@ const applyOffhandCombat: TickStep = (s, ctx) => {
       i > 0 && ctx.killedMonster === null;
       i -= 1
     ) {
-      const extra = rollSwing(s.stats, ctx.rng, new Decimal(1), 'off')
+      const offExtra = rollSwing(s.stats, ctx.rng, new Decimal(1), 'off')
+      const extra = { ...offExtra, amount: offExtra.amount.times(outgoingMultiplier(s)) }
       const afterExtra = monster.currentHp.minus(extra.amount)
       monster = { ...monster, currentHp: Decimal.max(afterExtra, new Decimal(0)) }
       combatLog = pushEvent(combatLog, {
@@ -686,7 +697,10 @@ const applyMonsterAttack: TickStep = (s, ctx) => {
     // ЩИТ СЪЕДАЕТ ОСТАТОК ПОСЛЕДНИМ, уже после блока и смягчения: он
     // поглощает то, что дошло бы до полоски, и его запас тратится ровно на
     // столько, сколько дошло.
-    let amount = hit
+    // СТОЙКА СМЯГЧАЕТ ВХОДЯЩЕЕ. Стоит ПОСЛЕ блока и ДО щита: блок снимает
+    // фиксированную величину с самого удара, стойка режет долю оставшегося,
+    // а щит съедает то, что дошло бы до полоски.
+    let amount = s.stance ? hit.times(1 - s.stance.mitigationShare) : hit
     if (absorb && absorb.left.gt(0)) {
       const eaten = Decimal.min(absorb.left, amount)
       amount = amount.minus(eaten)
@@ -761,6 +775,7 @@ const applyMonsterAttack: TickStep = (s, ctx) => {
     queuedAbilityId: null,
     activeEffects: [],
     monsterWeaken: null,
+    monsterBrand: null,
     combatLog: pushEvent(next.combatLog, { type: 'death', reviveMs }),
   }
   // Смерть в данже выкидывает наружу: лут за убитых боссов уже в сумке,
@@ -874,6 +889,7 @@ const applyRespawn: TickStep = (s, ctx) => {
     monster,
     activeEffects: [], // эффекты были на прежнем мобе
     monsterWeaken: null,
+    monsterBrand: null,
     combatLog: pushEvent(s.combatLog, { type: 'spawn', monsterName: monster.name }),
   }
 }

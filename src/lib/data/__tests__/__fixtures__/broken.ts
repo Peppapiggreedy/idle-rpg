@@ -487,6 +487,20 @@ export function brokenCases(): BrokenCase[] {
       expect: ['выше потолка'],
     },
     {
+      // Сторож сетки: у готового класса ступени идут без дыр. Убираем одно
+      // умение из середины — и ступень пропадает.
+      title: 'дыра в сетке разблокировок готового класса',
+      content: {
+        ...real,
+        classes: real.classes.map((hero) =>
+          hero.status === 'ready'
+            ? { ...hero, abilityIds: hero.abilityIds.slice(0, -1) }
+            : hero,
+        ),
+      },
+      expect: ['сетка разблокировок', 'data/abilities.ts'],
+    },
+    {
       title: 'класс ссылается на несуществующее умение',
       content: {
         ...real,
