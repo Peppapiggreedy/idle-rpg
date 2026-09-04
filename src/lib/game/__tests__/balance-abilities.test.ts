@@ -14,7 +14,7 @@ import { Decimal } from '../numbers'
 import { buildSimState, referenceBuild } from '../simulate'
 import { estimateCombatRate } from '../combat'
 import { abilitiesOf } from '../state'
-import { ABILITY_SLOTS, POWER_BUDGET } from '../../data/balance'
+import { ABILITY_SLOTS, AUTOCAST_MAX_LOSS, POWER_BUDGET } from '../../data/balance'
 import { DEFAULT_CLASS } from '../../data/classes'
 import { ZONES } from '../../data/zones'
 import { dump } from './dump'
@@ -185,5 +185,51 @@ describe('набор умений: перераспределение, а не �
       dump(`abilities/${DEFAULT_CLASS.id}/mandatory/count`, new Decimal(mandatory.length)).toNumber(),
       'обязательных больше трёх — выбора нет',
     ).toBeLessThan(ABILITY_SLOTS)
+  }, 900_000)
+})
+
+// ЖЕЛЕЗНОЕ ПРАВИЛО НА КАЖДОЙ ДОПУСТИМОЙ ЧЕТВЁРКЕ, а не на той, что стоит по
+// умолчанию. Умение, которое автокаст не умеет применять разумно, — плохое
+// умение в идл-игре, даже если в руках оно сильное; и вылезет это ровно на
+// той четвёрке, которую никто не проверял.
+describe('автокаст и оффлайн держатся на ЛЮБОЙ четвёрке', () => {
+  const LEVEL = 20
+  const allFours = (): Array<{ ids: string[]; state: GameState }> => {
+    const base = buildSimState(
+      referenceBuild(LEVEL, DEFAULT_CLASS.id),
+      zoneFor(LEVEL).id,
+      7,
+    )
+    return combos(abilitiesOf(DEFAULT_CLASS.id), ABILITY_SLOTS).map((combo) => ({
+      ids: combo.map((a) => a.id),
+      state: { ...base, abilitySlots: slotsOf(combo.map((a) => a.id)) },
+    }))
+  }
+
+  it('оффлайн <= автокаст <= ручная игра', () => {
+    let worst = { ids: [] as string[], gap: 0 }
+    for (const four of allFours()) {
+      const auto = estimateCombatRate(four.state, 'auto')
+      const manual = estimateCombatRate(four.state, 'manual')
+      expect(
+        auto.damagePerSecond.lte(manual.damagePerSecond.times(1 + 1e-9)),
+        `авто обгоняет руку на ${four.ids.join('+')}`,
+      ).toBe(true)
+      expect(
+        auto.killsPerSecond.lte(manual.killsPerSecond.times(1 + 1e-9)),
+        `убийств: авто обгоняет руку на ${four.ids.join('+')}`,
+      ).toBe(true)
+      const gap = 1 - auto.damagePerSecond.div(manual.damagePerSecond).toNumber()
+      if (gap > worst.gap) worst = { ids: four.ids, gap }
+    }
+    // eslint-disable-next-line no-console
+    console.log(
+      `худшее отставание авто: ${(worst.gap * 100).toFixed(1)}% на ${worst.ids.join(' + ')}` +
+        ` (потолок ${(AUTOCAST_MAX_LOSS * 100).toFixed(0)}%)`,
+    )
+    expect(
+      dump(`abilities/${DEFAULT_CLASS.id}/autocast/worst-gap`, new Decimal(worst.gap)).toNumber(),
+      `отставание автокаста выше потолка на ${worst.ids.join(' + ')}`,
+    ).toBeLessThanOrEqual(AUTOCAST_MAX_LOSS + 1e-9)
   }, 900_000)
 })
