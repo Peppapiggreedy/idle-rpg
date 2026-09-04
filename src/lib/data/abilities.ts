@@ -235,10 +235,10 @@ export const ABILITIES: AbilityDef[] = [
     type: 'instant',
     unlockLevel: 2,
     manaCost: new Decimal(7),
-    cooldownSec: 6,
-    weaponDamagePercent: new Decimal(0.8),
+    cooldownSec: 8,
+    weaponDamagePercent: new Decimal(0.3),
     triggersGcd: true,
-    weaken: { damageShare: 0.35, hits: 1 },
+    weaken: { damageShare: 0.4, hits: 1 },
   },
   {
     id: 'shattering-blow',
@@ -292,25 +292,32 @@ export const ABILITIES: AbilityDef[] = [
     name: 'Милость',
     type: 'instant',
     unlockLevel: 14,
-    manaCost: new Decimal(10),
-    cooldownSec: 6,
-    weaponDamagePercent: new Decimal(4.0),
+    manaCost: new Decimal(16),
+    cooldownSec: 12,
+    weaponDamagePercent: new Decimal(1.1),
     triggersGcd: true,
     execute: { belowHpShare: 0.25 },
   },
   {
     // КЛЕЙМО. Двадцать секунд повышенного урона: рядовому мобу оно едва
     // окупается, боссу — сильно. Ради него четвёрку и меняют перед данжем.
+    // ТИП СМЕНЁН С onNextSwing НА instant, и это не косметика. Очередь на
+    // замах ОДНА, и в ней уже стоят «Рваная рана» и «Сокрушение»: клеймо
+    // конкурировало с ними за один и тот же замах, а платой за него был не
+    // ресурс, а ЧУЖОЙ удар. При двух заходах усиления (+0.25 → +0.4 → +0.55)
+    // оно так и не вошло ни в одну верхнюю четвёрку — потому что дело было не
+    // в числе. Мгновенным оно платит общей задержкой, как и положено метке:
+    // повесил и бьёшь дальше своим.
     id: 'brand',
     icon: 'ability-brand',
     name: 'Клеймо',
-    type: 'onNextSwing',
+    type: 'instant',
     unlockLevel: 16,
-    manaCost: new Decimal(22),
+    manaCost: new Decimal(18),
     cooldownSec: 20,
     weaponDamagePercent: new Decimal(1.0),
-    triggersGcd: false,
-    brand: { damageShare: 0.25, durationSec: 20, autocastAboveHpShare: 0.5 },
+    triggersGcd: true,
+    brand: { damageShare: 0.55, durationSec: 20, autocastAboveHpShare: 0.5 },
   },
   {
     // СОСРЕДОТОЧЕНИЕ. Само по себе не бьёт почти ничего: его ценность — цена
@@ -340,7 +347,7 @@ export const ABILITIES: AbilityDef[] = [
     cooldownSec: 30,
     weaponDamagePercent: new Decimal(0.6),
     triggersGcd: true,
-    stance: { damageShare: 0.25, mitigationShare: 0.2, durationSec: 30 },
+    stance: { damageShare: 0.3, mitigationShare: 0.15, durationSec: 30 },
   },
 
   // --- Умения Изувера ---

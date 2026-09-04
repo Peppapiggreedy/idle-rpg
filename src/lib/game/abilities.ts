@@ -2,7 +2,7 @@
 // Своей формулы урона здесь НЕТ — умение это доля удара оружия, а удар
 // считает combat.ts. Текста для игрока тоже нет: наружу идут коды причин.
 import { Decimal } from './numbers'
-import { rollSwing } from './combat'
+import { absorbPool, rollSwing } from './combat'
 import { AUTOCAST_DELAY_MS, GCD_MS } from '../data/balance'
 import { ABILITIES, ABILITY_BY_ID, type AbilityDef } from '../data/abilities'
 import { abilitiesByPriority } from './rotation'
@@ -13,6 +13,9 @@ import type { Rng } from './rng'
 import type { AttackEvent, CombatEvent } from '../types'
 
 export { ABILITIES, ABILITY_BY_ID } from '../data/abilities'
+// Запас щита считает combat.ts — он нижний слой и знает про статы; здесь
+// имя переэкспортировано, чтобы вызывающим не приходилось знать, где оно.
+export { absorbPool } from './combat'
 export type { AbilityDef, AbilityEffect, AbilityType } from '../data/abilities'
 
 // Почему кнопка не нажимается. Каждый случай отдельный код — текст рендерит UI.
@@ -446,17 +449,6 @@ export function useAbility(
   // Поглощение — тоже поддержка: платит как все, но вместо удара вешает щит.
   if (ability.absorb) return absorbWithAbility(payFor(state, ability), ability)
   return strikeWithAbility(payFor(state, ability), ability, rng, emitAttack)
-}
-
-/**
- * Запас щита от ЭТОГО применения. Растёт от брони и силы блока — числа обе
- * доли берут из данных умения, своих в логике нет. Считается в момент
- * применения: снаряжение потом сменится, а щит уже висит.
- */
-export function absorbPool(state: GameState, ability: AbilityDef): Decimal {
-  const a = ability.absorb
-  if (!a) return new Decimal(0)
-  return state.stats.armor.times(a.armorShare).plus(state.stats.blockValue.times(a.blockShare))
 }
 
 function absorbWithAbility(state: GameState, ability: AbilityDef): GameState {
