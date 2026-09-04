@@ -3,7 +3,9 @@
   // в 61 очко. Весь текст для игрока — здесь; логика отдаёт только ранги,
   // коды причин и структурированные эффекты.
   import {
+    Decimal,
     availablePoints,
+    formatNumber,
     heroBranches,
     resetStatus,
     spentInBranch,
@@ -29,9 +31,12 @@
   const reset = $derived(resetStatus($gameState))
 
   // Почему кнопка сброса заперта. Заперта молча она читалась как сломанная.
-  const RESET_REASON: Record<ResetBlockReason, string> = {
-    'nothing-spent': 'Сбрасывать нечего — очки не вложены',
-    gold: 'Не хватает золота на сброс',
+  // СКОЛЬКО НЕ ХВАТАЕТ — ЧИСЛОМ. «Не хватает золота» не говорит, сколько ещё
+  // копить, и цель превращается в стену без расстояния до неё. Число берётся
+  // из логики (`resetStatus.short`), а не считается здесь второй раз.
+  const RESET_REASON: Record<ResetBlockReason, (short: Decimal) => string> = {
+    'nothing-spent': () => 'Сбрасывать нечего — очки не вложены',
+    gold: (short) => `Не хватает ${formatNumber(short)} золота на сброс`,
   }
 
   // Ресурс называется по классу: ветки у классов разные, но общие статы
@@ -186,7 +191,7 @@
     </Button>
     <span class="hint">
       {#if reset.reason}
-        {RESET_REASON[reset.reason]}.
+        {RESET_REASON[reset.reason](reset.short)}.
       {:else if $gameState.talentResets > 0}
         Сбросов было {$gameState.talentResets} — каждый следующий дороже.
       {:else}

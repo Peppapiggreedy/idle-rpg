@@ -62,7 +62,7 @@ export const PROGRESSION: ProgressionStep[] = [
     level: 10,
     id: 'step-talents',
     name: 'Дерево талантов',
-    description: 'Очко за уровень: три ветки, и вложить всё в одну не выйдет.',
+    description: 'Очко за уровень. Веток три, а очков хватит на одну целиком и половину второй.',
     icon: 'talent-honed-edge',
     unlocks: [{ kind: 'mechanic', id: 'talents' }],
   },
@@ -70,7 +70,11 @@ export const PROGRESSION: ProgressionStep[] = [
     level: 20,
     id: 'step-first-dungeon',
     name: 'Первый данж',
-    description: 'Цепочка из трёх боссов подряд. Привала внутри нет.',
+    // БЫЛО «Привала внутри нет» — И ЭТО БЫЛА НЕПРАВДА. Привал между боссами
+    // есть, и на нём держится вся цена схватки: три боя по 80 % запаса на
+    // одной полоске не проходятся никак (см. CLAUDE.md, «Данжи»). Нет его
+    // ровно в одном месте — после ПОСЛЕДНЕГО босса, и там отдыхать не от чего.
+    description: 'Три босса подряд. Между ними привал, после последнего — выход.',
     icon: 'dungeon',
     unlocks: [{ kind: 'dungeon', id: 'sunken-barrow' }],
   },
@@ -91,8 +95,10 @@ export const PROGRESSION: ProgressionStep[] = [
     name: 'Травничество и третий данж',
     description: 'Травы собираются сами, зелья пьются руками.',
     icon: 'material-herb',
-    // Механики ещё нет в коде: ступень живёт раньше содержимого.
-    unlocks: [{ kind: 'dungeon', id: 'tier-cisterns' }],
+    unlocks: [
+      { kind: 'mechanic', id: 'herbalism' },
+      { kind: 'dungeon', id: 'tier-cisterns' },
+    ],
   },
   {
     level: 50,
@@ -100,7 +106,10 @@ export const PROGRESSION: ProgressionStep[] = [
     name: 'Зачарование и четвёртый данж',
     description: 'Лишний лут превращается в пыль, пыль — в постоянную прибавку.',
     icon: 'material-shard',
-    unlocks: [{ kind: 'dungeon', id: 'boiling-adits' }],
+    unlocks: [
+      { kind: 'mechanic', id: 'enchanting' },
+      { kind: 'dungeon', id: 'boiling-adits' },
+    ],
   },
   {
     level: 60,
@@ -108,15 +117,25 @@ export const PROGRESSION: ProgressionStep[] = [
     name: 'Уникальные рецепты и пятый данж',
     description: 'Реагенты боссов: вещь можно спланировать, а не выпрашивать у рулетки.',
     icon: 'reagent-silt-clot',
-    unlocks: [{ kind: 'dungeon', id: 'wind-galleries' }],
+    unlocks: [
+      { kind: 'mechanic', id: 'unique-recipes' },
+      { kind: 'dungeon', id: 'wind-galleries' },
+    ],
   },
   {
     level: 70,
     id: 'step-temple',
     name: 'Храм испытаний и шестой данж',
-    description: 'Бесконечная волна раз в сутки. Награда — за рубежи, а не за удачу.',
+    // БЫЛО «Бесконечная волна раз в сутки» — ДВЕ НЕПРАВДЫ В ОДНОЙ СТРОКЕ.
+    // Храм КОНЕЧЕН (двадцать этажей: без потолка полная зачистка недостижима,
+    // а с ней и награда за неё), и кулдауна у него НЕТ вовсе — фарм закрыт не
+    // запретом, а построением: платят только этажи выше рекорда.
+    description: 'Двадцать этажей вверх. Заходить можно сколько угодно, но платят только этажи выше рекорда.',
     icon: 'dungeon',
-    unlocks: [{ kind: 'dungeon', id: 'salt-womb' }],
+    unlocks: [
+      { kind: 'mechanic', id: 'temple' },
+      { kind: 'dungeon', id: 'salt-womb' },
+    ],
   },
   {
     level: 80,
@@ -124,7 +143,10 @@ export const PROGRESSION: ProgressionStep[] = [
     name: 'Преквесты и седьмой данж',
     description: 'Цепочка заданий, за которой открываются врата рейда.',
     icon: 'log',
-    unlocks: [{ kind: 'dungeon', id: 'rime-catacombs' }],
+    unlocks: [
+      { kind: 'mechanic', id: 'prequests' },
+      { kind: 'dungeon', id: 'rime-catacombs' },
+    ],
   },
   {
     level: 90,
@@ -132,7 +154,10 @@ export const PROGRESSION: ProgressionStep[] = [
     name: 'Героический режим и восьмой данж',
     description: 'Те же данжи, другие числа и по одной новой способности боссам.',
     icon: 'dungeon',
-    unlocks: [{ kind: 'dungeon', id: 'bluff-hollow' }],
+    unlocks: [
+      { kind: 'mechanic', id: 'heroic' },
+      { kind: 'dungeon', id: 'bluff-hollow' },
+    ],
   },
   {
     level: 100,

@@ -109,6 +109,14 @@ export interface Content {
    * броня не лежит в шаблоне отдельным полем, её кладёт генератор, и
    * проверить её можно только по результату.
    */
+  /**
+   * УРОВЕНЬ, НА КОТОРОМ МЕХАНИКА ОТКРЫВАЕТСЯ НА САМОМ ДЕЛЕ. Лестница
+   * открытий называет свой уровень отдельным полем, и эти два числа обязаны
+   * совпадать: разъедутся — лестница будет обещать травничество на сороковом,
+   * а собирать травы игрок начнёт на пятидесятом, и никто этого не заметит.
+   * Механики, у которой ещё нет кода, здесь нет вовсе — сверять нечего.
+   */
+  mechanicLevels: Readonly<Record<string, number>>
   generatedMods: ReadonlyArray<{
     /** Кого описывает строка: «броня head», «щит buckler». Идёт в текст замечания. */
     what: string
@@ -2870,6 +2878,38 @@ function checkArmorPoints(content: Content, report: Report): void {
   }
 }
 
+/**
+ * ЛЕСТНИЦА ОТКРЫТИЙ НЕ ВРЁТ ПРО УРОВНИ. Ступень называет уровень сама, а
+ * механика за ней — своим порогом; совпадать они обязаны, и держать это
+ * глазами нельзя: числа лежат в разных файлах и двигаются порознь.
+ */
+function checkProgressionLevels(content: Content, report: Report): void {
+  for (const step of content.progression) {
+    for (const unlock of step.unlocks ?? []) {
+      if (unlock.kind === 'dungeon') {
+        const dungeon = content.dungeons.find((d) => d.id === unlock.id)
+        if (!dungeon) continue
+        report.need(
+          dungeon.unlockRequirement === step.level,
+          `ступень ${step.id}`,
+          `обещает данж «${unlock.id}» на ${step.level} уровне, а сам данж ` +
+            `открывается на ${dungeon.unlockRequirement} (data/dungeons.ts против ` +
+            'data/progression.ts)',
+        )
+        continue
+      }
+      const level = content.mechanicLevels[unlock.id]
+      if (level === undefined) continue
+      report.need(
+        level === step.level,
+        `ступень ${step.id}`,
+        `обещает механику «${unlock.id}» на ${step.level} уровне, а открывается ` +
+          `она на ${level} (data/progression.ts против порога самой механики)`,
+      )
+    }
+  }
+}
+
 export function checkContent(content: Content): ContentIssue[] {
   const report = new Report()
   for (const schema of SCHEMAS) runSchema(schema, content, report)
@@ -2877,6 +2917,7 @@ export function checkContent(content: Content): ContentIssue[] {
   checkInstanceEntrances(content, report)
   checkBalance(content, report)
   checkArmorPoints(content, report)
+  checkProgressionLevels(content, report)
   checkUnlockLevels(content, report)
   checkScene(content, report)
   return report.issues

@@ -5,6 +5,7 @@ import type { GameState } from './state'
 import {
   GOLD_UPGRADES,
   GOLD_UPGRADE_BY_ID,
+  GOLD_PRICE_SIGNIFICANT_DIGITS,
   LOOT_POLICIES,
   type GoldUpgradeDef,
   type LootPolicy,
@@ -16,9 +17,25 @@ import { goldPerHourAt } from '../data/recipes'
  * ЦЕНА ПОКУПКИ — доля часового дохода СВОЕГО уровня, как и пошлина крафта.
  * Второй модели дохода в игре нет: `goldPerHourAt` берётся там же, где её
  * берёт `craftToll`, и правка кривой золота двигает обе цены сразу.
+ *
+ * ОКРУГЛЯЕТСЯ ДО ЗНАЧАЩИХ ЦИФР, число которых лежит в данных: сырая цена
+ * выходит вроде 137 489, а такой точности у неё нет — и игрок читает её как
+ * точную. Округление ОТНОСИТЕЛЬНОЕ (см. GOLD_PRICE_SIGNIFICANT_DIGITS),
+ * потому что цены идут от десятков тысяч до десятков миллионов.
  */
 export function upgradeCost(def: GoldUpgradeDef): Decimal {
-  return goldPerHourAt(def.level).times(def.costHours).ceil()
+  return roundPrice(goldPerHourAt(def.level).times(def.costHours))
+}
+
+/** Округление до GOLD_PRICE_SIGNIFICANT_DIGITS значащих цифр, вверх по шагу. */
+export function roundPrice(value: Decimal): Decimal {
+  if (value.lte(0)) return new Decimal(0)
+  // Порядок числа: у 137 489 это 5, значит шаг — 10^(5 - (2 - 1)) = 10 000.
+  const magnitude = Math.floor(Math.log10(value.toNumber()))
+  const step = new Decimal(10).pow(
+    Math.max(0, magnitude - (GOLD_PRICE_SIGNIFICANT_DIGITS - 1)),
+  )
+  return value.div(step).round().times(step)
 }
 
 export type UpgradeBlockReason = 'owned' | 'level' | 'gold'

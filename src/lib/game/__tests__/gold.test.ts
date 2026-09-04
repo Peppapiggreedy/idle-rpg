@@ -25,6 +25,8 @@ import { classIt, contractClasses } from './class-set'
 import { LEVEL_CAP } from '../../data/balance'
 import { MONSTER_GROWTH } from '../../data/monsters'
 import { RECIPES, craftToll, goldPerHourAt, recipeLevel } from '../../data/recipes'
+import { GOLD_UPGRADES } from '../../data/upgrades'
+import { upgradeCost } from '../upgrades'
 import { dump } from './dump'
 
 const SAMPLE = process.env.BALANCE_SAMPLE === '1'
@@ -34,18 +36,11 @@ const CLASS_SET = contractClasses(SAMPLE)
 const STEP = 10
 const LEVELS = Array.from({ length: 1 + (LEVEL_CAP - STEP) / STEP }, (_, i) => STEP + i * STEP)
 
-/**
- * ПЛЕЙСХОЛДЕРНЫЕ ЦЕНЫ ЛЕСТНИЦЫ ПОКУПОК.
- *
- * Самой лестницы ещё нет, но её форма известна из решения по экономике: семь
- * ступеней, цена последней в 48 раз выше первой. Этого хватает, чтобы мерить
- * главное свойство — время до покупки, — не дожидаясь настоящих цен.
- */
-const LADDER_RUNGS = 7
-const LADDER_PRICE_GROWTH = 48
-const RUNG_LEVELS = Array.from({ length: LADDER_RUNGS }, (_, i) =>
-  Math.round(STEP + ((LEVEL_CAP - STEP) * i) / (LADDER_RUNGS - 1)),
-)
+// ЛЕСТНИЦА ПОКУПОК ТЕПЕРЬ НАСТОЯЩАЯ. Здесь стояли ПЛЕЙСХОЛДЕРНЫЕ цены —
+// «семь ступеней, последняя в 48 раз дороже первой», — и мерились они, пока
+// самой лестницы не было. Лестница появилась (GOLD_UPGRADES), и мерить надо
+// её: у настоящих ступеней и уровни другие (15..85, а не 10..100), и рост
+// другой (26/2 часа вместо 48-кратной цены).
 
 /**
  * КРАН ЗОЛОТА ЗА ЧАС — КОШЕЛЁК ПЛЮС ПОДОРОЖАНИЕ СУМКИ (`incomePerHour`).
@@ -158,29 +153,51 @@ describe('кран золота', () => {
     })
 
     cit(
-      `${cls.name}: время до следующей покупки не гуляет больше чем втрое`,
+      `${cls.name}: лестница покупок растёт ровно, без прыжков между ступенями`,
       () => {
-        const perRung = Math.pow(LADDER_PRICE_GROWTH, 1 / (LADDER_RUNGS - 1))
-        const hours = RUNG_LEVELS.map(
-          (level, i) =>
-            Math.pow(perRung, i) /
-            dump(
-              `gold/income/${classId}/zone-own/level-${String(level).padStart(3, '0')}`,
-              goldPerHour(level, classId),
-            ),
-        )
-        const relative = hours.map((h) => h / hours[0])
+        // КОНТРАКТ ЗДЕСЬ НЕ ТОТ, ЧТО БЫЛ, И ЭТО ЗАМЕР, А НЕ ПОСЛАБЛЕНИЕ.
+        //
+        // Стояло «время до следующей покупки не гуляет больше чем втрое», и
+        // мерилось оно на плейсхолдерных ценах. Настоящая лестница такого
+        // свойства НЕ ИМЕЕТ и иметь не должна: в data/upgrades.ts прямо
+        // записано «цена растёт быстрее дохода (2 → 26 часов), и это
+        // намеренно — последняя ступень должна оставаться целью, а не
+        // покупаться попутно». Замер по настоящим ценам: копить на первую
+        // покупку 2.0 часа, на последнюю 26.7 — разброс тринадцатикратный, и
+        // он есть форма лестницы, а не её поломка.
+        //
+        // Мерить надо ДРУГОЕ: чтобы лестница РОСЛА РОВНО. Ступень, дороже
+        // соседней вдвое, читается как стена; дешевле — как ступень, которую
+        // покупают не глядя. Замер: каждая следующая покупка стоит 1.48-1.66
+        // предыдущей.
+        const rungs = GOLD_UPGRADES.map((def) => ({
+          def,
+          hours: upgradeCost(def)
+            .div(
+              dump(
+                `gold/income/${classId}/zone-own/level-${String(def.level).padStart(3, '0')}`,
+                goldPerHour(def.level, classId),
+              ),
+            )
+            .toNumber(),
+        }))
         // eslint-disable-next-line no-console
         console.log(
-          `${classId}: время до покупки по ступеням — ` +
-            relative.map((r, i) => `ур.${RUNG_LEVELS[i]}:${r.toFixed(2)}`).join(' '),
+          `${classId}: копить на покупку — ` +
+            rungs.map((r) => `ур.${r.def.level}:${r.hours.toFixed(1)}ч`).join(' '),
         )
+        const steps = rungs.slice(1).map((r, i) => r.hours / rungs[i].hours)
         expect(
-          dump(
-            `gold/ladder/${classId}/hours-spread`,
-            Math.max(...relative) / Math.min(...relative),
-          ),
-        ).toBeLessThan(3)
+          dump(`gold/ladder/${classId}/step-min`, Math.min(...steps)),
+          'самая пологая ступень лестницы покупок',
+        ).toBeGreaterThan(1.2)
+        expect(
+          dump(`gold/ladder/${classId}/step-max`, Math.max(...steps)),
+          'самая крутая ступень лестницы покупок',
+        ).toBeLessThan(2)
+        // И ПЕРВАЯ ПОКУПКА ДОСТУПНА НЕ ПОЗЖЕ ЧАСА-ДВУХ: до неё игрок доходит
+        // на первом же вечере, иначе лестницы для него не существует.
+        expect(dump(`gold/ladder/${classId}/first-hours`, rungs[0].hours)).toBeLessThan(3)
       },
       900_000,
     )

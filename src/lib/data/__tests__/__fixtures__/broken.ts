@@ -1190,6 +1190,18 @@ export function brokenCases(): BrokenCase[] {
       expect: ['ARMOR_CURVE.maxReduction', 'бессмертие', 'data/balance.ts'],
     },
     {
+      title: 'лестница открытий обещает механику не на своём уровне',
+      content: {
+        ...real,
+        progression: real.progression.map((step) =>
+          step.unlocks?.some((u) => u.kind === 'mechanic')
+            ? { ...step, level: step.level + 10 }
+            : step,
+        ),
+      },
+      expect: ['ступень', 'обещает механику', 'data/progression.ts'],
+    },
+    {
       title: 'у брони нулевой бюджет защиты',
       content: { ...real, balance: { ...real.balance, armorBaseDefense: 0 } },
       expect: ['ARMOR_BASE_DEFENSE', 'не защищает', 'data/balance.ts'],

@@ -45,12 +45,12 @@ import { MATERIALS } from '../materials'
 import { HERBS } from '../herbs'
 import { DUST_BY_RARITY, ENCHANTS, ENCHANT_FLAT_STATS } from '../enchants'
 import { PROCS } from '../procs'
-import { BOSS_ABILITIES } from '../heroic'
+import { BOSS_ABILITIES, HEROIC } from '../heroic'
 import { TEMPLES } from '../temple'
 import { QUESTS, QUEST_CHAIN } from '../quests'
 import { PROGRESSION } from '../progression'
 import { REAGENTS } from '../reagents'
-import { PROFESSIONS, RECIPES } from '../recipes'
+import { PROFESSIONS, PROFESSION_UNLOCK_LEVEL, RECIPES } from '../recipes'
 import { SLOT_DROP_WEIGHTS, SLOT_ICONS, SLOT_IDS, SLOT_NAMES } from '../slots'
 import { BRANCHES, TALENTS } from '../talents'
 import { ZONES } from '../zones'
@@ -131,6 +131,18 @@ export function realContent(): Content {
     professions: PROFESSIONS,
     audioFiles: audioFiles(),
     questChainUnlockLevel: QUEST_CHAIN.unlockLevel,
+    // Пороги механик — оттуда же, откуда их берёт сама игра. Механики без
+    // кода здесь нет: сверять её ступень не с чем.
+    mechanicLevels: {
+      talents: TALENT_FIRST_LEVEL,
+      crafting: CRAFT_UNLOCK_LEVEL,
+      herbalism: PROFESSION_UNLOCK_LEVEL.herbalism,
+      enchanting: ENCHANT_UNLOCK_LEVEL,
+      'unique-recipes': PROFESSION_UNLOCK_LEVEL.relics,
+      temple: TEMPLES[0].unlockRequirement,
+      prequests: QUEST_CHAIN.unlockLevel,
+      heroic: HEROIC.unlockRequirement,
+    },
     balance: {
       dropChance: DROP_CHANCE,
       shieldShare: SHIELD_SHARE,

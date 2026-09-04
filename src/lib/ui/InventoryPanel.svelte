@@ -32,7 +32,8 @@
   import { RARITY_BY_ID } from '../data/rarity'
   import { SLOT_ICONS } from '../data/slots'
   import { UPGRADE_PRIORITIES, type UpgradePriority } from '../data/upgrade'
-  import type { LootPolicy } from '../data/upgrades'
+  import type { GoldUpgradeDef, LootPolicy } from '../data/upgrades'
+  import { plural } from './plural'
   import { availableLootPolicies, availableUpgrades, inventorySize, lootPolicyOf } from '../game/upgrades'
   import type { UpgradeBlockReason } from '../game/upgrades'
   import { Button, IconSlot, NumberText, Panel, Tag, rarityStyle } from './kit'
@@ -95,6 +96,19 @@
     sell: 'Лишнее уходит в золото сразу. Лучшее хоть по одной оси остаётся.',
     dust: 'Лишнее уходит в пыль сразу. Лучшее хоть по одной оси остаётся.',
   }
+  /**
+   * ОПИСАНИЕ ПОКУПКИ СТРОИТСЯ ИЗ ДАННЫХ там, где в нём есть ЧИСЛО. В
+   * data/upgrades.ts у пяти ступеней стояло «Ещё четыре места в сумке»
+   * словом, а число мест лежало рядом в `effect.slots` — две правды об одном,
+   * и разъехаться им ничто не мешало. Число теперь одно, и берётся оно из
+   * эффекта; всё остальное описание — как записано в данных.
+   */
+  function upgradeText(def: GoldUpgradeDef): string {
+    if (def.effect.kind !== 'bag') return def.description
+    const n = def.effect.slots
+    return `Ещё ${n} ${plural(n, 'место', 'места', 'мест')} в сумке.`
+  }
+
   const UPGRADE_REASON: Record<UpgradeBlockReason, string> = {
     owned: 'Уже куплено',
     level: 'Откроется позже',
@@ -336,16 +350,31 @@
             <Icon name={row.def.icon} />
             <div class="shop-text">
               <b>{row.def.name}</b>
-              <span class="shop-desc">{row.def.description}</span>
+              <span class="shop-desc">{upgradeText(row.def)}</span>
             </div>
-            <Button
-              size="sm"
-              variant={row.canBuy ? 'primary' : 'ghost'}
-              disabled={!row.canBuy}
-              onclick={() => buyGoldUpgrade(row.def.id)}
-            >
-              {row.canBuy ? `${formatNumber(row.cost)} золота` : UPGRADE_REASON[row.reason!]}
-            </Button>
+            <!-- ЦЕНА ВИДНА ВСЕГДА, И ОСОБЕННО КОГДА ЗОЛОТА НЕ ХВАТАЕТ.
+                 Раньше на месте цены появлялось «Не хватает золота», и
+                 покупка, к которой игрок идёт, переставала называть, СКОЛЬКО
+                 до неё идти: цену он видел только в тот момент, когда она уже
+                 не нужна. Теперь цена на кнопке всегда, а нехватка — строкой
+                 рядом и числом. -->
+            <div class="shop-buy">
+              <Button
+                size="sm"
+                variant={row.canBuy ? 'primary' : 'ghost'}
+                disabled={!row.canBuy}
+                onclick={() => buyGoldUpgrade(row.def.id)}
+              >
+                {formatNumber(row.cost)} золота
+              </Button>
+              {#if !row.canBuy}
+                <span class="deny" data-deny>
+                  {row.reason === 'gold'
+                    ? `Не хватает ${formatNumber(row.short)}`
+                    : UPGRADE_REASON[row.reason!]}
+                </span>
+              {/if}
+            </div>
           </li>
         {/each}
       </ul>
@@ -612,6 +641,14 @@
     bottom: 0;
     font-size: var(--text-2xs);
     color: var(--c-text-faint);
+  }
+  /* Цена и нехватка — столбиком: строка «не хватает N» встаёт под кнопкой,
+     а не растягивает ряд покупки в ширину. */
+  .shop-buy {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: var(--space-1);
   }
   .chosen {
     display: flex;

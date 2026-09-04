@@ -11,6 +11,7 @@
   import { progressionGateOpen } from '../game'
   import { gameState } from '../stores/game'
   import { Panel } from './kit'
+  import { levelWord } from './plural'
   import { Icon } from './icons'
 
   const level = $derived($gameState.level.toNumber())
@@ -46,8 +47,7 @@
               {#if level >= step.level}
                 Нужно пройти цепочку заданий
               {:else if step === nextStep}
-                Осталось {step.level - level}
-                {step.level - level === 1 ? 'уровень' : 'уровней'}
+                Осталось {step.level - level} {levelWord(step.level - level)}
               {:else}
                 Откроется на {step.level} уровне
               {/if}
@@ -60,8 +60,9 @@
 
   {#snippet footer()}
     <p class="hint">
-      Каждые десять уровней — новый данж и новая механика. Что именно, узнаешь,
-      когда дойдёшь: половина интереса в том, чтобы не знать заранее.
+      Каждые десять уровней открывается что-то новое — данж, механика или и то,
+      и другое сразу. Что именно, узнаешь, когда дойдёшь: половина интереса в
+      том, чтобы не знать заранее.
     </p>
   {/snippet}
 </Panel>
