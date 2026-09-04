@@ -257,6 +257,45 @@ export function releaseItem(): void {
   carried.set(null)
 }
 
+// --- Что игрок сейчас несёт из умений ----------------------------------
+
+// У УМЕНИЯ ТОЖЕ ЕСТЬ МОДЕЛЬ ПЕРЕНОСА, И ОНА ОБЩАЯ. Раньше её не было вовсе:
+// книга носила умение в СВОЕЙ локальной переменной, ряд действий — в своей,
+// и друг о друге они не знали. Отсюда всё сразу: из книги нельзя было
+// бросить в ряд под сценой, из ряда нельзя было вернуть в книгу, а на
+// тач-экране порядок слотов не менялся никак — HTML5-перетаскивания там нет.
+//
+// Модель та же, что у вещей, и это не совпадение: вопрос один и тот же —
+// «что я держу и откуда взял». Источников ровно два: строка книги и слот
+// ряда. Индекс слота нужен, чтобы слот↔слот МЕНЯЛИСЬ МЕСТАМИ, а не
+// затирали друг друга.
+export type AbilityCarry =
+  | { from: 'book'; abilityId: string }
+  | { from: 'slot'; index: number; abilityId: string }
+
+export const sameAbilityCarry = (a: AbilityCarry | null, b: AbilityCarry | null): boolean => {
+  if (a === null || b === null) return a === b
+  if (a.from === 'book' && b.from === 'book') return a.abilityId === b.abilityId
+  if (a.from === 'slot' && b.from === 'slot') return a.index === b.index
+  return false
+}
+
+const ability = writable<AbilityCarry | null>(null)
+export const carriedAbility = readonly(ability)
+
+export function takeAbility(next: AbilityCarry): void {
+  ability.set(next)
+}
+
+/** Повторное нажатие по тому же месту кладёт умение обратно. */
+export function toggleCarriedAbility(next: AbilityCarry): void {
+  ability.update((current) => (sameAbilityCarry(current, next) ? null : next))
+}
+
+export function releaseAbility(): void {
+  ability.set(null)
+}
+
 // --- Развёрнутые «Детали» карточки героя ------------------------------
 
 // КАРТОЧКА ГЕРОЯ ПОКАЗЫВАЕТ ДВА ЧИСЛА КРУПНО, остальное — списком под

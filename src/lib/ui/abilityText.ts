@@ -4,6 +4,7 @@ import type { AbilityBlockReason } from '../game'
 import { Decimal, expectedAbilityDamage, formatNumber } from '../game'
 import type { StatBlock } from '../game/stats'
 import type { AbilityDef } from '../data/abilities'
+import type { AbilityDropRefusal } from './abilityDrop'
 import type { ResourceWords } from './resource'
 
 // Причина «не хватает ресурса» называет его по имени класса, «заперто» —
@@ -232,4 +233,17 @@ export function abilityLines(ability: AbilityDef, ctx: AbilityTextContext): stri
   }
 
   return lines
+}
+
+/**
+ * ПОЧЕМУ УМЕНИЕ НЕ КЛАДЁТСЯ СЮДА — словами. Логика (`ui/abilityDrop.ts`)
+ * отдаёт код, слово живёт здесь: тот же порядок, что у отказов применения
+ * и у отказов куклы.
+ */
+export function abilityDropRefusalText(reason: AbilityDropRefusal, unlockLevel = 1): string {
+  const fixed: Record<AbilityDropRefusal, string> = {
+    locked: `Умение откроется на ${unlockLevel} уровне`,
+    'same-spot': 'Это тот же слот — переносить некуда',
+  }
+  return fixed[reason]
 }

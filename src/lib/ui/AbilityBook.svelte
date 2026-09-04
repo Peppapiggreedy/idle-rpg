@@ -16,7 +16,14 @@
   import { ABILITY_BY_ID } from '../data/abilities'
   import type { AbilityDef } from '../game'
   import { abilitiesOf } from '../game'
-  import { gameState, setAbilitySlot } from '../stores/game'
+  import { gameState, setAbilitySlot, swapAbilitySlots } from '../stores/game'
+  import {
+    carriedAbility,
+    releaseAbility,
+    takeAbility,
+    toggleCarriedAbility,
+  } from '../stores/ui'
+  import { abilityDropStatus } from './abilityDrop'
   import { ABILITY_ROLE, abilityLines, comboState, comboText } from './abilityText'
   import { resourceWords } from './resource'
   import { Icon } from './icons'
@@ -36,19 +43,41 @@
   const inSlot = (id: string): number => slots.indexOf(id)
   const locked = (a: AbilityDef): boolean => level < a.unlockLevel
 
-  /** Что несут в руке из книги; null — ничего. */
-  let carried = $state<string | null>(null)
+  // НЕСОМОЕ УМЕНИЕ — ОБЩЕЕ СОСТОЯНИЕ. Раньше книга носила своё, ряд действий
+  // своё, и перенести из книги в ряд под сценой было нельзя: они друг о
+  // друге не знали.
+  const carry = $derived($carriedAbility)
+  const dropCtx = $derived({ heroLevel: level, byId: ABILITY_BY_ID })
+  const dropTo = (index: number) => abilityDropStatus(carry, { kind: 'slot', index }, dropCtx)
+  const dropToBook = $derived(abilityDropStatus(carry, { kind: 'book' }, dropCtx))
 
   function put(index: number): void {
-    if (carried === null) return
-    setAbilitySlot(index, carried)
-    carried = null
+    if (carry === null) return
+    if (dropTo(index).allowed) {
+      if (carry.from === 'slot') swapAbilitySlots(carry.index, index)
+      else setAbilitySlot(index, carry.abilityId)
+    }
+    releaseAbility()
+  }
+
+  /** Нажатие по занятому слоту с пустой рукой: берём умение из ряда. */
+  function pickSlot(index: number, abilityId: string): void {
+    toggleCarriedAbility({ from: 'slot', index, abilityId })
   }
 
   /** Нажатие по строке книги: взять умение или вернуть его обратно. */
   function pick(id: string): void {
     if (locked(ABILITY_BY_ID[id])) return
-    carried = carried === id ? null : id
+    toggleCarriedAbility({ from: 'book', abilityId: id })
+  }
+
+  /**
+   * БРОСОК В КНИГУ ОСВОБОЖДАЕТ СЛОТ. Обратного пути не было вовсе: положить
+   * умение в ряд можно было, а вынуть — нечем.
+   */
+  function returnToBook(): void {
+    if (dropToBook.allowed && carry?.from === 'slot') setAbilitySlot(carry.index, null)
+    releaseAbility()
   }
 </script>
 
@@ -62,23 +91,32 @@
         type="button"
         class="cell"
         class:filled={ability !== null}
-        class:target={carried !== null}
+        class:target={dropTo(i).fits}
+        class:refused={dropTo(i).fits && !dropTo(i).allowed}
+        draggable={ability !== null}
         aria-label="Слот {i + 1}: {ability ? ability.name : 'пусто'}"
-        onclick={() => put(i)}
-        ondragover={(e: DragEvent) => carried !== null && e.preventDefault()}
+        onclick={() => (carry === null && ability ? pickSlot(i, ability.id) : put(i))}
+        ondragstart={(e: DragEvent) => {
+          if (!ability) return
+          e.dataTransfer?.setData('text/plain', ability.id)
+          takeAbility({ from: 'slot', index: i, abilityId: ability.id })
+        }}
+        ondragover={(e: DragEvent) => dropTo(i).fits && e.preventDefault()}
         ondrop={(e: DragEvent) => {
           e.preventDefault()
           put(i)
         }}
+        ondragend={() => releaseAbility()}
       >
         <span class="key">{i + 1}</span>
         {#if ability}<Icon name={ability.icon} size="lg" />{/if}
       </button>
     {/each}
   </div>
-  {#if carried}
+  {#if carry}
     <p class="carrying" data-book-carrying>
-      Несёшь: <b>{ABILITY_BY_ID[carried].name}</b> — выбери слот.
+      Несёшь: <b>{ABILITY_BY_ID[carry.abilityId]?.name ?? '?'}</b> —
+      {carry.from === 'slot' ? 'выбери другой слот или брось в список ниже.' : 'выбери слот.'}
     </p>
   {/if}
 
@@ -87,12 +125,21 @@
       {@const slot = inSlot(ability.id)}
       {@const isLocked = locked(ability)}
       {@const combo = comboState(ability, slots)}
+      <!-- СТРОКА КНИГИ — ТОЖЕ ЦЕЛЬ. Умение, взятое из ряда, бросают сюда,
+           и слот освобождается: обратного пути раньше не было вовсе. -->
+      <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
       <li
         class="row"
         class:locked={isLocked}
         class:chosen={slot !== -1}
-        class:carried={carried === ability.id}
+        class:carried={carry?.abilityId === ability.id}
+        class:target={dropToBook.fits}
         data-ability={ability.id}
+        ondragover={(e: DragEvent) => dropToBook.fits && e.preventDefault()}
+        ondrop={(e: DragEvent) => {
+          e.preventDefault()
+          returnToBook()
+        }}
       >
         <button
           type="button"
@@ -100,9 +147,12 @@
           disabled={isLocked}
           draggable={!isLocked}
           aria-label={ability.name}
-          onclick={() => pick(ability.id)}
-          ondragstart={() => (carried = ability.id)}
-          ondragend={() => (carried = null)}
+          onclick={() => (carry?.from === 'slot' ? returnToBook() : pick(ability.id))}
+          ondragstart={(e: DragEvent) => {
+            e.dataTransfer?.setData('text/plain', ability.id)
+            takeAbility({ from: 'book', abilityId: ability.id })
+          }}
+          ondragend={() => releaseAbility()}
         >
           <Icon name={ability.icon} size="lg" />
         </button>
@@ -163,6 +213,17 @@
   .cell.target {
     border-color: var(--c-accent);
     background: color-mix(in srgb, var(--c-accent) var(--tint-weak), var(--c-surface-sunken));
+  }
+  /* «Подходит» и «можно прямо сейчас» — разные вещи. Цель, куда бросок
+     ничего не изменит (тот же слот) или запрещён уровнем, остаётся
+     подсвеченной и получает рамку предупреждения. */
+  .cell.refused {
+    border-color: var(--c-warning);
+  }
+  /* СТРОКА КНИГИ КАК ЦЕЛЬ: сюда возвращают умение из ряда. */
+  .row.target {
+    outline: 1px dashed var(--c-accent);
+    outline-offset: calc(-1 * var(--space-1));
   }
   .key {
     position: absolute;

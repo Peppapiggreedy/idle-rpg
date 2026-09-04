@@ -25,7 +25,15 @@
   } from '../game'
   import { ABILITY_BY_ID } from '../data/abilities'
   import { ABILITY_SLOTS, GCD_MS } from '../data/balance'
-  import { activateAbility, drinkPotion, gameState, swapAbilitySlots } from '../stores/game'
+  import {
+    activateAbility,
+    drinkPotion,
+    gameState,
+    setAbilitySlot,
+    swapAbilitySlots,
+  } from '../stores/game'
+  import { carriedAbility, releaseAbility, takeAbility } from '../stores/ui'
+  import { abilityDropStatus } from './abilityDrop'
   import { abilityLines, abilityReasonText } from './abilityText'
   import { potionEffectText, potionReasonText } from './potionText'
   import { resourceWords } from './resource'
@@ -46,9 +54,46 @@
   )
   const statuses = $derived(slots.map((a) => (a ? abilityStatus($gameState, a) : null)))
 
-  // Перетаскивание внутри ряда: взяли слот, бросили на другой — поменялись
-  // местами. Откаты при этом НЕ трогаются: они живут на умении.
-  let dragFrom = $state<number | null>(null)
+  // ПЕРЕНОС УМЕНИЯ — ОБЩЕЕ СОСТОЯНИЕ, а не локальная переменная ряда.
+  //
+  // Было так: ряд носил свой `dragFrom`, книга — свой `carried`, и друг о
+  // друге они не знали. Из книги нельзя было бросить сюда, отсюда нельзя
+  // было вернуть в книгу, а на тач-экране порядок слотов не менялся вовсе:
+  // HTML5-перетаскивания там нет, а тап был занят применением умения.
+  //
+  // Откаты при перестановке НЕ трогаются: они живут на умении, а не на слоте.
+  const carry = $derived($carriedAbility)
+  const dropCtx = $derived({ heroLevel: $gameState.level.toNumber(), byId: ABILITY_BY_ID })
+  const dropTo = (index: number) => abilityDropStatus(carry, { kind: 'slot', index }, dropCtx)
+
+  /**
+   * ТАП ПО СЛОТУ: без несомого — применение умения, с несомым — перестановка.
+   *
+   * Это ЕДИНСТВЕННЫЙ способ поменять приоритет на телефоне, и разводится он
+   * не по типу указателя, а по тому, несёт игрок что-нибудь или нет: рука
+   * пуста — играем, рука занята — раскладываем.
+   */
+  function slotTap(index: number, abilityId: string | null): void {
+    if (carry !== null) {
+      const status = dropTo(index)
+      if (status.allowed) {
+        if (carry.from === 'slot') swapAbilitySlots(carry.index, index)
+        else setAbilitySlot(index, carry.abilityId)
+      }
+      releaseAbility()
+      return
+    }
+    if (abilityId !== null) activateAbility(abilityId)
+  }
+
+  /** Перетаскивание: тот же перенос, только жестом мыши. */
+  function slotDrop(index: number): void {
+    if (dropTo(index).allowed && carry) {
+      if (carry.from === 'slot') swapAbilitySlots(carry.index, index)
+      else setAbilitySlot(index, carry.abilityId)
+    }
+    releaseAbility()
+  }
 
   const potions = $derived(potionSlots($gameState))
 
@@ -132,30 +177,66 @@
       <!-- ПУСТОЙ СЛОТ ВИДЕН. Ряд из четырёх мест — обещание игры, и место,
            которое ещё нечем занять, обязано быть на экране: иначе книга
            умений открывается вслепую, а хоткей 3 нажимается в пустоту. -->
-      <div class="slot empty" data-kind="ability" aria-label="Пустой слот {i + 1}">
+      <!-- ПУСТОЙ СЛОТ ОСТАЁТСЯ DIV, А НЕ СТАНОВИТСЯ КНОПКОЙ, и это закреплено
+           тестом: кнопка обещала бы нажатие, которого нет. Но целью переноса
+           он быть обязан — иначе умение некуда положить. -->
+      <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+      <div
+        class="slot empty"
+        class:target={dropTo(i).fits}
+        class:refused={dropTo(i).fits && !dropTo(i).allowed}
+        data-kind="ability"
+        role="button"
+        tabindex="0"
+        aria-label="Пустой слот {i + 1}"
+        onclick={() => slotTap(i, null)}
+        onkeydown={(e: KeyboardEvent) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            slotTap(i, null)
+          }
+        }}
+        ondragover={(e: DragEvent) => dropTo(i).fits && e.preventDefault()}
+        ondrop={(e: DragEvent) => {
+          e.preventDefault()
+          slotDrop(i)
+        }}
+      >
         <span class="key">{hotkey(i)}</span>
       </div>
     {:else}
       {@const status = statuses[i]!}
       <Tooltip text={abilityTooltip(ability, i)} width="wide">
+      <!-- НЕДОСТУПНОЕ УМЕНИЕ ПОМЕЧЕНО `aria-disabled`, А НЕ `disabled`, И ЭТО
+           ГЛАВНАЯ ПРИЧИНА, ПО КОТОРОЙ ПЕРЕСТАНОВКА НЕ РАБОТАЛА. Отключённая
+           кнопка не выдаёт событий перетаскивания вовсе, а в бою умение
+           почти всегда на откате или без маны — то есть жест был мёртв ровно
+           тогда, когда игрок его пробует. Нажатие по-прежнему ничего не
+           делает: `activateAbility` недоступное умение не применяет. -->
       <button
         type="button"
         class="slot"
         class:queued={status.queued}
         class:blocked={!status.usable}
-        disabled={!status.usable}
+        class:target={dropTo(i).fits}
+        class:refused={dropTo(i).fits && !dropTo(i).allowed}
+        aria-disabled={!status.usable}
         data-kind="ability"
         draggable="true"
         aria-label={ability.name}
-        onclick={() => activateAbility(ability.id)}
-        ondragstart={() => (dragFrom = i)}
-        ondragover={(e: DragEvent) => dragFrom !== null && e.preventDefault()}
+        onclick={() => slotTap(i, ability.id)}
+        ondragstart={(e: DragEvent) => {
+          // dataTransfer обязателен: без него перетаскивание не стартует в
+          // части браузеров (тот же приём, что на кукле).
+          e.dataTransfer?.setData('text/plain', ability.id)
+          takeAbility({ from: 'slot', index: i, abilityId: ability.id })
+        }}
+        ondragover={(e: DragEvent) => dropTo(i).fits && e.preventDefault()}
         ondrop={(e: DragEvent) => {
           e.preventDefault()
-          if (dragFrom !== null) swapAbilitySlots(dragFrom, i)
-          dragFrom = null
+          slotDrop(i)
         }}
-        ondragend={() => (dragFrom = null)}
+        ondragend={() => releaseAbility()}
       >
         <span class="fill" style="height: {Math.min(100, status.cooldownFraction * 100)}%"></span>
         {#if ability.triggersGcd && gcdFraction > 0 && status.cooldownMsLeft <= 0}
@@ -251,6 +332,16 @@
   .slot.empty {
     border-style: dashed;
     opacity: 0.5;
+  }
+  /* ЦЕЛЬ ПЕРЕНОСА ПОДСВЕЧИВАЕТСЯ, а цель, куда сейчас нельзя, — тушится
+     рамкой предупреждения. Разница та же, что у куклы: «подходит» и «можно
+     прямо сейчас» — разные вещи, и игрок обязан их различать ДО броска. */
+  .slot.target {
+    border-color: var(--c-accent);
+    opacity: 1;
+  }
+  .slot.refused {
+    border-color: var(--c-warning);
   }
   .slot.queued {
     border-color: var(--c-xp);

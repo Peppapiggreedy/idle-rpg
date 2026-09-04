@@ -18,7 +18,14 @@
   import { availablePoints, inventorySize, upgradeShare } from './lib/game'
   import { gameStarted, gameState } from './lib/stores/game'
   import { placeTitle } from './lib/ui/placeText'
-  import { carriedItem, closeMenu, openMenu, releaseItem } from './lib/stores/ui'
+  import {
+    carriedAbility,
+    carriedItem,
+    closeMenu,
+    openMenu,
+    releaseAbility,
+    releaseItem,
+  } from './lib/stores/ui'
   import { isTextMode, uiSettings } from './lib/stores/ui'
   import { isSceneDisabled } from './lib/ui/route'
   import {
@@ -102,6 +109,12 @@
     if (event.key !== 'Escape') return
     if ($carriedItem !== null) {
       releaseItem()
+      return
+    }
+    // УМЕНИЕ В РУКЕ — ТО ЖЕ САМОЕ, ЧТО ВЕЩЬ. Esc снимает ближайшее: сперва
+    // то, что несут, и только если руки пусты — меню.
+    if ($carriedAbility !== null) {
+      releaseAbility()
       return
     }
     if ($openMenu !== null) closeMenu()
