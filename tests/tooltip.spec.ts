@@ -1,6 +1,12 @@
 import { expect, test, type Page } from '@playwright/test'
 import { openMenu, visibleFraction } from './screen.js'
 
+// ТАЧ ВКЛЮЧЁН НА ВЕСЬ ФАЙЛ. Прикрепление подсказки — механика ТАЧ-экрана, и
+// проверять её кликом мыши больше нельзя: клик мышью подсказку, наоборот,
+// ГАСИТ (клик мышью по кнопке умения — это применение умения). Мышь при
+// hasTouch никуда не девается, поэтому проверки наведения работают тут же.
+test.use({ hasTouch: true })
+
 /** Селектор пузыря первой кнопки умений — для замера настоящей видимости. */
 const ABILITY_BUBBLE = '[aria-label="Действия"] .host [role="tooltip"]'
 
@@ -62,6 +68,13 @@ function bubbleOf(target: ReturnType<typeof ability>) {
 async function tap(page: Page, target: ReturnType<typeof ability>): Promise<void> {
   const box = await target.boundingBox()
   if (!box) throw new Error('кнопка не на экране')
+  await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2)
+}
+
+/** Клик НАСТОЯЩЕЙ мышью по координатам — то есть применение умения. */
+async function clickWithMouse(page: Page, target: ReturnType<typeof ability>): Promise<void> {
+  const box = await target.boundingBox()
+  if (!box) throw new Error('кнопка не на экране')
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
 }
 
@@ -81,6 +94,73 @@ test('закрывается по Esc', async ({ page }) => {
   await tap(page, ability(page))
   await expect(bubble).toBeVisible()
   await page.keyboard.press('Escape')
+  await expect(bubble).toBeHidden()
+})
+
+// ПОДСКАЗКА НЕ ПРИЛИПАЕТ ПОСЛЕ ПРИМЕНЕНИЯ УМЕНИЯ (находка 6).
+//
+// Игрок применял умение мышкой, и описание оставалось висеть над рядом
+// действий. Причин было две — безусловное прикрепление по клику и
+// `:focus-within` без обработчика `focusout`, — и чинить надо обе: правка
+// одной оставила бы находку живой на кнопках, которые не становятся
+// `disabled` (зелье, автокаст).
+test('применение умения мышью ЗАКРЫВАЕТ подсказку', async ({ page }) => {
+  await open(page, 1280)
+  const target = ability(page)
+  const bubble = bubbleOf(target)
+
+  // Наведение показывает — это законный путь.
+  await target.hover({ force: true })
+  await expect(bubble).toBeVisible()
+
+  // Клик мышью гасит: это применение умения, а не запрос описания.
+  await clickWithMouse(page, target)
+  await expect(bubble).toBeHidden()
+})
+
+test('подсказка уходит, когда курсор уводят с кнопки', async ({ page }) => {
+  await open(page, 1280)
+  const target = ability(page)
+  const bubble = bubbleOf(target)
+  await target.hover({ force: true })
+  await expect(bubble).toBeVisible()
+  await page.mouse.move(2, 2)
+  await expect(bubble).toBeHidden()
+})
+
+test('прокрутка закрывает подсказку, а не тащит её за собой', async ({ page }) => {
+  // Пузырь `fixed`, за хостом он не едет. Раньше место пересчитывалось на
+  // каждый скролл, и подсказка ползла по экрану за уехавшей кнопкой.
+  await open(page, 390)
+  const bubble = bubbleOf(ability(page))
+  await tap(page, ability(page))
+  await expect(bubble).toBeVisible()
+  // Прокручиваем сам документ: колесо над пузырём (у него pointer-events:
+  // none) не всегда доходит до прокручиваемого предка, а событие scroll
+  // нужно настоящее.
+  await page.evaluate(() => {
+    const el = document.scrollingElement ?? document.documentElement
+    el.scrollTop += 120
+    el.dispatchEvent(new Event('scroll', { bubbles: true }))
+  })
+  await expect(bubble).toBeHidden()
+})
+
+test('клавиатурный фокус подсказку ОТКРЫВАЕТ, мышиный — нет', async ({ page }) => {
+  await open(page, 1280)
+  const target = ability(page)
+  const bubble = bubbleOf(target)
+
+  // Tab до кнопки: подсказка обязана быть доступна без мыши.
+  await target.evaluate((el) => (el as HTMLElement).focus())
+  await page.keyboard.press('Tab')
+  await page.keyboard.press('Shift+Tab')
+  await expect(bubble).toBeVisible()
+
+  // А фокус от мыши — не повод показывать: именно он держал пузырь после
+  // применения умения.
+  await page.keyboard.press('Escape')
+  await clickWithMouse(page, target)
   await expect(bubble).toBeHidden()
 })
 
@@ -126,7 +206,7 @@ test('подсказка умения показывает посчитанно�
   await expect(bubble).toBeVisible()
   const text = await bubble.innerText()
   // В подсказке обязано быть конкретное число урона, а не только проценты.
-  expect(text).toMatch(/Урон:.*≈\s*[\d.,KMB]+/)
+  expect(text).toMatch(/Урон .*≈\s*[\d.,KMB]+/)
 })
 
 // СРАВНЕНИЕ ПРЕДМЕТОВ НЕ ЗАСТРЕВАЕТ (находка 4.2 в AUDIT.md).
@@ -191,7 +271,9 @@ test('подсказка умения не срезается рядом дей�
   await openWithScene(page, 390)
   const btn = page.locator('[aria-label="Действия"] button.slot').first()
   const box = await btn.boundingBox()
-  await page.mouse.click(box!.x + box!.width / 2, box!.y + box!.height / 2)
+  // ТАП, А НЕ КЛИК: на узком экране подсказку открывает палец, а клик мышью
+  // теперь её гасит — это применение умения.
+  await page.touchscreen.tap(box!.x + box!.width / 2, box!.y + box!.height / 2)
   await page.waitForTimeout(250)
   expect(await visibleFraction(page, ABILITY_BUBBLE)).toBeGreaterThan(0.95)
 })
@@ -202,5 +284,5 @@ test('в подсказке умения есть посчитанный уро�
   const text = await page.locator(ABILITY_BUBBLE).first().innerText()
   expect(text.length).toBeGreaterThan(20)
   // Конкретное число, а не только проценты.
-  expect(text).toMatch(/Урон:.*≈\s*[\d.,KMB]+/)
+  expect(text).toMatch(/Урон .*≈\s*[\d.,KMB]+/)
 })
