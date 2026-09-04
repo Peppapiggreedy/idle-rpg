@@ -15,6 +15,14 @@
     badge?: Snippet
     // Ячейка выделена (выбрана, наведена, активна).
     active?: boolean
+    /**
+     * КОМПАКТНАЯ ячейка: только значок и пара мелких меток, без карточки.
+     * Такой сумка и стала — сеткой ИКОНОК: полтора десятка карточек со
+     * списком модификаторов не помещались на телефон и не читались на
+     * десктопе, а искать в них глазами нужный слот было дольше, чем в
+     * ряду значков.
+     */
+    compact?: boolean
     interactive?: boolean
     /**
      * Роль ячейки в перетаскивании. Про сам инвентарь примитив по-прежнему
@@ -52,6 +60,7 @@
     emptyText = 'пусто',
     badge,
     active = false,
+    compact = false,
     interactive = false,
     drop,
     draggable = false,
@@ -79,6 +88,7 @@
 <div
   class="slot"
   class:filled={rarity !== undefined}
+  class:compact
   class:active
   class:carried={drop === 'carried'}
   class:target={drop === 'target'}
@@ -133,6 +143,23 @@
   }
   .slot:not(.filled) {
     min-height: 4rem;
+  }
+  /* Компактная ячейка — квадрат под значок: ни подписи, ни списка статов.
+     Высота задана тем же, чем ширина (aspect-ratio), поэтому сетка иконок
+     остаётся сеткой при любой ширине колонки. */
+  .slot.compact {
+    position: relative;
+    min-height: 0;
+    aspect-ratio: 1;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    padding: var(--space-1);
+  }
+  .slot.compact .content {
+    align-items: center;
+    justify-content: center;
+    gap: 0;
   }
   .slot-head {
     display: flex;

@@ -140,9 +140,7 @@ test('после действия над предметом сравнение �
   await open(page, 1280)
   await openMenu(page, 'Сумка')
 
-  const cards = page
-    .locator('.slot')
-    .filter({ has: page.locator('button', { hasText: 'Продать' }) })
+  const cards = page.locator('.grid > .slot.filled')
   await expect(cards.first()).toBeVisible()
   const compare = page.locator('[data-item-compare]')
 
@@ -150,12 +148,13 @@ test('после действия над предметом сравнение �
   await cards.first().hover()
   await expect(compare).toBeVisible()
 
-  // Клик по иконке ПРИКРЕПЛЯЕТ его — именно с этого и начинался тупик.
+  // Клик по значку ПРИКРЕПЛЯЕТ его — именно с этого и начинался тупик.
   await cards.first().click()
   await expect(compare).toBeVisible()
 
-  // Действие над предметом снимает прикрепление.
-  await cards.first().locator('button', { hasText: 'Продать' }).click()
+  // Действие над предметом снимает прикрепление. Кнопки теперь живут в
+  // карточке ВЫБРАННОГО, а не в ячейке: сумка — сетка значков.
+  await page.locator('[data-chosen] button', { hasText: 'Продать' }).click()
 
   // ГЛАВНОЕ: наведение снова живое. Уводим курсор совсем в сторону — окно
   // обязано пропасть, значит оно следует за мышью, а не приколото.

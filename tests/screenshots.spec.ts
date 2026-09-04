@@ -320,33 +320,30 @@ test('левая рука под двуручным объясняет, поче
 // сравнение раскрывалось ВНУТРИ карточки, и «Продать» с «Распылить» уезжали
 // из-под курсора ровно тогда, когда игрок к ним тянулся. Картинка такое не
 // ловит — это измерение, а не вид.
-test('карточка предмета при наведении не двигает свои кнопки', async ({ page }) => {
+test('ячейка сумки при наведении не меняет ни размер, ни место', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 })
   await openPreset(page, 'rich', true)
   await openMenu(page, 'Сумка')
-  const card = page.locator('.slot').filter({ has: page.locator('button', { hasText: 'Продать' }) }).first()
+  const card = page.locator('.grid > .slot.filled').first()
   await expect(card).toBeVisible()
-  // Карточку СНАЧАЛА докручиваем целиком в окно, а уже потом меряем. Иначе
-  // hover() докрутит её сам — и «сдвиг кнопки» окажется прокруткой страницы
-  // на те пиксели, на которые карточка не влезала. Координаты boundingBox
-  // считаются от окна, а не от документа, и меряют не то, что заявлено.
+  // Ячейку СНАЧАЛА докручиваем целиком в окно, а уже потом меряем. Иначе
+  // hover() докрутит её сам — и «сдвиг» окажется прокруткой страницы на те
+  // пиксели, на которые ячейка не влезала. Координаты boundingBox считаются
+  // от окна, а не от документа, и меряют не то, что заявлено.
   await card.scrollIntoViewIfNeeded()
-  const sell = card.locator('button', { hasText: 'Продать' })
-  const before = await sell.boundingBox()
-  const cardBefore = await card.boundingBox()
+  const before = await card.boundingBox()
 
   await card.hover()
   // Окно сравнения появилось — значит наведение сработало, и тест меряет
   // именно тот случай, ради которого написан.
   await expect(page.locator('[data-item-compare]')).toBeVisible()
 
-  const after = await sell.boundingBox()
-  const cardAfter = await card.boundingBox()
+  const after = await card.boundingBox()
   expect(after?.y).toBeCloseTo(before?.y ?? -1, 0)
   expect(after?.x).toBeCloseTo(before?.x ?? -1, 0)
-  expect(cardAfter?.height).toBeCloseTo(cardBefore?.height ?? -1, 0)
+  expect(after?.height).toBeCloseTo(before?.height ?? -1, 0)
 
-  // И окно НЕ ЛОВИТ МЫШЬ: кнопка под ним обязана нажиматься.
+  // И окно НЕ ЛОВИТ МЫШЬ: то, что под ним, обязано нажиматься.
   const box = page.locator('[data-item-compare]')
   await expect(box).toHaveCSS('pointer-events', 'none')
 })
