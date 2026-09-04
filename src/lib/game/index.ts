@@ -16,7 +16,11 @@ export { defaultAbilitySlots, fillAbilitySlots, rotationOf } from './tick'
 export { abilitiesOf } from './state'
 export { xpToNextLevel, applyXp, MAX_LEVELUPS_PER_CALL } from './formulas'
 export type { XpResult } from './formulas'
-export { rollRarity, rollLoot, rollSlot, sellItem, sellPrice, INVENTORY_SIZE } from './loot'
+export { rollRarity, rollLoot, rollSlot, sellItem, sellPrice } from './loot'
+// ВМЕСТИМОСТЬ СУМКИ — ОДНО ЧИСЛО, И СПРАШИВАЮТ ЕГО ЗДЕСЬ. База наружу НЕ
+// отдаётся намеренно: пока её можно было импортировать из индекса, счётчик
+// на кнопке её и импортировал — и показывал «28/24» после расширения.
+export { inventorySize } from './upgrades'
 export {
   equipItem,
   unequipItem,

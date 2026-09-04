@@ -1,5 +1,4 @@
 // Надеть / снять / оценить экипировку. Чистые операции над состоянием.
-import { INVENTORY_SIZE } from '../data/balance'
 import { estimateCombatRate, mitigationAgainst, swingDamageRange, survival } from './combat'
 import { inventorySize } from './upgrades'
 import { SAFE_ZONE, ZONE_BY_ID, representativeMonster, type Zone } from '../data/zones'

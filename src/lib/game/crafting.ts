@@ -14,7 +14,7 @@ import {
 } from '../data/recipes'
 import { RARITY_BY_ID } from '../data/rarity'
 import { ARMOR_NOUNS, SHIELD_BY_ID, WEAPON_BY_ID } from '../data/items'
-import { INVENTORY_SIZE, MATERIAL_DROP_CHANCE, REAGENT_DROP_CHANCE } from '../data/balance'
+import { MATERIAL_DROP_CHANCE, REAGENT_DROP_CHANCE } from '../data/balance'
 import { inventorySize } from './upgrades'
 import { REAGENT_BY_ID, type ReagentDef } from '../data/reagents'
 import type { DungeonDef } from '../data/dungeons'

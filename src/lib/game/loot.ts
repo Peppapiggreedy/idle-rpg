@@ -24,7 +24,7 @@ import {
   type ShieldTemplate,
   type WeaponTemplate,
 } from '../data/items'
-import { INVENTORY_SIZE, itemLevelScale } from '../data/balance'
+import { itemLevelScale } from '../data/balance'
 import type { StatModifier } from './stats'
 import { betterOnAnyAxis, isEquipped, upgradeShare } from './equipment'
 import { dustValue } from './enchanting'
@@ -35,7 +35,6 @@ import type { BossLoot } from '../data/dungeons'
 export type { Rng } from './rng'
 
 // Взвешенная рулетка: чем больше weight тира, тем шире его отрезок на [0, 1).
-export { INVENTORY_SIZE } from '../data/balance'
 export function rollRarity(rng: Rng): RarityDef {
   const total = RARITIES.reduce((sum, r) => sum + r.weight, 0)
   let roll = rng() * total

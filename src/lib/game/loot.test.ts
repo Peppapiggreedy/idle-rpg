@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { Decimal } from './numbers'
+import { INVENTORY_SIZE } from '../data/balance'
 import {
-  INVENTORY_SIZE,
   armorMods,
   averageArmorMods,
   rollLoot,

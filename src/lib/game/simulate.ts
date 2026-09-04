@@ -41,7 +41,8 @@ import {
   zoneStanding,
   type ZoneStanding,
 } from './zones'
-import { INVENTORY_SIZE, LEVEL_CAP, xpGapShare, RUN_PLAYER_DEATH_TOLERANCE_PER_HOUR } from '../data/balance'
+import { LEVEL_CAP, xpGapShare, RUN_PLAYER_DEATH_TOLERANCE_PER_HOUR } from '../data/balance'
+import { inventorySize } from './upgrades'
 import { ABILITIES, ABILITY_BY_ID } from '../data/abilities'
 import { RARITY_BY_ID, TYPICAL_RARITY } from '../data/rarity'
 import { ARMOR_NOUNS, ONE_HANDED, SHIELDS, WEAPONS, WEAPON_BY_ID } from '../data/items'
@@ -1035,7 +1036,7 @@ export function simulate(options: SimOptions): SimResult {
     }
     // Полная сумка: живой игрок продаёт самое дешёвое и освобождает место.
     // Без этого дроп после двенадцатой находки прекращается совсем.
-    if (bag === 'sell' && state.inventory.length >= INVENTORY_SIZE) {
+    if (bag === 'sell' && state.inventory.length >= inventorySize(state)) {
       const cheapest = state.inventory.reduce((min, item) =>
         sellPrice(item).lt(sellPrice(min)) ? item : min,
       )

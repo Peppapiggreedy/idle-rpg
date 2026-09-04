@@ -35,7 +35,6 @@ import { pushEvent, spawnMonster, type ActiveEffect, type GameState } from './st
 import { ensureStats } from './stats'
 import { emit as busEmit } from './events'
 import {
-  INVENTORY_SIZE,
   REGEN_TICK_S,
   RESPAWN_DELAY_MS,
   REVIVE_DELAY_MS,
