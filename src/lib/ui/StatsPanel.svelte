@@ -2,7 +2,7 @@
   import {
     Decimal,
     attackPowerContribution,
-    estimateCombatRate,
+    axesOf,
     explainStat,
     explainSwingTime,
     expectedSwingDamage,
@@ -13,6 +13,7 @@
     type StatModifier,
   } from '../game'
   import { TALENT_BY_ID } from '../data/talents'
+  import { TYPICAL_FIGHT_SEC } from '../data/balance'
   import { gameState } from '../stores/game'
   import { heroDetailsOpen, toggleHeroDetails } from '../stores/ui'
   import { Button, NumberText, Panel } from './kit'
@@ -32,7 +33,7 @@
   const STAT_NAMES = $derived(statNames($gameState.classId))
 
   // 'swingTime' — производная строка, не модифицируемый стат.
-  type RowId = StatId | 'swingTime' | 'swingDamage' | 'dps'
+  type RowId = StatId | 'swingTime' | 'swingDamage' | 'dps' | 'vitality'
 
   let openStat = $state<RowId | null>(null)
 
@@ -45,7 +46,17 @@
   const apPart = $derived(attackPowerContribution($gameState.stats))
   const avgSwing = $derived(expectedSwingDamage($gameState.stats))
   const crit = $derived(critFactor($gameState.stats))
-  const dps = $derived(estimateCombatRate($gameState).damagePerSecond)
+  // ДВЕ ОСИ, ТЕ ЖЕ САМЫЕ. Крупные числа карточки — это ровно то, чем игра
+  // сравнивает находки: урон в секунду по эталонному противнику и живучесть.
+  // Второй пары чисел «насколько я хорош» в игре нет — иначе карточка героя
+  // и подсказка сравнения спорили бы на одном экране.
+  const axes = $derived(axesOf($gameState))
+  // Строка деталей называет РОВНО ТО, что в ней разложено: удар, криты, замах.
+  // Раньше здесь стояло полное «в секунду» из модели боя (с умениями, проками
+  // и перебоем), а разложение показывало три множителя автоатаки — числа не
+  // сходились, и сойтись не могли.
+  const autoDps = $derived(avgSwing.times(crit).div(swing.swingTime))
+
   const formatSeconds = (v: number) => `${v.toFixed(2)}с`
   const formatPercent = (v: number) => `${(v * 100).toFixed(0)}%`
 
@@ -94,11 +105,11 @@
   <div class="big" data-hero-summary>
     <div class="tile">
       <span class="tile-name">Урон в секунду</span>
-      <span class="tile-value">{dps.toNumber().toFixed(2)}</span>
+      <span class="tile-value">{axes.damage.toNumber().toFixed(2)}</span>
     </div>
     <div class="tile">
-      <span class="tile-name">Здоровье</span>
-      <span class="tile-value"><NumberText value={$gameState.stats.maxHp} /></span>
+      <span class="tile-name">Живучесть</span>
+      <span class="tile-value"><NumberText value={axes.vitality} /></span>
     </div>
   </div>
 
@@ -133,15 +144,29 @@
     </li>
     <li>
       <button type="button" class="stat-row" onclick={() => toggle('dps')}>
-        <span class="name">Урон в секунду</span>
-        <span class="value">{dps.toNumber().toFixed(2)}</span>
+        <span class="name">Урон автоатаки в секунду</span>
+        <span class="value">{autoDps.toNumber().toFixed(2)}</span>
       </button>
       {#if openStat === 'dps'}
         <div class="breakdown">
           <span>{formatNumber(avgSwing)} средний удар</span>
           <span>· ×{crit.toNumber().toFixed(2)} за криты ({formatPercent($gameState.stats.critChance)} × {$gameState.stats.critMultiplier.toNumber().toFixed(1)})</span>
           <span>· / {formatSeconds(swing.swingTime)} замах</span>
-          <span>= {dps.toNumber().toFixed(2)}</span>
+          <span>= {autoDps.toNumber().toFixed(2)}</span>
+        </div>
+      {/if}
+    </li>
+    <li>
+      <button type="button" class="stat-row" onclick={() => toggle('vitality')}>
+        <span class="name">Живучесть</span>
+        <span class="value"><NumberText value={axes.vitality} /></span>
+      </button>
+      {#if openStat === 'vitality'}
+        <div class="breakdown">
+          <span>{formatNumber($gameState.stats.maxHp)} запас</span>
+          <span>· + {formatNumber($gameState.stats.hpRegen.times(TYPICAL_FIGHT_SEC))} реген за схватку ({formatNumber($gameState.stats.hpRegen)}/с × {TYPICAL_FIGHT_SEC}с)</span>
+          <span>· / {formatPercent(1 - axes.mitigation)} доходит после брони и блока</span>
+          <span>= <NumberText value={axes.vitality} /></span>
         </div>
       {/if}
     </li>

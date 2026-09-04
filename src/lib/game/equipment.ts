@@ -1,15 +1,9 @@
 // Надеть / снять / оценить экипировку. Чистые операции над состоянием.
-import { estimateCombatRate, swingDamageRange, type CombatRate } from './combat'
-import { INVENTORY_SIZE, RESPAWN_DELAY_MS } from '../data/balance'
+import { estimateCombatRate, mitigationAgainst, swingDamageRange, vitality } from './combat'
+import { INVENTORY_SIZE } from '../data/balance'
 import { inventorySize } from './upgrades'
-import {
-  SAFE_ZONE,
-  ZONE_BY_ID,
-  averageMonsterLevel,
-  representativeMonster,
-  type Zone,
-} from '../data/zones'
-import { buildMonster } from '../data/monsters'
+import { SAFE_ZONE, ZONE_BY_ID, representativeMonster, type Zone } from '../data/zones'
+import { referenceMonsterTemplate } from '../data/monsters'
 import { ensureStats, type StatBlock, type StatModifier } from './stats'
 import { monsterFromTemplate } from './state'
 import { Decimal } from './numbers'
@@ -123,105 +117,52 @@ function withEquipped(state: GameState, item: Item): GameState {
   })
 }
 
-/** Темп фарма, каким он станет с предметом (сам предмет не надевается). */
-export function farmRateWith(state: GameState, item: Item): Decimal {
-  return axesOf(withEquipped(state, item)).damage
-}
-
 /**
- * ЧЕМ МЕРИТСЯ «ЛУЧШЕ». Убийствами в секунду, а не голым уроном в секунду.
+ * ДВЕ ОСИ ПРОТИВ ЭТАЛОННОГО ПРОТИВНИКА.
  *
- * Разница принципиальна, и прогон полного пути показал это дороже некуда.
- * `damagePerSecond` — это «как сильно бью», и живучесть в него не входит
- * вовсе: панцирь на живучесть не двигает его ни на единицу. Значит по нему
- * броня НИКОГДА не апгрейд — герой донашивает стартовый панцирь до
- * шестидесятого уровня, начинает умирать, и класс со щитом (у которого
- * половина силы как раз в том, чтобы стоять) вылетает из игры к середине
- * лестницы. В прогоне страж застревал на 64 уровне с четырнадцатью
- * смертями в час, пока изувер доходил до сотого.
+ * ГРАНИЦА, КОТОРУЮ НЕЛЬЗЯ РАЗМЫВАТЬ. Две оси — это то, что видит ИГРОК и по
+ * чему принимаются решения об экипировке. `estimateCombatRate` и цена боя —
+ * МОДЕЛЬ и КОНТРАКТ: по ним считаются прогноз зоны, оффлайн, прогон баланса
+ * и тесты. Первое обязано быть простым, устойчивым и объяснимым в двух
+ * строках; второе — точным. Смешивать их нельзя: как только «лучше» начинает
+ * зависеть от зоны, привалов и смертности, одна и та же вещь читается
+ * по-разному в двух шагах пути.
  *
- * `killsPerSecond` — это «сколько мобов в секунду я кладу»: в нём и урон,
- * и аптайм, то есть и живучесть. Это ТА ЖЕ оценка из estimateCombatRate,
- * которой пользуются прогноз зоны и оффлайн, — второй меры «хорошести»
- * в игре по-прежнему нет.
+ *   damage   — урон в секунду по эталонному противнику, с учётом ПЕРЕБОЯ
+ *              (добивающий удар пропадает тем больше, чем крупнее замах).
+ *              Считает его та же `estimateCombatRate` — второй модели боя
+ *              в игре нет, — но берётся из неё чистая пропускная способность
+ *              урона, без аптайма, привалов и смертей.
+ *   vitality — сколько урона герой держит за одну типичную схватку:
+ *              `(запас + реген × TYPICAL_FIGHT_SEC) / (1 − смягчение)`.
+ *              Формула — `vitality` в game/combat.ts, число абсолютное и в
+ *              единицах здоровья. Больше — лучше, как и у урона.
+ *
+ * ОБЕ ОСИ НЕ ЗАВИСЯТ ОТ ЗОНЫ. Противник строится той же `buildMonster` на
+ * эталонном архетипе УРОВНЯ ГЕРОЯ и без зонального множителя наград. Прежняя
+ * пара («убийств в секунду» и «цена боя») бралась по трём ролям ТЕКУЩЕЙ зоны,
+ * и это стоило дорого: в безопасной зоне аптайм равен единице, а цена боя
+ * почти ноль — панцирь не двигал ни одну ось, и игре приходилось объяснять
+ * игроку, почему находка «не апгрейд». Прибору же приходилось смотреть в
+ * зону, КУДА герой собирается (`aimZoneId`), — костыль ровно про это.
  */
-/**
- * ДВЕ ОСИ ЗА ОДИН ПРОХОД, и это не оптимизация ради оптимизации: обе
- * считаются из ОДНОГО И ТОГО ЖЕ `estimateCombatRate` по одним и тем же
- * трём мобам. Считай их порознь — появилось бы два места, где выбирается
- * противник, и они разъехались бы на первой же правке.
- *
- *   damage   — убийств в секунду, прежняя единственная мера;
- *   fightCost — цена ОДНОЙ схватки долей максимального запаса, ровно та
- *              формула, на которой стоит контракт цены боя в CLAUDE.md
- *              (потеря за бой плюс реген за паузу респауна, делить на
- *              максимум). Меньше — лучше.
- *
- * ЦЕНА БЕРЁТСЯ НЕТТО (`hpLossPerSecond`), а не валовая. Контракт цены боя
- * стоит на валовой намеренно — там мерят счёт, который выставляет моб, до
- * того как герой оплатит его маной. Но игроку в сумке нужен другой ответ:
- * сколько он РЕАЛЬНО потеряет за бой в этой вещи. Предмет на интеллект
- * даёт лишнее лечение и цену снижает — по валовой это было бы не видно
- * вовсе, и «выживание» умалчивало бы ровно про то, чем Страж и выживает.
- * Мана при этом не считается дважды: потраченная на лечение, она не идёт
- * в урон, и ось урона это уже видит.
- */
-function axesOf(state: GameState): { damage: Decimal; fightCost: number } {
-  // ПРОТИВ ТРЁХ РОЛЕЙ ЗОНЫ на её среднем уровне, а не против того, кто стоит
-  // перед героем сейчас, и не против одного «среднего» моба.
-  //
-  // Против ЖИВОГО моба оценка прыгала сама по себе: пул выдаёт мобов разных
-  // ролей и уровней, и одна и та же вещь при неизменной экипировке читалась
-  // то как «+12,6 %», то как «не апгрейд» — три разных вердикта за полторы
-  // минуты стояния на месте.
-  //
-  // Против ОДНОГО медианного моба она стала устойчивой, но приобрела другую
-  // болезнь: цикл фарма квантуется целыми боями (сколько схваток до привала —
-  // число целое), и на единственном противнике мелкая прибавка к живучести
-  // перекидывает это число с двух на три, давая скачок темпа на треть.
-  // Модель игрока в прогоне гналась за этим скачком и одевала Стража в
-  // живучесть: путь 1..100 растягивался с 13.8 до 19.1 часа при неизменном
-  // числе убийств.
-  //
-  // Три роли — мелочь, обычный, здоровяк — бьют с разной частотой и живут
-  // разное время, поэтому порог целого числа схваток у них лежит в разных
-  // местах, и среднее по ним уже не скачет. Весь пул зоны (пятнадцать мобов,
-  // как в zoneRate) сгладил бы ещё лучше, но это пятнадцать боевых оценок на
-  // КАЖДУЮ примерку: быстрый набор тестов уезжал с полуминуты за десять.
-  const zone = referenceZone(state)
-  const level = Math.round(averageMonsterLevel(zone))
-  let kills = new Decimal(0)
-  let cost = 0
-  for (const archetype of zone.monsterPool) {
-    const monster = monsterFromTemplate(buildMonster(archetype, level, zone.rewardMultiplier))
-    const facing = { ...state, monster }
-    const rate = estimateCombatRate(facing)
-    kills = kills.plus(rate.killsPerSecond)
-    cost += fightCostShare(facing, rate)
+export function axesOf(state: GameState): Axes {
+  const level = state.level.toNumber()
+  const monster = monsterFromTemplate(referenceMonsterTemplate(level))
+  return {
+    damage: estimateCombatRate({ ...state, monster }).sustainedDamagePerSecond,
+    vitality: vitality(state.stats, level, monster),
+    mitigation: mitigationAgainst(monster, state.stats, level),
   }
-  const n = zone.monsterPool.length
-  return { damage: kills.div(n), fightCost: cost / n }
 }
 
-/**
- * Доля максимального запаса, которую снимает ОДНА схватка. Формула — та же,
- * что у контракта цены боя (`balance-pacing.test.ts`): потеря за цикл боя
- * плюс реген вне боя за паузу респауна, делить на максимум. Пауза респауна
- * входит потому, что за неё платит не схватка, а промежуток между ними.
- *
- * Не убивает вовсе (`idealKillsPerSecond` нулевой) — цена бесконечна: это
- * честнее нуля, иначе беспомощная связка выглядела бы самой безопасной.
- */
-function fightCostShare(state: GameState, rate: CombatRate): number {
-  if (rate.idealKillsPerSecond.lte(0)) return Number.POSITIVE_INFINITY
-  const cycleSec = new Decimal(1).div(rate.idealKillsPerSecond)
-  return rate.hpLossPerSecond
-    .times(cycleSec)
-    .plus(state.stats.hpRegenOutOfCombat.times(RESPAWN_DELAY_MS / 1000))
-    .div(state.stats.maxHp)
-    .toNumber()
+/** Пара чисел, которую видит игрок и по которой решает автоматика. */
+export interface Axes {
+  damage: Decimal
+  vitality: Decimal
+  /** Доля удара, которую съедают броня, снижение урона и блок. Для подсказки. */
+  mitigation: number
 }
-
 
 /**
  * ПУСТОЙ СЛОТ — ЭТО НОЛЬ ПО ОБЕИМ ОСЯМ, и порог для него другой.
@@ -265,9 +206,13 @@ function facingReference(state: GameState): GameState {
 
 /**
  * ИЗМЕНЕНИЕ ПО КАЖДОЙ ОСИ, долей: положительное — лучше, отрицательное —
- * хуже, null — считать не от чего (герой сейчас не убивает вовсе, или цена
- * боя и так ноль). Знак у обеих осей ОДИНАКОВЫЙ по смыслу: у выживания он
- * перевёрнут внутри, потому что там «лучше» значит МЕНЬШЕ.
+ * хуже, null — считать не от чего (сейчас ось равна нулю).
+ *
+ * ОБЕ ОСИ ТЕПЕРЬ «БОЛЬШЕ — ЛУЧШЕ», и переворачивать знак внутри больше не
+ * надо: живучесть — абсолютное число, а не цена, которую хотелось снизить.
+ * Пока осью выживания была ЦЕНА боя, здесь стояла отдельная ветка со своим
+ * направлением, и она была вечным источником вопроса «а в какую сторону тут
+ * плюс».
  *
  * Считается ровно одна пара состояний — «как есть» и «если надеть», — и обе
  * оси берутся из неё. Отдельного прохода на каждую ось нет.
@@ -277,22 +222,18 @@ export interface AxisDeltas {
   survival: number | null
 }
 
-function axisDeltas(
-  before: { damage: Decimal; fightCost: number },
-  after: { damage: Decimal; fightCost: number },
-): AxisDeltas {
-  const damage = before.damage.lte(0)
-    ? after.damage.gt(0)
-      ? Number.POSITIVE_INFINITY
-      : null
-    : after.damage.minus(before.damage).div(before.damage).toNumber()
-  // Выживание — СНИЖЕНИЕ цены боя: (было − стало) / было. Плюс значит
-  // «схватка стала дешевле», то есть та же сторона, что и у урона.
-  const survival =
-    !Number.isFinite(before.fightCost) || before.fightCost <= 0
-      ? null
-      : (before.fightCost - after.fightCost) / before.fightCost
-  return { damage, survival }
+function relative(before: Decimal, after: Decimal): number | null {
+  if (before.lte(0)) return after.gt(0) ? Number.POSITIVE_INFINITY : null
+  return after.minus(before).div(before).toNumber()
+}
+
+type AxisValues = Pick<Axes, 'damage' | 'vitality'>
+
+function axisDeltas(before: AxisValues, after: AxisValues): AxisDeltas {
+  return {
+    damage: relative(before.damage, after.damage),
+    survival: relative(before.vitality, after.vitality),
+  }
 }
 
 /** Лучше ли предмет хотя бы по одной оси из перечисленных. */
@@ -353,11 +294,12 @@ export interface EquipPreview {
   damageMin: Decimal // нижняя граница урона удара (оружие + вклад силы атаки)
   damageMax: Decimal
   swingTime: number // секунд между ударами с учётом haste
+  /** Урон в секунду по МОБУ ТЕКУЩЕЙ ЗОНЫ — справочная строка карточки. */
   damagePerSecond: Decimal
-  /** Убийств в секунду с учётом аптайма — ось УРОНА. */
-  killsPerSecond: Decimal
-  /** Цена одной схватки долей запаса — ось ВЫЖИВАНИЯ. Меньше — лучше. */
-  fightCost: number
+  /** ОСЬ УРОНА: урон в секунду по эталонному противнику, с перебоем. */
+  axisDamage: Decimal
+  /** ОСЬ ЖИВУЧЕСТИ: сколько урона герой держит за схватку. Больше — лучше. */
+  vitality: Decimal
 }
 
 function previewOf(state: GameState): EquipPreview {
@@ -369,9 +311,8 @@ function previewOf(state: GameState): EquipPreview {
     damageMax: max,
     swingTime: state.stats.swingTime,
     damagePerSecond: estimateCombatRate(facing).damagePerSecond,
-    // Обе оси сравнения: в первой урон и аптайм, во второй цена схватки.
-    killsPerSecond: axes.damage,
-    fightCost: axes.fightCost,
+    axisDamage: axes.damage,
+    vitality: axes.vitality,
   }
 }
 
@@ -422,11 +363,11 @@ export function compareItem(state: GameState, item: Item): EquipComparison {
   const equipped = withEquipped(state, item)
   const withItem = previewOf(equipped)
   const current = previewOf(state)
-  const base = current.killsPerSecond
+  const base = current.axisDamage
   const empty = fillsEmptySlot(state, item)
   const axes = axisDeltas(
-    { damage: current.killsPerSecond, fightCost: current.fightCost },
-    { damage: withItem.killsPerSecond, fightCost: withItem.fightCost },
+    { damage: current.axisDamage, vitality: current.vitality },
+    { damage: withItem.axisDamage, vitality: withItem.vitality },
   )
   const markedAxes = UPGRADE_RULES[priorityOf(state)].axes
   return {
@@ -442,7 +383,7 @@ export function compareItem(state: GameState, item: Item): EquipComparison {
     after: equipped.stats,
     combatDelta: base.lte(0)
       ? null
-      : withItem.killsPerSecond.minus(base).div(base).toNumber(),
+      : withItem.axisDamage.minus(base).div(base).toNumber(),
     axes,
     markedAxes,
   }

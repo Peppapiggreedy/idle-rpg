@@ -13,9 +13,13 @@ import type { Item } from '../types'
 import { ensureStats } from './stats'
 import { compareItem } from './equipment'
 import { estimateCombatRate } from './combat'
-import { ZONES, ZONE_BY_ID, representativeMonster, zoneForMonsterLevel } from '../data/zones'
+import { SAFE_ZONE, ZONES, zoneForMonsterLevel } from '../data/zones'
+import { SHIELDS } from '../data/items'
+import { RARITY_BY_ID } from '../data/rarity'
+import { shieldMods } from './loot'
+import type { StatId } from './stats'
+import type { SlotId } from '../data/slots'
 import {
-  aimZoneId,
   averageGear,
   equipUpgrades,
   playerZoneId,
@@ -56,88 +60,148 @@ function laggard(zoneId: string): GameState {
 const SHALLOW = zoneForMonsterLevel(13)
 const OWN = zoneForMonsterLevel(25)
 
-/**
- * Сколько живучести нужно, чтобы панцирь ОКУПАЛСЯ ПО УРОНУ в целевой зоне и
- * не окупался в мелкой. Число НЕ ЗАШИТО: любая правка баланса его двигает,
- * а свойство остаётся. Нет такого числа вовсе — свойство пропало, и тест
- * обязан упасть, а не молча проверять пустоту.
- *
- * МЕРИТСЯ ПО ОСИ УРОНА, а не по метке «апгрейд», и это следствие двух осей.
- * Пока мера была одна, «апгрейд» и «окупается по урону» значили одно и то
- * же; теперь панцирь — апгрейд в любой зоне, потому что цену боя он снижает
- * везде. Свойство третьей ночи от этого никуда не делось: оно про то, что
- * ЖИВУЧЕСТЬ ПЛАТИТ УРОНОМ ТОЛЬКО ТАМ, ГДЕ ГЕРОЙ ТЕРЯЕТ АПТАЙМ, — и меряется
- * теперь на той оси, о которой оно и было.
- */
-function flippingVitality(): number {
-  const shallow = laggard(SHALLOW.id)
-  const own = laggard(OWN.id)
-  for (const v of [25, 50, 100, 200, 400, 800]) {
-    const item = vitalityChest(v)
-    const here = compareItem(shallow, item).axes.damage ?? 0
-    const there = compareItem(own, item).axes.damage ?? 0
-    if (there > 0 && here <= 0) return v
-  }
-  throw new Error('нет живучести, которая окупается по урону в целевой зоне и не окупается в мелкой')
+/** Вещь с одним статом — чтобы проверять, что ось на него отзывается. */
+function statItem(stat: StatId, value: number): Item {
+  return {
+    id: `test-${stat}-trinket`,
+    templateId: 'plate-chest',
+    name: 'подвеска',
+    icon: 'slot-trinket',
+    slot: 'trinket',
+    rarity: 'common',
+    level: 25,
+    mods: [{ stat, kind: 'flat', value: new Decimal(value), source: 'test' }],
+  } as unknown as Item
 }
 
-describe('модель игрока одевается под зону, куда идёт', () => {
-  it('живучесть окупается уроном только в целевой зоне', () => {
-    const vitality = flippingVitality()
-    const item = vitalityChest(vitality)
+/** Тот же герой с ПУСТЫМИ слотами: сравнение «ничего → вещь», без обмена. */
+function withEmpty(state: GameState, ...slots: SlotId[]): GameState {
+  const equipment = { ...state.equipment }
+  for (const slot of slots) equipment[slot] = null
+  return ensureStats({ ...state, equipment, statsDirty: true })
+}
+
+/** Щит своего уровня — тем же shieldMods, что и настоящая находка. */
+function shieldItem(): Item {
+  return {
+    id: 'test-shield',
+    templateId: SHIELDS[0].id,
+    name: SHIELDS[0].noun,
+    icon: 'slot-offhand',
+    slot: 'offHand',
+    grip: 'shield',
+    rarity: 'common',
+    level: 25,
+    mods: shieldMods(SHIELDS[0], RARITY_BY_ID.common, 25),
+  } as unknown as Item
+}
+
+describe('оценка находки не зависит от зоны', () => {
+  // РАНЬШЕ ЗДЕСЬ БЫЛО ОБРАТНОЕ СВОЙСТВО, и оно стоило прибору костыля.
+  // Оси считались по ТЕКУЩЕЙ зоне: в мелкой аптайм равен единице, цена боя
+  // почти ноль, и панцирь не двигал ни одну ось. Модель приходилось водить
+  // за руку — оценивать находку по зоне, КУДА герой собирается (`aimZoneId`).
+  //
+  // Обе оси теперь считаются против ЭТАЛОННОГО противника уровня героя, и
+  // зоны в них нет вовсе. Значит и свойство ровно обратное: один и тот же
+  // герой с одной и той же находкой обязан получить ОДИН И ТОТ ЖЕ ответ, где
+  // бы он ни стоял. Это не украшение: пока ответ зависел от зоны, вещь
+  // читалась как находка на одном шаге пути и как хлам на следующем.
+  it('одна и та же вещь оценивается одинаково в мелкой зоне и в своей', () => {
+    const item = vitalityChest(200)
     const shallow = compareItem(laggard(SHALLOW.id), item)
     const own = compareItem(laggard(OWN.id), item)
+    expect(shallow.axes.damage).toBeCloseTo(own.axes.damage!, 12)
+    expect(shallow.axes.survival).toBeCloseTo(own.axes.survival!, 12)
+    expect(shallow.isUpgrade).toBe(own.isUpgrade)
+  })
 
-    // Свойство третьей ночи: в мелкой зоне герой не теряет аптайма и без
-    // панциря, поэтому запас там уроном НЕ окупается; в своей полосе — да.
-    expect(shallow.axes.damage!, 'мелкая зона: запас уроном не окупается').toBeLessThanOrEqual(0)
-    expect(own.axes.damage!, 'целевая зона: запас окупается уроном').toBeGreaterThan(0)
+  it('и в БЕЗОПАСНОЙ зоне тоже: там прежняя мера молчала', () => {
+    // Самый тяжёлый случай прежней меры: в безопасной зоне герой не гибнет и
+    // не тает, аптайм единица, цена боя около нуля — снижать нечего, и игра
+    // говорила «не апгрейд» про панцирь.
+    const item = vitalityChest(200)
+    const safe = compareItem(laggard(SAFE_ZONE.id), item)
+    const own = compareItem(laggard(OWN.id), item)
+    expect(safe.axes.survival!, 'живучесть растёт и в безопасной зоне').toBeGreaterThan(0)
+    expect(safe.axes.survival).toBeCloseTo(own.axes.survival!, 12)
+  })
 
-    // Свойство ЧЕТВЁРТОЙ ночи: цену боя панцирь снижает В ОБЕИХ зонах, и
-    // именно поэтому он апгрейд и там, и там. Раньше мера была одна, и в
-    // мелкой зоне игра говорила про панцирь «не апгрейд» — то есть молчала
-    // ровно о том, что он и делает.
-    expect(shallow.axes.survival!, 'мелкая зона: цена боя падает').toBeGreaterThan(0)
-    expect(own.axes.survival!, 'целевая зона: цена боя падает').toBeGreaterThan(0)
-    expect(shallow.isUpgrade && own.isUpgrade, 'при «балансе» апгрейд в обеих зонах').toBe(true)
+  it('щит в безопасной зоне поднимает живучесть', () => {
+    // ТО ЖЕ САМОЕ ПРО ЩИТ, и это отдельный случай: щит снимает урон ПЛОСКИМ
+    // числом, поэтому в долю он превращается только против конкретного удара.
+    // Против эталонного противника такой удар есть всегда — а прежняя мера
+    // (цена боя) в безопасной зоне была около нуля, и снижать было нечего.
+    const bare = withEmpty(laggard(SAFE_ZONE.id), 'offHand')
+    const cmp = compareItem(bare, shieldItem())
+    expect(cmp.axes.survival!, 'щит поднимает живучесть').toBeGreaterThan(0)
+  })
 
-    // А при приоритете «урон» остаётся ровно прежний вердикт: панцирь не
-    // апгрейд в мелкой зоне и апгрейд в целевой. Переключатель этим и
-    // ценен — он возвращает игроку старое поведение, если тот его хочет.
+  it('мана и интеллект живучесть НЕ двигают', () => {
+    // Живучесть — это сколько герой держит САМ. Всё, что оплачивается маной
+    // (лечащее умение, зелья), в неё не входит: считать её дважды значило бы
+    // обещать игроку запас, которого нет, когда мана кончилась.
+    //
+    // Слот ПУСТОЙ намеренно: сравнение «ничего → вещь», а не обмен одной
+    // подвески на другую — иначе тест мерил бы, что снялось, а не что надето.
+    const hero = withEmpty(laggard(OWN.id), 'trinket')
+    const brainy = compareItem(hero, statItem('intellect', 500))
+    expect(brainy.axes.survival ?? 0, 'интеллект живучесть не двигает').toBe(0)
+    const manaful = compareItem(hero, statItem('maxMana', 500))
+    expect(manaful.axes.survival ?? 0, 'запас маны живучесть не двигает').toBe(0)
+    // А живучесть — двигает, иначе тест проверял бы, что ось всегда молчит.
+    const tough = compareItem(hero, statItem('vitality', 200))
+    expect(tough.axes.survival!, 'живучесть двигает ось').toBeGreaterThan(0)
+  })
+
+  it('ось урона не двигают ни броня, ни живучесть, ни запас', () => {
+    // ОБРАТНАЯ ПОЛОВИНА ТОГО ЖЕ СВОЙСТВА. Оси обязаны быть независимыми, а до
+    // этой стадии они были СВЯЗАНЫ ЗАДОМ НАПЕРЁД: `damagePerSecond` знает про
+    // цикл привала (привал наливает ману), и панцирь ронял «урон в секунду» на
+    // 4 % — вещь, которая урона не трогала вовсе.
+    const hero = withEmpty(laggard(OWN.id), 'trinket')
+    for (const stat of ['armor', 'vitality', 'maxHp'] as const) {
+      expect(compareItem(hero, statItem(stat, 100)).axes.damage ?? 0, stat).toBe(0)
+    }
+    // И наоборот: сила атаки двигает урон и не двигает живучесть.
+    const sharp = compareItem(hero, statItem('attackPower', 100))
+    expect(sharp.axes.damage!, 'сила атаки двигает урон').toBeGreaterThan(0)
+    expect(sharp.axes.survival ?? 0, 'сила атаки живучесть не двигает').toBe(0)
+  })
+
+  it('ось живучести монотонна: больше запаса — больше живучести', () => {
+    const hero = withEmpty(laggard(OWN.id), 'trinket')
+    let previous = 0
+    for (const value of [10, 50, 100, 200, 400, 800]) {
+      const share = compareItem(hero, statItem('vitality', value)).axes.survival!
+      expect(share, `живучесть ${value}`).toBeGreaterThan(previous)
+      previous = share
+    }
+  })
+
+  it('ось урона монотонна: больше силы атаки — больше урона', () => {
+    const hero = withEmpty(laggard(OWN.id), 'trinket')
+    let previous = 0
+    for (const value of [10, 50, 100, 200, 400, 800]) {
+      const share = compareItem(hero, statItem('attackPower', value)).axes.damage!
+      expect(share, `сила атаки ${value}`).toBeGreaterThan(previous)
+      previous = share
+    }
+  })
+
+  it('приоритет «урон» по-прежнему отличает панцирь от клинка', () => {
+    // Переключатель никуда не делся: при «уроне» чистая живучесть апгрейдом
+    // не считается, при «балансе» — считается. Зона на это не влияет.
+    const item = vitalityChest(200)
     const damageOnly = (s: GameState) => ({ ...s, upgradePriority: 'damage' as const })
     expect(compareItem(damageOnly(laggard(SHALLOW.id)), item).isUpgrade).toBe(false)
-    expect(compareItem(damageOnly(laggard(OWN.id)), item).isUpgrade).toBe(true)
+    expect(compareItem(damageOnly(laggard(OWN.id)), item).isUpgrade).toBe(false)
+    expect(compareItem(laggard(OWN.id), item).isUpgrade, 'при «балансе» — апгрейд').toBe(true)
   })
+})
 
-  it('модель одевается под зону, куда идёт, а не где стоит', () => {
-    // Панцирь настолько тяжёлый, что в мелкой зоне ОСЛАБЛЯЕТ героя по урону:
-    // модель с приоритетом «урон» наденет его только глядя на целевую зону.
-    const vitality = flippingVitality()
-    const base = { ...laggard(SHALLOW.id), inventory: [vitalityChest(vitality)] }
-    const state = { ...base, upgradePriority: 'damage' as const }
-    const here = equipUpgrades(state)
-    expect(here.equipment.chest?.id, 'мелкая зона: панцирь не должен надеться').not.toBe(
-      'test-vitality-chest',
-    )
-    // Та же вещь, тот же герой, другая точка отсчёта — зона, куда он идёт.
-    const ahead = equipUpgrades(state, OWN.id)
-    expect(ahead.equipment.chest?.id, 'целевая зона: панцирь надет').toBe('test-vitality-chest')
-    expect(ahead.stats.maxHp.gt(state.stats.maxHp)).toBe(true)
-  })
-
-  // ЗДЕСЬ СТОЯЛ ТРЕТИЙ ТЕСТ — «прибавка запаса в глубокой зоне стоит дороже,
-  // чем в мелкой» — и он оказался НЕПРАВДОЙ на мелких прибавках. Замер: запас
-  // ×1.05 в своей полосе даёт 0.999 темпа, в мелкой 1.001. Причина известна и
-  // измерена ещё второй ночью: привал наливает ману досуха, поэтому лишний
-  // запас РЕЖЕ отправляет героя на привал и оставляет его с меньшим числом
-  // кастов. На больших прибавках выигрыш аптайма перекрывает эту потерю, на
-  // мелких — нет. Значит правка стадии не про «живучесть всегда дороже
-  // глубже», а про то, что РЕШЕНИЕ переворачивается — это и проверяет тест
-  // выше. Ложное свойство в наборе хуже отсутствующего.
-
-  it('вещи и переезд смотрят в ОДНУ лестницу', () => {
-    // Разъедься эти два решения, и герой одевался бы под одну зону, а шёл
-    // в другую — ровно тот случай, который стадия и чинит.
+describe('модель игрока идёт по лестнице', () => {
+  it('переезд идёт по лестнице, а не «куда глаза глядят»', () => {
     for (const level of [10, 25, 55, 85]) {
       const state = ensureStats({
         ...createInitialState(1, 'warden'),
@@ -149,19 +213,13 @@ describe('модель игрока одевается под зону, куда
       })
       const ladder = reachableZones(state, level).map((z) => z.id)
       expect(ladder, `уровень ${level}: лестница не пуста`).not.toHaveLength(0)
-      expect(ladder, `уровень ${level}: цель на лестнице`).toContain(aimZoneId(state, level))
       expect(ladder, `уровень ${level}: переезд на той же лестнице`).toContain(
         playerZoneId(state, level),
-      )
-      // Цель — СЛЕДУЮЩАЯ ступень за текущей, а не «куда глаза глядят».
-      const here = ladder.indexOf(state.currentZoneId)
-      expect(aimZoneId(state, level), `уровень ${level}`).toBe(
-        ladder[here + 1] ?? state.currentZoneId,
       )
     }
   })
 
-  it('на последней ступени лестницы цель — она сама', () => {
+  it('глубже своей полосы прибор не заглядывает: полосы открывает данж', () => {
     const level = 25
     const own = zoneForMonsterLevel(level)
     const state = ensureStats({
@@ -172,9 +230,7 @@ describe('модель игрока одевается под зону, куда
       unlockedZoneIds: unlockedByLevel(level),
       statsDirty: true,
     })
-    expect(aimZoneId(state, level)).toBe(own.id)
-    // И глубже своей полосы прибор не заглядывает: полосы открывает данж.
     const deeper = ZONES.filter((z) => z.monsterLevelRange.min > own.monsterLevelRange.max)
-    expect(deeper.map((z) => z.id)).not.toContain(aimZoneId(state, level))
+    expect(deeper.map((z) => z.id)).not.toContain(playerZoneId(state, level))
   })
 })

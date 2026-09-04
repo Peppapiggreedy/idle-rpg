@@ -76,7 +76,7 @@ test('наведение на подсвеченный слот показыва
   const axes = page.locator('[data-axes]')
   await expect(axes).toBeVisible()
   await expect(axes).toContainText('Урон')
-  await expect(axes).toContainText('Выживание')
+  await expect(axes).toContainText('Живучесть')
   await expect(axes).toContainText(/\d|с нуля|без изменений/)
 })
 

@@ -24,6 +24,7 @@ import {
   REGEN_TICK_S,
   RESPAWN_DELAY_MS,
   REVIVE_DELAY_MS,
+  TYPICAL_FIGHT_SEC,
 } from '../data/balance'
 import {
   abilitiesByPriority,
@@ -239,11 +240,77 @@ export function expectedMonsterDamage(
   return incoming.minus(Decimal.min(stats.blockValue, incoming).times(stats.blockChance))
 }
 
+/**
+ * ОБЩЕЕ СМЯГЧЕНИЕ ПРОТИВ КОНКРЕТНОГО ПРОТИВНИКА, доля 0..1 — включая БЛОК.
+ *
+ * `mitigationShare` выше блок не считает и не может: щит снимает
+ * фиксированную величину, а не долю, и в долю она превращается только против
+ * КОНКРЕТНОГО удара. Здесь противник есть, поэтому доля считается честно —
+ * отношением того, что дойдёт, к тому, что замахнулось.
+ *
+ * Отсюда же берётся свойство, ради которого ось живучести и заведена: щит,
+ * надетый в безопасной зоне, поднимает её сразу. Прежняя мера (цена боя) в
+ * безопасной зоне была почти нулём, и снижать там было нечего.
+ */
+export function mitigationAgainst(
+  monster: GameState['monster'],
+  stats: StatBlock,
+  heroLevel: number,
+): number {
+  const raw = monster.damageMin.plus(monster.damageMax).div(2)
+  if (raw.lte(0)) return 0
+  const taken = expectedMonsterDamage(monster, stats, heroLevel)
+  return Math.min(0.999, Math.max(0, 1 - taken.div(raw).toNumber()))
+}
+
+/**
+ * ЖИВУЧЕСТЬ — сколько урона герой держит за одну типичную схватку.
+ *
+ *     живучесть = (запас + реген × TYPICAL_FIGHT_SEC) / (1 − смягчение)
+ *
+ * Число АБСОЛЮТНОЕ и в тех же единицах, что здоровье: «столько урона по мне
+ * должны нанести, чтобы я упал». Растёт от запаса, регенерации, брони,
+ * снижения урона, шанса и силы блока — то есть от всего, чем герой стоит.
+ *
+ * ЧЕГО В НЕЙ НЕТ И БЫТЬ НЕ ДОЛЖНО: ничего, что стоит РЕСУРСА. Ни лечащего
+ * умения, ни зелий, ни маны, ни интеллекта. Живучесть — это сколько герой
+ * держит САМ; всё, что оплачивается маной, уже вычтено из оси урона (мана,
+ * ушедшая в лечение, не ушла в удар). Считать её дважды значило бы обещать
+ * игроку живучесть, которой у него нет, когда мана кончилась.
+ */
+export function vitality(
+  stats: StatBlock,
+  heroLevel: number,
+  monster: GameState['monster'],
+): Decimal {
+  const pool = stats.maxHp.plus(stats.hpRegen.times(TYPICAL_FIGHT_SEC))
+  return pool.div(1 - mitigationAgainst(monster, stats, heroLevel))
+}
+
 export interface CombatRate {
   // ВЕСЬ урон героя в секунду. Сумме двух чисел ниже он НЕ равен: умение
   // «на следующий удар» занимает замах автоатаки, и эти замахи входят в оба
   // слагаемых. Складывать их напрямую нельзя.
   damagePerSecond: Decimal
+  /**
+   * ЧИСТАЯ ПРОПУСКНАЯ СПОСОБНОСТЬ УРОНА — то же, но БЕЗ маны, приходящей с
+   * привалов, и без лечения в ротации. Это ОСЬ УРОНА для сравнения предметов
+   * (`axesOf` в game/equipment.ts), и отдельное число ей нужно вот почему.
+   *
+   * `damagePerSecond` считается вторым проходом, а тот знает про цикл привала:
+   * привал наливает ману досуха, значит герой, который отдыхает ЧАЩЕ, кастует
+   * БОЛЬШЕ. Отсюда обратная связь, которую игрок не в состоянии прочесть:
+   * надел панцирь — стал реже уходить на привал — потерял касты — «урон в
+   * секунду» упал на 4 % от вещи, которая урона не трогала вовсе. Замер на
+   * первом уровне: броня 44 и живучесть 6 обе давали ровно −4.4 %.
+   *
+   * Оси обязаны быть НЕЗАВИСИМЫМИ: одна отвечает «как сильно бью», вторая —
+   * «сколько держу». Поэтому ось урона берёт первый проход — тот, где ротация
+   * держится на собственном доходе ресурса. Модель боя от этого не меняется:
+   * прогноз зоны, оффлайн и все контракты по-прежнему считают
+   * `damagePerSecond`.
+   */
+  sustainedDamagePerSecond: Decimal
   autoDamagePerSecond: Decimal // только автоатака
   /** Сколько из damagePerSecond приносят проки — UI показывает это строкой. */
   procDamagePerSecond: Decimal
@@ -908,6 +975,10 @@ function computeCombatRate(state: GameState, mode: PlayMode = 'auto'): CombatRat
   return {
     ...rate,
     damagePerSecond: bounded(rate.damagePerSecond, byHand.damagePerSecond),
+    sustainedDamagePerSecond: bounded(
+      rate.sustainedDamagePerSecond,
+      byHand.sustainedDamagePerSecond,
+    ),
     killsPerSecond: bounded(rate.killsPerSecond, byHand.killsPerSecond),
     idealKillsPerSecond: bounded(rate.idealKillsPerSecond, byHand.idealKillsPerSecond),
   }
@@ -1220,6 +1291,9 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
   // без привалов и лечения, затем с посчитанной длиной цикла и темпом
   // лечения; второй проход меняет ответ на проценты, третий — на доли.
   let pass = evaluate(planRotation(null, []))
+  // ПЕРВЫЙ ПРОХОД — ЭТО ЧИСТАЯ ПРОПУСКНАЯ СПОСОБНОСТЬ УРОНА, и она нужна
+  // наружу отдельным числом: см. `sustainedDamagePerSecond` в CombatRate.
+  const sustainedDamagePerSecond = pass.damagePerSecond
   let healing = healFor(pass)
   let { netLossPerSec, cycle } = cycleFor(pass, healing)
   const refill: RestRefill | null =
@@ -1243,6 +1317,7 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
   if (!cycle) {
     return {
       damagePerSecond,
+      sustainedDamagePerSecond,
       autoDamagePerSecond: autoDps,
       abilityDamagePerSecond: rotation.damagePerSecond,
       procDamagePerSecond: procDps,
@@ -1260,6 +1335,7 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
   }
   return {
     damagePerSecond,
+    sustainedDamagePerSecond,
     autoDamagePerSecond: autoDps,
     abilityDamagePerSecond: rotation.damagePerSecond,
     procDamagePerSecond: procDps,
