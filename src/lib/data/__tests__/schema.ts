@@ -121,7 +121,7 @@ export interface Content {
   generatedMods: ReadonlyArray<{
     /** Кого описывает строка: «броня head», «щит buckler». Идёт в текст замечания. */
     what: string
-    wear: 'armor' | 'shield' | 'weapon'
+    wear: 'armor' | 'shield' | 'weapon' | 'trinket'
     mods: ReadonlyArray<{ stat: string; kind: string; value: number }>
   }>
 }
@@ -1290,12 +1290,12 @@ export const SHIELD_SCHEMA: EntitySchema<ShieldTemplate> = {
         )
       }
       // Щит НЕ оружие: урона он не даёт ни в каком виде, иначе стиль «щит»
-      // перестал бы быть платой за живучесть.
+      // перестал бы быть платой за выносливость.
       if (String(mod.stat).startsWith('offhandDamage') || String(mod.stat).startsWith('weaponDamage')) {
         report.add(
           where,
           `щит даёт урон статом «${mod.stat}» — щит не оружие, его вклад ` +
-            'это блок и живучесть (data/items.ts)',
+            'это блок и выносливость (data/items.ts)',
         )
       }
     }
@@ -3039,6 +3039,20 @@ function checkArmorPoints(content: Content, report: Report): void {
         'оружие несёт броню — броня это плата за слот, который не бьёт; ' +
           'с ней двуручное стало бы строго лучше связки «одноручное + щит» ' +
           '(game/loot.ts, weaponMods)',
+      )
+      continue
+    }
+    // УКРАШЕНИЕ — НЕ ЧАСТЬ БРОНИ И НЕ ЩИТ. Правило игры называет ровно два
+    // носителя брони, а генератор не проверял НИЧЕГО: броню получало всё, что
+    // не рука, и талисман защищал наравне со шлемом — 15 % брони эталонного
+    // комплекта. Признак лежит в данных (`SLOT_DEFENSE` в data/slots.ts),
+    // и проверка спрашивает его же.
+    if (entry.wear === 'trinket') {
+      report.need(
+        points.length === 0,
+        entry.what,
+        'украшение несёт броню — броню носят только части брони и щиты ' +
+          '(SLOT_DEFENSE в data/slots.ts, генератор в game/loot.ts)',
       )
       continue
     }

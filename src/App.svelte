@@ -15,10 +15,17 @@
   // как ещё один ряд среди прочих. Столбцы и ряд действий делят ОДНУ сетку
   // (`.permanent` — grid `auto 1fr auto`), поэтому «Автокаст» встаёт ровно
   // под левым столбцом, а ряд умений — ровно под левым краем сцены.
-  import { INVENTORY_SIZE, availablePoints, upgradeShare } from './lib/game'
+  import { availablePoints, inventorySize, upgradeShare } from './lib/game'
   import { gameStarted, gameState } from './lib/stores/game'
   import { placeTitle } from './lib/ui/placeText'
-  import { carriedItem, closeMenu, openMenu, releaseItem } from './lib/stores/ui'
+  import {
+    carriedAbility,
+    carriedItem,
+    closeMenu,
+    openMenu,
+    releaseAbility,
+    releaseItem,
+  } from './lib/stores/ui'
   import { isTextMode, uiSettings } from './lib/stores/ui'
   import { isSceneDisabled } from './lib/ui/route'
   import {
@@ -104,6 +111,12 @@
       releaseItem()
       return
     }
+    // УМЕНИЕ В РУКЕ — ТО ЖЕ САМОЕ, ЧТО ВЕЩЬ. Esc снимает ближайшее: сперва
+    // то, что несут, и только если руки пусты — меню.
+    if ($carriedAbility !== null) {
+      releaseAbility()
+      return
+    }
     if ($openMenu !== null) closeMenu()
   }
   const place = $derived(placeTitle($gameState))
@@ -111,7 +124,10 @@
   const hasUpgrade = $derived(
     $gameState.inventory.some((item) => upgradeShare($gameState, item) !== null),
   )
-  const bagNote = $derived({ bag: `${$gameState.inventory.length}/${INVENTORY_SIZE}` })
+  // ВМЕСТИМОСТЬ БЕРЁТСЯ ТАМ ЖЕ, ГДЕ ЕЁ БЕРЁТ ЛОГИКА. Здесь стояла БАЗА, и
+  // после первой же покупки расширения кнопка показывала «28/24»: вещи
+  // лежали сверх знаменателя, потому что знаменатель был не тот.
+  const bagNote = $derived({ bag: `${$gameState.inventory.length}/${inventorySize($gameState)}` })
   // Кнопка меню, до которой герой не дорос, не показывается вовсе — то же
   // правило, что и у панелей внутри. Уровень идёт в MenuButtons числом:
   // сам компонент про игровое состояние не знает.

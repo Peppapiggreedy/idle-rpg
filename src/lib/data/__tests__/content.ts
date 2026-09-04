@@ -51,7 +51,7 @@ import { QUESTS, QUEST_CHAIN } from '../quests'
 import { PROGRESSION } from '../progression'
 import { REAGENTS } from '../reagents'
 import { PROFESSIONS, PROFESSION_UNLOCK_LEVEL, RECIPES } from '../recipes'
-import { SLOT_DROP_WEIGHTS, SLOT_ICONS, SLOT_IDS, SLOT_NAMES } from '../slots'
+import { SLOT_DEFENSE, SLOT_DROP_WEIGHTS, SLOT_ICONS, SLOT_IDS, SLOT_NAMES } from '../slots'
 import { BRANCHES, TALENTS } from '../talents'
 import { ZONES } from '../zones'
 import { STAT_IDS } from '../../game/stats'
@@ -185,17 +185,21 @@ function generatedMods(): Content['generatedMods'] {
   const rarity = RARITIES[0]
   const out: Array<{
     what: string
-    wear: 'armor' | 'shield' | 'weapon'
+    wear: 'armor' | 'shield' | 'weapon' | 'trinket'
     mods: ReadonlyArray<{ stat: string; kind: string; value: number }>
   }> = []
   const plain = (mods: ReadonlyArray<{ stat: string; kind: string; value: Decimal }>) =>
     mods.map((m) => ({ stat: m.stat as string, kind: m.kind as string, value: m.value.toNumber() }))
   for (const slot of SLOT_IDS) {
     if (slot === 'mainHand' || slot === 'offHand') continue
+    // ВИД НОШЕНИЯ БЕРЁТСЯ ИЗ ДАННЫХ, а не из имени слота: `SLOT_DEFENSE`
+    // говорит, часть это брони или украшение, и проверка спрашивает ровно
+    // то же, что спрашивает генератор.
+    const wear = SLOT_DEFENSE[slot] ? ('armor' as const) : ('trinket' as const)
     for (const primary of ARMOR_ATTRIBUTES) {
       out.push({
-        what: `броня ${slot} (${primary})`,
-        wear: 'armor',
+        what: `${wear === 'armor' ? 'броня' : 'украшение'} ${slot} (${primary})`,
+        wear,
         mods: plain(armorMods(slot as ArmorSlot, rarity, 1, primary)),
       })
     }

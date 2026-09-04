@@ -1220,5 +1220,20 @@ export function brokenCases(): BrokenCase[] {
       content: { ...real, balance: { ...real.balance, armorBaseDefense: 0 } },
       expect: ['ARMOR_BASE_DEFENSE', 'не защищает', 'data/balance.ts'],
     },
+    {
+      // Ровно та поломка, которая жила в игре: генератор не проверял НИЧЕГО и
+      // выдавал броню всему, что не рука. Талисман нёс 15 % брони эталонного
+      // комплекта, а проверка молчала.
+      title: 'талисман несёт броню',
+      content: {
+        ...real,
+        generatedMods: real.generatedMods.map((entry) =>
+          entry.wear === 'trinket'
+            ? { ...entry, mods: [...entry.mods, { stat: 'armor', kind: 'flat', value: 44 }] }
+            : entry,
+        ),
+      },
+      expect: ['украшение', 'части брони и щиты', 'SLOT_DEFENSE'],
+    },
   ]
 }

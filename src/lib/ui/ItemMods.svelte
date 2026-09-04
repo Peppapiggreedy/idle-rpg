@@ -22,7 +22,7 @@
     strength: 'сила',
     agility: 'ловкость',
     intellect: 'интеллект',
-    vitality: 'живучесть',
+    vitality: 'выносливость',
     attackPower: 'сила атаки',
     weaponDamageMin: 'урон оружия (мин)',
     weaponDamageMax: 'урон оружия (макс)',

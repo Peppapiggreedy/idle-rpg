@@ -60,3 +60,223 @@ test('слотов в книге столько же, сколько в ряду
     await barSlots(page).count(),
   )
 })
+
+// ПОРЯДОК СЛОТОВ МЕНЯЕТСЯ, И ЭТО НЕ КОСМЕТИКА (находка 7).
+//
+// Порядок слотов ЕСТЬ приоритет автокаста — так устроена вся система. Пока
+// порядок нельзя изменить, половина принятого решения не существует: игрок
+// выбирает четвёрку, но не может выбрать, что жмётся первым.
+//
+// Раньше перетаскивание внутри ряда было мертво по четырём причинам разом, и
+// главная — `disabled` у кнопки: в бою умение почти всегда на откате, а
+// отключённая кнопка не выдаёт событий перетаскивания вовсе.
+
+/** Имена умений в ряду по порядку слотов. */
+async function barOrder(page: Page): Promise<string[]> {
+  return barSlots(page).evaluateAll((els) =>
+    els.map((el) => el.getAttribute('aria-label') ?? ''),
+  )
+}
+
+test('тап по слоту, тап по другому — умения меняются местами', async ({ page }) => {
+  // ЕДИНСТВЕННЫЙ путь на тач-экране: HTML5-перетаскивания там нет вовсе.
+  await openBook(page)
+  const before = await barOrder(page)
+  expect(before[0]).not.toBe(before[2])
+
+  // Открываем книгу: её ряд слотов — тот же ряд, и тап-тап работает и там.
+  const cells = book(page).locator('[data-book-slots] button')
+  await cells.nth(0).click()
+  await expect(book(page).locator('[data-book-carrying]')).toBeVisible()
+  await cells.nth(2).click()
+
+  const after = await barOrder(page)
+  expect(after[0]).toBe(before[2])
+  expect(after[2]).toBe(before[0])
+  // Состав тот же — переставили, а не потеряли.
+  expect([...after].sort()).toEqual([...before].sort())
+})
+
+test('слот в ряду под сценой перетаскивается в другой слот', async ({ page }) => {
+  await openBook(page)
+  const before = await barOrder(page)
+  const slots = barSlots(page)
+  await slots.nth(0).dragTo(slots.nth(1))
+  const after = await barOrder(page)
+  expect(after[0]).toBe(before[1])
+  expect(after[1]).toBe(before[0])
+})
+
+test('перетаскивание работает и когда умение НЕ нажимается', async ({ page }) => {
+  // Главная причина, по которой жест был мёртв: кнопка стояла disabled, а в
+  // бою умение почти всегда на откате или без ресурса.
+  await openBook(page)
+  const slots = barSlots(page)
+  const blocked = page.locator('[aria-label="Действия"] button.slot.blocked')
+  if ((await blocked.count()) === 0) test.skip(true, 'в этом пресете все умения доступны')
+  const label = await blocked.first().getAttribute('aria-label')
+  // Недоступное помечено aria-disabled, а НЕ disabled: иначе нет событий.
+  await expect(blocked.first()).toHaveAttribute('aria-disabled', 'true')
+  await expect(blocked.first()).not.toHaveAttribute('disabled', '')
+  const from = (await barOrder(page)).indexOf(label ?? '')
+  const to = from === 0 ? 1 : 0
+  await slots.nth(from).dragTo(slots.nth(to))
+  expect((await barOrder(page))[to]).toBe(label)
+})
+
+test('умение из ряда возвращается в книгу и слот пустеет', async ({ page }) => {
+  await openBook(page)
+  const cells = book(page).locator('[data-book-slots] button')
+  const before = await barOrder(page)
+
+  // Берём умение из слота и бросаем в список книги.
+  await cells.nth(0).click()
+  await expect(book(page).locator('[data-book-carrying]')).toBeVisible()
+  await rows(page).first().locator('button.grab').click()
+
+  const empty = page.locator('[aria-label="Действия"] .slot.empty')
+  expect(await empty.count()).toBeGreaterThan(0)
+  const after = await barOrder(page)
+  expect(after).not.toEqual(before)
+})
+
+test('Esc роняет несомое умение, а не закрывает меню', async ({ page }) => {
+  await openBook(page)
+  const cells = book(page).locator('[data-book-slots] button')
+  await cells.nth(0).click()
+  await expect(book(page).locator('[data-book-carrying]')).toBeVisible()
+  await page.keyboard.press('Escape')
+  // Умение из руки выпало...
+  await expect(book(page).locator('[data-book-carrying]')).toHaveCount(0)
+  // ...а меню осталось открытым: Esc снимает БЛИЖАЙШЕЕ.
+  await expect(book(page)).toBeVisible()
+})
+
+test('ПРИОРИТЕТ АВТОКАСТА следует новому порядку, а не остаётся прежним', async ({ page }) => {
+  // Проверять журналом боя нельзя: в режиме пресета игровой цикл не
+  // запускается, и после перестановки лог не пополнится ни строкой. Зато
+  // настройки автокаста показывают порядок ЧИСЛОМ приоритета — тем же
+  // порядком слотов, из которого он и выводится.
+  await openBook(page)
+  const before = await barOrder(page)
+
+  // Список автокаста идёт В ПОРЯДКЕ ПРИОРИТЕТА — сверху то, что жмётся
+  // первым, — и это ровно порядок слотов.
+  // Панель автокаста опознаётся по своему выключателю, а не по слову
+  // «Автокаст»: слово встречается и в заголовке меню, и наружная секция
+  // захватывала заодно книгу.
+  const priorities = () =>
+    page.locator('section:has([data-autocast-master])').locator('.list .name').allInnerTexts()
+
+  // Сперва убеждаемся, что читаем настоящий список, а не пустоту: условная
+  // проверка, которая никогда не срабатывает, — тот же зелёный, что у
+  // сторожа, которому нечего сказать.
+  const listedBefore = await priorities()
+  expect(listedBefore.length, 'список автокаста пуст — проверять нечего').toBeGreaterThan(1)
+  expect(listedBefore[0]).toBe(before[0])
+
+  const cells = book(page).locator('[data-book-slots] button')
+  await cells.nth(0).click()
+  await cells.nth(1).click()
+
+  const after = await barOrder(page)
+  expect(after[0]).toBe(before[1])
+  // ГЛАВНОЕ: приоритет поехал вместе с рядом, а не остался прежним.
+  const listedAfter = await priorities()
+  expect(listedAfter[0]).toBe(after[0])
+  expect(listedAfter[0]).not.toBe(listedBefore[0])
+})
+
+// КНИГА — СЕТКА, А НЕ ЛЕНТА (находка 8).
+//
+// Одиннадцать строк по одной листались вниз, и выбор четвёрки шёл ЧТЕНИЕМ:
+// чтобы сравнить первое умение с последним, приходилось прокручивать.
+
+test('одиннадцать умений укладываются в три ряда и не листаются', async ({ page }) => {
+  // МЕРИМ КНИГУ, А НЕ СТРАНИЦУ. Над книгой стоит постоянная зона со сценой —
+  // она видна всегда, это правило игры, и её высоту книга не отменяет.
+  // Требование «без прокрутки» относится к самой книге: одиннадцать умений
+  // обязаны укладываться в несколько рядов, а не в ленту на одиннадцать
+  // экранов, и внутри у неё не должно быть своей прокрутки.
+  await openBook(page)
+  const cells = rows(page)
+  const count = await cells.count()
+  expect(count).toBeGreaterThanOrEqual(11)
+
+  const boxes = []
+  for (let i = 0; i < count; i += 1) boxes.push((await cells.nth(i).boundingBox())!)
+
+  // Рядов ровно три: одиннадцать умений по четыре и больше в ряд.
+  const rowTops = new Set(boxes.map((b) => Math.round(b.y)))
+  expect(rowTops.size, 'книга не легла в три ряда').toBeLessThanOrEqual(3)
+
+  // Вся сетка помещается в высоту окна — до последнего умения дотягивается
+  // взгляд, а не колесо.
+  const top = Math.min(...boxes.map((b) => b.y))
+  const bottom = Math.max(...boxes.map((b) => b.y + b.height))
+  expect(bottom - top, 'сетка выше окна').toBeLessThanOrEqual(page.viewportSize()!.height)
+
+  // И своей прокрутки у книги нет: список не спрятан под скроллбар.
+  const grid = book(page).locator('ul').first()
+  const scrolls = await grid.evaluate((el) => el.scrollHeight - el.clientHeight)
+  expect(scrolls, 'внутри книги завелась прокрутка').toBeLessThanOrEqual(1)
+})
+
+test('сетка идёт в несколько колонок, а не столбиком', async ({ page }) => {
+  await openBook(page)
+  const xs = await rows(page).evaluateAll((els) =>
+    els.map((el) => Math.round(el.getBoundingClientRect().x)),
+  )
+  // В ленте все клетки стоят на одной вертикали; в сетке — минимум на трёх.
+  expect(new Set(xs).size).toBeGreaterThanOrEqual(3)
+})
+
+test('запертое приглушено и называет уровень, стоящее в слоте помечено', async ({ page }) => {
+  await openBook(page, 'fresh')
+  const locked = book(page).locator('[data-ability].locked')
+  expect(await locked.count()).toBeGreaterThan(0)
+  await expect(locked.first().locator('[data-lock]')).toContainText('уровне')
+
+  const chosen = book(page).locator('[data-ability].chosen')
+  expect(await chosen.count()).toBe(await barSlots(page).count())
+  // Метка называет НОМЕР слота, а не просто «выбрано».
+  await expect(chosen.first().locator('.name')).toContainText('слот')
+})
+
+test('предупреждение о связке видно БЕЗ наведения', async ({ page }) => {
+  // Спрятать связку в подсказку значило бы сделать «Разрыв без Рваной раны»
+  // невидимым ровно для того, кто ещё не знает, что связка бывает.
+  await openBook(page)
+  const combo = book(page).locator('[data-combo]')
+  expect(await combo.count()).toBeGreaterThan(0)
+  await expect(combo.first()).toBeVisible()
+})
+
+test('описание по наведению — то же, что в ряду под сценой', async ({ page }) => {
+  // Одна сборка на игру: два разных ответа на один вопрос — это два
+  // источника правды.
+  await openBook(page)
+  const first = rows(page).first()
+  const name = await first.locator('.name').innerText()
+  const shortName = name.split('\n')[0].trim()
+
+  await first.locator('button.grab').hover()
+  const bookTip = first.locator('[role="tooltip"]').first()
+  await expect(bookTip).toBeVisible()
+  const bookText = await bookTip.innerText()
+
+  const barButton = page.locator(`[aria-label="Действия"] button.slot[aria-label="${shortName}"]`)
+  if ((await barButton.count()) === 0) test.skip(true, 'это умение не стоит в ряду')
+  // ЧИТАЕМ textContent, А НЕ innerText: сравнивается ТЕКСТ подсказки, а не
+  // её видимость, и наводить мышь ради этого не нужно — у скрытого элемента
+  // innerText пуст, и проверка молча сравнивала бы с пустой строкой.
+  const barTip = barButton.first().locator('xpath=following-sibling::*[@role="tooltip"]')
+  const barText = (await barTip.textContent()) ?? ''
+
+  // Ряд добавляет хоткей и состояние кнопки, книга — нет; общими обязаны
+  // быть ВСЕ содержательные строки описания.
+  for (const line of bookText.split('\n').slice(1)) {
+    if (line.trim().length === 0) continue
+    expect(barText, `строка «${line}» разошлась между книгой и рядом`).toContain(line.trim())
+  }
+})

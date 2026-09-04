@@ -28,12 +28,19 @@
   const resource = $derived(resourceWords($gameState.classId))
 
   // Названия и способ прочтения — из ОБЩЕГО реестра ui/statFormat.ts.
-  // Сравнение предметов берёт их оттуда же, поэтому «Живучесть» в двух
+  // Сравнение предметов берёт их оттуда же, поэтому характеристика во всех
   // местах игры называется одинаково и по одной причине, а не по двум.
+  //
+  // ДВА РАЗНЫХ СЛОВА НА ЭТОМ ЭКРАНЕ, И ПУТАТЬ ИХ НЕЛЬЗЯ. «Выносливость» —
+  // ХАРАКТЕРИСТИКА (StatId 'vitality'), одна из четырёх, растит запас
+  // здоровья. «Живучесть» — ОСЬ (axes.survival), сколько урона герой держит
+  // за схватку. Раньше обе назывались «Живучестью» и стояли в одной
+  // карточке: плитка сверху и строка в списке отвечали разными числами на
+  // один и тот же, как казалось игроку, вопрос.
   const STAT_NAMES = $derived(statNames($gameState.classId))
 
   // 'swingTime' — производная строка, не модифицируемый стат.
-  type RowId = StatId | 'swingTime' | 'swingDamage' | 'dps' | 'vitality'
+  type RowId = StatId | 'swingTime' | 'swingDamage' | 'dps' | 'survival'
 
   let openStat = $state<RowId | null>(null)
 
@@ -81,7 +88,7 @@
     strength: 'от силы',
     agility: 'от ловкости',
     intellect: 'от интеллекта',
-    vitality: 'от живучести',
+    vitality: 'от выносливости',
   }
   function sourceName(source: string): string {
     if (source === 'base') return 'база'
@@ -109,7 +116,7 @@
     </div>
     <div class="tile">
       <span class="tile-name">Живучесть</span>
-      <span class="tile-value"><NumberText value={axes.vitality} /></span>
+      <span class="tile-value"><NumberText value={axes.survival} /></span>
     </div>
   </div>
 
@@ -157,16 +164,16 @@
       {/if}
     </li>
     <li>
-      <button type="button" class="stat-row" onclick={() => toggle('vitality')}>
+      <button type="button" class="stat-row" onclick={() => toggle('survival')}>
         <span class="name">Живучесть</span>
-        <span class="value"><NumberText value={axes.vitality} /></span>
+        <span class="value"><NumberText value={axes.survival} /></span>
       </button>
-      {#if openStat === 'vitality'}
+      {#if openStat === 'survival'}
         <div class="breakdown">
           <span>{formatNumber($gameState.stats.maxHp)} запас</span>
           <span>· + {formatNumber($gameState.stats.hpRegen.times(TYPICAL_FIGHT_SEC))} реген за схватку ({formatNumber($gameState.stats.hpRegen)}/с × {TYPICAL_FIGHT_SEC}с)</span>
           <span>· / {formatPercent(1 - axes.mitigation)} доходит после брони и блока</span>
-          <span>= <NumberText value={axes.vitality} /></span>
+          <span>= <NumberText value={axes.survival} /></span>
         </div>
       {/if}
     </li>

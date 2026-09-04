@@ -187,7 +187,7 @@ describe('конвейер статов', () => {
     expect(expectedSwingDamage(s.stats).toNumber()).toBe(60)
   })
 
-  it('ловкость даёт скорость и криты, интеллект ману, живучесть здоровье', () => {
+  it('ловкость даёт скорость и криты, интеллект ману, выносливость здоровье', () => {
     const base = bareHero(1)
     const s = ensureStats({
       ...base,
@@ -213,8 +213,8 @@ describe('конвейер статов', () => {
     expect(s.stats.critChance).toBeCloseTo(0.05 + 0.005, 10)
     expect(s.stats.maxMana.toNumber()).toBe(50 + 50) // 10 интеллекта * 5
     expect(s.stats.manaRegen.toNumber()).toBe(9 + 5)
-    expect(s.stats.maxHp.toNumber()).toBe(100 + 70) // 10 живучести * 7
-    expect(s.stats.hpRegen.toNumber()).toBe(1 + 1) // 10 живучести * 0.1
+    expect(s.stats.maxHp.toNumber()).toBe(100 + 70) // 10 выносливости * 7
+    expect(s.stats.hpRegen.toNumber()).toBe(1 + 1) // 10 выносливости * 0.1
   })
 
   it('процент на атрибут множит и его вклады: конвейер один', () => {

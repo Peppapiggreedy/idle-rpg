@@ -1,6 +1,5 @@
 // Надеть / снять / оценить экипировку. Чистые операции над состоянием.
-import { estimateCombatRate, mitigationAgainst, swingDamageRange, vitality } from './combat'
-import { INVENTORY_SIZE } from '../data/balance'
+import { estimateCombatRate, mitigationAgainst, swingDamageRange, survival } from './combat'
 import { inventorySize } from './upgrades'
 import { SAFE_ZONE, ZONE_BY_ID, representativeMonster, type Zone } from '../data/zones'
 import { referenceMonsterTemplate } from '../data/monsters'
@@ -133,10 +132,13 @@ function withEquipped(state: GameState, item: Item): GameState {
  *              Считает его та же `estimateCombatRate` — второй модели боя
  *              в игре нет, — но берётся из неё чистая пропускная способность
  *              урона, без аптайма, привалов и смертей.
- *   vitality — сколько урона герой держит за одну типичную схватку:
- *              `(запас + реген × TYPICAL_FIGHT_SEC) / (1 − смягчение)`.
- *              Формула — `vitality` в game/combat.ts, число абсолютное и в
+ *   survival — ЖИВУЧЕСТЬ: сколько урона герой держит за одну типичную
+ *              схватку, `(запас + реген × TYPICAL_FIGHT_SEC) / (1 − смягчение)`.
+ *              Формула — `survival` в game/combat.ts, число абсолютное и в
  *              единицах здоровья. Больше — лучше, как и у урона.
+ *              ИМЯ ПОЛЯ — НЕ `vitality`, И ЭТО ВАЖНО: `vitality` в игре
+ *              называется ХАРАКТЕРИСТИКА (игроку — «выносливость»), и одно
+ *              имя на два разных числа читалось бы как одно число.
  *
  * ОБЕ ОСИ НЕ ЗАВИСЯТ ОТ ЗОНЫ. Противник строится той же `buildMonster` на
  * эталонном архетипе УРОВНЯ ГЕРОЯ и без зонального множителя наград. Прежняя
@@ -151,7 +153,7 @@ export function axesOf(state: GameState): Axes {
   const monster = monsterFromTemplate(referenceMonsterTemplate(level))
   return {
     damage: estimateCombatRate({ ...state, monster }).sustainedDamagePerSecond,
-    vitality: vitality(state.stats, level, monster),
+    survival: survival(state.stats, level, monster),
     mitigation: mitigationAgainst(monster, state.stats, level),
   }
 }
@@ -159,7 +161,7 @@ export function axesOf(state: GameState): Axes {
 /** Пара чисел, которую видит игрок и по которой решает автоматика. */
 export interface Axes {
   damage: Decimal
-  vitality: Decimal
+  survival: Decimal
   /** Доля удара, которую съедают броня, снижение урона и блок. Для подсказки. */
   mitigation: number
 }
@@ -227,12 +229,12 @@ function relative(before: Decimal, after: Decimal): number | null {
   return after.minus(before).div(before).toNumber()
 }
 
-type AxisValues = Pick<Axes, 'damage' | 'vitality'>
+type AxisValues = Pick<Axes, 'damage' | 'survival'>
 
 function axisDeltas(before: AxisValues, after: AxisValues): AxisDeltas {
   return {
     damage: relative(before.damage, after.damage),
-    survival: relative(before.vitality, after.vitality),
+    survival: relative(before.survival, after.survival),
   }
 }
 
@@ -299,7 +301,7 @@ export interface EquipPreview {
   /** ОСЬ УРОНА: урон в секунду по эталонному противнику, с перебоем. */
   axisDamage: Decimal
   /** ОСЬ ЖИВУЧЕСТИ: сколько урона герой держит за схватку. Больше — лучше. */
-  vitality: Decimal
+  survival: Decimal
 }
 
 function previewOf(state: GameState): EquipPreview {
@@ -312,7 +314,7 @@ function previewOf(state: GameState): EquipPreview {
     swingTime: state.stats.swingTime,
     damagePerSecond: estimateCombatRate(facing).damagePerSecond,
     axisDamage: axes.damage,
-    vitality: axes.vitality,
+    survival: axes.survival,
   }
 }
 
@@ -366,8 +368,8 @@ export function compareItem(state: GameState, item: Item): EquipComparison {
   const base = current.axisDamage
   const empty = fillsEmptySlot(state, item)
   const axes = axisDeltas(
-    { damage: current.axisDamage, vitality: current.vitality },
-    { damage: withItem.axisDamage, vitality: withItem.vitality },
+    { damage: current.axisDamage, survival: current.survival },
+    { damage: withItem.axisDamage, survival: withItem.survival },
   )
   const markedAxes = UPGRADE_RULES[priorityOf(state)].axes
   return {

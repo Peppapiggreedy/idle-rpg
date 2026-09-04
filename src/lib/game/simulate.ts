@@ -41,7 +41,8 @@ import {
   zoneStanding,
   type ZoneStanding,
 } from './zones'
-import { INVENTORY_SIZE, LEVEL_CAP, xpGapShare, RUN_PLAYER_DEATH_TOLERANCE_PER_HOUR } from '../data/balance'
+import { LEVEL_CAP, xpGapShare, RUN_PLAYER_DEATH_TOLERANCE_PER_HOUR } from '../data/balance'
+import { inventorySize } from './upgrades'
 import { ABILITIES, ABILITY_BY_ID } from '../data/abilities'
 import { RARITY_BY_ID, TYPICAL_RARITY } from '../data/rarity'
 import { ARMOR_NOUNS, ONE_HANDED, SHIELDS, WEAPONS, WEAPON_BY_ID } from '../data/items'
@@ -248,7 +249,7 @@ export const BALANCE_PRESET = {
   // Ниже героя мобы бьют по той же ставке, но запаса хватает на 26 ударов, а
   // золото за отставание не штрафуется — сравнивать есть что.
   weaponZoneId: 'mine-collapse',
-  // Связки меряются с ОБЩЕЙ средней бронёй: реген живёт на живучести вещей,
+  // Связки меряются с ОБЩЕЙ средней бронёй: реген живёт на выносливости вещей,
   // и совсем голый герой умирал бы в зоне замера, меряя смертность, а не удар.
   // Броня одна на все стили, поэтому нормализацию она не трогает.
   weaponBuild: { level: 58, gear: 'average', gearLevel: 81 } as SimBuild,
@@ -874,7 +875,7 @@ export function reachableZones(state: GameState, level: number): Zone[] {
  * находки по ней, а не по текущей зоне. Костыль был нужен ровно потому, что
  * мера «лучше» смотрела в зону: в безопасной зоне аптайм равен единице, цена
  * боя почти ноль, и нагрудник проигрывал любой тряпке с силой атаки — герой
- * приходил на десятый уровень с 309 HP в семи вещах без единой живучести.
+ * приходил на десятый уровень с 309 HP в семи вещах без единой выносливости.
  *
  * Теперь обе оси считаются против ЭТАЛОННОГО противника уровня героя и от
  * зоны не зависят вовсе (`axesOf` в game/equipment.ts). Смотреть вперёд стало
@@ -1035,7 +1036,7 @@ export function simulate(options: SimOptions): SimResult {
     }
     // Полная сумка: живой игрок продаёт самое дешёвое и освобождает место.
     // Без этого дроп после двенадцатой находки прекращается совсем.
-    if (bag === 'sell' && state.inventory.length >= INVENTORY_SIZE) {
+    if (bag === 'sell' && state.inventory.length >= inventorySize(state)) {
       const cheapest = state.inventory.reduce((min, item) =>
         sellPrice(item).lt(sellPrice(min)) ? item : min,
       )

@@ -67,6 +67,36 @@ export const SLOT_CELL: Record<SlotId, { col: number; row: number }> = {
 export const DOLL_COLS = Math.max(...Object.values(SLOT_CELL).map((c) => c.col))
 export const DOLL_ROWS = Math.max(...Object.values(SLOT_CELL).map((c) => c.row))
 
+/**
+ * НЕСЁТ ЛИ ВЕЩЬ В ЭТОМ СЛОТЕ БРОНЮ — ДАННЫМИ, а не выводом «всё, что не рука».
+ *
+ * Правило игры звучит так: броня лежит на КАЖДОЙ ЧАСТИ БРОНИ и на КАЖДОМ
+ * ЩИТЕ. Талисман не то и не другое — это украшение, и защищать он не должен.
+ * Но в генераторе никакого условия не было ВООБЩЕ: броню получало всё, что не
+ * рука (`Exclude<SlotId, 'mainHand' | 'offHand'>`), и талисман попадал под
+ * это исключение вместе со шлемом.
+ *
+ * Признак приехал СЮДА, а не в логику, по железному правилу проекта: ветка
+ * `if (slot === 'trinket')` в `game/loot.ts` — это ветвление по конкретному
+ * id, его ловит `game/__tests__/rules.test.ts`. Появится восьмой слот —
+ * решение о нём принимается здесь, одной строкой, и проверка контента
+ * потребует его заполнить.
+ *
+ * РУКИ — `false` обе, и это не «руки не защищают»: у щита СВОЯ строка брони
+ * (`SHIELD_BASE_DEFENSE`, генератор `shieldMods`), потому что щит занимает
+ * руку и стоит игроку второго оружия. Здесь речь только о вещах, которые
+ * делает `armorMods`.
+ */
+export const SLOT_DEFENSE: Record<SlotId, boolean> = {
+  mainHand: false,
+  offHand: false,
+  head: true,
+  chest: true,
+  hands: true,
+  legs: true,
+  trinket: false,
+}
+
 // Вес слота в рулетке дропа: оружие падает реже брони.
 export const SLOT_DROP_WEIGHTS: Record<SlotId, number> = {
   mainHand: 20,

@@ -54,7 +54,7 @@ export function statNames(classId: string | undefined | null): Record<StatId, st
     strength: 'Сила',
     agility: 'Ловкость',
     intellect: 'Интеллект',
-    vitality: 'Живучесть',
+    vitality: 'Выносливость',
     attackPower: 'Сила атаки',
     weaponDamageMin: 'Урон оружия (мин)',
     weaponDamageMax: 'Урон оружия (макс)',

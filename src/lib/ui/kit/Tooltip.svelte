@@ -9,6 +9,30 @@
   // Закрывается по Esc и по клику вне: открытая подсказка, которую нечем
   // убрать, хуже отсутствующей.
   //
+  // ПОДСКАЗКА ПРИЛИПАЛА, И ПРИЧИН БЫЛО ДВЕ. Обе чинятся здесь, и чинить надо
+  // ОБЕ: правка одной оставила бы находку живой.
+  //
+  //  1. `onclick` на обёртке безусловно делал `pinned = !pinned`. Механика
+  //     нажатия заведена ради тач-экранов, где наведения нет вовсе, — но
+  //     применялась и к обычному клику мышью. Игрок применял умение мышкой,
+  //     и описание оставалось висеть над рядом действий.
+  //  2. Видимость держал CSS-селектор `:focus-within`, а обработчика
+  //     `focusout` не было вовсе. Chrome фокусирует кнопку на mousedown, и
+  //     пузырь жил, пока фокус не уйдёт. У умения, ушедшего в откат, это
+  //     самоустранялось (`disabled` снимает фокус), у зелья и кнопки
+  //     автокаста — нет.
+  //
+  // ТЕПЕРЬ ВИДИМОСТЬ — СОСТОЯНИЕ, А НЕ СЕЛЕКТОР. CSS умеет показать пузырь
+  // по `:hover`, но не умеет его СНЯТЬ по нашему правилу: закрыть надо и по
+  // применению умения, и по прокрутке, и по Escape. Три источника
+  // (наведение, фокус, тач-прикрепление) сведены в три флага, и каждый
+  // гасится своим событием.
+  //
+  // ПРИКРЕПЛЕНИЕ ОСТАЛОСЬ, НО ТОЛЬКО ДЛЯ ТАЧ-УКАЗАТЕЛЯ. На телефоне это
+  // ЕДИНСТВЕННЫЙ способ прочитать подсказку — наведения там не существует.
+  // Мышь его больше не включает: клик мышью, наоборот, гасит подсказку,
+  // потому что клик мышью по кнопке умения — это применение умения.
+  //
   // ПОЗИЦИЯ — FIXED, И ЭТО НЕ ПРИДИРКА К СТИЛЮ.
   //
   // Пузырь висел `absolute` внутри хоста и клипался ЛЮБЫМ прокручиваемым
@@ -49,14 +73,21 @@
 
   let host = $state<HTMLElement | null>(null)
   let bubble = $state<HTMLElement | null>(null)
-  /** Открыта нажатием: живёт до Esc, клика вне или повторного нажатия. */
+  /** Прикреплена тач-нажатием: живёт до Esc, нажатия вне или повторного тапа. */
   let pinned = $state(false)
+  /** Курсор над хостом. Раньше это знал только CSS, и снять было нечем. */
+  let hovered = $state(false)
+  /**
+   * Фокус пришёл С КЛАВИАТУРЫ. Не «фокус вообще»: кнопка получает фокус и от
+   * мыши, и именно это держало пузырь после применения умения.
+   */
+  let keyboard = $state(false)
   /** Место пузыря в координатах окна: считает JS, потому что позиция fixed. */
   let pos = $state({ left: 0, top: 0 })
   /** Пузырь не влез со своей стороны — показываем с противоположной. */
   let flipped = $state(false)
 
-  const shown = $derived(open || pinned)
+  const shown = $derived(open || pinned || hovered || keyboard)
   const side = $derived(flipped ? (placement === 'top' ? 'bottom' : 'top') : placement)
 
   /** Отступ пузыря от хоста и от края окна. */
@@ -100,17 +131,53 @@
     requestAnimationFrame(place)
   }
 
-  function toggle(event: MouseEvent): void {
-    // Нажатие открывает подсказку, но не мешает кнопке под ней сработать:
-    // это подсказка, а не модалка.
-    void event
-    pinned = !pinned
-    if (pinned) schedule()
+  /** Погасить все три источника разом: одно правило закрытия на все пути. */
+  function dismiss(): void {
+    pinned = false
+    hovered = false
+    keyboard = false
+  }
+
+  function onPointerUp(event: PointerEvent): void {
+    // ТАЧ — ЕДИНСТВЕННЫЙ, КТО ПРИКРЕПЛЯЕТ. Наведения на телефоне нет, и без
+    // прикрепления подсказка там не существовала бы вовсе. Перо считаем
+    // тачем: у него тоже нет устойчивого наведения.
+    if (event.pointerType === 'touch' || event.pointerType === 'pen') {
+      pinned = !pinned
+      if (pinned) schedule()
+      return
+    }
+    // МЫШЬ ГАСИТ. Клик мышью по кнопке умения — это применение умения, и
+    // описание над рядом действий после него висеть не должно.
+    dismiss()
+  }
+
+  function onEnter(): void {
+    hovered = true
+    schedule()
+  }
+
+  function onLeave(): void {
+    hovered = false
+  }
+
+  function onFocusIn(event: FocusEvent): void {
+    // ТОЛЬКО КЛАВИАТУРНЫЙ ФОКУС. `:focus-visible` — ровно то различие,
+    // которого не хватало: Tab подсказку открывает, клик мышью нет.
+    const target = event.target as Element | null
+    if (!target || typeof target.matches !== 'function') return
+    if (!target.matches(':focus-visible')) return
+    keyboard = true
+    schedule()
+  }
+
+  function onFocusOut(): void {
+    keyboard = false
   }
 
   function onKey(event: KeyboardEvent): void {
-    if (event.key === 'Escape' && pinned) {
-      pinned = false
+    if (event.key === 'Escape' && (pinned || hovered || keyboard)) {
+      dismiss()
       event.stopPropagation()
     }
   }
@@ -132,17 +199,18 @@
     if (open) schedule()
   })
 
-  // fixed НЕ ЕДЕТ ЗА ХОСТОМ. Пока подсказка приколота, страницу могут
-  // прокрутить или повернуть телефон — пересчитываем, иначе пузырь останется
-  // висеть там, где хоста уже нет.
+  // ПРОКРУТКА ГАСИТ ПОДСКАЗКУ, А НЕ ПЕРЕСТАВЛЯЕТ ЕЁ. Пузырь `fixed`, то есть
+  // за хостом он не едет; раньше место пересчитывалось на каждый скролл, и
+  // подсказка ползла по экрану за уехавшей кнопкой. Игрок, который начал
+  // прокручивать, читает уже другое — закрыть честнее, чем догонять.
+  // Поворот телефона (`resize`) — то же самое.
   $effect(() => {
-    if (!pinned) return
-    const again = () => place()
-    window.addEventListener('scroll', again, true)
-    window.addEventListener('resize', again)
+    if (!shown || open) return
+    window.addEventListener('scroll', dismiss, true)
+    window.addEventListener('resize', dismiss)
     return () => {
-      window.removeEventListener('scroll', again, true)
-      window.removeEventListener('resize', again)
+      window.removeEventListener('scroll', dismiss, true)
+      window.removeEventListener('resize', dismiss)
     }
   })
 </script>
@@ -159,9 +227,11 @@
   class="host"
   class:block
   bind:this={host}
-  onclick={toggle}
-  onmouseenter={schedule}
-  onfocusin={schedule}
+  onpointerup={onPointerUp}
+  onmouseenter={onEnter}
+  onmouseleave={onLeave}
+  onfocusin={onFocusIn}
+  onfocusout={onFocusOut}
 >
   {@render children()}
   <span
@@ -218,20 +288,15 @@
   .bubble.wide {
     max-width: min(24rem, calc(100vw - 2 * var(--space-4)));
   }
-  .bubble.open,
-  .host:hover .bubble,
-  .host:focus-within .bubble {
+  /* ВИДИМОСТЬ — ТОЛЬКО ПО СОСТОЯНИЮ. Селекторов `:hover` и `:focus-within`
+     здесь больше нет намеренно: CSS умеет пузырь показать, но не умеет снять
+     его по нашему правилу — закрыть надо и по применению умения, и по
+     прокрутке, и по Escape. Пока показ шёл селектором, а снятие состоянием,
+     они спорили, и подсказка переживала клик мышью.
+     Медиазапрос про узкий экран тоже ушёл: наведения на телефоне не бывает,
+     и гасить нечего — `hovered` там просто не включается. */
+  .bubble.open {
     opacity: 1;
     visibility: visible;
-  }
-  /* На узком экране наведения нет: подсказка открывается НАЖАТИЕМ и живёт,
-     пока её не закроют. Наведённое состояние там только мешало бы попасть
-     пальцем по кнопке под пузырём. */
-  @media (max-width: 719px) {
-    .host:hover .bubble:not(.open),
-    .host:focus-within .bubble:not(.open) {
-      opacity: 0;
-      visibility: hidden;
-    }
   }
 </style>

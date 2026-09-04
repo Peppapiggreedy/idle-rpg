@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { Decimal } from './numbers'
+import { INVENTORY_SIZE } from '../data/balance'
+import { SLOT_DEFENSE } from '../data/slots'
 import {
-  INVENTORY_SIZE,
   armorMods,
   averageArmorMods,
   rollLoot,
@@ -119,7 +120,7 @@ describe('rollLoot', () => {
     expect(attrs(0.1)[0].stat).toBe('strength')
     expect(attrs(0.3)[0].stat).toBe('agility')
     expect(attrs(0.6)[0].stat).toBe('intellect')
-    // Выпавшая живучесть сливается с общим довеском в одну строку.
+    // Выпавшая выносливость сливается с общим довеском в одну строку.
     const vit = attrs(0.9)
     expect(vit).toHaveLength(1)
     expect(vit[0]).toMatchObject({ stat: 'vitality', kind: 'flat' })
@@ -383,10 +384,10 @@ describe('продажа', () => {
 
 // ДОВЕСОК БРОНИ — ДАННЫЕ, А НЕ ИМЯ В КОДЕ (находка 1.4 в AUDIT.md).
 //
-// Логика знала, что живучесть особая: `if (primary === 'vitality')` сливал
+// Логика знала, что выносливость особая: `if (primary === 'vitality')` сливал
 // главный атрибут с общим довеском. Появись пятый атрибут или переедь
 // довесок на другой стат — броня начала бы выдавать ДВЕ записи об одном
-// стате, и в карточке предмета игрок читал бы «+12 живучести, +4 живучести»
+// стате, и в карточке предмета игрок читал бы «+12 выносливости, +4 выносливости»
 // двумя строками.
 describe('цена находки растёт от уровня и тира', () => {
   it('на одном тире цена строго растёт с уровнем вещи', () => {
@@ -514,7 +515,7 @@ describe('модификаторы брони', () => {
   })
 
   it('броня есть у каждой части брони и не зависит от главного атрибута', () => {
-    for (const slot of ['head', 'chest', 'hands', 'legs', 'trinket'] as const) {
+    for (const slot of ['head', 'chest', 'hands', 'legs'] as const) {
       for (const primary of ARMOR_ATTRIBUTES) {
         const armor = armorMods(slot, rarity, 7, primary).filter((m) => m.stat === 'armor')
         expect(armor, `${slot}/${primary}`).toHaveLength(1)
@@ -524,6 +525,23 @@ describe('модификаторы брони', () => {
         expect(armor[0].value.eq(armor[0].value.round()), `${slot}/${primary}`).toBe(true)
       }
     }
+  })
+
+  it('ТАЛИСМАН БРОНИ НЕ НЕСЁТ: он не часть брони и не щит', () => {
+    // Правило игры называет ровно двух носителей брони. Условия в генераторе
+    // не было вовсе — броню получало всё, что не рука, — и талисман нёс
+    // 15 % брони эталонного комплекта. Признак теперь в данных.
+    expect(SLOT_DEFENSE.trinket, 'талисман помечен как носитель брони').toBe(false)
+    for (const primary of ARMOR_ATTRIBUTES) {
+      const armor = armorMods('trinket', rarity, 7, primary).filter((m) => m.stat === 'armor')
+      expect(armor, `trinket/${primary}`).toHaveLength(0)
+    }
+    // Атрибуты у талисмана остаются: он украшение, а не пустышка.
+    expect(armorMods('trinket', rarity, 7, 'strength').length).toBeGreaterThan(0)
+    // Эталон прогона обязан носить ТО ЖЕ САМОЕ: разойдись он с игрой, модель
+    // считала бы по пяти частям брони там, где игрок носит четыре.
+    expect(averageArmorMods('trinket', rarity, 7).filter((m) => m.stat === 'armor')).toHaveLength(0)
+    expect(averageArmorMods('head', rarity, 7).filter((m) => m.stat === 'armor')).toHaveLength(1)
   })
 
   it('средняя броня прогона слита по тому же признаку', () => {

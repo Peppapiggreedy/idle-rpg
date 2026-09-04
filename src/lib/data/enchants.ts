@@ -153,7 +153,7 @@ export const ENCHANTS: EnchantDef[] = [
     id: 'stone-core',
     name: 'Каменная сердцевина',
     icon: 'enchant-stone-core',
-    tagline: '+6% живучести: запас здоровья и его восстановление.',
+    tagline: '+6% выносливости: запас здоровья и его восстановление.',
     slots: ['head', 'chest', 'hands', 'legs', 'trinket'],
     dustCost: 70,
     mods: [{ stat: 'vitality', kind: 'percent', value: new Decimal(0.09) }],
