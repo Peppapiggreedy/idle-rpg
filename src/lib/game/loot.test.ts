@@ -753,3 +753,53 @@ describe('целые бонусы на предметах', () => {
     expect(Math.abs(drift)).toBeLessThan(0.01)
   })
 })
+
+describe('сколько падает щитов', () => {
+  // ЗАМЕР ПЕРВЫМ, РЕШЕНИЕ ВТОРЫМ. Щит после появления брони стал нести
+  // заметную долю смягчения, и вопрос «а не слишком ли он редкий» законен.
+  // Ответ считается, а не назначается: доля щитов лежит в данных
+  // (SHIELD_SHARE в data/loot.ts), и тест фиксирует, ЧТО ИЗ НЕЁ ВЫХОДИТ.
+  const KILLS = 60_000
+  const per1000 = (n: number) => (n / KILLS) * 1000
+
+  function drops(level: number) {
+    const rng = createRng(4242 + level)
+    const bySlot = new Map<string, number>()
+    let shields = 0
+    let total = 0
+    for (let i = 0; i < KILLS; i += 1) {
+      const item = rollLoot(rng, i, level)
+      if (!item) continue
+      total += 1
+      bySlot.set(item.slot, (bySlot.get(item.slot) ?? 0) + 1)
+      if (item.grip === 'shield') shields += 1
+    }
+    return { total, shields, bySlot }
+  }
+
+  it('щит — самая редкая находка, но не дефицит', () => {
+    for (const level of [25, 55, 85]) {
+      const { total, shields, bySlot } = drops(level)
+      const shieldsPer1000 = per1000(shields)
+      const chestPer1000 = per1000(bySlot.get('chest') ?? 0)
+      // ОДИН ЩИТ НА ВОСЕМЬ ДЕСЯТКОВ УБИЙСТВ. Полный путь стоит около пяти
+      // тысяч убийств, то есть щитов за игру выпадает шесть десятков — по
+      // одному на полтора уровня героя. Редкость есть, дефицита нет.
+      expect(shieldsPer1000, `ур.${level}: щитов на 1000 убийств`).toBeGreaterThan(10)
+      expect(shieldsPer1000, `ур.${level}: щитов на 1000 убийств`).toBeLessThan(16)
+      // И он ВСЕГДА реже любой части брони: слот левой руки делится с
+      // одноручным оружием, а армора там нет вовсе.
+      expect(shieldsPer1000, `ур.${level}: щит реже нагрудника`).toBeLessThan(chestPer1000)
+      // Доля щитов среди всех находок — около пяти процентов.
+      expect((shields / total) * 100, `ур.${level}: доля щитов`).toBeGreaterThan(3)
+      expect((shields / total) * 100, `ур.${level}: доля щитов`).toBeLessThan(8)
+    }
+  })
+
+  it('выпадение щитов не зависит от уровня', () => {
+    // Уровень меняет СИЛУ находки, а не её вид: рулетка слотов и доля щитов
+    // от него не зависят вовсе, и разъехаться они могли бы только правкой.
+    const rates = [25, 55, 85].map((level) => per1000(drops(level).shields))
+    expect(Math.max(...rates) / Math.min(...rates)).toBeLessThan(1.15)
+  })
+})
