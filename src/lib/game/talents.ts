@@ -11,6 +11,8 @@
 import { Decimal } from './numbers'
 import {
   BRANCH_BY_ID,
+  BRANCH_ROW_STEP,
+  CONCEPT_ROWS,
   TALENTS,
   TALENT_BY_ID,
   branchesOfClass,
@@ -33,7 +35,7 @@ import {
   TALENT_RESET_COST_GROWTH,
 } from '../data/balance'
 import { ensureStats } from './stats'
-import type { GameState } from './state'
+import { pushEvent, type GameState } from './state'
 
 // Реэкспорт: чистые производные живут в данных, правила — здесь.
 export { rankOf, talentModifiers, branchesOfClass, talentsOfClass } from '../data/talents'
@@ -144,9 +146,31 @@ export function investTalent(state: GameState, talentId: string): GameState {
   const talent = TALENT_BY_ID[talentId]
   if (!talent) return state
   if (!talentStatus(state, talent).canInvest) return state
+  const rank = rankOf(state.talents, talentId)
+  const talents = { ...state.talents, [talentId]: rank + 1 }
+  // КЛЮЧЕВОЙ ЭТАЖ — СОБЫТИЕ, И РОВНО ОДНО НА ПЕРЕСЕЧЕНИЕ ПОРОГА. Очко,
+  // которым ветка набрала порог ключевого этажа, пишет строку в журнал:
+  // выбор появился, и игрок обязан об этом узнать без окон и пауз.
+  // Отдельного флага «объявлено» в состоянии нет: пересечение снизу вверх
+  // случается один раз на заход, а снятие и сброс, вернувшие ветку под
+  // порог, честно дадут объявить его снова — он и правда снова открылся.
+  let log = state.combatLog
+  const before = spentInBranch(state.talents, talent.branch)
+  for (const row of CONCEPT_ROWS) {
+    const required = (row - 1) * BRANCH_ROW_STEP
+    if (before < required && before + 1 >= required) {
+      log = pushEvent(log, { type: 'talent-floor', branchId: talent.branch, row })
+    }
+  }
+  // ВЗЯТЫЙ КЛЮЧЕВОЙ — тоже строка: первый ранг на ключевом этаже запирает
+  // соседа, и журнал называет, что именно выбрано.
+  if (rank === 0 && CONCEPT_ROWS.includes(talent.row)) {
+    log = pushEvent(log, { type: 'talent-key', talentId })
+  }
   return ensureStats({
     ...state,
-    talents: { ...state.talents, [talentId]: rankOf(state.talents, talentId) + 1 },
+    talents,
+    combatLog: log,
     statsDirty: true, // таланты — источник статов
   })
 }

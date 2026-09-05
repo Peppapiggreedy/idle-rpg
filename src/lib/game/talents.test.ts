@@ -1213,3 +1213,61 @@ describe('ключевые этажи Стража — взаимоисключ�
     }
   })
 })
+
+describe('ключевой этаж — событие журнала', () => {
+  const keyEvents = (s: GameState) =>
+    s.combatLog.filter((e) => e.type === 'talent-floor' || e.type === 'talent-key')
+  /** Вложить в верхние этажи ветки ровно `points` очков, не трогая ключевые. */
+  function fillTop(state: GameState, points: number): GameState {
+    let next = state
+    let left = points
+    for (const talent of talentsInBranch(WRATH)) {
+      if (left <= 0) break
+      if (CONCEPT_ROWS.includes(talent.row)) continue
+      const take = Math.min(left, talent.maxRank)
+      const before = next
+      next = invest(next, talent.id, take)
+      left -= spentInBranch(next.talents, WRATH) - spentInBranch(before.talents, WRATH)
+    }
+    return next
+  }
+
+  it('порог ключевого этажа объявляется ОДИН раз — тем очком, что его набрало', () => {
+    const s = hero(TALENT_FIRST_LEVEL + 60)
+    const almost = fillTop(s, 19)
+    expect(spentInBranch(almost.talents, WRATH)).toBe(19)
+    expect(keyEvents(almost)).toEqual([])
+    const opened = fillTop(almost, 1)
+    expect(spentInBranch(opened.talents, WRATH)).toBe(20)
+    expect(keyEvents(opened)).toEqual([{ type: 'talent-floor', branchId: WRATH, row: 5 }])
+    // Следующее очко порога не пересекает — второй строки нет.
+    const more = fillTop(opened, 1)
+    expect(keyEvents(more)).toHaveLength(1)
+  })
+
+  it('взятый ключевой — своя строка; обычный талант её не пишет', () => {
+    const s = hero(TALENT_FIRST_LEVEL + 60)
+    const opened = fillTop(s, 20)
+    const key = talentsInBranch(WRATH).find((t) => t.row === 5)!
+    const chosen = investTalent(opened, key.id)
+    expect(rankOf(chosen.talents, key.id)).toBe(1)
+    expect(keyEvents(chosen).map((e) => e.type)).toEqual(['talent-key', 'talent-floor'])
+    expect(keyEvents(chosen)[0]).toEqual({ type: 'talent-key', talentId: key.id })
+    // Обычный талант на обычном этаже — строк не добавляет.
+    const plain = fillTop(chosen, 1)
+    expect(keyEvents(plain)).toHaveLength(2)
+  })
+
+  it('снятие и отказ журнал не трогают', () => {
+    const s = hero(TALENT_FIRST_LEVEL + 60)
+    const opened = fillTop(s, 20)
+    const key = talentsInBranch(WRATH).find((t) => t.row === 5)!
+    const chosen = investTalent(opened, key.id)
+    const back = takeBackTalent(chosen, key.id, { [key.id]: 1 })
+    expect(rankOf(back.talents, key.id)).toBe(0)
+    expect(back.combatLog).toBe(chosen.combatLog)
+    // Запертый выбором сосед не берётся — и события не оставляет.
+    const mate = talentsInBranch(WRATH).find((t) => t.row === 5 && t.id !== key.id)!
+    expect(investTalent(chosen, mate.id)).toBe(chosen)
+  })
+})
