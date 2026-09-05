@@ -212,16 +212,29 @@ const menu = writable<MenuId | null>(null)
 export const openMenu = readonly(menu)
 
 export function setMenu(id: MenuId | null): void {
-  menu.set(id)
+  menu.update((current) => {
+    // УХОД С ЭКРАНА ТАЛАНТОВ ФИКСИРУЕТ ЗАХОД, каким бы путём он ни случился:
+    // Esc, другая кнопка меню, повторное нажатие своей. Иначе «закрыл и
+    // открыл» стало бы бесплатным сбросом.
+    if (current === 'talents' && id !== 'talents') clearTalentDraft()
+    return id
+  })
 }
 
 /** Повторное нажатие той же кнопки закрывает меню. */
 export function toggleMenu(id: MenuId): void {
-  menu.update((current) => (current === id ? null : id))
+  menu.update((current) => {
+    const next = current === id ? null : id
+    if (current === 'talents' && next !== 'talents') clearTalentDraft()
+    return next
+  })
 }
 
 export function closeMenu(): void {
-  menu.set(null)
+  menu.update((current) => {
+    if (current === 'talents') clearTalentDraft()
+    return null
+  })
 }
 
 // --- Что игрок сейчас несёт --------------------------------------------
@@ -294,6 +307,37 @@ export function toggleCarriedAbility(next: AbilityCarry): void {
 
 export function releaseAbility(): void {
   ability.set(null)
+}
+
+// --- Черновик захода в дерево талантов ---------------------------------
+
+// ЧТО ВЛОЖЕНО В ЭТОТ ЗАХОД. Экран талантов позволяет снять бесплатно только
+// те очки, которые игрок вложил С МОМЕНТА ОТКРЫТИЯ; закрыл экран — остаётся
+// платный сброс. Значит кто-то обязан помнить границу захода, и это «где я
+// сейчас», а не прогресс: в сейве такому не место.
+//
+// Черновик обнуляется при ЗАКРЫТИИ меню талантов, а не при открытии: открытие
+// и так начинается с пустого, а вот закрытие обязано зафиксировать вложенное
+// намертво — иначе «закрыл и открыл» стало бы бесплатным сбросом.
+const draft = writable<Record<string, number>>({})
+export const talentDraft = readonly(draft)
+
+export function noteTalentPoint(talentId: string): void {
+  draft.update((current) => ({ ...current, [talentId]: (current[talentId] ?? 0) + 1 }))
+}
+
+export function forgetTalentPoint(talentId: string): void {
+  draft.update((current) => {
+    const left = (current[talentId] ?? 0) - 1
+    const next = { ...current }
+    if (left > 0) next[talentId] = left
+    else delete next[talentId]
+    return next
+  })
+}
+
+export function clearTalentDraft(): void {
+  draft.set({})
 }
 
 // --- Развёрнутые «Детали» карточки героя ------------------------------

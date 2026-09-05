@@ -1,12 +1,20 @@
 import { describe, expect, it } from 'vitest'
+import { get } from 'svelte/store'
 import {
   MENU_IDS,
   MENU_SIDE,
   MENU_UNLOCK_LEVEL,
+  clearTalentDraft,
+  closeMenu,
+  forgetTalentPoint,
   isTextMode,
   menuUnlocked,
   menusOn,
+  noteTalentPoint,
   sanitizeUiSettings,
+  setMenu,
+  talentDraft,
+  toggleMenu,
   type UiSettings,
 } from './ui'
 import { CRAFT_UNLOCK_LEVEL, SOUND_DEFAULT_VOLUMES, TALENT_FIRST_LEVEL } from '../data/balance'
@@ -141,5 +149,66 @@ describe('меню', () => {
     const settings = sanitizeUiSettings({ textMode: 'on', drawers: { hero: true, log: true } })
     expect('drawers' in settings).toBe(false)
     expect(settings.textMode).toBe('on')
+  })
+})
+
+// ЧЕРНОВИК ЗАХОДА В ДЕРЕВО ТАЛАНТОВ.
+//
+// Очко, вложенное ПОКА ЭКРАН ОТКРЫТ, снимается бесплатно; всё остальное —
+// платным сбросом. Значит, кто-то обязан помнить границу захода, и это не
+// сейв: «сколько я успел вложить, пока смотрю на дерево» — типичное «где я
+// сейчас», рядом с открытым меню и несомой вещью.
+//
+// САМОЕ ВАЖНОЕ ЗДЕСЬ — ЧТО ЧЕРНОВИК ЧИСТИТСЯ ВСЕМИ ТРЕМЯ ПУТЯМИ ЗАКРЫТИЯ.
+// Забыть один — значит раздать бесплатный сброс: закрыл меню тем путём,
+// про который забыли, открыл снова, и все прежние очки опять «этого захода».
+describe('черновик талантов: заход в дерево', () => {
+  it('очки копятся по таланту и снимаются по одному', () => {
+    clearTalentDraft()
+    noteTalentPoint('а')
+    noteTalentPoint('а')
+    noteTalentPoint('б')
+    expect(get(talentDraft)).toEqual({ а: 2, б: 1 })
+
+    forgetTalentPoint('а')
+    expect(get(talentDraft)).toEqual({ а: 1, б: 1 })
+    // Дошло до нуля — запись уходит совсем: ноль и отсутствие должны быть
+    // одним состоянием, иначе черновик начнёт врать про «этот заход».
+    forgetTalentPoint('а')
+    expect(get(talentDraft)).toEqual({ б: 1 })
+    forgetTalentPoint('б')
+    expect(get(talentDraft)).toEqual({})
+    // Снятие того, чего нет, ничего не портит.
+    forgetTalentPoint('нет-такого')
+    expect(get(talentDraft)).toEqual({})
+  })
+
+  it('ВСЕ ТРИ ПУТИ ЗАКРЫТИЯ чистят черновик', () => {
+    // Esc и повторное нажатие своей кнопки закрывают через closeMenu и
+    // toggleMenu, чужая кнопка — через setMenu. Пути разные, правило одно.
+    const ways: Array<[string, () => void]> = [
+      ['закрытие', () => closeMenu()],
+      ['повторное нажатие', () => toggleMenu('talents')],
+      ['другое меню', () => setMenu('hero')],
+    ]
+    for (const [name, close] of ways) {
+      setMenu('talents')
+      noteTalentPoint('а')
+      expect(get(talentDraft), name).toEqual({ а: 1 })
+      close()
+      expect(get(talentDraft), name).toEqual({})
+    }
+    closeMenu()
+  })
+
+  it('переходы ВНУТРИ дерева черновик не трогают', () => {
+    // Открыть «Таланты» поверх «Талантов» — это не новый заход: игрок никуда
+    // не уходил, и снимать у него право на отмену не за что.
+    setMenu('talents')
+    clearTalentDraft()
+    noteTalentPoint('а')
+    setMenu('talents')
+    expect(get(talentDraft)).toEqual({ а: 1 })
+    closeMenu()
   })
 })

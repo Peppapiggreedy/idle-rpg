@@ -116,6 +116,8 @@ export {
   heroTalents,
   rankOf,
   talentStatus,
+  takeBackStatus,
+  takeBackTalent,
   allTalentStatuses,
   investTalent,
   resetTalents,

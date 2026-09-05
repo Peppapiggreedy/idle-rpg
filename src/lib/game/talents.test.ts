@@ -17,6 +17,8 @@ import {
   reviveMultiplier,
   spentInBranch,
   spentPoints,
+  takeBackStatus,
+  takeBackTalent,
   talentFlags,
   talentModifiers,
   talentStatus,
@@ -671,5 +673,121 @@ describe('стрелки-предпосылки', () => {
 
   it('самостоятельный талант зависимых не имеет', () => {
     expect(dependentsOf(ANCHOR.id)).toEqual([])
+  })
+})
+
+// ОТМЕНА ПОКА ЭКРАН ОТКРЫТ.
+//
+// Очко, вложенное в этот заход, снимается бесплатно; всё остальное — только
+// платным сбросом. Разница между ними — не удобство, а ЦЕНА: раздать сброс
+// бесплатно значит обесценить и сам сброс, и решение, которое игрок принимал,
+// вкладывая очко в прошлый раз.
+//
+// Заход помнит не логика, а экран (`talentDraft` в `stores/ui.ts`): в сейве
+// ему не место — это «где я сейчас», а не прогресс. Логика получает черновик
+// параметром и о том, кто его ведёт, не знает.
+describe('снятие очка в пределах открытого экрана', () => {
+  const FIRST = talentsInBranch(WRATH)[0]
+
+  it('вложенное в этот заход снимается и возвращает очко свободным', () => {
+    const base = invest(hero(LEVEL_CAP), FIRST.id, 2)
+    const before = availablePoints(base)
+    const draft = { [FIRST.id]: 2 }
+
+    const status = takeBackStatus(base, FIRST, draft)
+    expect(status).toMatchObject({ canTakeBack: true, reason: null, fromThisVisit: 2 })
+
+    const after = takeBackTalent(base, FIRST.id, draft)
+    expect(rankOf(after.talents, FIRST.id)).toBe(1)
+    // Отдельного счётчика свободных очков нет — они считаются как
+    // «заработано минус вложено», поэтому снятие возвращает очко само.
+    expect(availablePoints(after)).toBe(before + 1)
+  })
+
+  it('СЧЁТЧИК ПЛАТНЫХ СБРОСОВ НЕ ТРОГАЕТСЯ, и золото тоже', () => {
+    // Иначе бесплатная отмена дорожала бы следующий сброс — то есть была бы
+    // не бесплатной, а с отложенной ценой.
+    const base = invest(hero(LEVEL_CAP), FIRST.id, 1)
+    const after = takeBackTalent(base, FIRST.id, { [FIRST.id]: 1 })
+    expect(after.talentResets).toBe(base.talentResets)
+    expect(after.gold.eq(base.gold)).toBe(true)
+  })
+
+  it('вложенное в ПРОШЛЫЙ заход не снимается', () => {
+    // Закрыл экран — черновик пуст, и остаётся только платный сброс.
+    const base = invest(hero(LEVEL_CAP), FIRST.id, 2)
+    const status = takeBackStatus(base, FIRST, {})
+    expect(status).toMatchObject({ canTakeBack: false, reason: 'not-this-visit', fromThisVisit: 0 })
+    expect(takeBackTalent(base, FIRST.id, {})).toBe(base)
+  })
+
+  it('черновик больше вложенного не даёт снять лишнего', () => {
+    // Черновик ведёт экран, а правду о рангах знает состояние: если они
+    // разошлись (сброс при открытом экране), верить надо состоянию.
+    const base = invest(hero(LEVEL_CAP), FIRST.id, 1)
+    expect(takeBackStatus(base, FIRST, { [FIRST.id]: 5 }).fromThisVisit).toBe(1)
+    const empty = hero(LEVEL_CAP)
+    expect(takeBackStatus(empty, FIRST, { [FIRST.id]: 3 })).toMatchObject({
+      canTakeBack: false,
+      reason: 'nothing-invested',
+    })
+  })
+
+  it('снятие ОТКАЗЫВАЕТ, если обрывает стрелку, а не сносит зависимых', () => {
+    // Каскад здесь был бы бесплатным сбросом с чёрного хода: очки зависимого
+    // могли быть вложены в ПРОШЛЫЙ заход, и молча вернуть их нельзя.
+    const dependent: TalentDef = {
+      id: 'зависимый-от-снятия',
+      name: 'Зависимый',
+      icon: 'talent-honed-edge',
+      branch: WRATH,
+      row: 2,
+      maxRank: 3,
+      requiredPointsInBranch: BRANCH_ROW_STEP,
+      // Стрелка требует ПОЛНЫЙ ранг опорного: только так снятие одного очка
+      // действительно обрывает её, а порог этажа при этом уже набран.
+      requires: { talentId: FIRST.id, minRank: FIRST.maxRank },
+      effect: { kind: 'modifiers', mods: [] },
+    }
+    TALENTS.push(dependent)
+    TALENT_BY_ID[dependent.id] = dependent
+    try {
+      let state = invest(hero(LEVEL_CAP), FIRST.id, FIRST.maxRank)
+      state = invest(state, dependent.id, 1)
+      expect(rankOf(state.talents, dependent.id)).toBe(1)
+
+      const draft = { [FIRST.id]: FIRST.maxRank, [dependent.id]: 1 }
+      // Последний ранг опорного держит стрелку: снять его нельзя.
+      expect(takeBackStatus(state, FIRST, draft)).toMatchObject({
+        canTakeBack: false,
+        reason: 'blocks-dependent',
+      })
+      expect(takeBackTalent(state, FIRST.id, draft)).toBe(state)
+      // Зависимый при этом снимается свободно — и после него опорный тоже.
+      const freed = takeBackTalent(state, dependent.id, draft)
+      expect(rankOf(freed.talents, dependent.id)).toBe(0)
+      expect(takeBackStatus(freed, FIRST, draft).canTakeBack).toBe(true)
+    } finally {
+      TALENTS.pop()
+      delete TALENT_BY_ID[dependent.id]
+    }
+  })
+
+  it('снятие пересчитывает статы, а не только ранг', () => {
+    // Ранг — источник модификаторов; оставить его снятым, а статы прежними
+    // значило бы завести накопительную мутацию, которых в игре нет.
+    const talent = talentsInBranch(WRATH).find(
+      (t) => t.effect.kind === 'modifiers' && t.effect.mods.length > 0,
+    )!
+    const base = invest(hero(LEVEL_CAP), talent.id, 1)
+    const after = takeBackTalent(base, talent.id, { [talent.id]: 1 })
+    const plain = hero(LEVEL_CAP)
+    // Сравниваем ВЕСЬ блок статов: талант мог задеть что угодно, и проверять
+    // только «свои» статы значило бы поверить таланту на слово.
+    const shape = (state: GameState) =>
+      Object.fromEntries(
+        Object.entries(state.stats).map(([key, value]) => [key, value.toString()]),
+      )
+    expect(shape(after)).toEqual(shape(plain))
   })
 })
