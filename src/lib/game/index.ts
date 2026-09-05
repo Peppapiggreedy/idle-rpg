@@ -216,8 +216,13 @@ export {
   clearedXpBonus,
 } from './dungeons'
 export type { DungeonDef, BossDef, DungeonStatus, DungeonBlockReason } from './dungeons'
-export { simulate, buildSimState, simWeaponItem, totalXpEarned, spreadOf, BALANCE_PRESET } from './simulate'
-export type { SimResult, SimBuild, SimOptions, SimWeapon } from './simulate'
+// ПРОГОН ЧЕРЕЗ ОБЩИЙ БАРРЕЛЬ НЕ РЕЭКСПОРТИРУЕТСЯ, И ЭТО РЕШЕНИЕ О ВЕСЕ.
+// `game/simulate.ts` — измерительный прибор на 1388 строк: его зовут тесты
+// и отладочная страница `/balance`, и ни один экран игры. Пока строка
+// `export … from './simulate'` стояла здесь, прибор попадал в ОСНОВНОЙ кусок
+// сборки: баррель тянут почти все компоненты, а вместе с баррелем приезжает
+// всё, что он реэкспортирует. Прибор и его потребители импортируют
+// `./simulate` напрямую.
 export { subscribe as subscribeAttacks, emit as emitAttack } from './events'
 export type { Rng } from './rng'
 export {
