@@ -41,7 +41,12 @@ import { SAFE_ZONE, ZONE_BY_ID, zoneSpawnVariants, type Zone } from '../data/zon
 import { monsterFromTemplate, type AbilitySettings, type Rotation } from './state'
 import { ABILITY_BY_ID, type AbilityDef } from '../data/abilities'
 import { classById } from '../data/classes'
-import { blockReflectShare, blockResourceShare, doubleStrikeChance } from './talents'
+import {
+  blockReflectShare,
+  blockResourceShare,
+  doubleStrikeChance,
+  restDurationMultiplier,
+} from './talents'
 import { statsWithPotionPlan, statsWithoutPotions } from './potions'
 import { PROC_BY_ID, type ProcDef } from '../data/procs'
 import { SLOT_IDS } from '../data/slots'
@@ -1371,9 +1376,15 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
       cooldownSec: heal.cooldownSec,
     })
   }
+  // ДЛИНА ПРИВАЛА — С ТАЛАНТАМИ, а не сырая из конвейера. Флаг «Костёр на
+  // ходу» режет привал втрое, и тик это знал (`restDurationMs`), а модель —
+  // нет: прогноз зоны и оффлайн считали венец Бдения несуществующим, а прибор
+  // «шесть сборок» видел у двух сторон ветки одно и то же число. Еда сюда не
+  // входит намеренно: склянка — расходник, а не свойство героя.
+  const restSec = stats.restDuration * restDurationMultiplier(state.talents)
   const healCastsPerSecond = (healing: HealCycle | null, killCycleSec: number): number => {
     if (!healing || !Number.isFinite(healing.fights) || healing.fights <= 0) return 0
-    return healing.casts / (healing.fights * killCycleSec + stats.restDuration)
+    return healing.casts / (healing.fights * killCycleSec + restSec)
   }
   // Цикл фарма считается ПО БОЯМ ЦЕЛИКОМ: герой доводит схватку до конца и
   // уходит на привал только после убийства (см. farmCycle). Порог берётся
@@ -1388,7 +1399,7 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
           lossPerSecond: netLossPerSec,
           cycleSec: pass.killCycleSec.toNumber(),
           hpThreshold: stats.restThreshold,
-          restSec: stats.restDuration,
+          restSec,
         })
       : null
     return { netLossPerSec, cycle }

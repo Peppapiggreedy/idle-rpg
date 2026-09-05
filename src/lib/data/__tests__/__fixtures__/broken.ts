@@ -399,6 +399,25 @@ export function brokenCases(): BrokenCase[] {
       expect: ['через-ветки', 'через ветки'],
     },
     {
+      // Процент к криту — не майлстоун: на ключевом этаже меняют поведение.
+      title: 'на ключевом этаже стоит модификатор конвейера',
+      content: {
+        ...real,
+        talents: real.talents.map((t) =>
+          t.id === 'wrath-headlong'
+            ? {
+                ...t,
+                effect: {
+                  kind: 'modifiers' as const,
+                  mods: [{ stat: 'critChance' as const, kind: 'flat' as const, value: new Decimal(0.05) }],
+                },
+              }
+            : t,
+        ),
+      },
+      expect: ['ключевом этаже 5', 'модификаторы конвейера'],
+    },
+    {
       // Стрелка вверх: до таланта не добраться никогда — очки в опорный
       // талант вкладываются ПОСЛЕ него.
       title: 'стрелка-предпосылка ведёт снизу вверх',

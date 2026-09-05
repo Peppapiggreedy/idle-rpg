@@ -36,6 +36,7 @@
   import { resourceWords } from './resource'
   import { flatText } from './statText'
   import { abilityTuneText } from './abilityText'
+  import { ABILITY_BY_ID } from '../data/abilities'
   import { Button, NumberText, Panel, Tag } from './kit'
   import { Icon } from './icons'
 
@@ -97,7 +98,13 @@
   // в подписи. Ветвления по id таланта здесь нет и быть не должно.
   const FLAG_TEXT: Record<TalentFlag, (e: Extract<TalentDef['effect'], { kind: 'flag' }>) => string> =
     {
-      'ability-learns-effect': () => 'Умение начинает накладывать урон по времени',
+      'ability-learns-effect': (e) =>
+        'abilityId' in e && 'effect' in e
+          ? `«${ABILITY_BY_ID[e.abilityId]?.name ?? e.abilityId}» начинает кровить: ` +
+            `${e.effect.ticks} ${e.effect.ticks === 1 ? 'раз' : e.effect.ticks < 5 ? 'раза' : 'раз'} ` +
+            `по ${Math.round(e.effect.weaponDamagePercent.toNumber() * 100)} % удара оружия ` +
+            `каждые ${e.effect.tickIntervalSec} с`
+          : 'Умение начинает накладывать урон по времени',
       'ability-extra-charge': (e) =>
         `+${'extraCharges' in e ? e.extraCharges : 1} заряд умения: второе нажатие проходит, пока идёт откат`,
       'double-strike': (e) =>

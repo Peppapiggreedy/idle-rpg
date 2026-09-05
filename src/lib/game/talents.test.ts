@@ -143,6 +143,11 @@ function reachTalent(state: GameState, talentId: string, avoid: string[] = []): 
   return invest(next, target.id, 1)
 }
 
+/** Сколько рангов опоры требует стрелка таланта (0 — стрелки нет). */
+function requiredRankOf(talent: TalentDef): number {
+  return talent.requires ? (talent.requires.minRank ?? 1) : 0
+}
+
 /** Все таланты ветки — короткая обёртка для проверок формы. */
 function pathsAndFloors(branch: BranchId) {
   return talentsInBranch(branch)
@@ -598,6 +603,25 @@ describe('эффекты талантов', () => {
   })
 })
 
+/**
+ * Сколько очков путь может вложить вообще: сумма рангов минус те члены
+ * взаимоисключающих групп, которых путь не выбирает. Выбранным считается
+ * первый по порядку пути член группы — ровно так покупает `pathRanks`.
+ */
+function reachableCapacity(path: { order: string[] }): number {
+  const chosenOfGroup = new Map<string, string>()
+  for (const id of path.order) {
+    const group = TALENT_BY_ID[id]?.exclusiveGroup
+    if (group && !chosenOfGroup.has(group)) chosenOfGroup.set(group, id)
+  }
+  return path.order.reduce((sum, id) => {
+    const talent = TALENT_BY_ID[id]
+    const group = talent.exclusiveGroup
+    if (group && chosenOfGroup.get(group) !== id) return sum
+    return sum + talent.maxRank
+  }, 0)
+}
+
 describe('пути внутри ветки — сборка для прогонов', () => {
   const spentOf = (ranks: Record<string, number>) =>
     Object.values(ranks).reduce((n, r) => n + r, 0)
@@ -608,13 +632,13 @@ describe('пути внутри ветки — сборка для прогон�
     for (const [id, rank] of Object.entries(ranks)) {
       expect(rank, id).toBeLessThanOrEqual(TALENT_BY_ID[id].maxRank)
     }
-    // Потолок заполнения — ёмкость ПУТИ. Сейчас путь перечисляет всю ветку
-    // (порядок и есть его лицо), но так будет не всегда: путь — ВЫБОРКА, и
-    // то, что он берёт не всё, было бы не дефектом, а им самим.
+    // Потолок заполнения — ДОСТИЖИМАЯ ёмкость пути: сумма рангов минус те
+    // члены взаимоисключающих групп, которые путь не выбрал. Путь перечисляет
+    // всю ветку, но в каждой группе покупается ровно один.
     const path = pathsOf(WRATH)[0]
-    const pathCapacity = path.order.reduce((n, id) => n + TALENT_BY_ID[id].maxRank, 0)
-    expect(pathCapacity).toBeLessThanOrEqual(branchCapacity(WRATH))
-    expect(spentOf(fillBranchRanks(WRATH, 1000))).toBe(pathCapacity)
+    const reachable = reachableCapacity(path)
+    expect(reachable).toBeLessThan(branchCapacity(WRATH))
+    expect(spentOf(fillBranchRanks(WRATH, 1000))).toBe(reachable)
   })
 
   it('ПУТЬ ДОВОДИТ ДО ВЕНЦА, а жадная заливка сверху вниз — нет', () => {
@@ -646,7 +670,7 @@ describe('пути внутри ветки — сборка для прогон�
         const own = new Set(talentsInBranch(branch.id).map((t) => t.id))
         for (const id of path.order) expect(own.has(id), `${path.id}: ${id}`).toBe(true)
 
-        const capacity = path.order.reduce((n, id) => n + TALENT_BY_ID[id].maxRank, 0)
+        const capacity = reachableCapacity(path)
         const ranks = pathRanks(path, capacity)
         let spent = 0
         for (const talent of talentsInBranch(branch.id)) spent += ranks[talent.id] ?? 0
@@ -1036,16 +1060,6 @@ describe('взаимоисключающие группы', () => {
     return s
   }
 
-  it('на пятом этаже Гнева двое, и без группы берутся ОБА — это и есть беда', () => {
-    // Запись факта, а не желаемого: пока группа не назначена, ничто не
-    // мешает взять оба ключевых. Следующая стадия назначает группы.
-    const [a, b] = pair()
-    expect(pair()).toHaveLength(2)
-    const both = invest(invest(atFloor(), a.id, 1), b.id, 1)
-    expect(rankOf(both.talents, a.id)).toBe(1)
-    expect(rankOf(both.talents, b.id)).toBe(1)
-  })
-
   it('вложение в члена группы ЗАПИРАЕТ остальных кодом group-taken', () => {
     withGroup((a, b) => {
       const base = atFloor()
@@ -1119,5 +1133,83 @@ describe('взаимоисключающие группы', () => {
     // талантов «без группы»: пустое имя читается как отсутствие поля.
     const [a] = pair()
     expect(groupHolder({ [a.id]: 1 }, { ...a, id: 'другой', exclusiveGroup: undefined })).toBeNull()
+  })
+})
+
+// КЛЮЧЕВЫЕ ЭТАЖИ — ВЫБОР, А НЕ ДВА ОЧКА ИЗ ДЕВЯНОСТА ОДНОГО.
+//
+// Этаж 5 требует 20 очков в ветке — это 30-й уровень при вложении в одну
+// ветку; этаж 9 — 50-й; этаж 13 — 70-й. Три майлстоуна всей прокачки. Пока
+// на них стояли по два таланта по одному очку и брались оба, выбора не было:
+// «одно очко и очень сильный» ломало не число, а отсутствие ОТКАЗА.
+describe('ключевые этажи Стража — взаимоисключающие пары', () => {
+  const own = BRANCHES.filter((b) => b.classId === WARDEN.id)
+
+  it('на этажах 5, 9 и 13 каждой ветки РОВНО одна группа из двух', () => {
+    for (const branch of own) {
+      for (const row of CONCEPT_ROWS) {
+        const onRow = talentsInBranch(branch.id).filter((t) => t.row === row)
+        const groups = new Set(onRow.map((t) => t.exclusiveGroup))
+        expect(onRow, `${branch.id} этаж ${row}`).toHaveLength(2)
+        expect(groups.size, `${branch.id} этаж ${row}: групп ${[...groups].join(', ')}`).toBe(1)
+        expect([...groups][0], `${branch.id} этаж ${row}: группа не названа`).toBeTruthy()
+      }
+    }
+  })
+
+  it('ни один ключевой талант не модификатор конвейера', () => {
+    // Держит и схема; здесь — второй замок на самом заметном: процент к
+    // криту майлстоуном не является.
+    for (const branch of own) {
+      for (const talent of talentsInBranch(branch.id).filter((t) => CONCEPT_ROWS.includes(t.row))) {
+        expect(talent.effect.kind, talent.id).not.toBe('modifiers')
+      }
+    }
+  })
+
+  it('взять оба ключевых одного этажа НЕВОЗМОЖНО', () => {
+    for (const branch of own) {
+      for (const row of CONCEPT_ROWS) {
+        const [a, b] = talentsInBranch(branch.id).filter((t) => t.row === row)
+        let s = hero(LEVEL_CAP)
+        // Порог этажа набирается ТОЛЬКО нейтральными талантами выше: иначе
+        // по дороге к девятому этажу купились бы ключевые пятого, и тест
+        // проверял бы не ту пару.
+        for (const t of talentsInBranch(branch.id).filter((x) => x.row < row && !CONCEPT_ROWS.includes(x.row))) {
+          if (spentInBranch(s.talents, branch.id) >= a.requiredPointsInBranch) break
+          s = invest(s, t.id, t.maxRank)
+        }
+        expect(spentInBranch(s.talents, branch.id)).toBeGreaterThanOrEqual(a.requiredPointsInBranch)
+        // Стрелки ключевых набираем честно: у пары опоры разные.
+        for (const t of [a, b]) if (t.requires) s = invest(s, t.requires.talentId, requiredRankOf(t))
+        const first = invest(s, a.id, 1)
+        expect(rankOf(first.talents, a.id), a.id).toBe(1)
+        expect(talentStatus(first, b), `${b.id} после ${a.id}`).toMatchObject({
+          canInvest: false,
+          reason: 'group-taken',
+          groupTakenBy: a.id,
+        })
+        expect(investTalent(first, b.id)).toBe(first)
+      }
+    }
+  })
+
+  it('каждая ветка проходится до венца имеющимися очками — по ОБОИМ путям', () => {
+    // Группа не должна отрезать дорогу к венцу: у каждого пути один из двух
+    // капстоунов куплен, и не потому, что очков хватило на оба.
+    const total = earnedPoints(new Decimal(LEVEL_CAP))
+    for (const branch of own) {
+      const capstones = talentsInBranch(branch.id).filter((t) => t.row === BRANCH_ROWS)
+      for (const path of pathsOf(branch.id)) {
+        const ranks = pathRanks(path, total)
+        const taken = capstones.filter((t) => (ranks[t.id] ?? 0) > 0)
+        expect(taken.length, `${branch.id} «${path.name}»: венцов взято ${taken.length}`).toBe(1)
+        for (const row of CONCEPT_ROWS) {
+          const pair = talentsInBranch(branch.id).filter((t) => t.row === row)
+          const got = pair.filter((t) => (ranks[t.id] ?? 0) > 0)
+          expect(got.length, `${branch.id} «${path.name}» этаж ${row}: ключевых взято ${got.length}`).toBe(1)
+        }
+      }
+    }
   })
 })

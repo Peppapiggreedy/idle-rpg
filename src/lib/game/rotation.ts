@@ -342,7 +342,10 @@ function fundPlan(
     const castsPerSecond = wantPerSecond.times(share)
     if (ability.type === 'onNextSwing') swingBudget = swingBudget.minus(castsPerSecond)
     const hitDamage = expectedAbilityDamage(stats, ability.weaponDamagePercent)
-    const totalDamage = withEffect(stats, ability, hitDamage)
+    // Интервал между кастами — по фактическому темпу, а не по откату: маны
+    // может не хватать, и тогда касты реже, а тиков эффекта между ними ложится
+    // больше.
+    const totalDamage = withEffect(stats, ability, hitDamage, new Decimal(1).div(castsPerSecond).toNumber())
     manaBudget = manaBudget.minus(manaWanted.times(share))
     manaSpent = manaSpent.plus(manaWanted.times(share))
     damage = damage.plus(totalDamage.times(castsPerSecond))
@@ -356,12 +359,28 @@ function fundPlan(
   }
 }
 
-// Полный урон одного каста: сам удар плюс весь урон эффекта, если он есть.
+// Полный урон одного каста: сам удар плюс урон эффекта, если он есть.
 // Эффект тикает уже после удара, поэтому в темпе он идёт вместе с кастом,
 // но добить моба может только сам удар — для перебоя берётся именно он.
-function withEffect(stats: StatBlock, ability: AbilityDef, hit: Decimal): Decimal {
-  if (!ability.effect) return hit
-  return hit.plus(
-    expectedAbilityDamage(stats, ability.effect.weaponDamagePercent).times(ability.effect.ticks),
-  )
+//
+// ПОВТОРНОЕ НАЛОЖЕНИЕ СТИРАЕТ ЭФФЕКТ: тик заменяет висящий эффект того же
+// умения новым (abilities.ts), и до следующего каста ложатся только те тики,
+// что успели. У «Рваной раны» откат длиннее кровотечения — ложатся все три;
+// у Скорого выпада, выученного кровить «Рваным выпадом», откат две секунды
+// против четырёх с половиной кровотечения — ложится один. Тик мерил
+// 0.9–1.3 тика на каст, а модель без этой строки считала три и завышала
+// талант втрое. Целое здесь честнее дробного: тик либо лёг до перекаста,
+// либо нет, а интервал задаётся откатом и задержкой из данных, не сеткой
+// статов героя.
+function withEffect(
+  stats: StatBlock,
+  ability: AbilityDef,
+  hit: Decimal,
+  intervalSec: number,
+): Decimal {
+  const effect = ability.effect
+  if (!effect) return hit
+  const landed = Math.min(effect.ticks, Math.floor(intervalSec / effect.tickIntervalSec))
+  if (landed <= 0) return hit
+  return hit.plus(expectedAbilityDamage(stats, effect.weaponDamagePercent).times(landed))
 }

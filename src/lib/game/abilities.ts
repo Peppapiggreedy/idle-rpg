@@ -7,7 +7,7 @@ import { AUTOCAST_DELAY_MS, GCD_MS } from '../data/balance'
 import { ABILITIES, ABILITY_BY_ID, type AbilityDef } from '../data/abilities'
 import { tuneAbility, tunedById } from './abilityTune'
 import { abilitiesByPriority } from './rotation'
-import { talentAbilityEffect, talentExtraCharges } from './talents'
+import { talentExtraCharges } from './talents'
 import { punishResourceSpend } from './bossAbilities'
 import { abilitiesOf, pushEvent, rotationOf, type ActiveEffect, type GameState } from './state'
 import type { Rng } from './rng'
@@ -263,14 +263,12 @@ export function healWithAbility(state: GameState, ability: AbilityDef): GameStat
   }
 }
 
-// Эффект удара умения: свой из данных умения либо тот, которому научил талант
-// (у Скорого выпада своего эффекта нет — его даёт «Рваный выпад»).
-function effectFrom(
-  state: GameState,
-  ability: AbilityDef,
-  swingDamage: Decimal,
-): ActiveEffect | null {
-  const effect = ability.effect ?? talentAbilityEffect(state.talents, ability.id)
+// Эффект удара умения. Выученный талантом («Рваный выпад» учит Скорый выпад
+// кровить) сюда приходит УЖЕ ПОДШИТЫМ: его кладёт `tuneAbility`, и умение
+// здесь эффективное. Второго чтения флага тут нет намеренно — иначе тик и
+// модель читали бы талант из двух мест и разошлись бы на первой правке.
+function effectFrom(ability: AbilityDef, swingDamage: Decimal): ActiveEffect | null {
+  const effect = ability.effect
   if (!effect) return null
   // Умение поддержки бьёт нулём, и делить на ноль здесь нечего: эффекта у
   // него нет, а талант, который его выдаст, обязан выдать и урон.
@@ -314,7 +312,7 @@ export function strikeWithAbility(
     abilityId: ability.id,
     timestamp: state.playtimeMs.toNumber(),
   })
-  const effect = effectFrom(state, ability, amount)
+  const effect = effectFrom(ability, amount)
   let after: GameState = {
     ...state,
     monster,

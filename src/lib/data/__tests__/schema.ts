@@ -41,6 +41,7 @@ import {
 } from '../balance'
 import type { SlotId } from '../slots'
 import {
+  CONCEPT_ROWS,
   TALENT_STAT_RULE,
   pathsOf,
   type BranchDef,
@@ -841,6 +842,20 @@ export const TALENT_SCHEMA: EntitySchema<TalentDef> = {
   ],
   extra: (talent, content, report) => {
     const where = `талант ${talent.id}`
+    // КЛЮЧЕВОЙ ЭТАЖ — ПОВЕДЕНИЕ, А НЕ ЧИСЛО. Этажи 5, 9 и 13 приходятся на
+    // 30-й, 50-й и 70-й уровень при вложении в одну ветку, и это три
+    // майлстоуна всей прокачки. Процент к криту майлстоуном не является:
+    // талант на ключевом этаже обязан менять УМЕНИЕ (род 'ability') или
+    // включать поведение (флаг). Модификаторы конвейера здесь запрещены.
+    if (CONCEPT_ROWS.includes(talent.row)) {
+      report.need(
+        talent.effect.kind !== 'modifiers',
+        where,
+        `стоит на ключевом этаже ${talent.row}, а даёт модификаторы конвейера — ` +
+          'ключевой талант меняет поведение (умение или флаг), а не число ' +
+          '(data/talents.ts)',
+      )
+    }
     // ВЗАИМОИСКЛЮЧАЮЩАЯ ГРУППА — ЭТО ВЫБОР НА ОДНОМ ЭТАЖЕ, И НИЧТО ИНОЕ.
     //
     // Группа через ветки — выбор, который игрок не увидит целиком: одна

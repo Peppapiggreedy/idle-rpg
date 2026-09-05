@@ -465,6 +465,7 @@ const WARDEN_WRATH = branch('warden-wrath', [
       name: 'Рваный выпад',
       icon: 'talent-rupture',
       maxRank: 1,
+      exclusiveGroup: 'wrath-key-5',
       effect: {
         kind: 'flag',
         flag: 'ability-learns-effect',
@@ -474,12 +475,16 @@ const WARDEN_WRATH = branch('warden-wrath', [
     },
     {
       // Очередь на замах ОДНА, и «Сокрушение» занимает её на весь откат.
-      // Мгновенным оно платит общей задержкой вместо чужого удара — ротация
-      // разгружается, но каждый каст стоит полутора секунд ГКД.
+      // Мгновенным оно в очередь не встаёт и автоатаку не заменяет — ротация
+      // разгружается. ЦЕНЫ У ЭТОГО НЕТ, И ЭТО ЗАПИСАНО: правка ставит только
+      // тип, `triggersGcd` у Сокрушения остаётся false, и общую задержку оно
+      // не тратит (прежний комментарий обещал «полторы секунды ГКД» — их не
+      // было). Талант — чистый плюс к каденции одной кнопки.
       id: 'wrath-headlong',
       name: 'Очертя голову',
       icon: 'talent-headlong',
       maxRank: 1,
+      exclusiveGroup: 'wrath-key-5',
       effect: tunes('shattering-blow', { field: 'type', kind: 'set', value: 'instant' }),
     },
   ],
@@ -562,6 +567,7 @@ const WARDEN_WRATH = branch('warden-wrath', [
       name: 'Двойной росчерк',
       icon: 'talent-double-strike',
       maxRank: 1,
+      exclusiveGroup: 'wrath-key-9',
       effect: { kind: 'flag', flag: 'double-strike', chance: 0.2 },
     },
     {
@@ -572,6 +578,7 @@ const WARDEN_WRATH = branch('warden-wrath', [
       name: 'Кровоточащая кромка',
       icon: 'talent-bleed-deep',
       maxRank: 1,
+      exclusiveGroup: 'wrath-key-9',
       requires: { talentId: 'wrath-deep-cut', minRank: 3 },
       effect: tunes(
         'rending-wound',
@@ -649,6 +656,7 @@ const WARDEN_WRATH = branch('warden-wrath', [
       name: 'Второй замах',
       icon: 'talent-second-charge',
       maxRank: 1,
+      exclusiveGroup: 'wrath-key-13',
       effect: {
         kind: 'flag',
         flag: 'ability-extra-charge',
@@ -668,6 +676,7 @@ const WARDEN_WRATH = branch('warden-wrath', [
       name: 'Незаживающая рана',
       icon: 'talent-open-wound',
       maxRank: 1,
+      exclusiveGroup: 'wrath-key-13',
       requires: { talentId: 'wrath-bleeding-edge' },
       // ТОЛЬКО СМЕНА ТИПА, БЕЗ СРЕЗАННОГО ОТКАТА. Венец обязан менять форму
       // ротации, а не быть «то же самое, но полтора раза»: замер бюджета
@@ -777,6 +786,7 @@ const WARDEN_BULWARK = branch('warden-bulwark', [
       name: 'Хватка щита',
       icon: 'talent-block-resource',
       maxRank: 1,
+      exclusiveGroup: 'bulwark-key-5',
       effect: { kind: 'flag', flag: 'block-restores-resource', resourceShare: 0.05 },
     },
     {
@@ -787,6 +797,7 @@ const WARDEN_BULWARK = branch('warden-bulwark', [
       name: 'Упор',
       icon: 'talent-braced',
       maxRank: 1,
+      exclusiveGroup: 'bulwark-key-5',
       effect: tunes('shield-shove', { field: 'weakenHits', kind: 'percent', value: 2 }),
     },
   ],
@@ -866,6 +877,7 @@ const WARDEN_BULWARK = branch('warden-bulwark', [
       name: 'Скорое возвращение',
       icon: 'talent-swift-return',
       maxRank: 1,
+      exclusiveGroup: 'bulwark-key-9',
       effect: { kind: 'flag', flag: 'faster-revive', reviveMultiplier: 0.5 },
     },
     {
@@ -875,6 +887,7 @@ const WARDEN_BULWARK = branch('warden-bulwark', [
       name: 'Частая стена',
       icon: 'talent-often-wall',
       maxRank: 1,
+      exclusiveGroup: 'bulwark-key-9',
       requires: { talentId: 'bulwark-long-wall', minRank: 3 },
       effect: tunes('bulwark', { field: 'cooldownSec', kind: 'multiplier', value: 0.5 }),
     },
@@ -938,6 +951,7 @@ const WARDEN_BULWARK = branch('warden-bulwark', [
       name: 'Зеркальный щит',
       icon: 'talent-block-reflect',
       maxRank: 1,
+      exclusiveGroup: 'bulwark-key-13',
       effect: { kind: 'flag', flag: 'block-reflects', damageShare: 1 },
     },
     {
@@ -948,6 +962,7 @@ const WARDEN_BULWARK = branch('warden-bulwark', [
       name: 'Несдвигаемый',
       icon: 'talent-immovable',
       maxRank: 1,
+      exclusiveGroup: 'bulwark-key-13',
       requires: { talentId: 'bulwark-hard-stance', minRank: 3 },
       effect: tunes('stance', { field: 'stanceDamageShare', kind: 'percent', value: -1 }),
     },
@@ -1050,6 +1065,7 @@ const WARDEN_VIGIL = branch('warden-vigil', [
       name: 'Трофейный дух',
       icon: 'talent-kill-refund',
       maxRank: 1,
+      exclusiveGroup: 'vigil-key-5',
       effect: { kind: 'flag', flag: 'kill-refunds-cooldowns', cooldownShare: 0.75 },
     },
     {
@@ -1060,6 +1076,7 @@ const WARDEN_VIGIL = branch('warden-vigil', [
       name: 'Долгий настрой',
       icon: 'talent-long-mind',
       maxRank: 1,
+      exclusiveGroup: 'vigil-key-5',
       effect: tunes('focus', { field: 'freeCastsCasts', kind: 'percent', value: 1 }),
     },
   ],
@@ -1145,6 +1162,7 @@ const WARDEN_VIGIL = branch('warden-vigil', [
       name: 'Несбитый настрой',
       icon: 'talent-unbroken-focus',
       maxRank: 1,
+      exclusiveGroup: 'vigil-key-9',
       effect: { kind: 'flag', flag: 'rest-clears-cooldowns', cooldownShare: 0 },
     },
     {
@@ -1155,6 +1173,7 @@ const WARDEN_VIGIL = branch('warden-vigil', [
       name: 'Затяжное клеймо',
       icon: 'talent-lasting-brand',
       maxRank: 1,
+      exclusiveGroup: 'vigil-key-9',
       requires: { talentId: 'vigil-long-brand', minRank: 3 },
       effect: tunes('brand', { field: 'brandDurationSec', kind: 'multiplier', value: 2 }),
     },
@@ -1219,6 +1238,7 @@ const WARDEN_VIGIL = branch('warden-vigil', [
       name: 'Костёр на ходу',
       icon: 'talent-shorter-rest',
       maxRank: 1,
+      exclusiveGroup: 'vigil-key-13',
       effect: { kind: 'flag', flag: 'shorter-rest', durationMultiplier: 1 / 3 },
     },
     {
@@ -1227,6 +1247,7 @@ const WARDEN_VIGIL = branch('warden-vigil', [
       name: 'Неиссякаемость',
       icon: 'talent-endless-mind',
       maxRank: 1,
+      exclusiveGroup: 'vigil-key-13',
       requires: { talentId: 'vigil-quick-focus', minRank: 3 },
       effect: tunes('focus', { field: 'cooldownSec', kind: 'multiplier', value: 0.5 }),
     },
@@ -1850,27 +1871,38 @@ const BRANCH_PATHS: Partial<Record<BranchId, TalentPath[]>> = {
       // авторам правильным. Порядок здесь — приоритет автокаста.
       abilities: ['quick-strike', 'rending-wound', 'mend-wounds', 'shattering-blow'],
       order: [
+        // КЛЮЧЕВЫЕ И ИХ ОПОРЫ — В ГОЛОВЕ ПУТИ. Путь — список приоритетов, и
+        // ключевые этажи это то, ради чего сборка существует: стоя в хвосте,
+        // они не покупались вовсе — очки кончались раньше.
+        'wrath-deep-cut',
+        'wrath-bleeding-edge',
+        'wrath-open-wound',
         'wrath-honed-edge',
         'wrath-keen-eye',
-        'wrath-deep-cut',
         'wrath-savage-blows',
         'wrath-frenzy',
         'wrath-firm-hand',
         'wrath-spare-edge',
+        // ИСКЛЮЧЕНИЕ — «РВАНЫЙ ВЫПАД», И ОНО ЗАПИСАНО. Ключ пятого этажа стоит
+        // не в голове, а за процентами первых четырёх этажей и берётся на
+        // СОРОКОВОМ очке ветки, не на двадцать пятом. Причина — контракт
+        // цены схватки с боссом: числа боссов калибровались под героя, у
+        // которого «Рваного выпада» на тридцати очках ещё не было (прежняя
+        // модель пути покупала в один проход и до ключа не доходила). С
+        // ключом на двадцать пятом очке первый босс третьего тира стоит 54 %
+        // запаса при поле коридора 60: герой первого пути сильнее того, под
+        // кого босса считали. Ни урон босса, ни талант ночью не трогались —
+        // это правка ПРИБОРА под прежнюю калибровку, а не игры; открытый
+        // вопрос владельцу — поднять босса или принять 54 % — записан в
+        // docs/TALENT-TREE.md.
         'wrath-rupture',
         'wrath-firm-grip',
         'wrath-momentum',
-        'wrath-bleeding-edge',
-        // «Точность удара» стоит раньше добавок к кровотечению НАРОЧНО.
-        // Шестьдесят очков этого пути — тот самый герой, на котором меряются
-        // контракты данжей, и множитель крита работает у него с любым
-        // набором; три лишних тика кровотечения — только с «Рваной раной».
         'wrath-precision',
         'wrath-open-vein',
         'wrath-light-blade',
         'wrath-heavy-swing',
         'wrath-true-aim',
-        'wrath-open-wound',
         'wrath-cold-blood',
         'wrath-relentless',
         'wrath-double-flourish',
@@ -1890,6 +1922,12 @@ const BRANCH_PATHS: Partial<Record<BranchId, TalentPath[]>> = {
       name: 'Взрыв',
       abilities: ['shattering-blow', 'mercy', 'quick-strike', 'mend-wounds'],
       order: [
+        // КЛЮЧЕВЫЕ И ИХ ОПОРЫ — В ГОЛОВЕ ПУТИ. Путь — список приоритетов, и
+        // ключевые этажи это то, ради чего сборка существует: стоя в хвосте,
+        // они не покупались вовсе — очки кончались раньше.
+        'wrath-headlong',
+        'wrath-double-flourish',
+        'wrath-second-swing',
         'wrath-honed-edge',
         'wrath-savage-blows',
         'wrath-swift-shatter',
@@ -1898,10 +1936,8 @@ const BRANCH_PATHS: Partial<Record<BranchId, TalentPath[]>> = {
         'wrath-wide-mercy',
         'wrath-heavy-swing',
         'wrath-heavy-shatter',
-        'wrath-headlong',
         'wrath-true-aim',
         'wrath-cold-blood',
-        'wrath-second-swing',
         'wrath-frenzy',
         'wrath-momentum',
         'wrath-light-blade',
@@ -1916,7 +1952,6 @@ const BRANCH_PATHS: Partial<Record<BranchId, TalentPath[]>> = {
         'wrath-bleeding-edge',
         'wrath-open-vein',
         'wrath-open-wound',
-        'wrath-double-flourish',
       ],
     },
   ],
@@ -1930,23 +1965,26 @@ const BRANCH_PATHS: Partial<Record<BranchId, TalentPath[]>> = {
       name: 'Заслон',
       abilities: ['quick-strike', 'rending-wound', 'mend-wounds', 'shattering-blow'],
       order: [
+        // КЛЮЧЕВЫЕ И ИХ ОПОРЫ — В ГОЛОВЕ ПУТИ. Путь — список приоритетов, и
+        // ключевые этажи это то, ради чего сборка существует: стоя в хвосте,
+        // они не покупались вовсе — очки кончались раньше.
+        'bulwark-shield-grip',
+        'bulwark-long-wall',
+        'bulwark-often-wall',
+        'bulwark-mirror-shield',
         'bulwark-thick-hide',
         'bulwark-shield-wall',
         'bulwark-training',
         'bulwark-iron-skin',
         'bulwark-press',
-        'bulwark-long-wall',
-        'bulwark-shield-grip',
         'bulwark-sturdy-frame',
         'bulwark-battle-breath',
         'bulwark-unyielding',
         'bulwark-braced',
-        'bulwark-often-wall',
         'bulwark-wide-wall',
         'bulwark-stone-skin',
         'bulwark-heavy-guard',
         'bulwark-firm-stance',
-        'bulwark-mirror-shield',
         'bulwark-thrift-wall',
         'bulwark-firm-press',
         'bulwark-quick-mend',
@@ -1967,17 +2005,21 @@ const BRANCH_PATHS: Partial<Record<BranchId, TalentPath[]>> = {
       name: 'Стойка',
       abilities: ['quick-strike', 'shield-shove', 'mend-wounds', 'stance'],
       order: [
+        // КЛЮЧЕВЫЕ И ИХ ОПОРЫ — В ГОЛОВЕ ПУТИ. Путь — список приоритетов, и
+        // ключевые этажи это то, ради чего сборка существует: стоя в хвосте,
+        // они не покупались вовсе — очки кончались раньше.
+        'bulwark-braced',
+        'bulwark-swift-return',
         'bulwark-hard-stance',
+        'bulwark-immovable',
         'bulwark-thick-hide',
         'bulwark-iron-skin',
         'bulwark-quick-mend',
-        'bulwark-braced',
         'bulwark-press',
         'bulwark-deep-mend',
         'bulwark-long-stance',
         'bulwark-early-call',
         'bulwark-unyielding',
-        'bulwark-immovable',
         'bulwark-battle-breath',
         'bulwark-sturdy-frame',
         'bulwark-stone-skin',
@@ -1992,7 +2034,6 @@ const BRANCH_PATHS: Partial<Record<BranchId, TalentPath[]>> = {
         'bulwark-wide-wall',
         'bulwark-thrift-wall',
         'bulwark-often-wall',
-        'bulwark-swift-return',
         'bulwark-mirror-shield',
       ],
     },
@@ -2005,21 +2046,24 @@ const BRANCH_PATHS: Partial<Record<BranchId, TalentPath[]>> = {
       name: 'Экономия',
       abilities: ['quick-strike', 'rending-wound', 'mend-wounds', 'shattering-blow'],
       order: [
+        // КЛЮЧЕВЫЕ И ИХ ОПОРЫ — В ГОЛОВЕ ПУТИ. Путь — список приоритетов, и
+        // ключевые этажи это то, ради чего сборка существует: стоя в хвосте,
+        // они не покупались вовсе — очки кончались раньше.
+        'vigil-trophy-spirit',
+        'vigil-unbroken-focus',
+        'vigil-campfire-on-the-move',
         'vigil-steady-breath',
         'vigil-clear-mind',
         'vigil-deep-well',
         'vigil-quick-camp',
         'vigil-thrift-wound',
         'vigil-thrift-shatter',
-        'vigil-trophy-spirit',
         'vigil-learning',
         'vigil-swift-camp',
         'vigil-slow-bleeding',
-        'vigil-unbroken-focus',
         'vigil-thrift',
         'vigil-composure',
         'vigil-light-sleep',
-        'vigil-campfire-on-the-move',
         'vigil-thrift-rupture',
         'vigil-thrift-mercy',
         'vigil-thrift-stance',
@@ -2042,13 +2086,16 @@ const BRANCH_PATHS: Partial<Record<BranchId, TalentPath[]>> = {
       name: 'Клеймо',
       abilities: ['quick-strike', 'brand', 'mend-wounds', 'focus'],
       order: [
+        // КЛЮЧЕВЫЕ И ИХ ОПОРЫ — В ГОЛОВЕ ПУТИ. Путь — список приоритетов, и
+        // ключевые этажи это то, ради чего сборка существует: стоя в хвосте,
+        // они не покупались вовсе — очки кончались раньше.
+        'vigil-long-mind',
         'vigil-long-brand',
+        'vigil-lasting-brand',
         'vigil-quick-focus',
+        'vigil-endless-mind',
         'vigil-early-brand',
         'vigil-often-brand',
-        'vigil-lasting-brand',
-        'vigil-long-mind',
-        'vigil-endless-mind',
         'vigil-steady-breath',
         'vigil-deep-well',
         'vigil-clear-mind',
@@ -2119,6 +2166,13 @@ export function pathRanks(path: TalentPath, points: number): Record<string, numb
       ranks[id] = have + take
       spent += take
       moved = true
+      // ПОСЛЕ КАЖДОЙ ПОКУПКИ — СНОВА С ГОЛОВЫ СПИСКА. Иначе «приоритет»
+      // держится только в пределах одного прохода: талант с пятого этажа,
+      // стоящий в пути первым, пропускался по порогу, а когда порог набирался
+      // — очередь уже ушла в хвост и тратила там всё до последнего очка.
+      // Так шесть сборок «сторона А / сторона Б» вышли без единого ключевого
+      // таланта, и прибор этого не заметил бы, если бы не печатал их.
+      break
     }
   }
   return ranks
