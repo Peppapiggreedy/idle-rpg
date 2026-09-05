@@ -40,7 +40,13 @@ import {
   SOUND_PITCH_MIN_SEMITONES,
 } from '../balance'
 import type { SlotId } from '../slots'
-import { TALENT_STAT_RULE, type BranchDef, type TalentDef, type TalentStatRule } from '../talents'
+import {
+  TALENT_STAT_RULE,
+  pathsOf,
+  type BranchDef,
+  type TalentDef,
+  type TalentStatRule,
+} from '../talents'
 import type { Zone } from '../zones'
 import type { StatId } from '../../game/stats'
 
@@ -2891,6 +2897,19 @@ function checkReachable(content: Content, report: Report): void {
       `ветка ${branch.id}`,
       'в ветке нет ни одного таланта — вкладывать очки некуда (data/talents.ts)',
     )
+    // НИ ОДНОГО НЕИСПОЛЬЗУЕМОГО ТАЛАНТА. Путь — это то, что покупает модель
+    // прогона; талант, не попавший НИ В ОДИН путь своей ветки, не мерится
+    // ничем и не сравнивается ни с чем. Он не «слабый» — он невидимый, и
+    // узнать об этом можно только прочитав данные.
+    const inPaths = new Set(pathsOf(branch.id).flatMap((path) => path.order))
+    for (const talent of inBranch) {
+      report.need(
+        inPaths.has(talent.id),
+        `талант ${talent.id}`,
+        'не входит НИ В ОДИН путь своей ветки — модель прогона его не покупает, ' +
+          'то есть он не измерен ничем (BRANCH_PATHS в data/talents.ts)',
+      )
+    }
     // ЭТАЖ — РЯД ИЗ ОДНОГО, ДВУХ ИЛИ ТРЁХ. Раньше здесь стоял запрет на
     // двух талантов в одном ряду — ровно та лестница, из которой дерево и
     // делали. Осталась ВЕРХНЯЯ граница: четвёртая клетка в ряду не
