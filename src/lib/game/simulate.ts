@@ -55,7 +55,7 @@ import {
   type Zone,
 } from '../data/zones'
 import { buildMonster } from '../data/monsters'
-import { BRANCHES, talentsInBranch, type BranchId } from '../data/talents'
+import { BRANCHES, fillBranchRanks, talentsInBranch, type BranchId } from '../data/talents'
 import { DUNGEONS } from '../data/dungeons'
 import { DEFAULT_CLASS, classById } from '../data/classes'
 import { ABILITY_SLOTS, TALENT_FIRST_LEVEL } from '../data/balance'
@@ -451,22 +451,16 @@ export function referenceBuild(level: number, classId: string = DEFAULT_CLASS.id
 }
 
 /**
- * ЧИСТЫЙ билд ветки: все её таланты по максимуму, в остальные — ни очка.
+ * ЧИСТЫЙ билд ветки: очки в неё одну, по ПЕРВОМУ ОБЪЯВЛЕННОМУ ПУТИ.
  *
- * Ранги считаются из ДАННЫХ дерева, а не перечисляются здесь: добавили талант —
- * прогон подхватит его сам, и сравнение веток не устареет молча.
+ * Раньше здесь стояла жадная заливка сверху вниз. С альтернативами на этажах
+ * она сломалась молча: ёмкость ветки больше, чем очков у героя, и заливка
+ * тратила всё, до венца так и не дойдя, — то есть мерила ветку без того, ради
+ * чего её берут. Путь лежит в данных (`BRANCH_PATHS`), и новый талант больше
+ * не двигает модель сам собой.
  */
 export function pureBranchTalents(branch: BranchId, points: number): Record<string, number> {
-  const ranks: Record<string, number> = {}
-  let spent = 0
-  for (const talent of talentsInBranch(branch)) {
-    if (spent < talent.requiredPointsInBranch) break
-    const rank = Math.min(talent.maxRank, points - spent)
-    if (rank <= 0) break
-    ranks[talent.id] = rank
-    spent += rank
-  }
-  return ranks
+  return fillBranchRanks(branch, points)
 }
 
 /** Сколько очков есть у героя этого уровня. */

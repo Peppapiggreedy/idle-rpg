@@ -40,7 +40,7 @@ import {
   SOUND_PITCH_MIN_SEMITONES,
 } from '../balance'
 import type { SlotId } from '../slots'
-import type { BranchDef, TalentDef } from '../talents'
+import { TALENT_STAT_RULE, type BranchDef, type TalentDef, type TalentStatRule } from '../talents'
 import type { Zone } from '../zones'
 import type { StatId } from '../../game/stats'
 
@@ -783,11 +783,18 @@ const FLAG_PAYLOADS: Record<
 }
 
 /**
- * СТАТЫ, КОТОРЫЕ НА САМОМ ДЕЛЕ НАСТРОЙКИ ИГРОКА. Живут в конвейере, потому
- * что считаются там же, где всё остальное, — но принадлежат не герою, а
- * игроку: он выставляет их сам. Ни талант, ни предмет их двигать не вправе.
+ * ЧТО ТАЛАНТУ МОЖНО ТРОГАТЬ — ОДНОЙ ТАБЛИЦЕЙ ИЗ ДАННЫХ.
+ *
+ * Раньше здесь стоял отдельный список «настроек игрока», а правило про
+ * плоские прибавки не было записано вовсе. Таблица `TALENT_STAT_RULE`
+ * (data/talents.ts) отвечает на оба вопроса разом и закрыта по `StatId`:
+ * новая характеристика не пройдёт проверку типов, пока про неё не решат.
  */
-const SETTING_STAT_IDS: readonly string[] = ['restThreshold']
+/** Сколько талантов помещается в один ряд на экране. */
+const FLOOR_MAX_TALENTS = 3
+
+const talentRule = (stat: string): TalentStatRule | undefined =>
+  TALENT_STAT_RULE[stat as keyof typeof TALENT_STAT_RULE]
 
 export const TALENT_SCHEMA: EntitySchema<TalentDef> = {
   kind: 'талант',
@@ -917,18 +924,46 @@ export const TALENT_SCHEMA: EntitySchema<TalentDef> = {
               'иначе замах уходит в ноль или в бесконечность (data/talents.ts)',
           )
         }
+        const rule = talentRule(mod.stat)
         // НАСТРОЙКА ИГРОКА — НЕ ХАРАКТЕРИСТИКА. Порог привала игрок ставит
         // ползунком и ждёт, что игра ему следует; талант, молча сдвигающий
         // его вверх, читается как поломка — на экране 60 %, а герой уходит
         // отдыхать на 72 %, и объяснения этому нигде нет. Прокачивается то,
         // чем герой ЯВЛЯЕТСЯ (например, длина привала), а не то, что он себе
         // назначил. Три таких таланта удалены в четвёртую ночь.
-        if (SETTING_STAT_IDS.includes(mod.stat)) {
+        if (rule === 'setting') {
           report.add(
             where,
             `таланту нельзя менять «${mod.stat}» — это НАСТРОЙКА игрока, а не ` +
               'характеристика героя: он ставит её сам и ждёт, что игра ей следует ' +
               '(data/talents.ts)',
+          )
+        }
+        // ЧЕТЫРЕ БАЗОВЫЕ ХАРАКТЕРИСТИКИ ТАЛАНТУ ЗАКРЫТЫ ЦЕЛИКОМ. Прокачка
+        // характеристик — это предметы и уровень; талант обязан менять то,
+        // ЧЕМ герой пользуется, а не из чего он собран. Прибавка к силе
+        // читается игроком как «+3», а стоит ровно столько же очка, сколько
+        // талант, меняющий умение.
+        if (rule === 'attribute') {
+          report.add(
+            where,
+            `таланту нельзя менять «${mod.stat}» — это одна из четырёх БАЗОВЫХ ` +
+              'характеристик: их растят предметы и уровень, а талант меняет ' +
+              'производные и умения (TALENT_STAT_RULE в data/talents.ts)',
+          )
+        }
+        // ПЛОСКАЯ ПРИБАВКА К РАСТУЩЕМУ — МЁРТВЫЙ УЗЕЛ. Она не масштабируется
+        // ни от уровня, ни от снаряжения: то, что на 25-м уровне видно, к
+        // сотому становится шумом, а цена очка остаётся прежней. У ДОЛЕЙ и
+        // СЕКУНД этой болезни нет — доля и есть процент, а время с уровнем
+        // не растёт, — поэтому запрет адресный, а не «никакого flat».
+        if (rule === 'scaling' && mod.kind === 'flat') {
+          report.add(
+            where,
+            `таланту нельзя давать ПЛОСКУЮ прибавку к «${mod.stat}» — стат растёт ` +
+              'от уровня и снаряжения, и плоское число к сотому уровню становится ' +
+              'шумом; здесь только percent или multiplier (TALENT_STAT_RULE в ' +
+              'data/talents.ts)',
           )
         }
       }
@@ -2856,13 +2891,20 @@ function checkReachable(content: Content, report: Report): void {
       `ветка ${branch.id}`,
       'в ветке нет ни одного таланта — вкладывать очки некуда (data/talents.ts)',
     )
-    const rows = inBranch.map((t) => t.row)
-    report.need(
-      new Set(rows).size === rows.length,
-      `ветка ${branch.id}`,
-      `в ветке два таланта в одном ряду (ряды: ${rows.join(', ')}) — дерево рисуется ` +
-        'по рядам (data/talents.ts)',
-    )
+    // ЭТАЖ — РЯД ИЗ ОДНОГО, ДВУХ ИЛИ ТРЁХ. Раньше здесь стоял запрет на
+    // двух талантов в одном ряду — ровно та лестница, из которой дерево и
+    // делали. Осталась ВЕРХНЯЯ граница: четвёртая клетка в ряду не
+    // помещается ни на телефон, ни в ширину меню.
+    const perRow = new Map<number, number>()
+    for (const talent of inBranch) perRow.set(talent.row, (perRow.get(talent.row) ?? 0) + 1)
+    for (const [row, count] of perRow) {
+      report.need(
+        count <= FLOOR_MAX_TALENTS,
+        `ветка ${branch.id}`,
+        `на этаже ${row} ${count} талантов — больше ${FLOOR_MAX_TALENTS} в ряд не ` +
+          'помещается ни на телефон, ни в ширину меню (data/talents.ts)',
+      )
+    }
   }
 }
 

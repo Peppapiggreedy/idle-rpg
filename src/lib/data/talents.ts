@@ -226,6 +226,79 @@ const m = (stat: StatId, kind: ModifierKind, value: number): TalentModifier => (
 
 const mods = (...list: TalentModifier[]): TalentEffect => ({ kind: 'modifiers', mods: list })
 
+/** Талант, правящий умение: короткая запись третьего рода эффекта. */
+const tunes = (abilityId: string, ...tune: AbilityTune[]): TalentEffect => ({
+  kind: 'ability',
+  abilityId,
+  tune,
+})
+
+// ---------------------------------------------------------------------------
+// ЧТО ТАЛАНТУ МОЖНО ТРОГАТЬ, А ЧТО НЕТ
+// ---------------------------------------------------------------------------
+
+/**
+ * ПЛОСКАЯ ПРИБАВКА К ХАРАКТЕРИСТИКЕ — МЁРТВЫЙ УЗЕЛ, И ЭТО ИЗМЕРЕНО.
+ *
+ * «+3 к силе» за ранг, шесть рангов — восемнадцать силы, то есть +36 силы
+ * атаки. У эталонного Стража это **12.5 % на 25-м уровне, 6.8 % на 55-м и
+ * 4.2 % на сотом**: талант, за который платят тем же очком, что и за любой
+ * другой, к концу игры превращается в шум. Игрок этого не видит — число на
+ * карточке не меняется, — и узел молча становится ловушкой для новичка.
+ *
+ * Отсюда правило: **талант не трогает четыре базовые характеристики вовсе**,
+ * а плоскую прибавку выдаёт только там, где стат сам по себе ДОЛЯ или
+ * СЕКУНДЫ. Растёт от снаряжения — только процентом, он не устаревает.
+ *
+ * ПОЧЕМУ НЕ «ЗАПРЕТИТЬ FLAT ЦЕЛИКОМ», как просилось на словах. Ускорение и
+ * шанс крита живут В ДОЛЯХ, и у них `percent` от нуля даёт ноль: «+10 %
+ * ускорения» — это `{ haste, flat, 0.1 }` и никак иначе (правило записано в
+ * CLAUDE.md и закреплено тестом). Запрет рода сломал бы ровно те таланты,
+ * ради которых он затевался. Причина запрета — не слово «flat», а то, что
+ * прибавка ОТСТАЁТ ОТ УРОВНЯ; у доли этой болезни нет.
+ */
+export type TalentStatRule =
+  /** Четыре базовые: таланту нельзя ВОВСЕ — ни плоско, ни процентом. */
+  | 'attribute'
+  /** Настройка игрока: он ставит её сам и ждёт, что игра ей следует. */
+  | 'setting'
+  /** Доля 0..1 — плоская прибавка к ней и ЕСТЬ процент, она не устаревает. */
+  | 'share'
+  /** Секунды: время не растёт с уровнем, плоская правка честна и здесь. */
+  | 'seconds'
+  /** Растёт от снаряжения и уровня: плоская прибавка отстаёт — только процент. */
+  | 'scaling'
+
+export const TALENT_STAT_RULE: Record<StatId, TalentStatRule> = {
+  strength: 'attribute',
+  agility: 'attribute',
+  intellect: 'attribute',
+  vitality: 'attribute',
+  restThreshold: 'setting',
+  haste: 'share',
+  critChance: 'share',
+  critMultiplier: 'share',
+  blockChance: 'share',
+  damageReduction: 'share',
+  offhandPenalty: 'share',
+  regenDelay: 'seconds',
+  restDuration: 'seconds',
+  attackPower: 'scaling',
+  weaponDamageMin: 'scaling',
+  weaponDamageMax: 'scaling',
+  offhandSpeed: 'scaling',
+  offhandDamageMin: 'scaling',
+  offhandDamageMax: 'scaling',
+  blockValue: 'scaling',
+  maxHp: 'scaling',
+  maxMana: 'scaling',
+  weaponSpeed: 'scaling',
+  hpRegen: 'scaling',
+  hpRegenOutOfCombat: 'scaling',
+  manaRegen: 'scaling',
+  armor: 'scaling',
+}
+
 /**
  * Ветка из тринадцати ЭТАЖЕЙ. Этаж и требование берутся ИЗ ФОРМЫ, а не
  * пишутся руками у каждой записи: иначе арифметика порогов расползлась бы по
@@ -257,8 +330,22 @@ const BLEED: AbilityEffect = {
 // СТРАЖ
 // ---------------------------------------------------------------------------
 
-// Гнев: всё про удар. Прибавки мелкие и однообразные намеренно — ветка
-// платит не ими, а тремя концептуальными талантами на 21-м, 41-м и 61-м очке.
+// ГНЕВ: ВСЁ ПРО УДАР — И ТЕПЕРЬ ЭТО ВЫБОР, А НЕ ЛЕСТНИЦА.
+//
+// Ветка была тринадцатью ступенями по одному таланту: очки просто лились в
+// единственный узел, и «дерево» состояло из трёх столбиков. Теперь на каждом
+// этаже стоят двое-трое, и очков на всех НЕ ХВАТАЕТ по построению: ёмкость
+// ветки 114 очков при глубине 60 и 91 очке у героя сотого уровня. Дефицит и
+// делает выбор выбором.
+//
+// БОЛЬШЕ ПОЛОВИНЫ ТАЛАНТОВ ПРАВЯТ УМЕНИЯ (17 из 27), и начиная со второго
+// этажа такой есть на каждом. Ветка, состоящая из процентов, меняет ЧИСЛА;
+// ветка, правящая умения, меняет РОТАЦИЮ — а ротация и есть то немногое, чем
+// игрок в idle-игре управляет.
+//
+// ПЛОСКИХ ПРИБАВОК К ХАРАКТЕРИСТИКАМ ЗДЕСЬ НЕТ НИ ОДНОЙ (см.
+// TALENT_STAT_RULE): «Крепкая хватка» на +3 силы удалена, а не переписана —
+// её место заняли таланты про умения, и это ОБМЕН, а не добавление.
 const WARDEN_WRATH = branch('warden-wrath', [
   [
     {
@@ -270,7 +357,25 @@ const WARDEN_WRATH = branch('warden-wrath', [
       name: 'Отточенный клинок',
       icon: 'talent-honed-edge',
       maxRank: 6,
-      effect: mods(m('attackPower', 'percent', 0.027)),
+      effect: mods(m('attackPower', 'percent', 0.01582)),
+    },
+    {
+      // ОТКАТ ЗДЕСЬ ТРОГАТЬ НЕЛЬЗЯ, И ЭТО ЗАМЕРЕНО. У «Скорого выпада» откат
+      // 2 секунды при общей задержке 1.5: срезать можно только четверть, а
+      // дальше умение упирается в ГКД. Первая редакция таланта резала откат
+      // на 35 % — из них работали 25, — и герой в данже первого тира
+      // переставал проходить цепочку: пять очков уходили в никуда. Поэтому
+      // талант растит УДАР, а дешевизну «Скорого выпада» правит «Скупая
+      // кромка» этажом ниже.
+      id: 'wrath-firm-hand',
+      name: 'Твёрдая рука',
+      icon: 'talent-firm-hand',
+      maxRank: 5,
+      effect: tunes('quick-strike', {
+        field: 'weaponDamagePercent',
+        kind: 'percent',
+        value: 0.04,
+      }),
     },
   ],
   [
@@ -279,7 +384,21 @@ const WARDEN_WRATH = branch('warden-wrath', [
       name: 'Острый глаз',
       icon: 'talent-keen-eye',
       maxRank: 6,
-      effect: mods(m('critChance', 'flat', 0.012)),
+      effect: mods(m('critChance', 'flat', 0.00703)),
+    },
+    {
+      // Кровотечение «Рваной раны» — 0.5 удара оружия за тик, три тика.
+      // Талант растит ТИК, а не сам удар: ветка на кровь должна окупаться
+      // тем, что цель живёт дольше, а не тем, что её быстрее добивают.
+      id: 'wrath-deep-cut',
+      name: 'Глубокий надрез',
+      icon: 'talent-deep-cut',
+      maxRank: 5,
+      effect: tunes('rending-wound', {
+        field: 'effectWeaponDamagePercent',
+        kind: 'percent',
+        value: 0.08,
+      }),
     },
   ],
   [
@@ -288,7 +407,17 @@ const WARDEN_WRATH = branch('warden-wrath', [
       name: 'Свирепые удары',
       icon: 'talent-savage-blows',
       maxRank: 6,
-      effect: mods(m('critMultiplier', 'flat', 0.08)),
+      effect: mods(m('critMultiplier', 'flat', 0.04687)),
+    },
+    {
+      // Цена «Скорого выпада» — 9 маны, самая низкая у класса. Пять рангов
+      // срезают её до 5.4: заполнитель перестаёт конкурировать за ману с
+      // крупными умениями вовсе.
+      id: 'wrath-spare-edge',
+      name: 'Скупая кромка',
+      icon: 'talent-spare-edge',
+      maxRank: 5,
+      effect: tunes('quick-strike', { field: 'manaCost', kind: 'percent', value: -0.08 }),
     },
   ],
   [
@@ -300,12 +429,24 @@ const WARDEN_WRATH = branch('warden-wrath', [
       // процент от нуля даёт ноль, а плоская правка скорости оружия увела бы
       // её в минус. Правило записано в CLAUDE.md и закреплено тестом.
       maxRank: 6,
-      effect: mods(m('haste', 'flat', 0.012)),
+      effect: mods(m('haste', 'flat', 0.00703)),
+    },
+    {
+      id: 'wrath-swift-shatter',
+      name: 'Скорое сокрушение',
+      icon: 'talent-swift-shatter',
+      maxRank: 5,
+      effect: tunes('shattering-blow', { field: 'cooldownSec', kind: 'percent', value: -0.06 }),
     },
   ],
   [
+    // 21-е очко, КОНЦЕПТ. Две альтернативы, и ни одна не «сильнее»: обе
+    // меняют форму ротации, но в разные стороны.
     {
-      // 21-е очко. Умение перестаёт быть просто сильным ударом.
+      // БЬЁТ ПО ПРИЧИНЕ ОБЯЗАТЕЛЬНОСТИ «РВАНОЙ РАНЫ». Она стоит в четвёрке
+      // потому, что она единственный безусловный урон по времени; научив
+      // кровотечению самое дешёвое умение, талант отбирает у неё монополию —
+      // и четвёрка «Скорый выпад + три крупных» становится возможной.
       id: 'wrath-rupture',
       name: 'Рваный выпад',
       icon: 'talent-rupture',
@@ -317,14 +458,15 @@ const WARDEN_WRATH = branch('warden-wrath', [
         effect: BLEED,
       },
     },
-  ],
-  [
     {
-      id: 'wrath-firm-grip',
-      name: 'Крепкая хватка',
-      icon: 'talent-strength',
-      maxRank: 6,
-      effect: mods(m('strength', 'flat', 3)),
+      // Очередь на замах ОДНА, и «Сокрушение» занимает её на весь откат.
+      // Мгновенным оно платит общей задержкой вместо чужого удара — ротация
+      // разгружается, но каждый каст стоит полутора секунд ГКД.
+      id: 'wrath-headlong',
+      name: 'Очертя голову',
+      icon: 'talent-headlong',
+      maxRank: 1,
+      effect: tunes('shattering-blow', { field: 'type', kind: 'set', value: 'instant' }),
     },
   ],
   [
@@ -333,7 +475,32 @@ const WARDEN_WRATH = branch('warden-wrath', [
       name: 'Верный глазомер',
       icon: 'talent-keen-eye',
       maxRank: 6,
-      effect: mods(m('critChance', 'flat', 0.008)),
+      effect: mods(m('critChance', 'flat', 0.00469)),
+    },
+    {
+      id: 'wrath-relentless',
+      name: 'Неотступность',
+      icon: 'talent-relentless',
+      maxRank: 5,
+      effect: tunes('rupture', { field: 'cooldownSec', kind: 'percent', value: -0.08 }),
+    },
+    {
+      // «КРЕПКАЯ ХВАТКА» ОСТАЛАСЬ НА МЕСТЕ — ПЕРЕПИСАН ТОЛЬКО ЭФФЕКТ, и id у
+      // неё прежний: у ветеранов в сейве лежат её ранги, и удалить талант
+      // значило бы вернуть им очки свободными — то есть раздать бесплатный
+      // сброс за чужой счёт.
+      //
+      // Было `strength flat 3`: восемнадцать силы — 12.5 % силы атаки на
+      // 25-м уровне, 6.8 % на 55-м и 4.2 % на сотом. Процент по замеру на
+      // 55-м: 6.8 % / 6 рангов = 1.1 % за ранг. Ветка при этом сохраняет
+      // ШИРОКИЙ источник силы, работающий с любой четвёркой, — без него
+      // Гнев проседал на данжах у тех, кто играет не тем набором, под
+      // который собран путь.
+      id: 'wrath-firm-grip',
+      name: 'Крепкая хватка',
+      icon: 'talent-strength',
+      maxRank: 6,
+      effect: mods(m('attackPower', 'percent', 0.00644)),
     },
   ],
   [
@@ -342,17 +509,17 @@ const WARDEN_WRATH = branch('warden-wrath', [
       name: 'Разгон',
       icon: 'talent-relentless',
       maxRank: 7,
-      effect: mods(m('haste', 'flat', 0.008)),
+      effect: mods(m('haste', 'flat', 0.00469)),
     },
-  ],
-  [
     {
-      // 41-е очко. Автоатака перестаёт быть ровным ручейком.
-      id: 'wrath-double-flourish',
-      name: 'Двойной росчерк',
-      icon: 'talent-double-strike',
-      maxRank: 1,
-      effect: { kind: 'flag', flag: 'double-strike', chance: 0.2 },
+      // Клеймо окупается на долгих схватках, то есть на боссах. Талант
+      // усиливает саму уязвимость, а не урон каста: ветка на клеймо должна
+      // платить в данже, а не на рядовом мобе.
+      id: 'wrath-deep-brand',
+      name: 'Глубокое клеймо',
+      icon: 'talent-deep-brand',
+      maxRank: 5,
+      effect: tunes('brand', { field: 'brandDamageShare', kind: 'percent', value: 0.12 }),
     },
   ],
   [
@@ -361,7 +528,42 @@ const WARDEN_WRATH = branch('warden-wrath', [
       name: 'Точность удара',
       icon: 'talent-savage-blows',
       maxRank: 5,
-      effect: mods(m('critMultiplier', 'flat', 0.06)),
+      effect: mods(m('critMultiplier', 'flat', 0.03515)),
+    },
+    {
+      // ПОРОГ СДВИГАЕТСЯ В ПУНКТАХ: 20 % + 5 рангов по 3 = 35 %. Процентом
+      // от себя те же пять рангов дали бы 23 %, и талант не читался бы.
+      id: 'wrath-wide-mercy',
+      name: 'Широкая милость',
+      icon: 'talent-wide-mercy',
+      maxRank: 5,
+      effect: tunes('mercy', { field: 'executeBelowHpShare', kind: 'points', value: 0.03 }),
+    },
+  ],
+  [
+    // 41-е очко, КОНЦЕПТ. Белый урон против крови: два разных ответа на один
+    // вопрос «откуда берётся урон, когда умения на откате».
+    {
+      id: 'wrath-double-flourish',
+      name: 'Двойной росчерк',
+      icon: 'talent-double-strike',
+      maxRank: 1,
+      effect: { kind: 'flag', flag: 'double-strike', chance: 0.2 },
+    },
+    {
+      // СТРЕЛКА: кровь удваивается только у того, кто её уже растил.
+      // Кровотечение перестаёт быть довеском к удару и становится половиной
+      // урона умения: шесть тиков вместо трёх и каждый тяжелее.
+      id: 'wrath-bleeding-edge',
+      name: 'Кровоточащая кромка',
+      icon: 'talent-bleed-deep',
+      maxRank: 1,
+      requires: { talentId: 'wrath-deep-cut', minRank: 3 },
+      effect: tunes(
+        'rending-wound',
+        { field: 'effectTicks', kind: 'percent', value: 0.34 },
+        { field: 'effectWeaponDamagePercent', kind: 'percent', value: 0.1 },
+      ),
     },
   ],
   [
@@ -370,7 +572,20 @@ const WARDEN_WRATH = branch('warden-wrath', [
       name: 'Мощь замаха',
       icon: 'talent-honed-edge',
       maxRank: 5,
-      effect: mods(m('attackPower', 'percent', 0.027)),
+      effect: mods(m('attackPower', 'percent', 0.01582)),
+    },
+    {
+      // СТРЕЛКА: тот же адрес, что и у «Скорого сокрушения».
+      id: 'wrath-heavy-shatter',
+      name: 'Тяжёлое сокрушение',
+      icon: 'talent-heavy-shatter',
+      maxRank: 5,
+      requires: { talentId: 'wrath-swift-shatter', minRank: 3 },
+      effect: tunes('shattering-blow', {
+        field: 'weaponDamagePercent',
+        kind: 'percent',
+        value: 0.06,
+      }),
     },
   ],
   [
@@ -379,13 +594,43 @@ const WARDEN_WRATH = branch('warden-wrath', [
       name: 'Лёгкость клинка',
       icon: 'talent-frenzy',
       maxRank: 5,
-      effect: mods(m('haste', 'flat', 0.008)),
+      effect: mods(m('haste', 'flat', 0.00469)),
+    },
+    {
+      // Три бесплатных применения — вся ценность «Сосредоточения», и она
+      // ЧУЖАЯ: талант окупается только с дорогой четвёркой. Штучное поле
+      // округляется к ближайшему: три ранга по 34 % дают шесть.
+      id: 'wrath-long-focus',
+      name: 'Долгое сосредоточение',
+      icon: 'talent-long-focus',
+      maxRank: 3,
+      effect: tunes('focus', { field: 'freeCastsCasts', kind: 'percent', value: 0.34 }),
     },
   ],
   [
     {
-      // 61-е очко, капстоун. Второй заряд самого дорогого умения: ротация
-      // перестаёт упираться в один откат.
+      id: 'wrath-cold-blood',
+      name: 'Хладнокровие',
+      icon: 'talent-cold-blood',
+      maxRank: 5,
+      effect: mods(m('critChance', 'flat', 0.00586)),
+    },
+    {
+      id: 'wrath-open-vein',
+      name: 'Вскрытая жила',
+      icon: 'talent-open-vein',
+      maxRank: 3,
+      effect: tunes('rending-wound', { field: 'effectTicks', kind: 'percent', value: 0.12 }),
+    },
+  ],
+  [
+    // 61-е очко, ДВА КАПСТОУНА. Взять оба нельзя не по запрету, а по
+    // арифметике: до тринадцатого этажа доходят с 60 очками в ветке, и
+    // лишнего очка на второй венец у героя сотого уровня уже не остаётся,
+    // если он вложил хоть что-то в соседние ветки.
+    {
+      // Второй заряд самого дорогого умения: ротация перестаёт упираться в
+      // один откат.
       id: 'wrath-second-swing',
       name: 'Второй замах',
       icon: 'talent-second-charge',
@@ -396,6 +641,24 @@ const WARDEN_WRATH = branch('warden-wrath', [
         abilityId: 'shattering-blow',
         extraCharges: 1,
       },
+    },
+    {
+      // ВТОРОЙ ВЕНЕЦ — ДЛЯ ДРУГОГО ПУТИ, И ЭТО ОБЯЗАТЕЛЬНО. Ветка с двумя
+      // путями и одним венцом — это ветка с одним путём: второй некуда
+      // вести. «Второй замах» венчает взрыв, эта запись — кровь.
+      //
+      // СТРЕЛКА: третья ступень одной и той же мысли (надрез → кромка →
+      // рана). Кровотечение перестаёт ждать замаха: «Рваная рана» бьёт
+      // сразу, и очередь на замах освобождается под что угодно ещё.
+      id: 'wrath-open-wound',
+      name: 'Незаживающая рана',
+      icon: 'talent-open-wound',
+      maxRank: 1,
+      requires: { talentId: 'wrath-bleeding-edge' },
+      // ТОЛЬКО СМЕНА ТИПА, БЕЗ СРЕЗАННОГО ОТКАТА. Венец обязан менять форму
+      // ротации, а не быть «то же самое, но полтора раза»: замер бюджета
+      // показал, что откат сверху выводил ветку далеко за свою строку.
+      effect: tunes('rending-wound', { field: 'type', kind: 'set', value: 'instant' }),
     },
   ],
 ])
@@ -455,7 +718,12 @@ const WARDEN_BULWARK = branch('warden-bulwark', [
       name: 'Крепость тела',
       icon: 'talent-vitality',
       maxRank: 6,
-      effect: mods(m('vitality', 'flat', 3)),
+      // Было `vitality flat 3`. Плоская характеристика отстаёт от уровня
+      // (см. TALENT_STAT_RULE): восемнадцать выносливости — 4.5 % запаса у
+      // эталонного Стража на 55-м уровне и 2.7 % на сотом. Переведено в
+      // процент по замеру НА 55-М: 4.5 % / 6 рангов = 0.75 % за ранг.
+      // Настоящая переделка ветки — своей стадией; здесь только правило.
+      effect: mods(m('maxHp', 'percent', 0.0075)),
     },
   ],
   [
@@ -464,7 +732,11 @@ const WARDEN_BULWARK = branch('warden-bulwark', [
       name: 'Дыхание в бою',
       icon: 'talent-second-wind',
       maxRank: 6,
-      effect: mods(m('hpRegen', 'flat', 2)),
+      // Плоское восстановление ОТСТАЁТ ОТ УРОВНЯ (см. TALENT_STAT_RULE):
+      // у эталонного Стража реген 19.2/с на 25-м уровне и 67.5/с на сотом,
+      // то есть один и тот же «+2» стоит втрое меньше к концу игры.
+      // Переведено в процент по замеру НА 55-М (39.5/с): 2 → 5.1 %.
+      effect: mods(m('hpRegen', 'percent', 0.051)),
     },
   ],
   [
@@ -535,7 +807,9 @@ const WARDEN_VIGIL = branch('warden-vigil', [
       name: 'Ровное дыхание',
       icon: 'talent-steady-breath',
       maxRank: 6,
-      effect: mods(m('manaRegen', 'flat', 1.5)),
+      // То же и с восстановлением ресурса: 38.7/с на 25-м уровне против
+      // 120.0/с на сотом. Замер на 55-м (72.5/с): 1.5 → 2.1 %.
+      effect: mods(m('manaRegen', 'percent', 0.021)),
     },
   ],
   [
@@ -584,7 +858,10 @@ const WARDEN_VIGIL = branch('warden-vigil', [
       name: 'Учёность',
       icon: 'talent-intellect',
       maxRank: 6,
-      effect: mods(m('intellect', 'flat', 3)),
+      // Было `intellect flat 3`: восемнадцать интеллекта — 13.1 % запаса
+      // маны на 55-м уровне и 7.8 % на сотом. Процент по замеру на 55-м:
+      // 13.1 % / 6 = 2.2 % за ранг.
+      effect: mods(m('maxMana', 'percent', 0.022)),
     },
   ],
   [
@@ -614,7 +891,11 @@ const WARDEN_VIGIL = branch('warden-vigil', [
       name: 'Скорое заживление',
       icon: 'talent-second-wind',
       maxRank: 7,
-      effect: mods(m('hpRegen', 'flat', 1.5)),
+      // Плоское восстановление ОТСТАЁТ ОТ УРОВНЯ (см. TALENT_STAT_RULE):
+      // у эталонного Стража реген 19.2/с на 25-м уровне и 67.5/с на сотом,
+      // то есть один и тот же «+1.5» стоит втрое меньше к концу игры.
+      // Переведено в процент по замеру НА 55-М (39.5/с): 1.5 → 3.8 %.
+      effect: mods(m('hpRegen', 'percent', 0.038)),
     },
   ],
   [
@@ -732,7 +1013,10 @@ const REAVER_CARNAGE = branch('reaver-carnage', [
       name: 'Дикая сила',
       icon: 'talent-strength',
       maxRank: 6,
-      effect: mods(m('strength', 'flat', 3)),
+      // Было `strength flat 3`: восемнадцать силы — 6.8 % силы атаки на
+      // 55-м уровне и 4.2 % на сотом. Процент по замеру на 55-м:
+      // 6.8 % / 6 = 1.1 % за ранг.
+      effect: mods(m('attackPower', 'percent', 0.011)),
     },
   ],
   [
@@ -864,7 +1148,12 @@ const REAVER_SINEW = branch('reaver-sinew', [
       name: 'Матёрость',
       icon: 'talent-vitality',
       maxRank: 6,
-      effect: mods(m('vitality', 'flat', 3)),
+      // Было `vitality flat 3`. Плоская характеристика отстаёт от уровня
+      // (см. TALENT_STAT_RULE): восемнадцать выносливости — 4.5 % запаса у
+      // эталонного Стража на 55-м уровне и 2.7 % на сотом. Переведено в
+      // процент по замеру НА 55-М: 4.5 % / 6 рангов = 0.75 % за ранг.
+      // Настоящая переделка ветки — своей стадией; здесь только правило.
+      effect: mods(m('maxHp', 'percent', 0.0075)),
     },
   ],
   [
@@ -873,7 +1162,11 @@ const REAVER_SINEW = branch('reaver-sinew', [
       name: 'Затягивание ран',
       icon: 'talent-second-wind',
       maxRank: 6,
-      effect: mods(m('hpRegen', 'flat', 2)),
+      // Плоское восстановление ОТСТАЁТ ОТ УРОВНЯ (см. TALENT_STAT_RULE):
+      // у эталонного Стража реген 19.2/с на 25-м уровне и 67.5/с на сотом,
+      // то есть один и тот же «+2» стоит втрое меньше к концу игры.
+      // Переведено в процент по замеру НА 55-М (39.5/с): 2 → 5.1 %.
+      effect: mods(m('hpRegen', 'percent', 0.051)),
     },
   ],
   [
@@ -944,7 +1237,11 @@ const REAVER_INSTINCT = branch('reaver-instinct', [
       name: 'Дыхание зверя',
       icon: 'talent-second-wind',
       maxRank: 6,
-      effect: mods(m('hpRegen', 'flat', 1.5)),
+      // Плоское восстановление ОТСТАЁТ ОТ УРОВНЯ (см. TALENT_STAT_RULE):
+      // у эталонного Стража реген 19.2/с на 25-м уровне и 67.5/с на сотом,
+      // то есть один и тот же «+1.5» стоит втрое меньше к концу игры.
+      // Переведено в процент по замеру НА 55-М (39.5/с): 1.5 → 3.8 %.
+      effect: mods(m('hpRegen', 'percent', 0.038)),
     },
   ],
   [
@@ -997,7 +1294,12 @@ const REAVER_INSTINCT = branch('reaver-instinct', [
       name: 'Выносливая порода',
       icon: 'talent-vitality',
       maxRank: 6,
-      effect: mods(m('vitality', 'flat', 3)),
+      // Было `vitality flat 3`. Плоская характеристика отстаёт от уровня
+      // (см. TALENT_STAT_RULE): восемнадцать выносливости — 4.5 % запаса у
+      // эталонного Стража на 55-м уровне и 2.7 % на сотом. Переведено в
+      // процент по замеру НА 55-М: 4.5 % / 6 рангов = 0.75 % за ранг.
+      // Настоящая переделка ветки — своей стадией; здесь только правило.
+      effect: mods(m('maxHp', 'percent', 0.0075)),
     },
   ],
   [
@@ -1016,7 +1318,11 @@ const REAVER_INSTINCT = branch('reaver-instinct', [
       name: 'Второе дыхание',
       icon: 'talent-second-wind',
       maxRank: 7,
-      effect: mods(m('hpRegen', 'flat', 1.5)),
+      // Плоское восстановление ОТСТАЁТ ОТ УРОВНЯ (см. TALENT_STAT_RULE):
+      // у эталонного Стража реген 19.2/с на 25-м уровне и 67.5/с на сотом,
+      // то есть один и тот же «+1.5» стоит втрое меньше к концу игры.
+      // Переведено в процент по замеру НА 55-М (39.5/с): 1.5 → 3.8 %.
+      effect: mods(m('hpRegen', 'percent', 0.038)),
     },
   ],
   [
@@ -1054,7 +1360,11 @@ const REAVER_INSTINCT = branch('reaver-instinct', [
       name: 'Терпение',
       icon: 'talent-second-wind',
       maxRank: 5,
-      effect: mods(m('hpRegen', 'flat', 1)),
+      // Плоское восстановление ОТСТАЁТ ОТ УРОВНЯ (см. TALENT_STAT_RULE):
+      // у эталонного Стража реген 19.2/с на 25-м уровне и 67.5/с на сотом,
+      // то есть один и тот же «+1» стоит втрое меньше к концу игры.
+      // Переведено в процент по замеру НА 55-М (39.5/с): 1 → 2.5 %.
+      effect: mods(m('hpRegen', 'percent', 0.025)),
     },
   ],
   [
@@ -1184,16 +1494,200 @@ export function capacityAbove(branchId: BranchId, row: number): number {
     .reduce((sum, t) => sum + t.maxRank, 0)
 }
 
-export function fillBranchRanks(branchId: BranchId, points: number): Record<string, number> {
+// ---------------------------------------------------------------------------
+// ПУТИ ВНУТРИ ВЕТКИ
+// ---------------------------------------------------------------------------
+
+/**
+ * ПУТЬ — ЭТО ПОРЯДОК ПОКУПКИ, И ОН ЛЕЖИТ В ДАННЫХ. НЕ УКРАШЕНИЕ, А ПРИБОР.
+ *
+ * Пока на этаже стоял один талант, «взять ветку» значило одно и то же для
+ * всех: очки лились сверху вниз, и модель прогона так их и тратила. С
+ * альтернативами такой модели не существует — сверху вниз она берёт ПЕРВОЕ
+ * по порядку в файле, то есть автор ветки задаёт лучшую сборку случайно, тем,
+ * в каком порядке напечатал записи. Хуже того: ёмкость ветки (114 у Гнева)
+ * теперь БОЛЬШЕ, чем очков у героя на сотом уровне (91), и жадная заливка
+ * тратит всё до тринадцатого этажа так и не дойдя — то есть меряет ветку
+ * БЕЗ ВЕНЦА, ради которого её и берут.
+ *
+ * Поэтому путь называется ЯВНО. Добавленный талант больше не двигает модель
+ * молча: чтобы модель начала его покупать, его надо вписать в путь — то есть
+ * принять решение, а не напечатать строку.
+ */
+export interface TalentPath {
+  id: string
+  /** Имя для отчёта и для теста «в ветке два жизнеспособных пути». */
+  name: string
+  /** Порядок покупки. Талант берётся ДО ПОТОЛКА, потом черёд следующего. */
+  order: string[]
+  /**
+   * ЧЕТВЁРКА, ПОД КОТОРУЮ ПУТЬ И СОБРАН. Не украшение: талант, правящий
+   * умение, которого нет в ряду, не делает НИЧЕГО — умение вне четвёрки не
+   * участвует ни в автокасте, ни в модели боя. Путь «Взрыв», сыгранный
+   * четвёркой по умолчанию, тратит одиннадцать очков в пустоту, и прогон
+   * честно показывает героя слабее прежнего.
+   *
+   * Не названа — играется четвёрка по умолчанию (так у веток-лестниц: у них
+   * талантов про умения нет вовсе).
+   */
+  abilities?: string[]
+}
+
+/**
+ * Явные пути там, где на этажах есть выбор. Ветка-лестница пути не объявляет:
+ * у неё он ровно один и тривиальный — сверху вниз, — и `pathsOf` строит его
+ * сам. Списывать очевидное руками значит заводить второй источник правды.
+ */
+const BRANCH_PATHS: Partial<Record<BranchId, TalentPath[]>> = {
+  'warden-wrath': [
+    {
+      // КРОВЬ. Урон по времени: дешёвое умение учится кровить, кровотечение
+      // «Рваной раны» удваивается и перестаёт ждать замаха. Урон идёт РОВНО,
+      // а не всплесками.
+      //
+      // ЭТОТ ПУТЬ СТОИТ ПЕРВЫМ, И ЭТО РЕШЕНИЕ, А НЕ ПОРЯДОК НАБОРА. Первый
+      // путь — тот, по которому ветку считает ПРОГОН, и он обязан быть тем,
+      // что герой играет БЕЗ подсказок: его четвёрка и есть четвёрка по
+      // умолчанию. Поставь первым «Взрыв» — прибор мерил бы героя, треть
+      // очков которого уходит в умения, которых у него в ряду нет.
+      //
+      // ОБЩЕЕ ЯДРО ИДЁТ ПЕРВЫМ, А ЛИЦО ВЕТКИ — ПОСЛЕ, и это не размывает
+      // путь. Опорные таланты кровотечения стоят на девятом и тринадцатом
+      // этажах, то есть требуют сорока и шестидесяти очков в ветке: до них
+      // герой сорокового уровня не дотягивается никак, и «сперва проценты»
+      // — не выбор автора, а форма ветки.
+      id: 'wrath-bleed',
+      name: 'Кровь',
+      // ЧЕТВЁРКА ПУТИ — ТА ЖЕ, ЧТО У ГЕРОЯ ПО УМОЛЧАНИЮ, и это решение, а не
+      // совпадение: первый путь мерит того, кто НИЧЕГО не менял, и контракты
+      // цены схватки не должны ехать от того, какой набор сегодня кажется
+      // авторам правильным. Порядок здесь — приоритет автокаста.
+      abilities: ['quick-strike', 'rending-wound', 'mend-wounds', 'shattering-blow'],
+      order: [
+        'wrath-honed-edge',
+        'wrath-keen-eye',
+        'wrath-deep-cut',
+        'wrath-savage-blows',
+        'wrath-frenzy',
+        'wrath-firm-hand',
+        'wrath-spare-edge',
+        'wrath-rupture',
+        'wrath-firm-grip',
+        'wrath-momentum',
+        'wrath-bleeding-edge',
+        // «Точность удара» стоит раньше добавок к кровотечению НАРОЧНО.
+        // Шестьдесят очков этого пути — тот самый герой, на котором меряются
+        // контракты данжей, и множитель крита работает у него с любым
+        // набором; три лишних тика кровотечения — только с «Рваной раной».
+        'wrath-precision',
+        'wrath-open-vein',
+        'wrath-light-blade',
+        'wrath-heavy-swing',
+        'wrath-true-aim',
+        'wrath-open-wound',
+        'wrath-cold-blood',
+        'wrath-relentless',
+        'wrath-double-flourish',
+        'wrath-swift-shatter',
+        'wrath-heavy-shatter',
+        'wrath-wide-mercy',
+        'wrath-deep-brand',
+        'wrath-long-focus',
+        'wrath-headlong',
+        'wrath-second-swing',
+      ],
+    },
+    {
+      // ВЗРЫВ. Два крупных удара: «Сокрушение» бьёт чаще и тяжелее, «Милость»
+      // из окна в конце боя превращается в постоянную кнопку.
+      id: 'wrath-burst',
+      name: 'Взрыв',
+      abilities: ['shattering-blow', 'mercy', 'quick-strike', 'mend-wounds'],
+      order: [
+        'wrath-honed-edge',
+        'wrath-savage-blows',
+        'wrath-swift-shatter',
+        'wrath-precision',
+        'wrath-keen-eye',
+        'wrath-wide-mercy',
+        'wrath-heavy-swing',
+        'wrath-heavy-shatter',
+        'wrath-headlong',
+        'wrath-true-aim',
+        'wrath-cold-blood',
+        'wrath-second-swing',
+        'wrath-frenzy',
+        'wrath-momentum',
+        'wrath-light-blade',
+        'wrath-deep-brand',
+        'wrath-long-focus',
+        'wrath-firm-hand',
+        'wrath-spare-edge',
+        'wrath-firm-grip',
+        'wrath-relentless',
+        'wrath-rupture',
+        'wrath-deep-cut',
+        'wrath-bleeding-edge',
+        'wrath-open-vein',
+        'wrath-open-wound',
+        'wrath-double-flourish',
+      ],
+    },
+  ],
+}
+
+/** Тривиальный путь ветки-лестницы: сверху вниз, как записано в данных. */
+function ladderPath(branchId: BranchId): TalentPath {
+  return {
+    id: `${branchId}-ladder`,
+    name: 'Сверху вниз',
+    order: talentsInBranch(branchId).map((t) => t.id),
+  }
+}
+
+/** Все объявленные пути ветки. Их всегда хотя бы один. */
+export function pathsOf(branchId: BranchId): TalentPath[] {
+  return BRANCH_PATHS[branchId] ?? [ladderPath(branchId)]
+}
+
+/**
+ * Разложить очки по пути.
+ *
+ * Проходов несколько, и это не оптимизация: талант с ЭТАЖА НИЖЕ может стоять
+ * в пути раньше своей опоры по порогу — тогда он пропускается и берётся на
+ * следующем проходе, когда очков в ветке набралось достаточно. Так путь
+ * остаётся списком ПРИОРИТЕТОВ, а не расписанием, которое автор обязан
+ * сверять с арифметикой порогов вручную.
+ */
+export function pathRanks(path: TalentPath, points: number): Record<string, number> {
   const ranks: Record<string, number> = {}
   let spent = 0
-  for (const talent of talentsInBranch(branchId)) {
-    if (spent < talent.requiredPointsInBranch) break
-    const rank = Math.min(talent.maxRank, points - spent)
-    if (rank <= 0) break
-    ranks[talent.id] = rank
-    spent += rank
+  let moved = true
+  while (moved && spent < points) {
+    moved = false
+    for (const id of path.order) {
+      const talent = TALENT_BY_ID[id]
+      if (!talent) continue
+      const have = ranks[id] ?? 0
+      if (have >= talent.maxRank) continue
+      if (spent < talent.requiredPointsInBranch) continue
+      const need = talent.requires
+      if (need && (ranks[need.talentId] ?? 0) < requiredRank(need)) continue
+      const take = Math.min(talent.maxRank - have, points - spent)
+      if (take <= 0) continue
+      ranks[id] = have + take
+      spent += take
+      moved = true
+    }
   }
   return ranks
+}
+
+/**
+ * Ветка, залитая очками ПО ПЕРВОМУ ОБЪЯВЛЕННОМУ ПУТИ. Это и есть «сборка
+ * ветки» для прогонов и тестов: одна на всю игру, названная в данных.
+ */
+export function fillBranchRanks(branchId: BranchId, points: number): Record<string, number> {
+  return pathRanks(pathsOf(branchId)[0], points)
 }
 

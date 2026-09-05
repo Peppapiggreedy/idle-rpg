@@ -16,6 +16,7 @@
   // в неактивную вкладку — Svelte размонтирует компонент, и хоткеи умрут
   // по всей игре.
   import {
+    abilityOf,
     abilityStatus,
     expectedAbilityDamage,
     formatNumber,
@@ -50,7 +51,11 @@
    * ПОРЯДОК СЛОТОВ И ЕСТЬ ПРИОРИТЕТ АВТОКАСТА: слева то, что жмётся первым.
    */
   const slots = $derived(
-    $gameState.abilitySlots.map((id) => (id === null ? null : (ABILITY_BY_ID[id] ?? null))),
+    // ЭФФЕКТИВНОЕ УМЕНИЕ, А НЕ БАЗОВОЕ. Ряд читал `ABILITY_BY_ID` напрямую и
+    // показывал числа ДО талантов: в книге «урон 192 %», на кнопке под сценой
+    // «160 %», и по этим же базовым числам считался статус — откат и цена.
+    // Правило стадии «эффективное умение читают ВСЕ» держится одной функцией.
+    $gameState.abilitySlots.map((id) => (id === null ? null : (abilityOf($gameState, id) ?? null))),
   )
   const statuses = $derived(slots.map((a) => (a ? abilityStatus($gameState, a) : null)))
 

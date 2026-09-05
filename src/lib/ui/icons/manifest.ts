@@ -71,6 +71,20 @@ export const ICONS = {
   'talent-hard-to-kill': { file: 'lorc/skull-crack.svg', author: 'Lorc' },
   'talent-spiked-guard': { file: 'lorc/spiked-armor.svg', author: 'Lorc' },
 
+  // --- Таланты, правящие умения (ночь «три ветки»): ветка «Гнев» ---
+  'talent-firm-hand': { file: 'lorc/quick-slash.svg', author: 'Lorc' },
+  'talent-deep-cut': { file: 'lorc/serrated-slash.svg', author: 'Lorc' },
+  'talent-spare-edge': { file: 'lorc/pointy-sword.svg', author: 'Lorc' },
+  'talent-swift-shatter': { file: 'lorc/blade-fall.svg', author: 'Lorc' },
+  'talent-headlong': { file: 'lorc/spiral-thrust.svg', author: 'Lorc' },
+  'talent-deep-brand': { file: 'sbed/hot-surface.svg', author: 'Sbed' },
+  'talent-wide-mercy': { file: 'lorc/chopped-skull.svg', author: 'Lorc' },
+  'talent-heavy-shatter': { file: 'lorc/heavy-fall.svg', author: 'Lorc' },
+  'talent-long-focus': { file: 'lorc/hourglass.svg', author: 'Lorc' },
+  'talent-cold-blood': { file: 'lorc/frozen-orb.svg', author: 'Lorc' },
+  'talent-open-vein': { file: 'lorc/vile-fluid.svg', author: 'Lorc' },
+  'talent-open-wound': { file: 'lorc/dripping-blade.svg', author: 'Lorc' },
+
   // --- Травы и зелья ---
   'herb-bitterleaf': { file: 'delapouite/dandelion-flower.svg', author: 'Delapouite' },
   'herb-emberroot': { file: 'lorc/root-tip.svg', author: 'Lorc' },
