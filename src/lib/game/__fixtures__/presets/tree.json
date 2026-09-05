@@ -1,0 +1,146 @@
+{
+  "version": 30,
+  "classId": "warden",
+  "materials": {},
+  "activePotions": [],
+  "enchantDust": "0",
+  "saveId": 505,
+  "templeRun": null,
+  "templeBestWave": 0,
+  "templeCleared": false,
+  "procCooldownsMs": {},
+  "restSpeedupSource": null,
+  "lastTimestamp": 1700000000000,
+  "inventory": [],
+  "equipment": {
+    "mainHand": {
+      "id": "start-mainHand-bastard",
+      "name": "Полуторник",
+      "rarity": "common",
+      "slot": "mainHand",
+      "level": 1,
+      "grip": "one",
+      "mods": [
+        {
+          "stat": "weaponSpeed",
+          "kind": "base",
+          "value": "2.2",
+          "source": "equipment:mainHand"
+        },
+        {
+          "stat": "weaponDamageMin",
+          "kind": "base",
+          "value": "11",
+          "source": "equipment:mainHand"
+        },
+        {
+          "stat": "weaponDamageMax",
+          "kind": "base",
+          "value": "22",
+          "source": "equipment:mainHand"
+        },
+        {
+          "stat": "strength",
+          "kind": "flat",
+          "value": "7",
+          "source": "equipment:mainHand"
+        }
+      ]
+    },
+    "offHand": null,
+    "head": null,
+    "chest": null,
+    "hands": null,
+    "legs": null,
+    "trinket": null
+  },
+  "currentZoneId": "shepherds-meadow",
+  "lastSurvivedZoneId": null,
+  "dungeonRun": null,
+  "dungeonsCleared": {},
+  "unlockedZoneIds": {},
+  "questProgress": {
+    "done": {},
+    "counter": 0
+  },
+  "gcdMsLeft": 0,
+  "abilityCooldownsMs": {},
+  "regenDelayMsLeft": 0,
+  "restHpThreshold": 0.6,
+  "holdManaForHeal": true,
+  "upgradePriority": "balance",
+  "purchasedUpgradeIds": [],
+  "lootPolicy": "keep",
+  "abilitySlots": [
+    "quick-strike",
+    "rending-wound",
+    "mend-wounds",
+    "shattering-blow"
+  ],
+  "abilitySettings": {
+    "quick-strike": {
+      "autocast": true,
+      "reserve": 0
+    },
+    "rending-wound": {
+      "autocast": true,
+      "reserve": 0
+    },
+    "mend-wounds": {
+      "autocast": true,
+      "reserve": 0
+    },
+    "shield-shove": {
+      "autocast": true,
+      "reserve": 0
+    },
+    "shattering-blow": {
+      "autocast": true,
+      "reserve": 0
+    },
+    "rupture": {
+      "autocast": true,
+      "reserve": 0
+    },
+    "bulwark": {
+      "autocast": true,
+      "reserve": 0
+    },
+    "mercy": {
+      "autocast": true,
+      "reserve": 0
+    },
+    "brand": {
+      "autocast": true,
+      "reserve": 0
+    },
+    "focus": {
+      "autocast": true,
+      "reserve": 0
+    },
+    "stance": {
+      "autocast": true,
+      "reserve": 0
+    }
+  },
+  "itemSeq": 0,
+  "gold": "0",
+  "level": "32",
+  "currentXp": "3993",
+  "currentHp": "534",
+  "currentMana": "205",
+  "heroState": "alive",
+  "reviveMsLeft": 0,
+  "talents": {
+    "wrath-honed-edge": 6,
+    "wrath-firm-hand": 5,
+    "wrath-keen-eye": 6,
+    "wrath-deep-cut": 3,
+    "wrath-savage-blows": 2,
+    "wrath-rupture": 1
+  },
+  "talentResets": 0,
+  "totalTicks": "0",
+  "playtimeMs": "0",
+  "abilityCasts": "0"
+}

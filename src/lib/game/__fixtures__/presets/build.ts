@@ -24,9 +24,9 @@ import { TALENTS } from '../../../data/talents'
 import { SLOT_IDS } from '../../../data/slots'
 import type { Item } from '../../../types'
 
-export type PresetName = 'fresh' | 'mid' | 'rich'
+export type PresetName = 'fresh' | 'mid' | 'rich' | 'tree'
 
-export const PRESET_NAMES: PresetName[] = ['fresh', 'mid', 'rich']
+export const PRESET_NAMES: PresetName[] = ['fresh', 'mid', 'rich', 'tree']
 
 // Время сейва фиксировано: иначе json менялся бы при каждой перегенерации,
 // а оффлайн-расчёт в режиме съёмки всё равно не запускается.
@@ -159,7 +159,35 @@ function rich(): GameState {
   }
 }
 
-const BUILDERS: Record<PresetName, () => GameState> = { fresh, mid, rich }
+/**
+ * ДЕРЕВО С СДЕЛАННЫМ ВЫБОРОМ: тот же уровень, что у «позднего», но очки
+ * положены так, чтобы на экране талантов было видно всё, ради чего сетка
+ * существует, — взятый ключевой узел, запертый выбором сосед, набранная
+ * стрелка рядом с ненабранной. Заливка «сверху вниз» у `rich` до ключевого
+ * этажа не доходит, а подменять её значило бы сдвинуть все снимки позднего
+ * пресета разом.
+ */
+function tree(): GameState {
+  let state = createInitialState(505, DEFAULT_CLASS.id, 505)
+  state = atLevel(state, CRAFT_UNLOCK_LEVEL + 2)
+  // Двадцать очков в четыре верхних этажа Гнева, «Глубокий надрез» до
+  // третьего ранга — опоры «Кровоточащей кромки»; затем ключевой пятого
+  // этажа и остаток в третий.
+  const order: [string, number][] = [
+    ['wrath-honed-edge', 6],
+    ['wrath-firm-hand', 5],
+    ['wrath-keen-eye', 6],
+    ['wrath-deep-cut', 3],
+    ['wrath-rupture', 1],
+    ['wrath-savage-blows', 6],
+  ]
+  for (const [id, ranks] of order) {
+    for (let rank = 0; rank < ranks; rank++) state = investTalent(state, id)
+  }
+  return { ...state, currentHp: state.stats.maxHp, currentMana: state.stats.maxMana }
+}
+
+const BUILDERS: Record<PresetName, () => GameState> = { fresh, mid, rich, tree }
 
 export function buildPreset(name: PresetName): GameState {
   return BUILDERS[name]()

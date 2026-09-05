@@ -362,6 +362,41 @@ export function brokenCases(): BrokenCase[] {
       expect: ['вне-путей', 'НИ В ОДИН путь'],
     },
     {
+      // Два узла в одном столбце лягут друг на друга.
+      title: 'два таланта этажа делят столбец',
+      content: {
+        ...real,
+        talents: real.talents.map((t) =>
+          t.id === 'wrath-headlong'
+            ? { ...t, col: first(real.talents.filter((x) => x.id === 'wrath-rupture')).col }
+            : t,
+        ),
+      },
+      expect: ['wrath-headlong', 'делит столбец'],
+    },
+    {
+      // Стрелка — прямая линия: опора и зависимый в одном столбце.
+      title: 'стрелка гнётся между столбцами',
+      content: {
+        ...real,
+        talents: real.talents.map((t) =>
+          t.id === 'wrath-open-wound'
+            ? { ...t, col: t.col === 1 ? (2 as const) : (1 as const) }
+            : t,
+        ),
+      },
+      expect: ['wrath-open-wound', 'гнётся'],
+    },
+    {
+      // Этаж с выбором обязан быть расставлен весь.
+      title: 'талант на этаже с выбором без столбца',
+      content: {
+        ...real,
+        talents: real.talents.map((t) => (t.id === 'wrath-firm-hand' ? { ...t, col: undefined } : t)),
+      },
+      expect: ['wrath-firm-hand', 'столбец у таланта не задан'],
+    },
+    {
       // Группа из одного члена — не выбор, а опечатка в имени соседа.
       title: 'взаимоисключающая группа из одного члена',
       content: {

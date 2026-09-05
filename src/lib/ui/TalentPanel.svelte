@@ -1,8 +1,21 @@
 <script lang="ts">
-  // Дерево талантов СВОЕГО класса: три ветки переключаются вкладками, ветка
-  // разложена по ЭТАЖАМ, на этаже один, два или три таланта с общим порогом.
-  // Весь текст для игрока — здесь; логика отдаёт только ранги, коды причин и
-  // структурированные эффекты.
+  // ДЕРЕВО ТАЛАНТОВ — СЕТКА ЗНАЧКОВ, А НЕ СПИСОК КАРТОЧЕК.
+  //
+  // Три ветки переключаются вкладками; открытая ветка — сетка в ЧЕТЫРЕ
+  // столбца и тринадцать этажей, как у классических деревьев: узел — квадрат
+  // размером в палец со значком и рангом, порог этажа подписан один раз слева,
+  // стрелка-предпосылка нарисована прямой линией от опоры к зависимому и
+  // тускла, пока опора не набрана. Всё, что читается словами — имя, эффект,
+  // причина отказа, — живёт в подсказке у курсора, а не в узле: карточки с
+  // текстом занимали по экрану на этаж, и дерево не читалось как дерево.
+  //
+  // МЕСТО УЗЛА В РЯДУ — ДАННЫМИ (`col` у таланта), как место слота на кукле:
+  // стрелка идёт вертикально только если опора и зависимый стоят в одном
+  // столбце, и решать это должен автор ветки, а не порядок в файле. Ветка без
+  // столбцов (лестница из одного таланта на этаж) центрируется сама.
+  //
+  // Весь текст для игрока — в `talentText.ts` и в подсказке; логика отдаёт
+  // ранги, коды причин и структурированные эффекты.
   import {
     Decimal,
     availablePoints,
@@ -13,18 +26,18 @@
     talentStatus,
     takeBackStatus,
     type ResetBlockReason,
-    type StatId,
-    type TalentBlockReason,
   } from '../game'
   import {
+    BRANCH_ROW_STEP,
+    CONCEPT_ROWS,
     TALENT_BY_ID,
     groupHolder,
+    rankOf,
+    talentsInBranch,
     type BranchId,
     type TalentDef,
-    type TalentFlag,
-    type TalentModifier,
   } from '../data/talents'
-  import { floorsOf } from './talentFloors'
+  import { floorsOf, type TalentFloor } from './talentFloors'
   import { LEVEL_CAP, TALENT_FIRST_LEVEL } from '../data/balance'
   import {
     gameState,
@@ -34,14 +47,14 @@
   } from '../stores/game'
   import { talentDraft } from '../stores/ui'
   import { resourceWords } from './resource'
-  import { flatText } from './statText'
-  import { abilityTuneText } from './abilityText'
-  import { ABILITY_BY_ID } from '../data/abilities'
+  import { pluralRu } from './talentText'
   import { Button, NumberText, Panel, Tag } from './kit'
   import { Icon } from './icons'
+  import TalentTip from './TalentTip.svelte'
 
   const points = $derived(availablePoints($gameState))
   const reset = $derived(resetStatus($gameState))
+  const resource = $derived(resourceWords($gameState.classId))
 
   // Почему кнопка сброса заперта. Заперта молча она читалась как сломанная.
   // СКОЛЬКО НЕ ХВАТАЕТ — ЧИСЛОМ. «Не хватает золота» не говорит, сколько ещё
@@ -52,119 +65,159 @@
     gold: (short) => `Не хватает ${formatNumber(short)} золота на сброс`,
   }
 
-  // Ресурс называется по классу: ветки у классов разные, но общие статы
-  // описываются одними и теми же строками.
-  const resource = $derived(resourceWords($gameState.classId))
-
-  // Названия статов и флагов — единственное место, где они превращаются в текст.
-  const STAT_NAMES: Record<StatId, string> = $derived({
-    strength: 'силы',
-    agility: 'ловкости',
-    intellect: 'интеллекта',
-    vitality: 'выносливости',
-    attackPower: 'силы атаки',
-    weaponDamageMin: 'урона оружия (мин)',
-    weaponDamageMax: 'урона оружия (макс)',
-    armor: 'брони',
-    maxHp: 'здоровья',
-    maxMana: resource.genitive,
-    weaponSpeed: 'скорости оружия',
-    offhandSpeed: 'скорости левой руки',
-    offhandDamageMin: 'урона левой руки (мин)',
-    offhandDamageMax: 'урона левой руки (макс)',
-    blockChance: 'шанса блока',
-    blockValue: 'силы блока',
-    offhandPenalty: 'силы левой руки',
-    regenDelay: `паузы восстановления ${resource.genitive}`,
-    restDuration: 'длины привала',
-    restThreshold: 'порога привала',
-    haste: 'ускорения',
-    critChance: 'шанса крита',
-    critMultiplier: 'множителя крита',
-    hpRegen: 'восстановления здоровья',
-    hpRegenOutOfCombat: 'восстановления здоровья вне боя',
-    manaRegen: `восстановления ${resource.genitive}`,
-    damageReduction: 'снижения урона',
-  })
-  const PERCENT_STATS: StatId[] = [
-    'critChance',
-    'damageReduction',
-    'haste',
-    'blockChance',
-    'offhandPenalty',
-    'restThreshold',
-  ]
-  // Текст флага собирается из ПЕЙЛОАДА таланта: число живёт в данных, а не
-  // в подписи. Ветвления по id таланта здесь нет и быть не должно.
-  const FLAG_TEXT: Record<TalentFlag, (e: Extract<TalentDef['effect'], { kind: 'flag' }>) => string> =
-    {
-      'ability-learns-effect': (e) =>
-        'abilityId' in e && 'effect' in e
-          ? `«${ABILITY_BY_ID[e.abilityId]?.name ?? e.abilityId}» начинает кровить: ` +
-            `${e.effect.ticks} ${e.effect.ticks === 1 ? 'раз' : e.effect.ticks < 5 ? 'раза' : 'раз'} ` +
-            `по ${Math.round(e.effect.weaponDamagePercent.toNumber() * 100)} % удара оружия ` +
-            `каждые ${e.effect.tickIntervalSec} с`
-          : 'Умение начинает накладывать урон по времени',
-      'ability-extra-charge': (e) =>
-        `+${'extraCharges' in e ? e.extraCharges : 1} заряд умения: второе нажатие проходит, пока идёт откат`,
-      'double-strike': (e) =>
-        `${'chance' in e ? (e.chance * 100).toFixed(0) : 0}% шанс, что замах бьёт дважды`,
-      'block-reflects': (e) =>
-        `Блок возвращает ${'damageShare' in e ? (e.damageShare * 100).toFixed(0) : 0}% поглощённого урона в моба`,
-      'block-restores-resource': (e) =>
-        `Блок возвращает ${'resourceShare' in e ? (e.resourceShare * 100).toFixed(0) : 0}% запаса ${resource.genitive}`,
-      'kill-refunds-cooldowns': (e) =>
-        `Убийство срезает откаты на ${'cooldownShare' in e ? ((1 - e.cooldownShare) * 100).toFixed(0) : 0}%`,
-      'rest-clears-cooldowns': () => 'После привала умения готовы: откаты снимаются',
-      'shorter-rest': (e) =>
-        `Привал короче на ${'durationMultiplier' in e ? ((1 - e.durationMultiplier) * 100).toFixed(0) : 0}%`,
-      'faster-revive': (e) =>
-        `Воскрешение быстрее на ${'reviveMultiplier' in e ? ((1 - e.reviveMultiplier) * 100).toFixed(0) : 0}%`,
-    }
   // КАКАЯ ВЕТКА ОТКРЫТА — «где я сейчас». В сейв ему не место, и переживать
   // перезагрузку он не должен; локальной переменной компонента достаточно.
   let openBranch = $state<BranchId>(heroBranches($gameState)[0]?.id ?? 'warden-wrath')
 
-  const REASON_TEXT: Record<TalentBlockReason, (t: TalentDef) => string> = {
-    'other-class': () => 'Ветка другого класса',
-    'branch-locked': (t) => `Нужно ${t.requiredPointsInBranch} очков в ветке`,
-    'max-rank': () => 'Уже максимальный ранг',
-    'no-points': () => 'Нет свободных очков',
-    // СТРЕЛКА НАЗЫВАЕТ ОПОРНЫЙ ТАЛАНТ ПО ИМЕНИ. «Не открыто» ничего не
-    // говорит игроку, который смотрит на дерево впервые.
-    'needs-talent': (t) => {
-      const need = t.requires
-      if (!need) return 'Нужен талант выше'
-      const anchor = TALENT_BY_ID[need.talentId]?.name ?? need.talentId
-      const rank = need.minRank ?? 1
-      return rank > 1 ? `Нужно ${rank} ранга в «${anchor}»` : `Нужен талант «${anchor}»`
-    },
-    // ГРУППА НАЗЫВАЕТ ВЫБРАННОГО СОСЕДА ПО ИМЕНИ: «заперто» не объясняет, чем.
-    'group-taken': (t) => {
-      const chosen = groupHolder($gameState.talents, t)
-      return chosen ? `Выбран «${chosen.name}» — вместе не берутся` : 'Заперт выбором на этаже'
-    },
+  // ДО СЛЕДУЮЩЕГО КЛЮЧЕВОГО — ЧИСЛОМ. Ключевые этажи — то, ради чего ветку
+  // берут; расстояние до ближайшего стоит в шапке ветки, а не вычисляется
+  // игроком по порогам слева.
+  function nextKeyText(spent: number): string {
+    const next = CONCEPT_ROWS.map((row) => (row - 1) * BRANCH_ROW_STEP).find((req) => req > spent)
+    if (next === undefined) return 'все ключевые этажи открыты'
+    const left = next - spent
+    return `до следующего ключевого — ${left} ${pluralRu(left, 'очко', 'очка', 'очков')}`
   }
 
-  // Текст одного модификатора за ОДИН ранг: игрок видит цену следующего очка.
-  function modText(mod: TalentModifier): string {
-    const name = STAT_NAMES[mod.stat]
-    if (mod.kind === 'percent') return `+${mod.value.times(100).toFixed(0)}% ${name}`
-    if (mod.kind === 'multiplier') return `×${mod.value.toFixed(2)} ${name}`
-    if (PERCENT_STATS.includes(mod.stat)) {
-      return `+${mod.value.times(100).toFixed(mod.value.times(100).lt(10) ? 1 : 0)}% ${name}`
+  // СТРЕЛКИ ВЕТКИ: от опоры к зависимому, в столбце зависимого. Линия
+  // тускла, пока опора не набрана до нужного ранга.
+  interface Arrow {
+    id: string
+    from: TalentDef
+    to: TalentDef
+    met: boolean
+  }
+  function arrowsOf(branch: BranchId, ranks: Readonly<Record<string, number>>): Arrow[] {
+    return talentsInBranch(branch).flatMap((to) => {
+      const need = to.requires
+      const from = need ? TALENT_BY_ID[need.talentId] : undefined
+      if (!need || !from) return []
+      return [{ id: to.id, from, to, met: rankOf(ranks, need.talentId) >= (need.minRank ?? 1) }]
+    })
+  }
+
+  const isKey = (talent: TalentDef): boolean => CONCEPT_ROWS.includes(talent.row)
+
+  /** Столбец сетки: первый занят порогом этажа, узлы идут со второго. */
+  function cellOf(talent: TalentDef, floor: TalentFloor): string {
+    if (talent.col !== undefined) return `${talent.col + 1}`
+    // Лестница без столбцов: единственный узел этажа стоит по центру.
+    if (floor.talents.length === 1) return '2 / -1'
+    return `${floor.talents.indexOf(talent) + 2}`
+  }
+
+  /** Пять состояний рамки — и ровно они, каждое читается издали. */
+  function stateOf(status: ReturnType<typeof talentStatus>): string {
+    if (status.reason === 'group-taken') return 'barred'
+    if (status.rank >= status.maxRank) return 'full'
+    if (status.rank > 0) return 'partial'
+    if (status.canInvest) return 'open'
+    return 'locked'
+  }
+
+  // ПОДСКАЗКА НЕ ПРИЛИПАЕТ. Видимость — состояние, а не селектор: закрыть
+  // надо и по нажатию, и по уходу курсора, и по потере фокуса, и по Esc, и по
+  // прокрутке, а CSS умеет только показать. Якорь — правый верхний угол узла.
+  let tip = $state<{ id: string; x: number; y: number } | null>(null)
+  /** Тач: первое нажатие открывает подсказку, второе по тому же узлу вкладывает. */
+  let armed = $state<string | null>(null)
+  let touch = $state(false)
+
+  function show(talent: TalentDef, node: Element): void {
+    const rect = node.getBoundingClientRect()
+    tip = { id: talent.id, x: rect.right, y: rect.top }
+  }
+  function hide(): void {
+    tip = null
+    armed = null
+  }
+
+  function onPointerUp(event: PointerEvent, talent: TalentDef): void {
+    const node = event.currentTarget as Element
+    if (event.pointerType === 'touch' || event.pointerType === 'pen') {
+      // ТАП-ТАП. Наведения на телефоне нет: первое нажатие показывает, что это
+      // за талант, второе — вкладывает. Иначе очко ложилось бы вслепую.
+      touch = true
+      if (armed !== talent.id) {
+        armed = talent.id
+        show(talent, node)
+        return
+      }
+      investTalentPoint(talent.id)
+      hide()
+      return
     }
-    return `${flatText(mod.value)} ${name}`
+    touch = false
+    // ЛКМ ВКЛАДЫВАЕТ, ПКМ СНИМАЕТ — как у классических деревьев. Снять можно
+    // только вложенное в этот заход: логика откажет сама, экран не спорит.
+    if (event.button === 2) takeBackTalentPoint(talent.id)
+    else if (event.button === 0) investTalentPoint(talent.id)
+    hide()
+  }
+  // Клавиатура: Enter/пробел приходят click'ом с detail 0; мышь и тач уже
+  // обработаны в pointerup и сюда не должны попадать вторым разом.
+  function onClick(event: MouseEvent, talent: TalentDef): void {
+    if (event.detail !== 0) return
+    investTalentPoint(talent.id)
+    hide()
+  }
+  function onKeydown(event: KeyboardEvent, talent: TalentDef): void {
+    if (event.key === 'Delete' || event.key === 'Backspace') {
+      event.preventDefault()
+      takeBackTalentPoint(talent.id)
+    }
+  }
+  function onEnter(event: MouseEvent, talent: TalentDef): void {
+    touch = false
+    show(talent, event.currentTarget as Element)
+  }
+  function onLeave(): void {
+    if (armed === null) hide()
+  }
+  function onFocusIn(event: FocusEvent, talent: TalentDef): void {
+    // ТОЛЬКО КЛАВИАТУРНЫЙ ФОКУС: мышь фокусирует кнопку на mousedown, и это
+    // держало бы подсказку после нажатия.
+    const node = event.currentTarget as Element
+    if (!node.matches(':focus-visible')) return
+    show(talent, node)
+  }
+  function onFocusOut(): void {
+    if (armed === null) hide()
   }
 
-  function effectText(talent: TalentDef): string {
-    if (talent.effect.kind === 'flag') return FLAG_TEXT[talent.effect.flag](talent.effect)
-    // ТАЛАНТ, ПРАВЯЩИЙ УМЕНИЕ, ПОКАЗЫВАЕТ, ЧЕМ УМЕНИЕ СТАНЕТ. Строка
-    // собирается из тех же полей, что и описание самого умения: второй
-    // формулировки на игру быть не должно.
-    if (talent.effect.kind === 'ability') return abilityTuneText(talent.effect)
-    return `${talent.effect.mods.map(modText).join(', ')} за ранг`
-  }
+  // Esc снимает ближайшее: сперва подсказку, и только если её нет — меню
+  // (слушатель меню висит в App.svelte и получает событие вторым). Прокрутка
+  // и поворот гасят окно, а не переставляют его.
+  $effect(() => {
+    if (!tip) return
+    const onEsc = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      hide()
+      event.stopPropagation()
+    }
+    const onOutside = (event: PointerEvent) => {
+      const target = event.target as Element | null
+      if (armed !== null && !target?.closest('[data-talent]')) hide()
+    }
+    window.addEventListener('keydown', onEsc, true)
+    window.addEventListener('resize', hide)
+    document.addEventListener('pointerdown', onOutside, true)
+    // ПРОКРУТКА СЛУШАЕТСЯ СО СЛЕДУЮЩЕГО КАДРА. Событие scroll браузер
+    // отдаёт отложенно, на ближайшем кадре; узел, к которому доскроллили,
+    // чтобы навести, успевает открыть подсказку раньше — и та же прокрутка
+    // тут же её гасила. Шаги прокрутки кадра идут ДО колбэков rAF, поэтому
+    // слушатель, повешенный из rAF, застаёт уже только настоящую прокрутку.
+    const raf = requestAnimationFrame(() => window.addEventListener('scroll', hide, true))
+    return () => {
+      cancelAnimationFrame(raf)
+      window.removeEventListener('keydown', onEsc, true)
+      window.removeEventListener('scroll', hide, true)
+      window.removeEventListener('resize', hide)
+      document.removeEventListener('pointerdown', onOutside, true)
+    }
+  })
+
+  const tipTalent = $derived(tip ? TALENT_BY_ID[tip.id] : undefined)
 </script>
 
 <!-- ЗАКРЫТО ЗНАЧИТ НЕ ВИДНО: до первого очка дерева нет в разметке вовсе.
@@ -189,10 +242,9 @@
     {/if}
   {/snippet}
 
-  <!-- ТРИ ВЕТКИ ПЕРЕКЛЮЧАЮТСЯ, И ОЧКИ ВИДНЫ В КАЖДОЙ. Три дерева по тридцать
-       с лишним узлов рядом не помещаются ни на одном экране, а выбор ветки —
-       главное решение игрока: он обязан видеть, сколько уже вложено в каждую,
-       не переключаясь. -->
+  <!-- ТРИ ВЕТКИ ПЕРЕКЛЮЧАЮТСЯ, И ОЧКИ ВИДНЫ В КАЖДОЙ. Выбор ветки — главное
+       решение игрока: он обязан видеть, сколько уже вложено в каждую, не
+       переключаясь. -->
   <div class="tabs" role="tablist" data-branch-tabs>
     {#each heroBranches($gameState) as branch (branch.id)}
       {@const spent = spentInBranch($gameState.talents, branch.id)}
@@ -211,77 +263,72 @@
   </div>
 
   {#each heroBranches($gameState).filter((b) => b.id === openBranch) as branch (branch.id)}
+    {@const spent = spentInBranch($gameState.talents, branch.id)}
     <div class="branch" data-branch={branch.id}>
-      {#each floorsOf(branch.id) as floor (floor.row)}
-        <!-- ЭТАЖ — РЯД. Пустых мест в ряду нет: два таланта значит два, а не
-             два и дырка. Порог этажа подписан один раз на ряд — он общий. -->
-        <div class="floor" data-floor={floor.row}>
-          <span class="gate" class:met={spentInBranch($gameState.talents, branch.id) >= floor.required}>
-            {floor.required}
-          </span>
-          <div class="row">
-            {#each floor.talents as talent (talent.id)}
-              {@const status = talentStatus($gameState, talent)}
-              {@const back = takeBackStatus($gameState, talent, $talentDraft)}
-              <div
-                class="talent"
-                class:locked={!status.canInvest && status.rank === 0}
-                class:taken={status.rank > 0}
-                class:group-locked={status.reason === 'group-taken'}
-                data-talent={talent.id}
-                data-group-locked={status.reason === 'group-taken' ? '' : undefined}
-              >
-                <div class="head">
-                  <Icon name={talent.icon} /><span class="name">{talent.name}</span>
-                  <span class="rank" class:full={status.rank === status.maxRank} data-rank>
+      <!-- ШАПКА ВЕТКИ: вложено и сколько до ключевого. -->
+      <div class="branch-head" data-next-key>
+        <span class="branch-name">{branch.name}</span>
+        <span class="branch-spent">вложено {spent}</span>
+        <span class="branch-next">{nextKeyText(spent)}</span>
+      </div>
+      <!-- ПРОКРУТКА — СВОЯ. Дерево в тринадцать этажей длиннее телефона, и
+           листать его надо внутри панели, а не вместе со сценой. -->
+      <div class="scroll">
+        <div class="tree">
+          {#each floorsOf(branch.id) as floor (floor.row)}
+            <!-- ЭТАЖ — РЯД С ОБЩИМ ПОРОГОМ, подписан один раз слева. Сам ряд в
+                 потоке не участвует (display: contents): узлы стоят в общей
+                 сетке по своим столбцам, а стрелки идут сквозь этажи. -->
+            <div class="floor" data-floor={floor.row}>
+              <span class="gate" class:met={spent >= floor.required} style="grid-row: {floor.row}">
+                {floor.required}
+              </span>
+              {#each floor.talents as talent (talent.id)}
+                {@const status = talentStatus($gameState, talent)}
+                {@const state = stateOf(status)}
+                <button
+                  type="button"
+                  class="node {state}"
+                  class:key={isKey(talent)}
+                  style="grid-column: {cellOf(talent, floor)}; grid-row: {floor.row}"
+                  data-talent={talent.id}
+                  data-state={state}
+                  data-key={isKey(talent) ? '' : undefined}
+                  data-group-locked={status.reason === 'group-taken' ? '' : undefined}
+                  aria-label="{talent.name}, ранг {status.rank} из {status.maxRank}"
+                  onpointerup={(e) => onPointerUp(e, talent)}
+                  oncontextmenu={(e) => e.preventDefault()}
+                  onclick={(e) => onClick(e, talent)}
+                  onkeydown={(e) => onKeydown(e, talent)}
+                  onmouseenter={(e) => onEnter(e, talent)}
+                  onmouseleave={onLeave}
+                  onfocusin={(e) => onFocusIn(e, talent)}
+                  onfocusout={onFocusOut}
+                >
+                  <Icon name={talent.icon} size="lg" />
+                  <span class="rank" class:full={status.rank >= status.maxRank} data-rank>
                     {status.rank}/{status.maxRank}
                   </span>
-                </div>
-                <!-- СТРЕЛКА НАЗВАНА ПРЯМО, а не нарисована линией: линия в
-                     колонке из тринадцати рядов читается хуже имени. -->
-                {#if talent.requires}
-                  <span class="arrow" data-arrow>
-                    ↑ {TALENT_BY_ID[talent.requires.talentId]?.name ?? talent.requires.talentId}
-                    {#if (talent.requires.minRank ?? 1) > 1}({talent.requires.minRank}){/if}
-                  </span>
-                {/if}
-                <div class="effect">{effectText(talent)}</div>
-                <div class="acts">
-                  {#if status.canInvest}
-                    <Button size="sm" variant="primary" onclick={() => investTalentPoint(talent.id)}>
-                      Вложить
-                    </Button>
-                  {:else}
-                    <span class="reason" data-reason>
-                      {REASON_TEXT[status.reason ?? 'no-points'](talent)}
-                      {#if status.reason === 'branch-locked'}
-                        <span class="progress">
-                          (вложено {status.pointsInBranch} из {status.requiredPointsInBranch})
-                        </span>
-                      {/if}
-                    </span>
-                  {/if}
-                  <!-- ОТМЕНА ПОКА ЭКРАН ОТКРЫТ. Кнопка появляется только у
-                       того, что вложено В ЭТОТ ЗАХОД: остальное снимается
-                       платным сбросом, и обещать иное нельзя. -->
-                  {#if back.fromThisVisit > 0}
-                    <Button
-                      size="sm"
-                      disabled={!back.canTakeBack}
-                      title={back.reason === 'blocks-dependent'
-                        ? 'Ниже стоит талант, которому нужен этот ранг'
-                        : 'Снять очко, вложенное в этот заход'}
-                      onclick={() => takeBackTalentPoint(talent.id)}
-                    >
-                      Снять
-                    </Button>
-                  {/if}
-                </div>
-              </div>
-            {/each}
-          </div>
+                </button>
+              {/each}
+            </div>
+          {/each}
+          <!-- СТРЕЛКИ — ПРЯМЫЕ ЛИНИИ под узлами, в столбце зависимого. Линия
+               тускла, пока опора не набрана; узлы лежат поверх, и там, где
+               столбец занят чужим узлом, линия проходит за ним. -->
+          {#each arrowsOf(branch.id, $gameState.talents) as arrow (arrow.id)}
+            <span
+              class="arrow"
+              class:met={arrow.met}
+              class:from-key={isKey(arrow.from)}
+              class:to-key={isKey(arrow.to)}
+              data-arrow={arrow.id}
+              data-met={arrow.met ? '' : undefined}
+              style="grid-column: {(arrow.to.col ?? 1) + 1}; grid-row: {arrow.from.row} / {arrow.to.row + 1}"
+            ></span>
+          {/each}
         </div>
-      {/each}
+      </div>
     </div>
   {/each}
 
@@ -300,12 +347,25 @@
     </span>
   {/snippet}
 </Panel>
+
+{#if tipTalent}
+  <TalentTip
+    talent={tipTalent}
+    status={talentStatus($gameState, tipTalent)}
+    back={takeBackStatus($gameState, tipTalent, $talentDraft)}
+    holder={groupHolder($gameState.talents, tipTalent)}
+    {resource}
+    {touch}
+    x={tip?.x ?? 0}
+    y={tip?.y ?? 0}
+  />
+{/if}
 {/if}
 
 <style>
-  /* ПЕРЕКЛЮЧАТЕЛЬ ВЕТОК. Три дерева по тридцать с лишним узлов рядом не
-     помещаются, а число вложенных очков видно у каждой вкладки: выбор ветки
-     — главное решение, и делать его вслепую нельзя. */
+  /* ПЕРЕКЛЮЧАТЕЛЬ ВЕТОК. Три дерева рядом не помещаются на телефон, а число
+     вложенных очков видно у каждой вкладки: выбор ветки — главное решение,
+     и делать его вслепую нельзя. */
   .tabs {
     display: flex;
     gap: var(--space-1);
@@ -343,82 +403,179 @@
     flex-direction: column;
     gap: var(--space-2);
   }
-  /* ЭТАЖ — РЯД. Порог слева один на ряд: он общий для всех талантов этажа,
-     и повторять его у каждой клетки значило бы сказать одно трижды. */
-  .floor {
+  .branch-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-2) var(--space-3);
+    font-size: var(--text-sm);
+    color: var(--c-text-muted);
+  }
+  .branch-name {
+    color: var(--c-text);
+    font-weight: var(--weight-medium);
+  }
+  .branch-next {
+    color: var(--c-xp);
+  }
+  .scroll {
+    max-height: min(70vh, 52rem);
+    overflow: auto;
+    padding: var(--space-1);
+  }
+  /* СЕТКА: порог слева, четыре столбца узлов, этаж — ряд. Ячейка размером
+     с ключевой узел, чтобы обычный и ключевой стояли на одной оси. Всё в
+     токенах: узел — минимальная область нажатия, ключевой — на шаг больше. */
+  .tree {
+    --node: var(--tap-min);
+    --node-key: calc(var(--tap-min) + var(--space-3));
+    --cell: calc(var(--node-key) + var(--space-2));
+    position: relative;
     display: grid;
-    grid-template-columns: auto 1fr;
-    align-items: start;
-    gap: var(--space-2);
+    grid-template-columns: auto repeat(4, var(--cell));
+    grid-auto-rows: var(--cell);
+    column-gap: var(--space-1);
+    align-items: center;
+    justify-items: center;
+    width: max-content;
+    margin: 0 auto;
+  }
+  .floor {
+    display: contents;
   }
   .gate {
+    grid-column: 1;
+    justify-self: end;
     min-width: 2ch;
-    padding-top: var(--space-2);
+    padding-right: var(--space-1);
     font-size: var(--text-xs);
     color: var(--c-text-faint);
     text-align: right;
+    font-variant-numeric: tabular-nums;
   }
   .gate.met {
     color: var(--c-xp);
   }
-  .row {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
-    gap: var(--space-2);
-  }
-  .arrow {
-    font-size: var(--text-2xs);
-    color: var(--c-accent);
-  }
-  .acts {
+  /* УЗЕЛ — КВАДРАТ В ПАЛЕЦ. Пять состояний рамки, и различаются они рамкой
+     и яркостью, а не текстом: текст живёт в подсказке. */
+  .node {
+    position: relative;
+    z-index: 1;
     display: flex;
     align-items: center;
-    flex-wrap: wrap;
-    gap: var(--space-2);
-  }
-  .talent {
+    justify-content: center;
+    width: var(--node);
+    height: var(--node);
+    padding: 0;
+    font: inherit;
+    color: var(--c-text);
+    background: var(--c-surface-sunken);
     border: 1px solid var(--c-border);
     border-radius: var(--radius-md);
-    padding: var(--space-2);
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: var(--space-1);
-    font-size: var(--text-sm);
+    cursor: pointer;
+    touch-action: manipulation;
   }
-  .talent.taken {
+  .node.key {
+    width: var(--node-key);
+    height: var(--node-key);
+    border-radius: var(--radius-lg);
+  }
+  .node.locked {
+    opacity: 0.5;
+  }
+  .node.open {
+    border-color: var(--c-accent);
+  }
+  .node.partial {
     border-color: color-mix(in srgb, var(--c-xp) 60%, transparent);
-    background: color-mix(in srgb, var(--c-xp) var(--tint-weak), transparent);
+    background: color-mix(in srgb, var(--c-xp) var(--tint-weak), var(--c-surface-sunken));
   }
-  .talent.locked {
-    opacity: 0.55;
+  .node.full {
+    border-color: var(--c-xp);
+    background: color-mix(in srgb, var(--c-xp) var(--tint), var(--c-surface-sunken));
   }
-  .head {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    gap: var(--space-2);
-    width: 100%;
+  /* ЗАПЕРТ ВЫБОРОМ — не «ещё не открыт», а «уже не будет»: пунктир цветом
+     предупреждения, чтобы не путать с порогом. */
+  .node.barred {
+    border-style: dashed;
+    border-color: var(--c-warning);
+    opacity: 0.45;
   }
-  .name {
-    font-weight: var(--weight-bold);
+  .node:focus-visible {
+    outline: none;
+    box-shadow: var(--focus-ring);
+  }
+  .node:hover {
+    border-color: var(--c-border-strong);
+  }
+  .node.open:hover {
+    border-color: var(--c-accent-strong);
   }
   .rank {
-    font-size: var(--text-xs);
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    padding: 0 var(--space-1);
+    font-size: var(--text-2xs);
+    line-height: var(--leading-normal);
     color: var(--c-text-muted);
+    background: var(--c-surface-raised);
+    border-top-left-radius: var(--radius-sm);
+    border-bottom-right-radius: var(--radius-md);
+    font-variant-numeric: tabular-nums;
   }
   .rank.full {
-    color: var(--c-gold);
+    color: var(--c-xp);
   }
-  .effect {
-    font-size: var(--text-xs);
-    color: var(--c-text-muted);
+  /* СТРЕЛКА: линия от центра опоры к верху зависимого, под узлами. Тусклая,
+     пока опора не набрана; наконечник — треугольник у зависимого. Концы
+     отступают на половину узла, чтобы линия начиналась и кончалась под ним:
+     задаются top/bottom, а не отступами — отступы у нас только из шкалы. */
+  .arrow {
+    position: relative;
+    z-index: 0;
+    align-self: stretch;
+    justify-self: center;
+    width: var(--space-2);
+    --from: var(--node);
+    --to: var(--node);
+    pointer-events: none;
   }
-  .reason {
-    font-size: var(--text-xs);
-    color: var(--c-text-faint);
+  .arrow.from-key {
+    --from: var(--node-key);
+  }
+  .arrow.to-key {
+    --to: var(--node-key);
+  }
+  .arrow::before {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: calc(var(--from) / 2);
+    bottom: calc(var(--to) / 2);
+    width: var(--space-1);
+    transform: translateX(-50%);
+    background: var(--c-border);
+    border-radius: var(--radius-pill);
+  }
+  .arrow::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    bottom: calc(var(--to) / 2);
+    transform: translateX(-50%);
+    border-left: var(--space-2) solid transparent;
+    border-right: var(--space-2) solid transparent;
+    border-top: var(--space-2) solid var(--c-border);
+  }
+  .arrow.met::before {
+    background: var(--c-accent);
+  }
+  .arrow.met::after {
+    border-top-color: var(--c-accent);
   }
   .hint {
-    color: var(--c-text-faint);
+    font-size: var(--text-xs);
+    color: var(--c-text-muted);
   }
 </style>

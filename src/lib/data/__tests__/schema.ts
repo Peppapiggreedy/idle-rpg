@@ -46,8 +46,7 @@ import {
   pathsOf,
   type BranchDef,
   type TalentDef,
-  type TalentStatRule,
-} from '../talents'
+  type TalentStatRule, TREE_COLUMNS } from '../talents'
 import type { Zone } from '../zones'
 import type { StatId } from '../../game/stats'
 
@@ -854,6 +853,42 @@ export const TALENT_SCHEMA: EntitySchema<TalentDef> = {
         `стоит на ключевом этаже ${talent.row}, а даёт модификаторы конвейера — ` +
           'ключевой талант меняет поведение (умение или флаг), а не число ' +
           '(data/talents.ts)',
+      )
+    }
+    // СТОЛБЕЦ В СЕТКЕ. Дерево рисуется четырьмя столбцами, и место узла —
+    // данные: на этаже с выбором расставлены ВСЕ (иначе узлы лягут друг на
+    // друга), столбцы в ряду не повторяются, а стрелка идёт вертикально —
+    // опора и зависимый стоят в одном столбце. Лестница из одного таланта на
+    // этаж столбцов не задаёт и центрируется сама.
+    const onRow = content.talents.filter((t) => t.branch === talent.branch && t.row === talent.row)
+    if (talent.col !== undefined) {
+      report.need(
+        Number.isInteger(talent.col) && talent.col >= 1 && talent.col <= TREE_COLUMNS,
+        where,
+        `столбец ${talent.col} вне сетки 1..${TREE_COLUMNS} (data/talents.ts)`,
+      )
+      for (const mate of onRow) {
+        report.need(
+          mate.id === talent.id || mate.col !== talent.col,
+          where,
+          `делит столбец ${talent.col} с «${mate.id}» на этаже ${talent.row} — узлы лягут ` +
+            'друг на друга (data/talents.ts)',
+        )
+      }
+    }
+    report.need(
+      onRow.length === 1 || talent.col !== undefined,
+      where,
+      `этаж ${talent.row} держит выбор из ${onRow.length}, а столбец у таланта не задан ` +
+        '(col в data/talents.ts)',
+    )
+    if (talent.requires && talent.col !== undefined) {
+      const anchor = content.talents.find((t) => t.id === talent.requires?.talentId)
+      report.need(
+        !anchor || anchor.col === undefined || anchor.col === talent.col,
+        where,
+        `стрелка гнётся: опора «${anchor?.id}» стоит в столбце ${anchor?.col}, а этот талант ` +
+          `в ${talent.col} — прямая линия требует одного столбца (data/talents.ts)`,
       )
     }
     // ВЗАИМОИСКЛЮЧАЮЩАЯ ГРУППА — ЭТО ВЫБОР НА ОДНОМ ЭТАЖЕ, И НИЧТО ИНОЕ.
