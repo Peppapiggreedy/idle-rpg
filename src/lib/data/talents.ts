@@ -940,8 +940,21 @@ const WARDEN_BULWARK = branch('warden-bulwark', [
   ],
 ])
 
-// Бдение: всё про паузы. Ветка ничего не добавляет к удару и почти ничего
-// к запасу HP — её вклад в том, что герой реже останавливается.
+// БДЕНИЕ: ВСЁ ПРО ПАУЗЫ — И ТЕПЕРЬ ЭТО ВЫБОР.
+//
+// Ветка ничего не добавляет к удару и почти ничего к запасу HP: её вклад в
+// том, что герой реже ОСТАНАВЛИВАЕТСЯ. Прежние тринадцать талантов правили
+// только числа пауз — реген, задержку, длину привала. Половина ветки теперь
+// правит ЭКОНОМИКУ РОТАЦИИ: цену умений, откат «Сосредоточения» и жизнь
+// «Клейма», то есть то, из-за чего паузы вообще случаются.
+//
+// ТАЛАНТ, БЬЮЩИЙ ПО ПРИЧИНЕ ОБЯЗАТЕЛЬНОСТИ УМЕНИЯ, здесь «Полный разрыв».
+// «Сокрушение» стоит в четвёрке потому, что незаменимо: 5.0 удара оружия —
+// вдвое больше следующего. «Разрыв» со «Рваной раной» бьёт всплеском тоже,
+// но множитель детонации 1.5 не догоняет; три ранга доводят его до 2.2, и
+// связка становится вторым ответом на тот же вопрос.
+//
+// Числа срезаны множителем 0.586 — тем же, что в Гневе и Оплоте.
 const WARDEN_VIGIL = branch('warden-vigil', [
   [
     {
@@ -949,9 +962,19 @@ const WARDEN_VIGIL = branch('warden-vigil', [
       name: 'Ровное дыхание',
       icon: 'talent-steady-breath',
       maxRank: 6,
-      // То же и с восстановлением ресурса: 38.7/с на 25-м уровне против
-      // 120.0/с на сотом. Замер на 55-м (72.5/с): 1.5 → 2.1 %.
-      effect: mods(m('manaRegen', 'percent', 0.021)),
+      // Плоское восстановление ресурса отстаёт от уровня (38.7/с на 25-м
+      // против 120.0/с на сотом), поэтому процент; замер на 55-м (72.5/с).
+      effect: mods(m('manaRegen', 'percent', 0.0123)),
+    },
+    {
+      // «Сосредоточение» — откат 45 секунд, самый длинный у класса, и вся
+      // его ценность ЧУЖАЯ: три бесплатных применения. Пять рангов срезают
+      // ожидание на треть.
+      id: 'vigil-quick-focus',
+      name: 'Скорое сосредоточение',
+      icon: 'talent-quick-focus',
+      maxRank: 5,
+      effect: tunes('focus', { field: 'cooldownSec', kind: 'percent', value: -0.06 }),
     },
   ],
   [
@@ -961,7 +984,14 @@ const WARDEN_VIGIL = branch('warden-vigil', [
       icon: 'talent-clear-mind',
       // Пауза регенерации — стат: конвейер обрежет её по нулю, в минус не уйдёт.
       maxRank: 6,
-      effect: mods(m('regenDelay', 'flat', -0.3)),
+      effect: mods(m('regenDelay', 'flat', -0.176)),
+    },
+    {
+      id: 'vigil-long-brand',
+      name: 'Долгое клеймо',
+      icon: 'talent-long-brand',
+      maxRank: 5,
+      effect: tunes('brand', { field: 'brandDurationSec', kind: 'percent', value: 0.08 }),
     },
   ],
   [
@@ -972,7 +1002,14 @@ const WARDEN_VIGIL = branch('warden-vigil', [
       // Запас важнее регена: пауза платится один раз за всплеск, и чем глубже
       // запас, тем реже она приходит.
       maxRank: 6,
-      effect: mods(m('maxMana', 'percent', 0.1)),
+      effect: mods(m('maxMana', 'percent', 0.0586)),
+    },
+    {
+      id: 'vigil-thrift-rupture',
+      name: 'Скупой разрыв',
+      icon: 'talent-thrift-rupture',
+      maxRank: 5,
+      effect: tunes('rupture', { field: 'manaCost', kind: 'percent', value: -0.08 }),
     },
   ],
   [
@@ -981,17 +1018,35 @@ const WARDEN_VIGIL = branch('warden-vigil', [
       name: 'Скорый привал',
       icon: 'talent-quick-camp',
       maxRank: 6,
-      effect: mods(m('restDuration', 'flat', -0.5)),
+      effect: mods(m('restDuration', 'flat', -0.293)),
+    },
+    {
+      id: 'vigil-thrift-shatter',
+      name: 'Скупое сокрушение',
+      icon: 'talent-thrift-shatter',
+      maxRank: 5,
+      effect: tunes('shattering-blow', { field: 'manaCost', kind: 'percent', value: -0.07 }),
     },
   ],
   [
+    // 21-е очко, КОНЦЕПТ. Откаты против ресурса: два разных ответа на вопрос
+    // «почему герой стоит без дела».
     {
-      // 21-е очко. Убийство начинает возвращать откаты — темп держится сам.
       id: 'vigil-trophy-spirit',
       name: 'Трофейный дух',
       icon: 'talent-kill-refund',
       maxRank: 1,
       effect: { kind: 'flag', flag: 'kill-refunds-cooldowns', cooldownShare: 0.75 },
+    },
+    {
+      // Три бесплатных применения становятся шестью. Умение, у которого своя
+      // ценность около нуля, превращается в половину всплеска — но только у
+      // того, кто носит ДОРОГУЮ четвёрку.
+      id: 'vigil-long-mind',
+      name: 'Долгий настрой',
+      icon: 'talent-long-mind',
+      maxRank: 1,
+      effect: tunes('focus', { field: 'freeCastsCasts', kind: 'percent', value: 1 }),
     },
   ],
   [
@@ -1000,10 +1055,28 @@ const WARDEN_VIGIL = branch('warden-vigil', [
       name: 'Учёность',
       icon: 'talent-intellect',
       maxRank: 6,
-      // Было `intellect flat 3`: восемнадцать интеллекта — 13.1 % запаса
-      // маны на 55-м уровне и 7.8 % на сотом. Процент по замеру на 55-м:
-      // 13.1 % / 6 = 2.2 % за ранг.
-      effect: mods(m('maxMana', 'percent', 0.022)),
+      // Было `intellect flat 3` — плоская характеристика отстаёт от уровня.
+      effect: mods(m('maxMana', 'percent', 0.0129)),
+    },
+    {
+      // ПОРОГ АВТОКАСТА КЛЕЙМА — В ПУНКТАХ: 50 % − 5 рангов по 4 = 30 %.
+      // Автокаст вешает метку и на подраненного, а не только на свежего.
+      id: 'vigil-early-brand',
+      name: 'Ранняя метка',
+      icon: 'talent-early-brand',
+      maxRank: 5,
+      effect: tunes('brand', {
+        field: 'brandAutocastAboveHpShare',
+        kind: 'points',
+        value: -0.04,
+      }),
+    },
+    {
+      id: 'vigil-thrift-wound',
+      name: 'Скупая рана',
+      icon: 'talent-thrift-wound',
+      maxRank: 5,
+      effect: tunes('rending-wound', { field: 'manaCost', kind: 'percent', value: -0.07 }),
     },
   ],
   [
@@ -1024,7 +1097,14 @@ const WARDEN_VIGIL = branch('warden-vigil', [
       name: 'Скорые сборы',
       icon: 'talent-quick-camp',
       maxRank: 6,
-      effect: mods(m('restDuration', 'percent', -0.04)),
+      effect: mods(m('restDuration', 'percent', -0.0234)),
+    },
+    {
+      id: 'vigil-thrift-mercy',
+      name: 'Скупая милость',
+      icon: 'talent-thrift-mercy',
+      maxRank: 5,
+      effect: tunes('mercy', { field: 'manaCost', kind: 'percent', value: -0.08 }),
     },
   ],
   [
@@ -1033,21 +1113,36 @@ const WARDEN_VIGIL = branch('warden-vigil', [
       name: 'Скорое заживление',
       icon: 'talent-second-wind',
       maxRank: 7,
-      // Плоское восстановление ОТСТАЁТ ОТ УРОВНЯ (см. TALENT_STAT_RULE):
-      // у эталонного Стража реген 19.2/с на 25-м уровне и 67.5/с на сотом,
-      // то есть один и тот же «+1.5» стоит втрое меньше к концу игры.
-      // Переведено в процент по замеру НА 55-М (39.5/с): 1.5 → 3.8 %.
-      effect: mods(m('hpRegen', 'percent', 0.038)),
+      effect: mods(m('hpRegen', 'percent', 0.0223)),
+    },
+    {
+      id: 'vigil-often-brand',
+      name: 'Частая метка',
+      icon: 'talent-often-brand',
+      maxRank: 5,
+      effect: tunes('brand', { field: 'cooldownSec', kind: 'percent', value: -0.07 }),
     },
   ],
   [
+    // 41-е очко, КОНЦЕПТ. Привал против метки: снять цену остановки или
+    // сделать так, чтобы метка её пережила.
     {
-      // 41-е очко.
       id: 'vigil-unbroken-focus',
       name: 'Несбитый настрой',
       icon: 'talent-unbroken-focus',
       maxRank: 1,
       effect: { kind: 'flag', flag: 'rest-clears-cooldowns', cooldownShare: 0 },
+    },
+    {
+      // СТРЕЛКА: метка, которую герой уже растил. Сорок секунд — дольше
+      // любой обычной схватки: клеймо перестаёт быть решением «на кого» и
+      // становится фоном.
+      id: 'vigil-lasting-brand',
+      name: 'Затяжное клеймо',
+      icon: 'talent-lasting-brand',
+      maxRank: 1,
+      requires: { talentId: 'vigil-long-brand', minRank: 3 },
+      effect: tunes('brand', { field: 'brandDurationSec', kind: 'multiplier', value: 2 }),
     },
   ],
   [
@@ -1056,7 +1151,14 @@ const WARDEN_VIGIL = branch('warden-vigil', [
       name: 'Бережливость',
       icon: 'talent-deep-well',
       maxRank: 5,
-      effect: mods(m('maxMana', 'percent', 0.08)),
+      effect: mods(m('maxMana', 'percent', 0.0469)),
+    },
+    {
+      id: 'vigil-thrift-stance',
+      name: 'Скупая стойка',
+      icon: 'talent-thrift-stance',
+      maxRank: 5,
+      effect: tunes('stance', { field: 'manaCost', kind: 'percent', value: -0.08 }),
     },
   ],
   [
@@ -1065,7 +1167,14 @@ const WARDEN_VIGIL = branch('warden-vigil', [
       name: 'Собранность',
       icon: 'talent-clear-mind',
       maxRank: 5,
-      effect: mods(m('regenDelay', 'flat', -0.2)),
+      effect: mods(m('regenDelay', 'flat', -0.117)),
+    },
+    {
+      id: 'vigil-quick-mercy',
+      name: 'Скорая милость',
+      icon: 'talent-quick-mercy',
+      maxRank: 5,
+      effect: tunes('mercy', { field: 'cooldownSec', kind: 'percent', value: -0.07 }),
     },
   ],
   [
@@ -1074,17 +1183,38 @@ const WARDEN_VIGIL = branch('warden-vigil', [
       name: 'Чуткий сон',
       icon: 'talent-quick-camp',
       maxRank: 5,
-      effect: mods(m('restDuration', 'flat', -0.3)),
+      effect: mods(m('restDuration', 'flat', -0.176)),
+    },
+    {
+      // БЬЁТ ПО ПРИЧИНЕ ОБЯЗАТЕЛЬНОСТИ «СОКРУШЕНИЯ». Оно незаменимо потому,
+      // что бьёт вдвое сильнее следующего; «Разрыв» со «Рваной раной» тоже
+      // всплеск, но множитель 1.5 не догоняет. Три ранга доводят его до 2.2 —
+      // и связка становится вторым ответом на тот же вопрос.
+      id: 'vigil-full-rupture',
+      name: 'Полный разрыв',
+      icon: 'talent-full-rupture',
+      maxRank: 3,
+      effect: tunes('rupture', { field: 'detonateMultiplier', kind: 'percent', value: 0.15 }),
     },
   ],
   [
+    // 61-е очко, ДВА КАПСТОУНА: привал перестаёт быть налогом против того,
+    // чтобы всплеск приходил вдвое чаще.
     {
-      // 61-е очко, капстоун. Привал перестаёт быть налогом: треть времени.
       id: 'vigil-campfire-on-the-move',
       name: 'Костёр на ходу',
       icon: 'talent-shorter-rest',
       maxRank: 1,
       effect: { kind: 'flag', flag: 'shorter-rest', durationMultiplier: 1 / 3 },
+    },
+    {
+      // СТРЕЛКА: венец достаётся тому, кто растил откат всю ветку.
+      id: 'vigil-endless-mind',
+      name: 'Неиссякаемость',
+      icon: 'talent-endless-mind',
+      maxRank: 1,
+      requires: { talentId: 'vigil-quick-focus', minRank: 3 },
+      effect: tunes('focus', { field: 'cooldownSec', kind: 'multiplier', value: 0.5 }),
     },
   ],
 ])
@@ -1850,6 +1980,81 @@ const BRANCH_PATHS: Partial<Record<BranchId, TalentPath[]>> = {
         'bulwark-often-wall',
         'bulwark-swift-return',
         'bulwark-mirror-shield',
+      ],
+    },
+  ],
+  'warden-vigil': [
+    {
+      // ЭКОНОМИЯ. Ставка на цену ротации: каждое умение дешевле, запас глубже,
+      // пауза короче. Четвёрка по умолчанию — первый путь ветки это прибор.
+      id: 'vigil-thrifty',
+      name: 'Экономия',
+      abilities: ['quick-strike', 'rending-wound', 'mend-wounds', 'shattering-blow'],
+      order: [
+        'vigil-steady-breath',
+        'vigil-clear-mind',
+        'vigil-deep-well',
+        'vigil-quick-camp',
+        'vigil-thrift-wound',
+        'vigil-thrift-shatter',
+        'vigil-trophy-spirit',
+        'vigil-learning',
+        'vigil-swift-camp',
+        'vigil-slow-bleeding',
+        'vigil-unbroken-focus',
+        'vigil-thrift',
+        'vigil-composure',
+        'vigil-light-sleep',
+        'vigil-campfire-on-the-move',
+        'vigil-thrift-rupture',
+        'vigil-thrift-mercy',
+        'vigil-thrift-stance',
+        'vigil-quick-mercy',
+        'vigil-full-rupture',
+        'vigil-quick-focus',
+        'vigil-long-mind',
+        'vigil-endless-mind',
+        'vigil-long-brand',
+        'vigil-early-brand',
+        'vigil-often-brand',
+        'vigil-lasting-brand',
+      ],
+    },
+    {
+      // КЛЕЙМО. Другой ответ: не экономить на каждом умении, а поставить метку
+      // и бить сквозь неё. Венец другой — «Неиссякаемость»: всплеск приходит
+      // вдвое чаще, и метка успевает окупиться.
+      id: 'vigil-brandbearer',
+      name: 'Клеймо',
+      abilities: ['quick-strike', 'brand', 'mend-wounds', 'focus'],
+      order: [
+        'vigil-long-brand',
+        'vigil-quick-focus',
+        'vigil-early-brand',
+        'vigil-often-brand',
+        'vigil-lasting-brand',
+        'vigil-long-mind',
+        'vigil-endless-mind',
+        'vigil-steady-breath',
+        'vigil-deep-well',
+        'vigil-clear-mind',
+        'vigil-learning',
+        'vigil-thrift',
+        'vigil-full-rupture',
+        'vigil-quick-mercy',
+        'vigil-thrift-mercy',
+        'vigil-thrift-stance',
+        'vigil-thrift-rupture',
+        'vigil-thrift-wound',
+        'vigil-thrift-shatter',
+        'vigil-quick-camp',
+        'vigil-swift-camp',
+        'vigil-light-sleep',
+        'vigil-composure',
+        'vigil-slow-bleeding',
+        'vigil-trophy-spirit',
+        'vigil-unbroken-focus',
+        'vigil-campfire-on-the-move',
       ],
     },
   ],

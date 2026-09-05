@@ -101,6 +101,22 @@ export const ICONS = {
   'talent-quiet-mend': { file: 'lorc/rosa-shield.svg', author: 'Lorc' },
   'talent-immovable': { file: 'lorc/cracked-shield.svg', author: 'Lorc' },
 
+  // --- Таланты, правящие умения: ветка «Бдение» ---
+  'talent-quick-focus': { file: 'lorc/concentration-orb.svg', author: 'Lorc' },
+  'talent-long-brand': { file: 'lorc/burning-passion.svg', author: 'Lorc' },
+  'talent-thrift-rupture': { file: 'lorc/tearing.svg', author: 'Lorc' },
+  'talent-thrift-shatter': { file: 'lorc/hammer-drop.svg', author: 'Lorc' },
+  'talent-long-mind': { file: 'lorc/meditation.svg', author: 'Lorc' },
+  'talent-early-brand': { file: 'lorc/burning-eye.svg', author: 'Lorc' },
+  'talent-thrift-wound': { file: 'lorc/fire-silhouette.svg', author: 'Lorc' },
+  'talent-thrift-mercy': { file: 'lorc/inner-self.svg', author: 'Lorc' },
+  'talent-often-brand': { file: 'lorc/lightning-frequency.svg', author: 'Lorc' },
+  'talent-lasting-brand': { file: 'lorc/eclipse-flare.svg', author: 'Lorc' },
+  'talent-thrift-stance': { file: 'lorc/mineral-heart.svg', author: 'Lorc' },
+  'talent-quick-mercy': { file: 'lorc/stopwatch.svg', author: 'Lorc' },
+  'talent-full-rupture': { file: 'lorc/vortex.svg', author: 'Lorc' },
+  'talent-endless-mind': { file: 'lorc/book-aura.svg', author: 'Lorc' },
+
   // --- Травы и зелья ---
   'herb-bitterleaf': { file: 'delapouite/dandelion-flower.svg', author: 'Delapouite' },
   'herb-emberroot': { file: 'lorc/root-tip.svg', author: 'Lorc' },
