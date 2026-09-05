@@ -654,36 +654,61 @@ export const BRANCH_SCHEMA: EntitySchema<BranchDef> = {
       report.add(where, 'в ветке нет ни одного таланта (data/talents.ts)')
       return
     }
-    // Ряды идут подряд с первого: дырка в нумерации означает, что талант
-    // потеряли при правке, и на панели останется пустая строка.
-    const rows = talents.map((t) => t.row)
-    const expected = talents.map((_, i) => i + 1)
+    // ЭТАЖ — РЯД, А НЕ ОДИН ТАЛАНТ. Считаем РАЗЛИЧНЫЕ этажи: на одном может
+    // стоять две-три альтернативы, и «ряды подряд» — про этажи, а не про
+    // записи. Дырка в нумерации означает, что этаж потеряли при правке, и на
+    // панели останется пустая строка.
+    const rows = [...new Set(talents.map((t) => t.row))].sort((a, b) => a - b)
+    const expected = rows.map((_, i) => i + 1)
     if (rows.join(',') !== expected.join(',')) {
       report.add(
         where,
-        `ряды идут как ${rows.join(', ')}, а должны подряд с первого ` +
+        `этажи идут как ${rows.join(', ')}, а должны подряд с первого ` +
           `(${expected.join(', ')}) — data/talents.ts`,
       )
     }
-    // Первый ряд обязан быть открыт сразу: иначе в ветку не войти вовсе.
-    if (talents[0].requiredPointsInBranch !== 0) {
-      report.add(
-        where,
-        `первый ряд требует ${talents[0].requiredPointsInBranch} очков в ветке — ` +
-          'в ветку невозможно войти (data/talents.ts)',
-      )
-    }
-    // Требование ряда не может быть больше, чем реально можно вложить выше.
-    let reachable = 0
-    for (const talent of talents) {
-      if (talent.requiredPointsInBranch > reachable) {
+    // ВСЕ ТАЛАНТЫ ОДНОГО ЭТАЖА ТРЕБУЮТ ОДНО И ТО ЖЕ. Иначе «этаж» перестаёт
+    // быть этажом: две альтернативы открывались бы в разное время, и выбор
+    // между ними превратился бы в порядок покупок.
+    for (const row of rows) {
+      const onRow = talents.filter((t) => t.row === row)
+      const required = [...new Set(onRow.map((t) => t.requiredPointsInBranch))]
+      if (required.length > 1) {
         report.add(
-          `талант ${talent.id}`,
-          `требует ${talent.requiredPointsInBranch} очков в ветке, а выше него ` +
-            `можно вложить только ${reachable} — талант недостижим (data/talents.ts)`,
+          `${where}, этаж ${row}`,
+          `таланты этажа требуют разное число очков (${required.join(', ')}) — ` +
+            'этаж открывается целиком или не открывается (data/talents.ts)',
         )
       }
-      reachable += talent.maxRank
+    }
+    // Первый этаж обязан быть открыт сразу: иначе в ветку не войти вовсе.
+    const firstRow = talents.filter((t) => t.row === rows[0])
+    for (const talent of firstRow) {
+      if (talent.requiredPointsInBranch !== 0) {
+        report.add(
+          where,
+          `первый этаж требует ${talent.requiredPointsInBranch} очков в ветке — ` +
+            'в ветку невозможно войти (data/talents.ts)',
+        )
+        break
+      }
+    }
+    // ДОСТИЖИМОСТЬ СЧИТАЕТСЯ ПО ЭТАЖАМ ВЫШЕ, А НЕ ПО ПРЕДЫДУЩИМ ЗАПИСЯМ.
+    // Ранги соседа по этажу в порог этого этажа не идут: чтобы открыть этаж,
+    // очки надо вложить НАД ним.
+    for (const row of rows) {
+      const above = talents
+        .filter((t) => t.row < row)
+        .reduce((sum, t) => sum + t.maxRank, 0)
+      for (const talent of talents.filter((t) => t.row === row)) {
+        if (talent.requiredPointsInBranch > above) {
+          report.add(
+            `талант ${talent.id}`,
+            `требует ${talent.requiredPointsInBranch} очков в ветке, а выше него ` +
+              `можно вложить только ${above} — талант недостижим (data/talents.ts)`,
+          )
+        }
+      }
     }
   },
 }

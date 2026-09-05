@@ -257,14 +257,36 @@ export function brokenCases(): BrokenCase[] {
       expect: [first(real.branches).id, 'невозможно войти'],
     },
     {
-      title: 'ряды ветки идут с дыркой — на панели останется пустая строка',
+      title: 'этажи ветки идут с дыркой — на панели останется пустая строка',
       content: {
         ...real,
         talents: real.talents.map((t) =>
           t.branch === first(real.branches).id && t.row === 2 ? { ...t, row: 9 } : t,
         ),
       },
-      expect: [first(real.branches).id, 'ряды идут'],
+      expect: [first(real.branches).id, 'этажи идут'],
+    },
+    {
+      // ЭТАЖ ОТКРЫВАЕТСЯ ЦЕЛИКОМ. Две альтернативы с разными порогами — это
+      // уже не выбор, а порядок покупок: одна открылась бы раньше другой.
+      title: 'таланты одного этажа требуют разное число очков',
+      content: {
+        ...real,
+        // Второй талант НА ТОТ ЖЕ ЭТАЖ, но со своим порогом. Одной правкой
+        // существующего таланта это не воспроизвести: пока на этаже он один,
+        // его порог и есть порог этажа.
+        talents: [
+          ...real.talents,
+          ...real.talents
+            .filter((t) => t.branch === first(real.branches).id && t.row === 3)
+            .map((t) => ({
+              ...t,
+              id: `${t.id}-двойник`,
+              requiredPointsInBranch: t.requiredPointsInBranch + 5,
+            })),
+        ],
+      },
+      expect: ['этаж 3', 'разное число очков'],
     },
     {
       title: 'рецепт требует материал, которого нет в игре',

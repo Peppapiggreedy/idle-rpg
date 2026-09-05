@@ -20,7 +20,7 @@ import {
   UNIQUE_RECIPE_LEVEL,
 } from '../data/balance'
 import { PROGRESSION } from '../data/progression'
-import { BRANCH_DEPTH, TALENTS, TALENT_BY_ID } from '../data/talents'
+import { BRANCH_DEPTH, TALENTS, TALENT_BY_ID, branchCapacity } from '../data/talents'
 import {
   MAX_REST_THRESHOLD,
   MIN_REST_DURATION_S,
@@ -301,11 +301,15 @@ describe('порог привала ползунком', () => {
   })
 
   it('на месте таланта на порог — талант на ДЛИНУ привала', () => {
-    // Не «талант пропал»: этаж занят настоящей характеристикой, и глубина
-    // ветки не изменилась.
-    for (const branchId of ['warden-vigil', 'reaver-instinct']) {
+    // Не «талант пропал»: этаж занят настоящей характеристикой, и ЁМКОСТЬ
+    // ветки не изменилась. Мерить глубиной тут нечего — она задана формой и
+    // от наполнения не зависит вовсе.
+    for (const branchId of ['warden-vigil', 'reaver-instinct'] as const) {
       const branch = TALENTS.filter((t) => t.branch === branchId)
-      expect(branch.reduce((sum, t) => sum + t.maxRank, 0), branchId).toBe(BRANCH_DEPTH)
+      expect(branch.reduce((sum, t) => sum + t.maxRank, 0), branchId).toBe(
+        branchCapacity(branchId),
+      )
+      expect(branchCapacity(branchId), branchId).toBeGreaterThanOrEqual(BRANCH_DEPTH)
     }
     const replaced = ['vigil-swift-camp', 'instinct-light-camp', 'instinct-restless']
     for (const id of replaced) {

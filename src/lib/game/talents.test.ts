@@ -34,7 +34,8 @@ import { CLASSES, classById } from '../data/classes'
 import {
   BRANCHES,
   BRANCH_DEPTH,
-  BRANCH_RANKS,
+  branchCapacity,
+  capacityAbove,
   BRANCH_ROWS,
   BRANCH_ROW_STEP,
   CONCEPT_ROWS,
@@ -100,7 +101,7 @@ function reachRow(state: GameState, branch: BranchId, row: number): GameState {
  * Вкладывает ветку до нужной глубины, по рядам сверху вниз. Списком id это
  * делать нельзя: ветки растут, и тест ломался бы от каждого нового таланта.
  */
-function fillBranch(state: GameState, branch: BranchId, points = BRANCH_DEPTH): GameState {
+function fillBranch(state: GameState, branch: BranchId, points = 1000): GameState {
   let next = state
   let left = points
   for (const talent of talentsInBranch(branch)) {
@@ -125,24 +126,57 @@ describe('данные дерева', () => {
     }
   })
 
-  it('каждая ветка ровно 61 очко глубиной: 13 этажей, шаг требования 5', () => {
-    // Глубина — не украшение: она равна числу очков за путь до сотого уровня,
-    // и от неё зависит, что «влить всё в одну ветку» — законченный выбор.
-    expect(BRANCH_DEPTH).toBe(61)
-    expect(BRANCH_RANKS).toHaveLength(BRANCH_ROWS)
+  // ГЛУБИНА И ЁМКОСТЬ — РАЗНЫЕ ВЕЛИЧИНЫ, И У КАЖДОЙ СВОЁ ИМЯ.
+  //
+  // Пока на этаже стоял один талант, они почти совпадали (60 и 61) и жили
+  // одной константой. С двумя-тремя талантами на этаже ёмкость уходит вдвое
+  // выше глубины, и всякое место, где смыслы перепутаны, ломается ТИХО.
+  it('глубина ветки — 60 очков и от наполнения не зависит', () => {
+    // Глубина задана ФОРМОЙ: тринадцатый этаж требует 5 × 12.
+    expect(BRANCH_DEPTH).toBe(60)
+    expect(BRANCH_DEPTH).toBe((BRANCH_ROWS - 1) * BRANCH_ROW_STEP)
     for (const branch of BRANCHES) {
       const talents = talentsInBranch(branch.id)
-      expect(talents.map((t) => t.row), branch.id).toEqual(BRANCH_RANKS.map((_, i) => i + 1))
-      expect(talents.map((t) => t.maxRank), branch.id).toEqual([...BRANCH_RANKS])
-      expect(
-        talents.reduce((n, t) => n + t.maxRank, 0),
-        branch.id,
-      ).toBe(BRANCH_DEPTH)
-      expect(talents.map((t) => t.requiredPointsInBranch), branch.id).toEqual(
-        BRANCH_RANKS.map((_, i) => i * BRANCH_ROW_STEP),
-      )
+      const lastRow = Math.max(...talents.map((t) => t.row))
+      expect(lastRow, branch.id).toBe(BRANCH_ROWS)
+      const capstones = talents.filter((t) => t.row === BRANCH_ROWS)
+      for (const c of capstones) expect(c.requiredPointsInBranch, c.id).toBe(BRANCH_DEPTH)
     }
-    expect(TALENTS).toHaveLength(BRANCHES.length * BRANCH_ROWS)
+  })
+
+  it('ёмкость ветки — сумма рангов, и она НЕ равна глубине', () => {
+    for (const branch of BRANCHES) {
+      const talents = talentsInBranch(branch.id)
+      const sum = talents.reduce((n, t) => n + t.maxRank, 0)
+      expect(branchCapacity(branch.id), branch.id).toBe(sum)
+      // Ёмкость обязана быть НЕ МЕНЬШЕ глубины, иначе до венца не добраться.
+      expect(branchCapacity(branch.id), branch.id).toBeGreaterThanOrEqual(BRANCH_DEPTH)
+    }
+  })
+
+  it('каждый этаж достижим: порог не больше того, что помещается выше', () => {
+    // Настоящий инвариант формы. Раньше его держала таблица BRANCH_RANKS —
+    // но таблица знала ранги ПО ЭТАЖУ, а с альтернативами ранг принадлежит
+    // таланту, и проверять надо ёмкость этажей выше, а не строку таблицы.
+    for (const branch of BRANCHES) {
+      for (const talent of talentsInBranch(branch.id)) {
+        expect(
+          talent.requiredPointsInBranch,
+          `${talent.id}: порог выше того, что помещается над ним`,
+        ).toBeLessThanOrEqual(capacityAbove(branch.id, talent.row))
+      }
+    }
+  })
+
+  it('этажи идут подряд с первого, требование растёт шагом', () => {
+    for (const branch of BRANCHES) {
+      const talents = talentsInBranch(branch.id)
+      const rows = [...new Set(talents.map((t) => t.row))].sort((a, b) => a - b)
+      expect(rows, branch.id).toEqual(Array.from({ length: BRANCH_ROWS }, (_, i) => i + 1))
+      for (const talent of talents) {
+        expect(talent.requiredPointsInBranch, talent.id).toBe((talent.row - 1) * BRANCH_ROW_STEP)
+      }
+    }
   })
 
   it('концептуальные таланты стоят на своих этажах и все — флаги', () => {
@@ -236,22 +270,26 @@ describe('очки талантов', () => {
     // Это и есть цена выбора: ОДНА ветка закрывается целиком, на вторую
     // остаётся заход до середины, а на третью не остаётся ничего. Хватило бы
     // на две ветки — капстоуны перестали бы быть выбором.
+    // МЕРИТСЯ ЁМКОСТЬ, А НЕ ГЛУБИНА: «ветка целиком» — это все её ранги,
+    // а глубина лишь говорит, сколько нужно ДО венца. Раньше числа почти
+    // совпадали и жили одной константой; теперь их два.
+    const capacity = branchCapacity(WRATH)
     const total = earnedPoints(new Decimal(LEVEL_CAP))
     expect(total).toBeGreaterThan(BRANCH_DEPTH)
-    expect(total).toBeLessThan(BRANCH_DEPTH * 2)
+    expect(total).toBeLessThan(capacity * 2)
 
     const capped = hero(LEVEL_CAP)
     const full = fillBranch(capped, WRATH)
-    expect(spentInBranch(full.talents, WRATH)).toBe(BRANCH_DEPTH)
+    expect(spentInBranch(full.talents, WRATH)).toBe(Math.min(capacity, total))
     // И капстоун взят: последний этаж — это то, ради чего ветка добивается.
-    const capstone = talentsInBranch(WRATH)[BRANCH_ROWS - 1]
+    const capstone = talentsInBranch(WRATH).find((t) => t.row === BRANCH_ROWS)!
     expect(rankOf(full.talents, capstone.id)).toBe(1)
 
     // Остаток уходит во вторую ветку — и до её капстоуна не дотягивает.
     const both = fillBranch(full, BULWARK, availablePoints(full))
     expect(availablePoints(both)).toBe(0)
-    expect(spentInBranch(both.talents, BULWARK)).toBe(total - BRANCH_DEPTH)
-    const secondCapstone = talentsInBranch(BULWARK)[BRANCH_ROWS - 1]
+    expect(spentInBranch(both.talents, BULWARK)).toBe(total - Math.min(capacity, total))
+    const secondCapstone = talentsInBranch(BULWARK).find((t) => t.row === BRANCH_ROWS)!
     expect(rankOf(both.talents, secondCapstone.id)).toBe(0)
   })
 })
@@ -423,7 +461,10 @@ describe('fillBranchRanks — заполнение ветки для прого�
     for (const [id, rank] of Object.entries(ranks)) {
       expect(rank, id).toBeLessThanOrEqual(TALENT_BY_ID[id].maxRank)
     }
-    expect(Object.values(fillBranchRanks(WRATH, 1000)).reduce((n, r) => n + r, 0)).toBe(BRANCH_DEPTH)
+    // Потолок заполнения — ЁМКОСТЬ ветки: больше в неё не влезает.
+    expect(Object.values(fillBranchRanks(WRATH, 1000)).reduce((n, r) => n + r, 0)).toBe(
+      branchCapacity(WRATH),
+    )
   })
 })
 
