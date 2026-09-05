@@ -188,6 +188,18 @@ export interface TalentDef {
   requiredPointsInBranch: number // сколько очков нужно вложить в ветку до него
   /** Стрелка от таланта выше; нет поля — талант самостоятельный. */
   requires?: TalentRequirement
+  /**
+   * ВЗАИМОИСКЛЮЧАЮЩАЯ ГРУППА. Таланты с одним именем группы стоят на одном
+   * этаже одной ветки, и взять можно ТОЛЬКО ОДИН: как только в один вложено
+   * очко, остальные заперты. Нет поля — талант ни с кем не спорит.
+   *
+   * СТРЕЛКА И ГРУППА — РАЗНЫЕ ВЕЩИ, и одна другую не заменяет: стрелка
+   * ТРЕБУЕТ (вложи сперва в опору), группа ЗАПРЕЩАЕТ (вложил в соседа —
+   * сюда уже нельзя). Ночь «три ветки» оставила ключевые этажи без групп и
+   * считала, что венцы «разведены путями»; путь — это порядок покупки для
+   * модели, и запретить он ничего не может — оба венца брались.
+   */
+  exclusiveGroup?: string
   effect: TalentEffect
 }
 
@@ -208,6 +220,8 @@ interface TalentSpec {
   maxRank: number
   /** Стрелка от таланта выше — см. `TalentRequirement`. */
   requires?: TalentRequirement
+  /** Взаимоисключающая группа — см. `TalentDef.exclusiveGroup`. */
+  exclusiveGroup?: string
   effect: TalentEffect
 }
 
@@ -2097,6 +2111,9 @@ export function pathRanks(path: TalentPath, points: number): Record<string, numb
       if (spent < talent.requiredPointsInBranch) continue
       const need = talent.requires
       if (need && (ranks[need.talentId] ?? 0) < requiredRank(need)) continue
+      // ГРУППА ЗАПИРАЕТ И МОДЕЛЬ ТОЖЕ. Иначе прогон мерил бы героя, который
+      // берёт оба ключевых, — того, которого в игре не существует.
+      if (groupHolder(ranks, talent)) continue
       const take = Math.min(talent.maxRank - have, points - spent)
       if (take <= 0) continue
       ranks[id] = have + take
@@ -2111,6 +2128,26 @@ export function pathRanks(path: TalentPath, points: number): Record<string, numb
  * Ветка, залитая очками ПО ПЕРВОМУ ОБЪЯВЛЕННОМУ ПУТИ. Это и есть «сборка
  * ветки» для прогонов и тестов: одна на всю игру, названная в данных.
  */
+// ---------------------------------------------------------------------------
+// Взаимоисключающие группы
+// ---------------------------------------------------------------------------
+
+/** Соседи таланта по группе — без него самого. Пусто, если группы нет. */
+export function groupMates(talent: TalentDef): TalentDef[] {
+  const group = talent.exclusiveGroup
+  if (!group) return []
+  return TALENTS.filter((t) => t.exclusiveGroup === group && t.id !== talent.id)
+}
+
+/**
+ * Кто из группы уже выбран — сосед с хотя бы одним рангом. `null` — группа
+ * свободна (или её нет). Ровно одна функция на вопрос «заперт ли талант
+ * выбором»: её зовут и статус вложения, и модель прогона, и экран.
+ */
+export function groupHolder(ranks: Readonly<Record<string, number>>, talent: TalentDef): TalentDef | null {
+  return groupMates(talent).find((mate) => rankOf(ranks, mate.id) > 0) ?? null
+}
+
 export function fillBranchRanks(branchId: BranchId, points: number): Record<string, number> {
   return pathRanks(pathsOf(branchId)[0], points)
 }

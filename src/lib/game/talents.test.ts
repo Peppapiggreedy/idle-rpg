@@ -35,6 +35,7 @@ import { WEAPONS } from '../data/items'
 import { CLASSES, classById } from '../data/classes'
 import {
   BRANCHES,
+  groupHolder,
   pathRanks,
   pathsOf,
   BRANCH_DEPTH,
@@ -995,5 +996,128 @@ describe('снятие очка в пределах открытого экра�
         Object.entries(state.stats).map(([key, value]) => [key, value.toString()]),
       )
     expect(shape(after)).toEqual(shape(plain))
+  })
+})
+
+// ВЗАИМОИСКЛЮЧАЮЩАЯ ГРУППА: ВЛОЖИЛ В ОДНОГО — ОСТАЛЬНЫЕ ЗАПЕРТЫ.
+//
+// Ночь «три ветки» поставила на ключевых этажах по два таланта и считала,
+// что венцы «разведены путями». Путь — это порядок покупки для модели, и
+// запретить он ничего не может: оба венца брались, а на этажах 5 и 9 модель
+// сама покупала оба концепта. Механизма не было. Здесь он появляется.
+//
+// Настоящих групп в данных на этой стадии ещё нет — их назначает следующая,
+// — поэтому правило проверяется на подставной группе с настоящими типами:
+// так проверка не зависит от того, какие группы сегодня в дереве.
+describe('взаимоисключающие группы', () => {
+  const FLOOR = 5
+  const pair = () => talentsInBranch(WRATH).filter((t) => t.row === FLOOR)
+
+  /** Ставим двум талантам одного этажа общую группу на время проверки. */
+  function withGroup<T>(body: (a: TalentDef, b: TalentDef) => T): T {
+    const [a, b] = pair()
+    const saved = [a.exclusiveGroup, b.exclusiveGroup]
+    a.exclusiveGroup = 'проверочная-группа'
+    b.exclusiveGroup = 'проверочная-группа'
+    try {
+      return body(a, b)
+    } finally {
+      ;[a.exclusiveGroup, b.exclusiveGroup] = saved
+    }
+  }
+
+  /** Герой с открытым пятым этажом Гнева и свободными очками. */
+  function atFloor(): GameState {
+    let s = hero(LEVEL_CAP)
+    for (const t of talentsInBranch(WRATH).filter((x) => x.row < FLOOR)) {
+      if (spentInBranch(s.talents, WRATH) >= (FLOOR - 1) * BRANCH_ROW_STEP) break
+      s = invest(s, t.id, t.maxRank)
+    }
+    return s
+  }
+
+  it('на пятом этаже Гнева двое, и без группы берутся ОБА — это и есть беда', () => {
+    // Запись факта, а не желаемого: пока группа не назначена, ничто не
+    // мешает взять оба ключевых. Следующая стадия назначает группы.
+    const [a, b] = pair()
+    expect(pair()).toHaveLength(2)
+    const both = invest(invest(atFloor(), a.id, 1), b.id, 1)
+    expect(rankOf(both.talents, a.id)).toBe(1)
+    expect(rankOf(both.talents, b.id)).toBe(1)
+  })
+
+  it('вложение в члена группы ЗАПИРАЕТ остальных кодом group-taken', () => {
+    withGroup((a, b) => {
+      const base = atFloor()
+      expect(talentStatus(base, a).canInvest).toBe(true)
+      expect(talentStatus(base, b).canInvest).toBe(true)
+
+      const chosen = invest(base, a.id, 1)
+      const locked = talentStatus(chosen, b)
+      expect(locked).toMatchObject({ canInvest: false, reason: 'group-taken', groupTakenBy: a.id })
+      // И вложить нельзя — состояние не меняется вовсе.
+      expect(investTalent(chosen, b.id)).toBe(chosen)
+      // У выбранного статус про группу молчит: он и есть выбор.
+      expect(talentStatus(chosen, a).groupTakenBy).toBeNull()
+    })
+  })
+
+  it('группа проверяется РАНЬШЕ стрелки и ПОЗЖЕ порога этажа', () => {
+    // Порог не лечится ничем, кроме очков; группа — только отказом от
+    // выбора; стрелка — очками в опору. Из двух причин называют ту, что
+    // твёрже: поэтому порог первый, группа вторая, стрелка третья.
+    withGroup((a, b) => {
+      const early = hero(TALENT_FIRST_LEVEL + 3)
+      const chosenEarly = { ...early, talents: { [a.id]: 1 } }
+      expect(talentStatus(chosenEarly, b).reason).toBe('branch-locked')
+
+      const chosen = invest(atFloor(), a.id, 1)
+      const withArrow: TalentDef = { ...b, requires: { talentId: 'wrath-honed-edge', minRank: 99 } }
+      expect(talentStatus(chosen, withArrow).reason).toBe('group-taken')
+    })
+  })
+
+  it('бесплатная отмена в открытом экране ОСВОБОЖДАЕТ группу', () => {
+    withGroup((a, b) => {
+      const chosen = invest(atFloor(), a.id, 1)
+      expect(talentStatus(chosen, b).reason).toBe('group-taken')
+      const undone = takeBackTalent(chosen, a.id, { [a.id]: 1 })
+      expect(rankOf(undone.talents, a.id)).toBe(0)
+      expect(talentStatus(undone, b)).toMatchObject({ canInvest: true, groupTakenBy: null })
+      // И выбор можно переменить: теперь заперт первый.
+      const swapped = invest(undone, b.id, 1)
+      expect(talentStatus(swapped, a).reason).toBe('group-taken')
+    })
+  })
+
+  it('платный сброс ОСВОБОЖДАЕТ группу', () => {
+    withGroup((a, b) => {
+      const chosen = { ...invest(atFloor(), a.id, 1), gold: new Decimal(1e9) }
+      expect(talentStatus(chosen, b).reason).toBe('group-taken')
+      const reset = resetTalents(chosen)
+      expect(spentPoints(reset.talents)).toBe(0)
+      // После сброса до пятого этажа ещё дойти надо — порог, а не группа.
+      expect(talentStatus(reset, b).reason).toBe('branch-locked')
+      expect(talentStatus(reset, b).groupTakenBy).toBeNull()
+    })
+  })
+
+  it('МОДЕЛЬ ПРОГОНА уважает группу: путь берёт одного, не обоих', () => {
+    // Иначе прибор мерил бы героя, берущего оба ключевых, — того, которого
+    // в игре после этой стадии не существует.
+    withGroup((a, b) => {
+      for (const path of pathsOf(WRATH)) {
+        const ranks = pathRanks(path, 1000)
+        const taken = [a, b].filter((t) => (ranks[t.id] ?? 0) > 0)
+        expect(taken.length, `${path.name}: взяты ${taken.map((t) => t.id).join(' и ')}`).toBe(1)
+      }
+    })
+  })
+
+  it('группа названа в данных пустой строкой — не группа', () => {
+    // `exclusiveGroup: ''` не должен превращаться в одну общую группу всех
+    // талантов «без группы»: пустое имя читается как отсутствие поля.
+    const [a] = pair()
+    expect(groupHolder({ [a.id]: 1 }, { ...a, id: 'другой', exclusiveGroup: undefined })).toBeNull()
   })
 })

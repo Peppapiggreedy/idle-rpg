@@ -20,6 +20,7 @@ import {
   talentsOfClass,
   requiredRank,
   dependentsOf,
+  groupHolder,
   type BranchDef,
   type BranchId,
   type TalentDef,
@@ -82,6 +83,9 @@ export type TalentBlockReason =
   | 'branch-locked'
   // Стрелка не набрана: опорный талант выше не вложен на нужный ранг.
   | 'needs-talent'
+  // Сосед по взаимоисключающей группе уже выбран: сюда нельзя, пока выбор
+  // не снят — отменой в этом заходе или платным сбросом.
+  | 'group-taken'
 
 export interface TalentStatus {
   talentId: string
@@ -91,6 +95,8 @@ export interface TalentStatus {
   reason: TalentBlockReason | null
   pointsInBranch: number // сколько уже вложено в ветку
   requiredPointsInBranch: number
+  /** Кто из группы выбран вместо этого таланта; `null` — никто или группы нет. */
+  groupTakenBy: string | null
 }
 
 /**
@@ -100,17 +106,23 @@ export interface TalentStatus {
 export function talentStatus(state: GameState, talent: TalentDef): TalentStatus {
   const rank = rankOf(state.talents, talent.id)
   const pointsInBranch = spentInBranch(state.talents, talent.branch)
+  const holder = groupHolder(state.talents, talent)
   const base = {
     talentId: talent.id,
     rank,
     maxRank: talent.maxRank,
     pointsInBranch,
     requiredPointsInBranch: talent.requiredPointsInBranch,
+    groupTakenBy: holder?.id ?? null,
   }
   const blocked = (reason: TalentBlockReason) => ({ ...base, canInvest: false, reason })
   // Дерево читается ПО КЛАССУ: ветка чужого класса не открывается ничем.
   if (BRANCH_BY_ID[talent.branch]?.classId !== state.classId) return blocked('other-class')
   if (pointsInBranch < talent.requiredPointsInBranch) return blocked('branch-locked')
+  // ГРУППА ПРОВЕРЯЕТСЯ РАНЬШЕ СТРЕЛКИ. Стрелка лечится очками — вложи в
+  // опору, и откроется; группа не лечится ничем, кроме отказа от уже
+  // сделанного выбора. Из двух причин игроку называют ту, что твёрже.
+  if (holder) return blocked('group-taken')
   // СТРЕЛКА ПРОВЕРЯЕТСЯ ПОСЛЕ ПОРОГА ЭТАЖА: порог не лечится ничем, кроме
   // очков в ветке, а стрелка — конкретным талантом, и назвать игроку надо
   // ту причину, которая ближе к делу.

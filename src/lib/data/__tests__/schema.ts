@@ -841,6 +841,40 @@ export const TALENT_SCHEMA: EntitySchema<TalentDef> = {
   ],
   extra: (talent, content, report) => {
     const where = `талант ${talent.id}`
+    // ВЗАИМОИСКЛЮЧАЮЩАЯ ГРУППА — ЭТО ВЫБОР НА ОДНОМ ЭТАЖЕ, И НИЧТО ИНОЕ.
+    //
+    // Группа через ветки — выбор, который игрок не увидит целиком: одна
+    // клетка в дереве Гнева, вторая в дереве Оплота, и запертый узел в
+    // соседней вкладке выглядит сломанным. Группа через этажи — то же самое
+    // по вертикали, только хуже: талант ниже оказывается заперт тем, до чего
+    // ещё не дошли. Группа из одного члена — не выбор, а опечатка в имени:
+    // сосед назван иначе, и запрет молча не работает.
+    if (talent.exclusiveGroup) {
+      const mates = content.talents.filter(
+        (t) => t.exclusiveGroup === talent.exclusiveGroup && t.id !== talent.id,
+      )
+      report.need(
+        mates.length >= 1,
+        where,
+        `группа «${talent.exclusiveGroup}» из одного члена — исключать некого; ` +
+          'выбор это двое или трое на одном этаже (data/talents.ts)',
+      )
+      for (const mate of mates) {
+        report.need(
+          mate.branch === talent.branch,
+          where,
+          `группа «${talent.exclusiveGroup}» тянется через ветки: «${mate.id}» стоит в ` +
+            `${mate.branch}, а этот талант в ${talent.branch} (data/talents.ts)`,
+        )
+        report.need(
+          mate.row === talent.row,
+          where,
+          `группа «${talent.exclusiveGroup}» тянется через этажи: «${mate.id}» на этаже ` +
+            `${mate.row}, а этот талант на ${talent.row} — выбор живёт на ОДНОМ этаже ` +
+            '(data/talents.ts)',
+        )
+      }
+    }
     // СТРЕЛКА-ПРЕДПОСЫЛКА ВЕДЁТ ТОЛЬКО ВНИЗ И ТОЛЬКО В СВОЕЙ ВЕТКЕ.
     //
     // Стрелка вверх или вбок — это цикл или недостижимый узел: талант, до

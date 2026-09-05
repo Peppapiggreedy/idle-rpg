@@ -18,6 +18,7 @@
   } from '../game'
   import {
     TALENT_BY_ID,
+    groupHolder,
     type BranchId,
     type TalentDef,
     type TalentFlag,
@@ -131,6 +132,11 @@
       const rank = need.minRank ?? 1
       return rank > 1 ? `Нужно ${rank} ранга в «${anchor}»` : `Нужен талант «${anchor}»`
     },
+    // ГРУППА НАЗЫВАЕТ ВЫБРАННОГО СОСЕДА ПО ИМЕНИ: «заперто» не объясняет, чем.
+    'group-taken': (t) => {
+      const chosen = groupHolder($gameState.talents, t)
+      return chosen ? `Выбран «${chosen.name}» — вместе не берутся` : 'Заперт выбором на этаже'
+    },
   }
 
   // Текст одного модификатора за ОДИН ранг: игрок видит цену следующего очка.
@@ -214,7 +220,9 @@
                 class="talent"
                 class:locked={!status.canInvest && status.rank === 0}
                 class:taken={status.rank > 0}
+                class:group-locked={status.reason === 'group-taken'}
                 data-talent={talent.id}
+                data-group-locked={status.reason === 'group-taken' ? '' : undefined}
               >
                 <div class="head">
                   <Icon name={talent.icon} /><span class="name">{talent.name}</span>
