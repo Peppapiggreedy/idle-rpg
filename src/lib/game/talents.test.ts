@@ -407,16 +407,31 @@ describe('очки талантов', () => {
     expect(availablePoints(full)).toBe(0)
   })
 
-  it('ветка-лестница закрывается целиком, и это видно рядом', () => {
-    // Оплот и Бдение ещё лестницы: их ёмкость почти равна глубине, и очков
-    // на них хватает. Строка стоит рядом с предыдущей нарочно — по ней и
-    // видно, что переделка ветки меняет именно эту величину.
+  it('ЁМКОСТЬ РЕШАЕТ, закрывается ветка целиком или нет', () => {
+    // Строка стоит рядом с предыдущей нарочно: по ней видно, что переделка
+    // ветки меняет ИМЕННО ЭТУ величину, а не что-то ещё. Ветка-лестница
+    // (ёмкость около глубины) закрывается целиком и очков на неё хватает;
+    // ветка с альтернативами — нет.
+    //
+    // Проверка идёт ПО ДАННЫМ, а не по имени ветки: имя пришлось бы менять
+    // в тот день, когда переделают следующую.
     const total = earnedPoints(new Decimal(LEVEL_CAP))
-    expect(branchCapacity(BULWARK)).toBeLessThan(total)
-    const both = fillBranch(hero(LEVEL_CAP), BULWARK)
-    expect(spentInBranch(both.talents, BULWARK)).toBe(branchCapacity(BULWARK))
-    const capstone = talentsInBranch(BULWARK).find((t) => t.row === BRANCH_ROWS)!
-    expect(rankOf(both.talents, capstone.id)).toBe(1)
+    // Только СВОИ ветки: в чужую очко не вложить вовсе, и «вложено ноль»
+    // там означает не выбор, а правило про класс.
+    for (const branch of BRANCHES.filter((b) => b.classId === WARDEN.id)) {
+      const capacity = branchCapacity(branch.id)
+      const filled = fillBranch(hero(LEVEL_CAP), branch.id)
+      const spent = spentInBranch(filled.talents, branch.id)
+      if (capacity <= total) {
+        // Влезает целиком — значит и вложено целиком, вместе с венцом.
+        expect(spent, branch.id).toBe(capacity)
+        const capstone = talentsInBranch(branch.id).find((t) => t.row === BRANCH_ROWS)!
+        expect(rankOf(filled.talents, capstone.id), branch.id).toBe(1)
+      } else {
+        // Не влезает — очки кончились раньше ветки, и это цена выбора.
+        expect(spent, branch.id).toBe(total)
+      }
+    }
   })
 })
 

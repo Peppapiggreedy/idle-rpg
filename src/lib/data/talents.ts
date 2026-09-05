@@ -663,8 +663,22 @@ const WARDEN_WRATH = branch('warden-wrath', [
   ],
 ])
 
-// Оплот: всё про то, чтобы дожить до конца схватки. Привал теперь между
-// боями, и цена ошибки — смерть, поэтому ветка окупается глубиной зоны.
+// ОПЛОТ: ВСЁ ПРО ТО, ЧТОБЫ ДОЖИТЬ ДО КОНЦА СХВАТКИ — И ТЕПЕРЬ ЭТО ВЫБОР.
+//
+// Ветка была тринадцатью ступенями по одному таланту, и все тринадцать
+// прибавляли ЧИСЛА: запас, блок, снижение урона. Половина ветки теперь правит
+// защитные УМЕНИЯ — «Стену», «Глухую стойку», «Толчок щитом» и «Заживление
+// ран», — потому что защита в бою это не запас, а то, чем герой её тратит.
+//
+// ТАЛАНТ, БЬЮЩИЙ ПО ПРИЧИНЕ ОБЯЗАТЕЛЬНОСТИ УМЕНИЯ, здесь «Упор». «Скорый
+// выпад» стоит в четвёрке потому, что дёшев (9 маны); «Толчок щитом» дешевле
+// (7), но за них платят одним и тем же очком выбора, а даёт он треть удара и
+// одно ослабление. С «Упором» ослабление держится три удара — и дешёвая
+// кнопка перестаёт быть одна.
+//
+// Числовые таланты срезаны в 0.586 раза — ровно тем же множителем, что и в
+// Гневе, и по той же причине: ёмкость ветки выросла с 61 до 118, а строка в
+// бюджете силы осталась прежней (см. docs/TALENTS.md, стадия 5).
 const WARDEN_BULWARK = branch('warden-bulwark', [
   [
     {
@@ -672,7 +686,21 @@ const WARDEN_BULWARK = branch('warden-bulwark', [
       name: 'Толстая шкура',
       icon: 'talent-thick-hide',
       maxRank: 6,
-      effect: mods(m('maxHp', 'percent', 0.05)),
+      effect: mods(m('maxHp', 'percent', 0.0293)),
+    },
+    {
+      // Ослабление «Толчка» — 40 % следующего удара цели. Пять рангов дают
+      // +40 % к самой доле, то есть 56 %: удар, который герой всё равно
+      // получит, становится вдвое слабее.
+      id: 'bulwark-press',
+      name: 'Плотный заслон',
+      icon: 'talent-press',
+      maxRank: 5,
+      effect: tunes('shield-shove', {
+        field: 'weakenDamageShare',
+        kind: 'percent',
+        value: 0.08,
+      }),
     },
   ],
   [
@@ -681,7 +709,16 @@ const WARDEN_BULWARK = branch('warden-bulwark', [
       name: 'Стена щитов',
       icon: 'talent-shield-wall',
       maxRank: 6,
-      effect: mods(m('blockChance', 'flat', 0.02)),
+      effect: mods(m('blockChance', 'flat', 0.0117)),
+    },
+    {
+      // Щит держится восемь секунд при откате двадцать пять: аптайм — треть.
+      // Пять рангов доводят его до половины схватки.
+      id: 'bulwark-long-wall',
+      name: 'Долгая стена',
+      icon: 'talent-long-wall',
+      maxRank: 5,
+      effect: tunes('bulwark', { field: 'absorbDurationSec', kind: 'percent', value: 0.09 }),
     },
   ],
   [
@@ -690,7 +727,14 @@ const WARDEN_BULWARK = branch('warden-bulwark', [
       name: 'Выучка заслона',
       icon: 'talent-bulwark-training',
       maxRank: 6,
-      effect: mods(m('blockValue', 'percent', 0.2)),
+      effect: mods(m('blockValue', 'percent', 0.117)),
+    },
+    {
+      id: 'bulwark-quick-mend',
+      name: 'Скорое врачевание',
+      icon: 'talent-quick-mend',
+      maxRank: 5,
+      effect: tunes('mend-wounds', { field: 'cooldownSec', kind: 'percent', value: -0.06 }),
     },
   ],
   [
@@ -699,17 +743,37 @@ const WARDEN_BULWARK = branch('warden-bulwark', [
       name: 'Железная кожа',
       icon: 'talent-iron-skin',
       maxRank: 6,
-      effect: mods(m('damageReduction', 'flat', 0.01)),
+      effect: mods(m('damageReduction', 'flat', 0.0059)),
+    },
+    {
+      // Стойка режет 15 % оставшегося урона ценой 30 % своего. Талант растит
+      // ТОЛЬКО смягчение: цена остаётся, и обмен видно.
+      id: 'bulwark-hard-stance',
+      name: 'Крепкая стойка',
+      icon: 'talent-hard-stance',
+      maxRank: 5,
+      effect: tunes('stance', { field: 'stanceMitigationShare', kind: 'percent', value: 0.1 }),
     },
   ],
   [
+    // 21-е очко, КОНЦЕПТ. Щит кормит ротацию против дешёвой кнопки, которая
+    // наконец работает.
     {
-      // 21-е очко. Щит начинает кормить ротацию, а не только беречь HP.
       id: 'bulwark-shield-grip',
       name: 'Хватка щита',
       icon: 'talent-block-resource',
       maxRank: 1,
       effect: { kind: 'flag', flag: 'block-restores-resource', resourceShare: 0.05 },
+    },
+    {
+      // БЬЁТ ПО ПРИЧИНЕ ОБЯЗАТЕЛЬНОСТИ «СКОРОГО ВЫПАДА». Ослабление держится
+      // три удара вместо одного: «Толчок щитом» перестаёт быть тычком и
+      // становится главным защитным умением ротации.
+      id: 'bulwark-braced',
+      name: 'Упор',
+      icon: 'talent-braced',
+      maxRank: 1,
+      effect: tunes('shield-shove', { field: 'weakenHits', kind: 'percent', value: 2 }),
     },
   ],
   [
@@ -718,12 +782,24 @@ const WARDEN_BULWARK = branch('warden-bulwark', [
       name: 'Крепость тела',
       icon: 'talent-vitality',
       maxRank: 6,
-      // Было `vitality flat 3`. Плоская характеристика отстаёт от уровня
-      // (см. TALENT_STAT_RULE): восемнадцать выносливости — 4.5 % запаса у
-      // эталонного Стража на 55-м уровне и 2.7 % на сотом. Переведено в
-      // процент по замеру НА 55-М: 4.5 % / 6 рангов = 0.75 % за ранг.
-      // Настоящая переделка ветки — своей стадией; здесь только правило.
-      effect: mods(m('maxHp', 'percent', 0.0075)),
+      // Было `vitality flat 3` — плоская характеристика отстаёт от уровня
+      // (см. TALENT_STAT_RULE). Переведено в процент по замеру на 55-м
+      // уровне и срезано общим множителем ветки.
+      effect: mods(m('maxHp', 'percent', 0.0044)),
+    },
+    {
+      id: 'bulwark-thrift-wall',
+      name: 'Скупая стена',
+      icon: 'talent-thrift-wall',
+      maxRank: 5,
+      effect: tunes('bulwark', { field: 'manaCost', kind: 'percent', value: -0.07 }),
+    },
+    {
+      id: 'bulwark-deep-mend',
+      name: 'Глубокое врачевание',
+      icon: 'talent-deep-mend',
+      maxRank: 5,
+      effect: tunes('mend-wounds', { field: 'healMaxHpShare', kind: 'percent', value: 0.07 }),
     },
   ],
   [
@@ -731,12 +807,18 @@ const WARDEN_BULWARK = branch('warden-bulwark', [
       id: 'bulwark-battle-breath',
       name: 'Дыхание в бою',
       icon: 'talent-second-wind',
-      maxRank: 6,
-      // Плоское восстановление ОТСТАЁТ ОТ УРОВНЯ (см. TALENT_STAT_RULE):
-      // у эталонного Стража реген 19.2/с на 25-м уровне и 67.5/с на сотом,
-      // то есть один и тот же «+2» стоит втрое меньше к концу игры.
-      // Переведено в процент по замеру НА 55-М (39.5/с): 2 → 5.1 %.
-      effect: mods(m('hpRegen', 'percent', 0.051)),
+      maxRank: 7,
+      effect: mods(m('hpRegen', 'percent', 0.0299)),
+    },
+    {
+      // Длительность стойки равна её откату — автокаст держит её постоянно.
+      // Талант этого не ломает, а расширяет запас: с ним стойка переживает
+      // и просадку кулдауна от отката умений.
+      id: 'bulwark-long-stance',
+      name: 'Долгая стойка',
+      icon: 'talent-long-stance',
+      maxRank: 5,
+      effect: tunes('stance', { field: 'stanceDurationSec', kind: 'percent', value: 0.06 }),
     },
   ],
   [
@@ -745,17 +827,42 @@ const WARDEN_BULWARK = branch('warden-bulwark', [
       name: 'Несгибаемость',
       icon: 'talent-thick-hide',
       maxRank: 7,
-      effect: mods(m('maxHp', 'percent', 0.03)),
+      effect: mods(m('maxHp', 'percent', 0.0176)),
+    },
+    {
+      // ПОРОГ АВТОКАСТА ЛЕЧЕНИЯ — В ПУНКТАХ: 55 % + 5 рангов по 2 = 65 %.
+      // Лечение начинает срабатывать раньше порога привала, и цикл держится
+      // дольше. Правит НАСТРОЙКУ УМЕНИЯ, а не настройку игрока: порог привала
+      // таланту трогать нельзя (см. TALENT_STAT_RULE).
+      id: 'bulwark-early-call',
+      name: 'Ранний зов',
+      icon: 'talent-early-call',
+      maxRank: 5,
+      effect: tunes('mend-wounds', {
+        field: 'healAutocastBelowHpShare',
+        kind: 'points',
+        value: 0.02,
+      }),
     },
   ],
   [
+    // 41-е очко, КОНЦЕПТ. Смерть дешевле против того, чтобы не умирать.
     {
-      // 41-е очко.
       id: 'bulwark-swift-return',
       name: 'Скорое возвращение',
       icon: 'talent-swift-return',
       maxRank: 1,
       effect: { kind: 'flag', flag: 'faster-revive', reviveMultiplier: 0.5 },
+    },
+    {
+      // СТРЕЛКА: щит, который герой уже растил. Откат вдвое короче — «Стена»
+      // из козыря на схватку превращается в постоянную часть ротации.
+      id: 'bulwark-often-wall',
+      name: 'Частая стена',
+      icon: 'talent-often-wall',
+      maxRank: 1,
+      requires: { talentId: 'bulwark-long-wall', minRank: 3 },
+      effect: tunes('bulwark', { field: 'cooldownSec', kind: 'multiplier', value: 0.5 }),
     },
   ],
   [
@@ -764,7 +871,17 @@ const WARDEN_BULWARK = branch('warden-bulwark', [
       name: 'Каменная кожа',
       icon: 'talent-iron-skin',
       maxRank: 5,
-      effect: mods(m('damageReduction', 'flat', 0.008)),
+      effect: mods(m('damageReduction', 'flat', 0.0047)),
+    },
+    {
+      // СТРЕЛКА: та же «Стена». Щит растёт от брони — талант удваивает эту
+      // долю, и броня получает третий адрес после смягчения и блока.
+      id: 'bulwark-wide-wall',
+      name: 'Широкая стена',
+      icon: 'talent-wide-wall',
+      maxRank: 5,
+      requires: { talentId: 'bulwark-long-wall', minRank: 3 },
+      effect: tunes('bulwark', { field: 'absorbArmorShare', kind: 'percent', value: 0.14 }),
     },
   ],
   [
@@ -773,7 +890,14 @@ const WARDEN_BULWARK = branch('warden-bulwark', [
       name: 'Тяжёлый заслон',
       icon: 'talent-bulwark-training',
       maxRank: 5,
-      effect: mods(m('blockValue', 'percent', 0.15)),
+      effect: mods(m('blockValue', 'percent', 0.0879)),
+    },
+    {
+      id: 'bulwark-firm-press',
+      name: 'Крепкий упор',
+      icon: 'talent-firm-press',
+      maxRank: 5,
+      effect: tunes('shield-shove', { field: 'cooldownSec', kind: 'percent', value: -0.07 }),
     },
   ],
   [
@@ -782,18 +906,36 @@ const WARDEN_BULWARK = branch('warden-bulwark', [
       name: 'Твёрдая стойка',
       icon: 'talent-shield-wall',
       maxRank: 5,
-      effect: mods(m('blockChance', 'flat', 0.015)),
+      effect: mods(m('blockChance', 'flat', 0.0088)),
+    },
+    {
+      id: 'bulwark-quiet-mend',
+      name: 'Тихое врачевание',
+      icon: 'talent-quiet-mend',
+      maxRank: 3,
+      effect: tunes('mend-wounds', { field: 'manaCost', kind: 'percent', value: -0.1 }),
     },
   ],
   [
+    // 61-е очко, ДВА КАПСТОУНА: оборона как источник урона против обороны,
+    // которая больше ничего не стоит.
     {
-      // 61-е очко, капстоун. Оборона становится источником урона: поглощённое
-      // щитом целиком уходит обратно.
       id: 'bulwark-mirror-shield',
       name: 'Зеркальный щит',
       icon: 'talent-block-reflect',
       maxRank: 1,
       effect: { kind: 'flag', flag: 'block-reflects', damageShare: 1 },
+    },
+    {
+      // СТРЕЛКА: венец достаётся тому, кто растил стойку всю ветку. Стойка
+      // перестаёт стоить урона вовсе — прямой обмен превращается в подарок,
+      // и ради этого ветку и добивают.
+      id: 'bulwark-immovable',
+      name: 'Несдвигаемый',
+      icon: 'talent-immovable',
+      maxRank: 1,
+      requires: { talentId: 'bulwark-hard-stance', minRank: 3 },
+      effect: tunes('stance', { field: 'stanceDamageShare', kind: 'percent', value: -1 }),
     },
   ],
 ])
@@ -1631,6 +1773,83 @@ const BRANCH_PATHS: Partial<Record<BranchId, TalentPath[]>> = {
         'wrath-open-vein',
         'wrath-open-wound',
         'wrath-double-flourish',
+      ],
+    },
+  ],
+  'warden-bulwark': [
+    {
+      // ЗАСЛОН. Ставка на щит и блок: «Стена» держится дольше и приходит
+      // чаще, ослабление «Толчка» — на три удара вместо одного. Четвёрка та
+      // же, что у героя по умолчанию: первый путь ветки — прибор, и мерить
+      // он обязан того, кто ничего не менял.
+      id: 'bulwark-guard',
+      name: 'Заслон',
+      abilities: ['quick-strike', 'rending-wound', 'mend-wounds', 'shattering-blow'],
+      order: [
+        'bulwark-thick-hide',
+        'bulwark-shield-wall',
+        'bulwark-training',
+        'bulwark-iron-skin',
+        'bulwark-press',
+        'bulwark-long-wall',
+        'bulwark-shield-grip',
+        'bulwark-sturdy-frame',
+        'bulwark-battle-breath',
+        'bulwark-unyielding',
+        'bulwark-braced',
+        'bulwark-often-wall',
+        'bulwark-wide-wall',
+        'bulwark-stone-skin',
+        'bulwark-heavy-guard',
+        'bulwark-firm-stance',
+        'bulwark-mirror-shield',
+        'bulwark-thrift-wall',
+        'bulwark-firm-press',
+        'bulwark-quick-mend',
+        'bulwark-deep-mend',
+        'bulwark-early-call',
+        'bulwark-hard-stance',
+        'bulwark-long-stance',
+        'bulwark-quiet-mend',
+        'bulwark-swift-return',
+        'bulwark-immovable',
+      ],
+    },
+    {
+      // СТОЙКА И ЛЕЧЕНИЕ. Другой ответ на тот же вопрос: не поглощать удар
+      // щитом, а не получать его вовсе и доливать полоску. Венец — стойка,
+      // которая больше не стоит урона.
+      id: 'bulwark-warden',
+      name: 'Стойка',
+      abilities: ['quick-strike', 'shield-shove', 'mend-wounds', 'stance'],
+      order: [
+        'bulwark-hard-stance',
+        'bulwark-thick-hide',
+        'bulwark-iron-skin',
+        'bulwark-quick-mend',
+        'bulwark-braced',
+        'bulwark-press',
+        'bulwark-deep-mend',
+        'bulwark-long-stance',
+        'bulwark-early-call',
+        'bulwark-unyielding',
+        'bulwark-immovable',
+        'bulwark-battle-breath',
+        'bulwark-sturdy-frame',
+        'bulwark-stone-skin',
+        'bulwark-quiet-mend',
+        'bulwark-firm-press',
+        'bulwark-shield-wall',
+        'bulwark-training',
+        'bulwark-heavy-guard',
+        'bulwark-firm-stance',
+        'bulwark-shield-grip',
+        'bulwark-long-wall',
+        'bulwark-wide-wall',
+        'bulwark-thrift-wall',
+        'bulwark-often-wall',
+        'bulwark-swift-return',
+        'bulwark-mirror-shield',
       ],
     },
   ],

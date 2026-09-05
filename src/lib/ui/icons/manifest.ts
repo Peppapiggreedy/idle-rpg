@@ -85,6 +85,22 @@ export const ICONS = {
   'talent-open-vein': { file: 'lorc/vile-fluid.svg', author: 'Lorc' },
   'talent-open-wound': { file: 'lorc/dripping-blade.svg', author: 'Lorc' },
 
+  // --- Таланты, правящие умения: ветка «Оплот» ---
+  'talent-press': { file: 'delapouite/shield-bash.svg', author: 'Delapouite' },
+  'talent-long-wall': { file: 'lorc/shield-echoes.svg', author: 'Lorc' },
+  'talent-quick-mend': { file: 'delapouite/medicines.svg', author: 'Delapouite' },
+  'talent-hard-stance': { file: 'lorc/turtle.svg', author: 'Lorc' },
+  'talent-braced': { file: 'lorc/edged-shield.svg', author: 'Lorc' },
+  'talent-thrift-wall': { file: 'lorc/bordered-shield.svg', author: 'Lorc' },
+  'talent-deep-mend': { file: 'lorc/hospital-cross.svg', author: 'Lorc' },
+  'talent-long-stance': { file: 'lorc/turtle-shell.svg', author: 'Lorc' },
+  'talent-early-call': { file: 'lorc/life-support.svg', author: 'Lorc' },
+  'talent-often-wall': { file: 'lorc/clockwork.svg', author: 'Lorc' },
+  'talent-wide-wall': { file: 'lorc/surrounded-shield.svg', author: 'Lorc' },
+  'talent-firm-press': { file: 'lorc/checked-shield.svg', author: 'Lorc' },
+  'talent-quiet-mend': { file: 'lorc/rosa-shield.svg', author: 'Lorc' },
+  'talent-immovable': { file: 'lorc/cracked-shield.svg', author: 'Lorc' },
+
   // --- Травы и зелья ---
   'herb-bitterleaf': { file: 'delapouite/dandelion-flower.svg', author: 'Delapouite' },
   'herb-emberroot': { file: 'lorc/root-tip.svg', author: 'Lorc' },
