@@ -828,6 +828,43 @@ export const TALENT_SCHEMA: EntitySchema<TalentDef> = {
   ],
   extra: (talent, content, report) => {
     const where = `талант ${talent.id}`
+    // СТРЕЛКА-ПРЕДПОСЫЛКА ВЕДЁТ ТОЛЬКО ВНИЗ И ТОЛЬКО В СВОЕЙ ВЕТКЕ.
+    //
+    // Стрелка вверх или вбок — это цикл или недостижимый узел: талант, до
+    // которого нельзя добраться, выглядит на панели как обычный, и игрок
+    // жмёт по нему до тех пор, пока не сдастся. Дерево обязано быть
+    // проходимым СВЕРХУ ВНИЗ, и проверяется это здесь, а не глазами.
+    if (talent.requires) {
+      const need = talent.requires
+      const anchor = content.talents.find((t) => t.id === need.talentId)
+      if (!anchor) {
+        report.add(
+          where,
+          `требует талант «${need.talentId}», которого нет в игре (data/talents.ts)`,
+        )
+      } else {
+        report.need(
+          anchor.branch === talent.branch,
+          where,
+          `требует талант «${need.talentId}» из ветки ${anchor.branch}, а сам стоит ` +
+            `в ${talent.branch} — стрелка через ветки невозможна (data/talents.ts)`,
+        )
+        report.need(
+          anchor.row < talent.row,
+          where,
+          `требует талант «${need.talentId}» с этажа ${anchor.row}, а сам стоит на ` +
+            `${talent.row}: стрелка обязана вести СВЕРХУ ВНИЗ, иначе до таланта ` +
+            'не добраться никогда (data/talents.ts)',
+        )
+        const rank = need.minRank ?? 1
+        report.need(
+          rank >= 1 && rank <= anchor.maxRank,
+          where,
+          `требует ${rank} ранга в «${need.talentId}», а у того максимум ` +
+            `${anchor.maxRank} — условие невыполнимо (data/talents.ts)`,
+        )
+      }
+    }
     // ТАЛАНТ НЕ ПРАВИТ ТО, ЧТО НЕ ОБЪЯВЛЕНО НАСТРАИВАЕМЫМ. Список полей
     // закрыт и лежит в data/abilities.ts; без этой проверки талант мог бы
     // назвать любое поле, и правка молча не сработала бы.

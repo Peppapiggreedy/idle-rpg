@@ -162,6 +162,21 @@ export type TalentEffect =
   | { kind: 'flag'; flag: 'shorter-rest'; durationMultiplier: number }
   | { kind: 'flag'; flag: 'faster-revive'; reviveMultiplier: number }
 
+/**
+ * СТРЕЛКА-ПРЕДПОСЫЛКА: талант дорабатывает конкретный талант выше.
+ *
+ * Ставится ТОЛЬКО там, где это буквально доработка — три-четыре на ветку, не
+ * больше. Стрелка ради вида превращает дерево в коридор: если каждый узел
+ * требует соседа сверху, альтернативы на этажах перестают браться вовсе, и
+ * ветка снова становится лестницей, только с картинками.
+ */
+export interface TalentRequirement {
+  /** Талант той же ветки на этаже ВЫШЕ. */
+  talentId: string
+  /** Сколько в него надо вложить. По умолчанию один ранг. */
+  minRank?: number
+}
+
 export interface TalentDef {
   id: string
   name: string
@@ -171,6 +186,8 @@ export interface TalentDef {
   row: number // этаж в ветке, 1 — верхний
   maxRank: number
   requiredPointsInBranch: number // сколько очков нужно вложить в ветку до него
+  /** Стрелка от таланта выше; нет поля — талант самостоятельный. */
+  requires?: TalentRequirement
   effect: TalentEffect
 }
 
@@ -189,6 +206,8 @@ interface TalentSpec {
   name: string
   icon: IconName
   maxRank: number
+  /** Стрелка от таланта выше — см. `TalentRequirement`. */
+  requires?: TalentRequirement
   effect: TalentEffect
 }
 
@@ -1119,6 +1138,32 @@ export function talentModifiers(
  * этажей. Чистая функция от данных: ею пользуются и миграция сейва (перенести
  * очки старого дерева), и прогон баланса (чистый билд ветки).
  */
+/** Минимальный ранг предпосылки: поле необязательное, умолчание — один. */
+export const requiredRank = (req: TalentRequirement): number => req.minRank ?? 1
+
+/**
+ * Кто зависит от этого таланта — прямо или через цепочку.
+ *
+ * Нужно для СНЯТИЯ: убрал опорный талант — зависимые обязаны уйти вместе с
+ * ним, иначе в дереве остаётся узел, который по правилам не мог быть взят.
+ */
+export function dependentsOf(talentId: string): TalentDef[] {
+  const out: TalentDef[] = []
+  const queue = [talentId]
+  const seen = new Set<string>([talentId])
+  while (queue.length > 0) {
+    const current = queue.shift()!
+    for (const talent of TALENTS) {
+      if (talent.requires?.talentId !== current) continue
+      if (seen.has(talent.id)) continue
+      seen.add(talent.id)
+      out.push(talent)
+      queue.push(talent.id)
+    }
+  }
+  return out
+}
+
 /**
  * ЁМКОСТЬ ВЕТКИ — сумма `maxRank` всех её талантов. Производная от
  * наполнения, а не константа: добавили талант на этаж — ёмкость выросла,

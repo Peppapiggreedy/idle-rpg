@@ -15,6 +15,7 @@
     type TalentBlockReason,
   } from '../game'
   import {
+    TALENT_BY_ID,
     talentsInBranch,
     type TalentDef,
     type TalentFlag,
@@ -108,6 +109,15 @@
     'branch-locked': (t) => `Нужно ${t.requiredPointsInBranch} очков в ветке`,
     'max-rank': () => 'Уже максимальный ранг',
     'no-points': () => 'Нет свободных очков',
+    // СТРЕЛКА НАЗЫВАЕТ ОПОРНЫЙ ТАЛАНТ ПО ИМЕНИ. «Не открыто» ничего не
+    // говорит игроку, который смотрит на дерево впервые.
+    'needs-talent': (t) => {
+      const need = t.requires
+      if (!need) return 'Нужен талант выше'
+      const anchor = TALENT_BY_ID[need.talentId]?.name ?? need.talentId
+      const rank = need.minRank ?? 1
+      return rank > 1 ? `Нужно ${rank} ранга в «${anchor}»` : `Нужен талант «${anchor}»`
+    },
   }
 
   // Текст одного модификатора за ОДИН ранг: игрок видит цену следующего очка.

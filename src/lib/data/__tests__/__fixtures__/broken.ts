@@ -289,6 +289,64 @@ export function brokenCases(): BrokenCase[] {
       expect: ['этаж 3', 'разное число очков'],
     },
     {
+      // Стрелка вверх: до таланта не добраться никогда — очки в опорный
+      // талант вкладываются ПОСЛЕ него.
+      title: 'стрелка-предпосылка ведёт снизу вверх',
+      content: {
+        ...real,
+        talents: real.talents.map((t) =>
+          t.row === 2 && t.branch === first(real.branches).id
+            ? {
+                ...t,
+                requires: {
+                  talentId: real.talents.find(
+                    (x) => x.branch === t.branch && x.row === 5,
+                  )!.id,
+                },
+              }
+            : t,
+        ),
+      },
+      expect: ['стрелка обязана вести', 'СВЕРХУ ВНИЗ'],
+    },
+    {
+      title: 'стрелка-предпосылка ведёт в чужую ветку',
+      content: {
+        ...real,
+        talents: real.talents.map((t) =>
+          t.row === 3 && t.branch === first(real.branches).id
+            ? {
+                ...t,
+                requires: {
+                  talentId: real.talents.find((x) => x.branch !== t.branch && x.row === 1)!.id,
+                },
+              }
+            : t,
+        ),
+      },
+      expect: ['стрелка через ветки невозможна'],
+    },
+    {
+      title: 'стрелка требует ранг выше потолка опорного таланта',
+      content: {
+        ...real,
+        talents: real.talents.map((t) =>
+          t.row === 4 && t.branch === first(real.branches).id
+            ? {
+                ...t,
+                requires: {
+                  talentId: real.talents.find(
+                    (x) => x.branch === t.branch && x.row === 1,
+                  )!.id,
+                  minRank: 99,
+                },
+              }
+            : t,
+        ),
+      },
+      expect: ['условие невыполнимо'],
+    },
+    {
       title: 'рецепт требует материал, которого нет в игре',
       content: {
         ...real,

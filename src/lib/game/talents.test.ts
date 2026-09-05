@@ -36,6 +36,8 @@ import {
   BRANCH_DEPTH,
   branchCapacity,
   capacityAbove,
+  dependentsOf,
+  type TalentDef,
   BRANCH_ROWS,
   BRANCH_ROW_STEP,
   CONCEPT_ROWS,
@@ -586,5 +588,88 @@ describe('ускорение: талант и предмет неразличи�
       const mods = talentModifiers({ [talent.id]: talent.maxRank }, branch.classId)
       expect(mods.filter((m) => m.stat === 'weaponSpeed')).toEqual([])
     }
+  })
+})
+
+// СТРЕЛКИ-ПРЕДПОСЫЛКИ: талант дорабатывает конкретный талант выше.
+//
+// Настоящих стрелок в данных на этой стадии ещё нет — их приносят стадии
+// 5-7, — поэтому правило проверяется на подставном таланте с настоящими
+// типами: так проверка не зависит от того, какие стрелки сегодня в дереве.
+describe('стрелки-предпосылки', () => {
+  const ANCHOR = talentsInBranch(WRATH)[0]
+
+  function withArrow<T>(minRank: number, body: (talent: TalentDef) => T): T {
+    const dependent: TalentDef = {
+      id: 'проверочная-стрелка',
+      name: 'Проверочная',
+      icon: 'talent-honed-edge',
+      branch: WRATH,
+      row: 2,
+      maxRank: 3,
+      requiredPointsInBranch: BRANCH_ROW_STEP,
+      requires: { talentId: ANCHOR.id, minRank },
+      effect: { kind: 'modifiers', mods: [{ stat: 'attackPower', kind: 'percent', value: new Decimal(0.01) }] },
+    }
+    TALENTS.push(dependent)
+    TALENT_BY_ID[dependent.id] = dependent
+    try {
+      return body(dependent)
+    } finally {
+      TALENTS.pop()
+      delete TALENT_BY_ID[dependent.id]
+    }
+  }
+
+  it('предпосылка блокирует вложение и разблокирует при наборе', () => {
+    // Стрелка требует ПОЛНЫЙ ранг опорного, а порог этажа — всего пять очков.
+    // Так проверяется именно стрелка: очков в ветке уже хватает, и отказ
+    // приходит своим кодом, а не общим «этаж закрыт».
+    withArrow(ANCHOR.maxRank, (dependent) => {
+      const rich = hero(LEVEL_CAP)
+      const primed = invest(rich, ANCHOR.id, ANCHOR.maxRank - 1)
+      expect(spentInBranch(primed.talents, WRATH)).toBeGreaterThanOrEqual(
+        dependent.requiredPointsInBranch,
+      )
+      const blocked = talentStatus(primed, dependent)
+      expect(blocked.canInvest).toBe(false)
+      expect(blocked.reason).toBe('needs-talent')
+
+      // Добрали последний ранг опорного — стрелка открылась.
+      const ready = invest(primed, ANCHOR.id, 1)
+      expect(talentStatus(ready, dependent)).toMatchObject({ canInvest: true, reason: null })
+    })
+  })
+
+  it('порог этажа проверяется РАНЬШЕ стрелки', () => {
+    // Порядок причин не косметика: порог не лечится ничем, кроме очков в
+    // ветке, и назвать надо ту причину, которая ближе к делу.
+    withArrow(1, (dependent) => {
+      const fresh = hero(TALENT_FIRST_LEVEL + 20)
+      const status = talentStatus(fresh, dependent)
+      expect(status.reason).toBe('branch-locked')
+    })
+  })
+
+  it('зависимые находятся по цепочке, а не только напрямую', () => {
+    // Снятие опорного обязано убрать ВСЮ цепочку: иначе в дереве останется
+    // узел, который по правилам не мог быть взят.
+    withArrow(1, (first) => {
+      const second: TalentDef = { ...first, id: 'вторая-стрелка', row: 3, requires: { talentId: first.id } }
+      TALENTS.push(second)
+      TALENT_BY_ID[second.id] = second
+      try {
+        const ids = dependentsOf(ANCHOR.id).map((t) => t.id)
+        expect(ids).toContain(first.id)
+        expect(ids).toContain(second.id)
+      } finally {
+        TALENTS.pop()
+        delete TALENT_BY_ID[second.id]
+      }
+    })
+  })
+
+  it('самостоятельный талант зависимых не имеет', () => {
+    expect(dependentsOf(ANCHOR.id)).toEqual([])
   })
 })

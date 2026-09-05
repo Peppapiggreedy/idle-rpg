@@ -18,6 +18,8 @@ import {
   talentModifiers,
   talentsInBranch,
   talentsOfClass,
+  requiredRank,
+  dependentsOf,
   type BranchDef,
   type BranchId,
   type TalentDef,
@@ -73,7 +75,13 @@ export function heroTalents(state: GameState): TalentDef[] {
 // Почему очко сюда не вложить. Каждый случай — свой код, текст рендерит UI.
 // 'other-class' появляется только на правленом руками сейве: в дереве своего
 // класса чужих веток нет вовсе.
-export type TalentBlockReason = 'other-class' | 'no-points' | 'max-rank' | 'branch-locked'
+export type TalentBlockReason =
+  | 'other-class'
+  | 'no-points'
+  | 'max-rank'
+  | 'branch-locked'
+  // Стрелка не набрана: опорный талант выше не вложен на нужный ранг.
+  | 'needs-talent'
 
 export interface TalentStatus {
   talentId: string
@@ -103,6 +111,12 @@ export function talentStatus(state: GameState, talent: TalentDef): TalentStatus 
   // Дерево читается ПО КЛАССУ: ветка чужого класса не открывается ничем.
   if (BRANCH_BY_ID[talent.branch]?.classId !== state.classId) return blocked('other-class')
   if (pointsInBranch < talent.requiredPointsInBranch) return blocked('branch-locked')
+  // СТРЕЛКА ПРОВЕРЯЕТСЯ ПОСЛЕ ПОРОГА ЭТАЖА: порог не лечится ничем, кроме
+  // очков в ветке, а стрелка — конкретным талантом, и назвать игроку надо
+  // ту причину, которая ближе к делу.
+  if (talent.requires && rankOf(state.talents, talent.requires.talentId) < requiredRank(talent.requires)) {
+    return blocked('needs-talent')
+  }
   if (rank >= talent.maxRank) return blocked('max-rank')
   if (availablePoints(state) <= 0) return blocked('no-points')
   return { ...base, canInvest: true, reason: null }
