@@ -10,6 +10,7 @@
 // Больше никаких множителей и штрафов.
 import { Decimal } from './numbers'
 import { critFactor, expectedAbilityDamage } from './combat'
+import { tuneAbility } from './abilityTune'
 import { ABILITY_BY_ID, type AbilityDef } from '../data/abilities'
 import { AUTOCAST_DELAY_MS, REGEN_TICK_S } from '../data/balance'
 import type { StatBlock } from './stats'
@@ -103,7 +104,9 @@ export function abilitiesByPriority(
     const setting = rotation.settings[id]
     if (!ability || setting === undefined) continue
     if (onlyAutocast && !setting.autocast) continue
-    out.push(ability)
+    // ЭФФЕКТИВНОЕ, А НЕ БАЗОВОЕ. Отсюда таланты доходят до модели боя,
+    // автокаста и оффлайна разом: все они читают ротацию.
+    out.push(tuneAbility(ability, rotation.talents))
   }
   return out
 }

@@ -212,6 +212,7 @@ describe('данные дерева', () => {
     for (const talent of TALENTS) {
       expect(talent.maxRank).toBeGreaterThan(0)
       if (talent.effect.kind === 'modifiers') expect(talent.effect.mods.length).toBeGreaterThan(0)
+      else if (talent.effect.kind === 'ability') expect(talent.effect.tune.length).toBeGreaterThan(0)
       else expect(talent.effect.flag).toBeTruthy()
     }
   })

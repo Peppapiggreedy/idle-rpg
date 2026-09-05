@@ -17,7 +17,7 @@
 import type { IconName } from '../ui/icons/manifest'
 import { Decimal } from '../game/numbers'
 import type { ModifierKind, StatId, StatModifier } from '../game/stats'
-import type { AbilityEffect } from './abilities'
+import type { AbilityEffect, AbilityTune } from './abilities'
 
 // ---------------------------------------------------------------------------
 // Форма ветки
@@ -136,8 +136,22 @@ export type TalentFlag =
   // Воскрешение занимает долю обычного времени.
   | 'faster-revive'
 
+/**
+ * ТРЕТИЙ РОД ЭФФЕКТА: талант правит УМЕНИЕ ДАННЫМИ.
+ *
+ * Модификаторами это не выразить (умение — не стат), а флагом пришлось бы
+ * заводить по флагу на каждую правку: сорок талантов про умения означали бы
+ * сорок вариантов объединения, то есть сорок веток логики — при прямом
+ * запрете «ни одного if (талант такой-то)».
+ *
+ * Здесь талант называет УМЕНИЕ, ПОЛЕ и ОПЕРАЦИЮ, а применяет их один общий
+ * конвейер (`game/abilityTune.ts`). Список полей закрыт (`ABILITY_TUNABLE` в
+ * data/abilities.ts): талант не может тронуть то, что не объявлено
+ * настраиваемым.
+ */
 export type TalentEffect =
   | { kind: 'modifiers'; mods: TalentModifier[] }
+  | { kind: 'ability'; abilityId: string; tune: AbilityTune[] }
   | { kind: 'flag'; flag: 'ability-learns-effect'; abilityId: string; effect: AbilityEffect }
   | { kind: 'flag'; flag: 'ability-extra-charge'; abilityId: string; extraCharges: number }
   | { kind: 'flag'; flag: 'double-strike'; chance: number }

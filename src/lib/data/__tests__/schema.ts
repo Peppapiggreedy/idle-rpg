@@ -67,6 +67,10 @@ export interface Content {
   enchantFlatStats: readonly StatId[]
   branches: readonly BranchDef[]
   talents: readonly TalentDef[]
+  /** Поля умения, объявленные настраиваемыми. Список закрыт. */
+  abilityTunable: readonly string[]
+  /** Годится ли операция для поля: реализация живёт в game/abilityTune.ts. */
+  tuneAllowed: (tune: { field: string; kind: string }) => boolean
   zones: readonly Zone[]
   dungeons: readonly DungeonDef[]
   weapons: readonly WeaponTemplate[]
@@ -810,7 +814,12 @@ export const TALENT_SCHEMA: EntitySchema<TalentDef> = {
       // Талант-флаг включает поведение КОНКРЕТНОГО умения. Умение переименовали,
       // а талант остался — молча перестал бы работать.
       field: 'effect.abilityId',
-      get: (t) => (t.effect.kind === 'flag' && 'abilityId' in t.effect ? t.effect.abilityId : undefined),
+      get: (t) =>
+        t.effect.kind === 'ability'
+          ? t.effect.abilityId
+          : t.effect.kind === 'flag' && 'abilityId' in t.effect
+            ? t.effect.abilityId
+            : undefined,
       target: 'умение',
       which: 'которого',
       targetFile: 'data/abilities.ts',
@@ -819,6 +828,34 @@ export const TALENT_SCHEMA: EntitySchema<TalentDef> = {
   ],
   extra: (talent, content, report) => {
     const where = `талант ${talent.id}`
+    // ТАЛАНТ НЕ ПРАВИТ ТО, ЧТО НЕ ОБЪЯВЛЕНО НАСТРАИВАЕМЫМ. Список полей
+    // закрыт и лежит в data/abilities.ts; без этой проверки талант мог бы
+    // назвать любое поле, и правка молча не сработала бы.
+    if (talent.effect.kind === 'ability') {
+      report.need(
+        talent.effect.tune.length > 0,
+        where,
+        'эффект вида ability без единой правки — талант ничего не делает (data/talents.ts)',
+      )
+      for (const tune of talent.effect.tune) {
+        if (tune.field !== 'type' && !content.abilityTunable.includes(tune.field)) {
+          report.add(
+            where,
+            `правит поле «${tune.field}», которого нет среди настраиваемых ` +
+              '(ABILITY_TUNABLE в data/abilities.ts)',
+          )
+          continue
+        }
+        if (!content.tuneAllowed(tune)) {
+          report.add(
+            where,
+            `операция «${tune.kind}» не годится для поля «${tune.field}»: ` +
+              'величины масштабируют, пороги сдвигают в пунктах, тип заменяют ' +
+              '(ABILITY_TUNABLE в data/abilities.ts)',
+          )
+        }
+      }
+    }
     if (talent.effect.kind === 'modifiers') {
       report.need(
         talent.effect.mods.length > 0,

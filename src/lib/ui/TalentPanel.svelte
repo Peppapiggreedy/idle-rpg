@@ -24,6 +24,7 @@
   import { gameState, investTalentPoint, resetTalentTree } from '../stores/game'
   import { resourceWords } from './resource'
   import { flatText } from './statText'
+  import { abilityTuneText } from './abilityText'
   import { Button, NumberText, Panel, Tag } from './kit'
   import { Icon } from './icons'
 
@@ -122,6 +123,10 @@
 
   function effectText(talent: TalentDef): string {
     if (talent.effect.kind === 'flag') return FLAG_TEXT[talent.effect.flag](talent.effect)
+    // ТАЛАНТ, ПРАВЯЩИЙ УМЕНИЕ, ПОКАЗЫВАЕТ, ЧЕМ УМЕНИЕ СТАНЕТ. Строка
+    // собирается из тех же полей, что и описание самого умения: второй
+    // формулировки на игру быть не должно.
+    if (talent.effect.kind === 'ability') return abilityTuneText(talent.effect)
     return `${talent.effect.mods.map(modText).join(', ')} за ранг`
   }
 </script>

@@ -15,7 +15,7 @@
   // всегда в бою, и такой запрет был бы запретом навсегда.
   import { ABILITY_BY_ID } from '../data/abilities'
   import type { AbilityDef } from '../game'
-  import { abilitiesOf } from '../game'
+  import { heroAbilities } from '../game'
   import { gameState, setAbilitySlot, swapAbilitySlots } from '../stores/game'
   import {
     carriedAbility,
@@ -36,7 +36,9 @@
   // поэтому имя связки сюда не передаётся — иначе строка была бы дважды.
   const describe = (ability: AbilityDef) =>
     abilityLines(ability, { resource, stats: $gameState.stats })
-  const all = $derived(abilitiesOf($gameState.classId))
+  // ЭФФЕКТИВНЫЕ УМЕНИЯ, А НЕ БАЗОВЫЕ: в книге видно, чем умение СТАЛО с
+  // талантами, а не чем оно было. Описание собирается из тех же полей.
+  const all = $derived(heroAbilities($gameState))
   const slots = $derived($gameState.abilitySlots)
   const level = $derived($gameState.level.toNumber())
 
