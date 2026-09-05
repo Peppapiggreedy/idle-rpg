@@ -3,6 +3,7 @@ import { Decimal } from './numbers'
 import { STEP_MS } from './loop'
 import { createRng } from './rng'
 import { createInitialState, manualOnlySettings, tick, type GameState } from './tick'
+import { fillAbilitySlots } from './state'
 import { applyModifiers, ensureStats } from './stats'
 import {
   advanceDungeon,
@@ -35,7 +36,7 @@ import { classIt, contractClasses } from './__tests__/class-set'
  * его готовый класс; у превью-класса расхождение — предупреждение, не провал.
  */
 const CLASS_SET = contractClasses(false)
-import { BRANCHES } from '../data/talents'
+import { BRANCH_DEPTH, BRANCHES, pathsOf } from '../data/talents'
 import { ZONE_BY_ID, representativeMonster } from '../data/zones'
 
 const DUNGEON = DUNGEONS[0]
@@ -460,10 +461,28 @@ describe('правило чисел держится на всех восьми 
     // решает исход, и мерить данж на несуществующем герое нельзя.
     const level = dungeon.unlockRequirement
     const branch = BRANCHES.find((b) => b.classId === classId)!
+    // ЧЕТВЁРКА — ИЗ ПУТИ, А НЕ ПО УМОЛЧАНИЮ. Талант, правящий умение вне
+    // ряда, не делает ничего: ряд решает, какие умения вообще участвуют.
+    // Пока таланты были одними процентами, разницы не было; с веткой,
+    // правящей умения, четвёрка становится частью сборки.
+    const path = pathsOf(branch.id)[0]
     const ready = ensureStats({
       ...createInitialState(1, classId),
+      abilitySlots: fillAbilitySlots(path.abilities ?? [], classId),
       level: new Decimal(level),
-      talents: pureBranchTalents(branch.id, branchPoints(level)),
+      // ОЧКИ КАПЛЮТ ДО ГЛУБИНЫ ВЕТКИ, А НЕ ДО ПОСЛЕДНЕГО. Контракт меряет
+      // ЦЕНУ СХВАТКИ, а не предельную сборку: герой, дошедший до венца одной
+      // ветки, — это типичный герой своего уровня, и куда он денет остаток,
+      // контракт не спрашивает.
+      //
+      // БЕЗ ЭТОГО ПРИБОР ПОЕХАЛ БЫ ОТ ПЕРЕДЕЛКИ ВЕТКИ. Пока ветка была
+      // лестницей, её ёмкость (61) сама обрезала вложение: герой девяностого
+      // уровня клал 61 очко, остальные двадцать деть было некуда. У ветки с
+      // альтернативами ёмкость 115, те же очки помещаются все — и замер по
+      // восьми данжам упал с 78.6 % до 69.4 при неизменных боссах. Двигать
+      // после этого урон боссов значило бы перебалансировать игру под правку
+      // дерева.
+      talents: pureBranchTalents(branch.id, Math.min(branchPoints(level), BRANCH_DEPTH)),
       equipment: averageGear(gearLevel),
       currentZoneId: dungeon.zoneId,
       statsDirty: true,
@@ -533,6 +552,10 @@ describe('правило чисел держится на всех восьми 
           const gear = zoneForMonsterLevel(dungeon.unlockRequirement).monsterLevelRange.max
           const { costs, rests, dead } = chainCosts(heroFor(dungeon, gear, classId), dungeon)
           const where = `${classId}, ${dungeon.id}`
+          // Таблица печатается ВСЕГДА, а не под флагом: по ней и подбирают
+          // множители урона боссов, а прогон, который печатает числа только
+          // когда падает, заставляет ронять его нарочно.
+          console.log(`${where}: ${costs.map((c) => (c * 100).toFixed(1)).join(' ')}`)
           expect(dead, where).toBe(false)
           expect(costs, where).toHaveLength(dungeon.bosses.length)
           for (const cost of costs) {

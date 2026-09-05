@@ -40,7 +40,7 @@ import {
   REVIVE_DELAY_MS,
   xpGapShare,
 } from '../data/balance'
-import { ABILITY_BY_ID } from '../data/abilities'
+import { abilityOf } from './abilities'
 import { currentZone, reviveInZone } from './zones'
 import {
   advanceCooldowns,
@@ -379,7 +379,7 @@ const applyEffects: TickStep = (s, ctx) => {
   const remaining: ActiveEffect[] = []
   for (const effect of s.activeEffects) {
     // Интервал между тиками постоянен и живёт в данных умения.
-    const intervalMs = (ABILITY_BY_ID[effect.abilityId]?.effect?.tickIntervalSec ?? 1) * 1000
+    const intervalMs = (abilityOf(s, effect.abilityId)?.effect?.tickIntervalSec ?? 1) * 1000
     let { ticksLeft, msToNextTick } = effect
     let msLeft = ctx.dtMs
     // Один жирный тик может прокрутить несколько тиков эффекта; остаток

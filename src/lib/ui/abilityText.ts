@@ -3,7 +3,7 @@
 import type { AbilityBlockReason } from '../game'
 import { Decimal, expectedAbilityDamage, formatNumber } from '../game'
 import type { StatBlock } from '../game/stats'
-import type { AbilityDef } from '../data/abilities'
+import { ABILITY_BY_ID, type AbilityDef, type AbilityTune } from '../data/abilities'
 import type { AbilityDropRefusal } from './abilityDrop'
 import type { ResourceWords } from './resource'
 
@@ -246,4 +246,60 @@ export function abilityDropRefusalText(reason: AbilityDropRefusal, unlockLevel =
     'same-spot': 'Это тот же слот — переносить некуда',
   }
   return fixed[reason]
+}
+
+/**
+ * ЧТО ТАЛАНТ ДЕЛАЕТ С УМЕНИЕМ — словами и числом.
+ *
+ * Талант третьего рода правит поля умения данными, и описание собирается из
+ * тех же полей: второй формулировки на игру быть не должно. Названия полей
+ * живут здесь, потому что это текст для игрока, а не имя в коде.
+ */
+const TUNE_LABEL: Record<string, string> = {
+  cooldownSec: 'откат',
+  manaCost: 'цена',
+  weaponDamagePercent: 'урон',
+  effectWeaponDamagePercent: 'урон эффекта',
+  effectTicks: 'тиков эффекта',
+  healMaxHpShare: 'лечение',
+  weakenDamageShare: 'ослабление',
+  weakenHits: 'ослабленных ударов',
+  detonateMultiplier: 'множитель детонации',
+  absorbArmorShare: 'щит от брони',
+  absorbBlockShare: 'щит от блока',
+  absorbDurationSec: 'длительность щита',
+  brandDamageShare: 'уязвимость',
+  brandDurationSec: 'длительность клейма',
+  freeCastsCasts: 'бесплатных применений',
+  stanceDamageShare: 'потеря урона',
+  stanceMitigationShare: 'смягчение стойки',
+  stanceDurationSec: 'длительность стойки',
+  executeBelowHpShare: 'порог добивания',
+  brandAutocastAboveHpShare: 'порог автокаста клейма',
+  healAutocastBelowHpShare: 'порог автокаста лечения',
+  type: 'тип',
+}
+
+const signed = (value: number): string => `${value > 0 ? '+' : '−'}${Math.abs(value)}`
+
+export function abilityTuneText(effect: {
+  abilityId: string
+  tune: readonly AbilityTune[]
+}): string {
+  const name = ABILITY_BY_ID[effect.abilityId]?.name ?? effect.abilityId
+  const parts = effect.tune.map((tune) => {
+    const label = TUNE_LABEL[tune.field] ?? tune.field
+    if (tune.kind === 'set') {
+      const how = tune.value === 'instant' ? 'бьёт сразу' : 'заменяет автоатаку'
+      return `${label}: ${how}`
+    }
+    if (tune.kind === 'points') {
+      // ПОРОГ — В ПУНКТАХ, а не в процентах от себя: игрок читает пороги
+      // именно так, и «на 20 % выше» от 0.2 значило бы 0.24.
+      return `${label} ${signed(Math.round(tune.value * 100))} пунктов`
+    }
+    const share = tune.kind === 'percent' ? tune.value : tune.value - 1
+    return `${label} ${signed(Math.round(share * 100))} %`
+  })
+  return `${name}: ${parts.join(', ')} за ранг`
 }

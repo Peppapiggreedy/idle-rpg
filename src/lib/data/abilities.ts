@@ -168,6 +168,73 @@ export interface AbilityDef {
   stance?: AbilityStance
 }
 
+/**
+ * ЧТО ТАЛАНТ ВПРАВЕ ПОДКРУТИТЬ У УМЕНИЯ. Список ЗАКРЫТЫЙ и лежит здесь, в
+ * данных: талант не может править то, что не объявлено настраиваемым.
+ *
+ * Без такого списка сорок талантов про умения означали бы сорок вариантов
+ * «что именно меняется», то есть сорок веток логики — при прямом запрете
+ * «ни одного if (талант === ...)». С ним талант описывает ПОЛЕ и ОПЕРАЦИЮ,
+ * а применяет их один общий конвейер.
+ *
+ * ДВА РОДА ПОЛЕЙ, И ОПЕРАЦИИ У НИХ РАЗНЫЕ:
+ *
+ *   'scale' — величина: откат, стоимость, урон, длительность, число тиков,
+ *             доля поглощения. Её масштабируют — `percent` или `multiplier`.
+ *   'shift' — ПОРОГ УСЛОВИЯ (добивание, автокаст клейма, автокаст лечения).
+ *             Порог живёт в долях 0..1, и множить его нельзя: «на 20 % выше»
+ *             от 0.2 это 0.24, а игрок читает пороги в ПУНКТАХ. Поэтому
+ *             только сдвиг: `points`.
+ *
+ * Тип умения (`instant` ↔ `onNextSwing`) — не величина и не порог, его
+ * только ЗАМЕНЯЮТ целиком.
+ */
+export const ABILITY_TUNABLE = {
+  cooldownSec: 'scale',
+  manaCost: 'scale',
+  weaponDamagePercent: 'scale',
+  effectWeaponDamagePercent: 'scale',
+  effectTicks: 'scale',
+  healMaxHpShare: 'scale',
+  weakenDamageShare: 'scale',
+  weakenHits: 'scale',
+  detonateMultiplier: 'scale',
+  absorbArmorShare: 'scale',
+  absorbBlockShare: 'scale',
+  absorbDurationSec: 'scale',
+  brandDamageShare: 'scale',
+  brandDurationSec: 'scale',
+  freeCastsCasts: 'scale',
+  stanceDamageShare: 'scale',
+  stanceMitigationShare: 'scale',
+  stanceDurationSec: 'scale',
+  executeBelowHpShare: 'shift',
+  brandAutocastAboveHpShare: 'shift',
+  healAutocastBelowHpShare: 'shift',
+} as const
+
+export type AbilityTuneField = keyof typeof ABILITY_TUNABLE
+export type ScaleField = {
+  [K in AbilityTuneField]: (typeof ABILITY_TUNABLE)[K] extends 'scale' ? K : never
+}[AbilityTuneField]
+export type ShiftField = {
+  [K in AbilityTuneField]: (typeof ABILITY_TUNABLE)[K] extends 'shift' ? K : never
+}[AbilityTuneField]
+
+/**
+ * ОДНА ПРАВКА ОДНОГО ПОЛЯ. Форма нарочно та же, что у модификатора статов:
+ * поле, род операции, значение — и значение множится на ранг, как везде.
+ *
+ * `multiplier` возводится в СТЕПЕНЬ ранга, а не множится на него: два ранга
+ * «вдвое дольше» — это вчетверо, а не «умножить на 4». У `percent` и
+ * `points` сложение по рангам — то же самое действие, повторённое дважды,
+ * поэтому там обычное умножение.
+ */
+export type AbilityTune =
+  | { field: ScaleField; kind: 'percent' | 'multiplier'; value: number }
+  | { field: ShiftField; kind: 'points'; value: number }
+  | { field: 'type'; kind: 'set'; value: AbilityType }
+
 export const ABILITIES: AbilityDef[] = [
   {
     id: 'quick-strike',

@@ -11,10 +11,12 @@
 // живёт в дорогом наборе (`balance-*.test.ts`), а не в быстром.
 import { describe, expect, it } from 'vitest'
 import { Decimal } from '../numbers'
-import { buildSimState, referenceBuild } from '../simulate'
+import { branchPoints, buildSimState, referenceBuild } from '../simulate'
+import { ensureStats } from '../stats'
+import { BRANCHES, pathRanks, pathsOf, type BranchId } from '../../data/talents'
 import { estimateCombatRate } from '../combat'
 import { abilitiesOf } from '../state'
-import { ABILITY_SLOTS, AUTOCAST_MAX_LOSS, POWER_BUDGET } from '../../data/balance'
+import { ABILITY_SLOTS, AUTOCAST_MAX_LOSS, LEVEL_CAP, POWER_BUDGET } from '../../data/balance'
 import { DEFAULT_CLASS } from '../../data/classes'
 import { ZONES } from '../../data/zones'
 import { dump } from './dump'
@@ -231,5 +233,76 @@ describe('автокаст и оффлайн держатся на ЛЮБОЙ ч
       dump(`abilities/${DEFAULT_CLASS.id}/autocast/worst-gap`, new Decimal(worst.gap)).toNumber(),
       `отставание автокаста выше потолка на ${worst.ids.join(' + ')}`,
     ).toBeLessThanOrEqual(AUTOCAST_MAX_LOSS + 1e-9)
+  }, 900_000)
+})
+
+// ТРИ ВЕТКИ — ЭТО ТРИ РАЗНЫХ ГЕРОЯ ИЛИ ТРИ ЛЕСТНИЦЫ, ТРЕТЬЕГО НЕ ДАНО.
+//
+// Ветка, наполненная талантами про умения, обязана менять ОТВЕТ на вопрос
+// «какую четвёрку взять». Если у всех трёх специализаций лучшая четвёрка
+// одна и та же, значит таланты не трогают выбор — а он единственный рычаг
+// игрока над ротацией, и вся переделка была косметикой.
+//
+// Перебор полный: C(11,4) = 330 сочетаний на ветку, три ветки, сотый уровень.
+describe('специализации играют РАЗНЫМ набором', () => {
+  const LEVEL = LEVEL_CAP
+  const POINTS = branchPoints(LEVEL)
+
+  /** Лучшая четвёрка для героя, вложившего очки в одну ветку по её пути. */
+  function bestFour(branch: BranchId, pathIndex = 0): { ids: string[]; rate: number } {
+    const path = pathsOf(branch)[pathIndex]
+    const base = buildSimState(referenceBuild(LEVEL, DEFAULT_CLASS.id), zoneFor(LEVEL).id, 7)
+    const talented: GameState = ensureStats({
+      ...base,
+      talents: pathRanks(path, POINTS),
+      statsDirty: true,
+    })
+    const rows = combos(abilitiesOf(DEFAULT_CLASS.id), ABILITY_SLOTS).map((combo) => {
+      const ids = combo.map((a) => a.id)
+      return {
+        ids,
+        rate: estimateCombatRate({ ...talented, abilitySlots: slotsOf(ids) }, 'auto')
+          .killsPerSecond.toNumber(),
+      }
+    })
+    rows.sort((a, b) => b.rate - a.rate)
+    return rows[0]
+  }
+
+  it('лучшая четвёрка РАЗЛИЧАЕТСЯ у трёх веток', () => {
+    const own = BRANCHES.filter((b) => b.classId === DEFAULT_CLASS.id)
+    const best = own.map((b) => ({ branch: b, ...bestFour(b.id) }))
+    // eslint-disable-next-line no-console
+    console.table(
+      best.map((row) => ({
+        ветка: row.branch.name,
+        четвёрка: row.ids.join(' + '),
+        'убийств/с': row.rate.toFixed(4),
+      })),
+    )
+    const keys = best.map((row) => [...row.ids].sort().join('|'))
+    // ВСЕ ТРИ ОДИНАКОВЫ — ПРОВАЛ. Две могут совпасть: у Гнева и Бдения обе
+    // ставки на урон, и лучший набор у них имеет право быть общим.
+    expect(new Set(keys).size, `все три ветки играют ${keys[0]}`).toBeGreaterThan(1)
+  }, 900_000)
+
+  it('оба пути ветки ЖИЗНЕСПОСОБНЫ, а не один настоящий и один для вида', () => {
+    // Второй путь имеет смысл, только если он не проигрывает первому вчистую.
+    // Порог мягкий: пути и должны различаться, вопрос лишь в том, что разница
+    // — это ВЫБОР, а не ошибка.
+    for (const branch of BRANCHES.filter((b) => b.classId === DEFAULT_CLASS.id)) {
+      const paths = pathsOf(branch.id)
+      expect(paths.length, branch.id).toBeGreaterThanOrEqual(2)
+      const rates = paths.map((_, i) => bestFour(branch.id, i).rate)
+      const [first, ...rest] = rates
+      for (const [i, rate] of rest.entries()) {
+        const share = rate / first
+        // eslint-disable-next-line no-console
+        console.log(
+          `${branch.name}: путь «${paths[i + 1].name}» даёт ${(share * 100).toFixed(1)} % от «${paths[0].name}»`,
+        )
+        expect(share, `${branch.id}: путь «${paths[i + 1].name}» безнадёжен`).toBeGreaterThan(0.75)
+      }
+    }
   }, 900_000)
 })

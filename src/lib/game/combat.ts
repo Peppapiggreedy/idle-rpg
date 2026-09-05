@@ -1164,7 +1164,9 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
   const respawnSec = RESPAWN_DELAY_MS / 1000
   const settings = unlockedSettings(s)
   // Ротация читает РЯД: состав и порядок слотов плюс галки по умениям.
-  const heroRotation: Rotation = { slots: s.abilitySlots, settings }
+  // Ранги талантов едут вместе: модель обязана считать по ЭФФЕКТИВНЫМ
+  // умениям, иначе она обещает игроку не то умение, что у него в руках.
+  const heroRotation: Rotation = { slots: s.abilitySlots, settings, talents: s.talents }
   // Ресурс из боя — уравнение с самим собой: удары умений тоже дают ярость,
   // а число умений зависит от ярости. Решаем ДВУМЯ проходами: сперва доход
   // от одних автоатак, потом — с учётом посчитанных мгновенных ударов.

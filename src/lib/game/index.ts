@@ -14,6 +14,8 @@ export {
 export type { GameState, Equipment, AbilitySlots, Rotation } from './tick'
 export { defaultAbilitySlots, fillAbilitySlots, rotationOf } from './tick'
 export { abilitiesOf } from './state'
+// ЭФФЕКТИВНЫЕ умения героя: базовые данные плюс правки талантов.
+export { abilityOf, heroAbilities } from './abilities'
 export { xpToNextLevel, applyXp, MAX_LEVELUPS_PER_CALL } from './formulas'
 export type { XpResult } from './formulas'
 export { rollRarity, rollLoot, rollSlot, sellItem, sellPrice } from './loot'
@@ -114,6 +116,8 @@ export {
   heroTalents,
   rankOf,
   talentStatus,
+  takeBackStatus,
+  takeBackTalent,
   allTalentStatuses,
   investTalent,
   resetTalents,

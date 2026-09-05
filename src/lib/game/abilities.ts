@@ -5,6 +5,7 @@ import { Decimal } from './numbers'
 import { absorbPool, rollSwing } from './combat'
 import { AUTOCAST_DELAY_MS, GCD_MS } from '../data/balance'
 import { ABILITIES, ABILITY_BY_ID, type AbilityDef } from '../data/abilities'
+import { tuneAbility, tunedById } from './abilityTune'
 import { abilitiesByPriority } from './rotation'
 import { talentAbilityEffect, talentExtraCharges } from './talents'
 import { punishResourceSpend } from './bossAbilities'
@@ -13,6 +14,20 @@ import type { Rng } from './rng'
 import type { AttackEvent, CombatEvent } from '../types'
 
 export { ABILITIES, ABILITY_BY_ID } from '../data/abilities'
+
+/**
+ * УМЕНИЕ ГЕРОЯ — ЭФФЕКТИВНОЕ, А НЕ БАЗОВОЕ. Единственная точка, через
+ * которую логика берёт умение по id: талант, сдвинувший порог добивания,
+ * обязан сдвинуть и гейт автокаста, иначе кнопка и автоматика разойдутся.
+ */
+export function abilityOf(state: GameState, abilityId: string): AbilityDef | undefined {
+  return tunedById(abilityId, state.talents)
+}
+
+/** Умения класса, подкрученные талантами героя. Их и показывает книга. */
+export function heroAbilities(state: GameState): AbilityDef[] {
+  return abilitiesOf(state.classId).map((a) => tuneAbility(a, state.talents))
+}
 // Запас щита считает combat.ts — он нижний слой и знает про статы; здесь
 // имя переэкспортировано, чтобы вызывающим не приходилось знать, где оно.
 export { absorbPool } from './combat'
@@ -111,7 +126,7 @@ export function abilityStatus(state: GameState, ability: AbilityDef): AbilitySta
 }
 
 export function allAbilityStatuses(state: GameState): AbilityStatus[] {
-  return abilitiesOf(state.classId).map((a) => abilityStatus(state, a))
+  return heroAbilities(state).map((a) => abilityStatus(state, a))
 }
 
 // Списание маны, кулдаун и (если умение его тратит) GCD — одним местом,
@@ -430,7 +445,7 @@ export function useAbility(
   rng: Rng,
   emitAttack: (event: AttackEvent) => void,
 ): GameState {
-  const ability = ABILITY_BY_ID[abilityId]
+  const ability = abilityOf(state, abilityId)
   if (!ability) return state
   if (!abilityStatus(state, ability).usable) return state
 
@@ -473,7 +488,7 @@ export type QueueDropReason = Extract<CombatEvent, { type: 'ability-dropped' }>[
 
 /** null — очередь пуста или умение ударит; иначе причина срыва. */
 export function queuedAbilityDropReason(state: GameState): QueueDropReason | null {
-  const ability = state.queuedAbilityId ? ABILITY_BY_ID[state.queuedAbilityId] : null
+  const ability = state.queuedAbilityId ? (abilityOf(state, state.queuedAbilityId) ?? null) : null
   if (!ability) return null
   // Мана списывается В МОМЕНТ УДАРА, а не при постановке в очередь.
   if (state.currentMana.lt(ability.manaCost)) return 'no-mana'
@@ -491,7 +506,7 @@ export function consumeQueuedAbility(
   rng: Rng,
   emitAttack: (event: AttackEvent) => void,
 ): GameState | null {
-  const ability = state.queuedAbilityId ? ABILITY_BY_ID[state.queuedAbilityId] : null
+  const ability = state.queuedAbilityId ? (abilityOf(state, state.queuedAbilityId) ?? null) : null
   if (!ability || queuedAbilityDropReason(state) !== null) return null
   const cleared = { ...state, queuedAbilityId: null }
   return strikeWithAbility(payFor(cleared, ability), ability, rng, emitAttack)
@@ -578,7 +593,7 @@ export function advanceCooldowns(state: GameState, dtMs: number): GameState {
   const abilityCharges: Record<string, number> = { ...state.abilityCharges }
   let changed = false
   for (const [id, leftMs] of Object.entries(state.abilityCooldownsMs)) {
-    const ability = ABILITY_BY_ID[id]
+    const ability = abilityOf(state, id)
     if (!ability) {
       changed = true
       continue

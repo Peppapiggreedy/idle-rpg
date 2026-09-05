@@ -21,7 +21,12 @@ import { equipItem, unequipItem } from '../game/equipment'
 import { currentZone, travelToZone as travelAction } from '../game/zones'
 import { useAbility as useAbilityAction } from '../game/abilities'
 import { ABILITY_BY_ID } from '../data/abilities'
-import { investTalent as investTalentAction, resetTalents as resetTalentsAction } from '../game/talents'
+import {
+  investTalent as investTalentAction,
+  resetTalents as resetTalentsAction,
+  takeBackTalent as takeBackTalentAction,
+} from '../game/talents'
+import { forgetTalentPoint, noteTalentPoint, talentDraft } from './ui'
 import { drinkPotion as drinkPotionAction } from '../game/potions'
 import { disenchantItem, enchantItem } from '../game/enchanting'
 import {
@@ -339,7 +344,28 @@ export function leaveDungeonRun(): void {
 /** Вложить очко в талант. Недоступный талант состояние не меняет. */
 export function investTalentPoint(talentId: string): void {
   recordDecision('talent')
-  state.update((s) => investTalentAction(s, talentId))
+  state.update((s) => {
+    const next = investTalentAction(s, talentId)
+    // ЗАСЕЧКА ЗАХОДА СТАВИТСЯ, ТОЛЬКО ЕСЛИ ОЧКО ДЕЙСТВИТЕЛЬНО ЛЕГЛО.
+    // Недоступный талант состояние не меняет, и черновик о нём знать не
+    // должен: иначе снятие вернуло бы очко, которого не вкладывали.
+    if (next !== s) noteTalentPoint(talentId)
+    return next
+  })
+}
+
+/**
+ * Снять очко, вложенное В ЭТОТ ЗАХОД. Бесплатно и без счётчика сбросов:
+ * дерево читается не с первого раза, и промах по первому же очку не должен
+ * стоить золотого сброса. Правило «что можно снять» живёт в game/talents.ts.
+ */
+export function takeBackTalentPoint(talentId: string): void {
+  const draft = get(talentDraft)
+  state.update((s) => {
+    const next = takeBackTalentAction(s, talentId, draft)
+    if (next !== s) forgetTalentPoint(talentId)
+    return next
+  })
 }
 
 /** Сброс талантов за золото; при нехватке золота ничего не делает. */

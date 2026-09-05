@@ -18,6 +18,8 @@ import {
   talentModifiers,
   talentsInBranch,
   talentsOfClass,
+  requiredRank,
+  dependentsOf,
   type BranchDef,
   type BranchId,
   type TalentDef,
@@ -73,7 +75,13 @@ export function heroTalents(state: GameState): TalentDef[] {
 // Почему очко сюда не вложить. Каждый случай — свой код, текст рендерит UI.
 // 'other-class' появляется только на правленом руками сейве: в дереве своего
 // класса чужих веток нет вовсе.
-export type TalentBlockReason = 'other-class' | 'no-points' | 'max-rank' | 'branch-locked'
+export type TalentBlockReason =
+  | 'other-class'
+  | 'no-points'
+  | 'max-rank'
+  | 'branch-locked'
+  // Стрелка не набрана: опорный талант выше не вложен на нужный ранг.
+  | 'needs-talent'
 
 export interface TalentStatus {
   talentId: string
@@ -103,6 +111,12 @@ export function talentStatus(state: GameState, talent: TalentDef): TalentStatus 
   // Дерево читается ПО КЛАССУ: ветка чужого класса не открывается ничем.
   if (BRANCH_BY_ID[talent.branch]?.classId !== state.classId) return blocked('other-class')
   if (pointsInBranch < talent.requiredPointsInBranch) return blocked('branch-locked')
+  // СТРЕЛКА ПРОВЕРЯЕТСЯ ПОСЛЕ ПОРОГА ЭТАЖА: порог не лечится ничем, кроме
+  // очков в ветке, а стрелка — конкретным талантом, и назвать игроку надо
+  // ту причину, которая ближе к делу.
+  if (talent.requires && rankOf(state.talents, talent.requires.talentId) < requiredRank(talent.requires)) {
+    return blocked('needs-talent')
+  }
   if (rank >= talent.maxRank) return blocked('max-rank')
   if (availablePoints(state) <= 0) return blocked('no-points')
   return { ...base, canInvest: true, reason: null }
@@ -123,6 +137,83 @@ export function investTalent(state: GameState, talentId: string): GameState {
     talents: { ...state.talents, [talentId]: rankOf(state.talents, talentId) + 1 },
     statsDirty: true, // таланты — источник статов
   })
+}
+
+// ---------------------------------------------------------------------------
+// Снятие очка в пределах открытого экрана
+// ---------------------------------------------------------------------------
+
+/**
+ * ОТМЕНА, ПОКА ЭКРАН ОТКРЫТ. Очки, вложенные в ЭТОТ заход, снимаются
+ * бесплатно; закрыл экран — только платный сброс.
+ *
+ * Зачем вообще: дерево из тридцати с лишним узлов на ветку читается не с
+ * первого раза, и «ткнул не туда» на первом же очке не должно стоить
+ * золотого сброса. Но и бесплатной перекладкой всего дерева это быть не
+ * может — иначе денежный сток перестаёт работать вовсе.
+ *
+ * ЧТО ВЛОЖЕНО В ЭТОТ ЗАХОД, ЗНАЕТ ЭКРАН, А НЕ СОСТОЯНИЕ. Черновик приходит
+ * ПАРАМЕТРОМ: в сейве ему делать нечего — «я только что вложил три очка»
+ * переживать перезагрузку не должно, это «где я сейчас».
+ */
+export type TakeBackReason =
+  // Ранга нет вовсе.
+  | 'nothing-invested'
+  // Ранг есть, но вложен не в этот заход — снимается только платным сбросом.
+  | 'not-this-visit'
+  // Снятие оборвёт стрелку: ниже стоит талант, которому этот ранг нужен.
+  | 'blocks-dependent'
+
+export interface TakeBackStatus {
+  canTakeBack: boolean
+  reason: TakeBackReason | null
+  /** Сколько рангов этого таланта вложено в текущий заход. */
+  fromThisVisit: number
+}
+
+/** Черновик захода: сколько рангов каждого таланта вложено с открытия экрана. */
+export type TalentDraft = Readonly<Record<string, number>>
+
+export function takeBackStatus(
+  state: GameState,
+  talent: TalentDef,
+  draft: TalentDraft,
+): TakeBackStatus {
+  const rank = rankOf(state.talents, talent.id)
+  const fromThisVisit = Math.max(0, Math.min(rank, Math.floor(draft[talent.id] ?? 0)))
+  const blocked = (reason: TakeBackReason): TakeBackStatus => ({
+    canTakeBack: false,
+    reason,
+    fromThisVisit,
+  })
+  if (rank <= 0) return blocked('nothing-invested')
+  if (fromThisVisit <= 0) return blocked('not-this-visit')
+  // СНЯТИЕ НЕ ОБРЫВАЕТ СТРЕЛКУ. Каскадно убирать зависимые нельзя: их очки
+  // могли быть вложены в ПРОШЛЫЙ заход, и молча вернуть их значило бы
+  // раздать бесплатный сброс. Проще и честнее — отказать с причиной.
+  for (const dependent of dependentsOf(talent.id)) {
+    const need = dependent.requires
+    if (!need || need.talentId !== talent.id) continue
+    if (rankOf(state.talents, dependent.id) <= 0) continue
+    if (rank - 1 < requiredRank(need)) return blocked('blocks-dependent')
+  }
+  return { canTakeBack: true, reason: null, fromThisVisit }
+}
+
+/** Снять одно очко. Недоступное снятие состояние не меняет вовсе. */
+export function takeBackTalent(
+  state: GameState,
+  talentId: string,
+  draft: TalentDraft,
+): GameState {
+  const talent = TALENT_BY_ID[talentId]
+  if (!talent) return state
+  if (!takeBackStatus(state, talent, draft).canTakeBack) return state
+  const rank = rankOf(state.talents, talentId) - 1
+  const talents = { ...state.talents }
+  if (rank <= 0) delete talents[talentId]
+  else talents[talentId] = rank
+  return ensureStats({ ...state, talents, statsDirty: true })
 }
 
 /** Цена очередного сброса: растёт с каждым уже сделанным сбросом. */

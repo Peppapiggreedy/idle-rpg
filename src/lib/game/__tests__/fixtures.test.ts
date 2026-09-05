@@ -290,29 +290,32 @@ describe('фикстуры сейвов', () => {
     expect(state.lootPolicy).toBe('keep')
   })
 
-  it('save-v27 -> v28: таланты на порог привала удалены, очки ВЕРНУЛИСЬ', () => {
+  it('27 -> 28: три таланта на порог привала выброшены из сейва', () => {
+    // Шаг 27→28 проверяется ОТДЕЛЬНО от полной цепочки нарочно: дальше по
+    // дороге стоит 29→30, которая обнуляет дерево целиком, и по итогу
+    // миграций отличить «талант удалён» от «дерево пересобрано» нельзя.
     const raw = JSON.parse(fixture('save-v27.json'))
-    // Предпосылка: в фикстуре есть вложенный удалённый талант, иначе тест
-    // не отличил бы «очки вернулись» от «их и не было».
     const spent = raw.talents['vigil-field-medicine']
     expect(spent, 'фикстура обязана нести вложенный старый талант').toBeGreaterThan(0)
 
-    const payload = migrateSave(raw)!
-    expect(payload.version).toBe(SAVE_VERSION)
-    for (const id of REMOVED_TALENT_IDS) expect(payload.talents[id]).toBeUndefined()
+    const next = MIGRATIONS[27](raw)
+    const ranks = next.talents as Record<string, number>
+    for (const id of REMOVED_TALENT_IDS) expect(ranks[id]).toBeUndefined()
+    // Остальные ранги на этом шаге на месте: он про три таланта, а не про
+    // дерево.
+    expect(ranks['wrath-honed-edge']).toBe(raw.talents['wrath-honed-edge'])
+  })
 
+  it('29 -> 30: дерево пересобрано, и ВСЕ очки вернулись свободными', () => {
+    // Ветки Стража переделаны: на каждом этаже стало по два-три таланта, и
+    // половины выборов в старой сборке просто не существовало. Ранги
+    // обнуляются, очки возвращаются — а СЧЁТЧИК ПЛАТНЫХ СБРОСОВ не растёт:
+    // игра пересобрала дерево, игрок за это не платит.
+    const raw = JSON.parse(fixture('save-v27.json'))
     const state = loadFixture('save-v27.json')
-    // ОЧКИ СВОБОДНЫ, а не пропали: доступные считаются как «заработано минус
-    // вложено», и снятые ранги освобождают их сами.
-    const before = Object.entries(raw.talents as Record<string, number>).reduce(
-      (sum, [, rank]) => sum + rank,
-      0,
-    )
-    expect(spentPoints(state.talents)).toBe(before - spent)
-    expect(availablePoints(state)).toBe(earnedPoints(state.level) - spentPoints(state.talents))
-    expect(availablePoints(state)).toBeGreaterThanOrEqual(spent)
-    // Остальные ранги на месте — миграция про три таланта, а не про дерево.
-    expect(state.talents['wrath-honed-edge']).toBe(raw.talents['wrath-honed-edge'])
+    expect(spentPoints(state.talents)).toBe(0)
+    expect(availablePoints(state)).toBe(earnedPoints(state.level))
+    expect(state.talentResets).toBe(raw.talentResets ?? 0)
   })
 
   it('save-v27 -> v28: порог привала прижат к шагу ползунка', () => {
@@ -712,43 +715,53 @@ describe('фикстуры сейвов', () => {
     expect(s.gold.toNumber()).toBe(140000) // прогресс не потерян
   })
 
-  it('save-v11: ранги и счётчик сбросов переживают загрузку', () => {
-    const s = loadFixture('save-v11.json')
-    // Дерево переехало на класс: старые id перенесены картой соответствия
-    // внутри стиля, ранги при этом не потеряны ни на очко.
-    expect(s.talents).toEqual({
+  it('save-v11: счётчик сбросов переживает загрузку, ранги переносятся до 29-й', () => {
+    // ДВЕ ПОЛОВИНЫ, И ИХ НАДО РАЗЛИЧАТЬ. Старые id переносятся картой
+    // соответствия внутри стиля на шаге 11→12, и до 29-й версии ранги
+    // доезжают целыми; на 29→30 дерево пересобрано, и они обнуляются вместе
+    // со всеми. Счётчик платных сбросов при этом не трогает ни один шаг.
+    const raw = JSON.parse(fixture('save-v11.json'))
+    let carried = raw as Record<string, unknown>
+    for (let v = 11; v < 29; v += 1) carried = MIGRATIONS[v](carried as never)
+    expect(carried.talents).toEqual({
       'wrath-honed-edge': 5,
       'wrath-keen-eye': 2,
       'bulwark-thick-hide': 3,
     })
+
+    const s = loadFixture('save-v11.json')
     expect(s.talentResets).toBe(2)
-    expect(spentPoints(s.talents)).toBe(10)
-    expect(availablePoints(s)).toBe(earnedPoints(s.level) - 10)
-    // Таланты пересчитаны в статы при загрузке, а не забыты. Ловкость с
-    // уровней тоже даёт крит — она входит в ожидание, а не в допуск.
+    expect(spentPoints(s.talents)).toBe(0)
+    expect(availablePoints(s)).toBe(earnedPoints(s.level))
+    // Статы пересчитаны при загрузке, а не забыты: у героя без единого
+    // вложенного очка крит равен базовому плюс вклад ловкости с уровней.
     expect(s.statsDirty).toBe(false)
-    const keenEye = TALENT_BY_ID['wrath-keen-eye']
-    const critPerRank =
-      keenEye.effect.kind === 'modifiers'
-        ? (keenEye.effect.mods.find((m) => m.stat === 'critChance')?.value.toNumber() ?? 0)
-        : 0
     const agiCrit = (s.level.toNumber() - 1) * 0.0005
-    expect(s.stats.critChance).toBeCloseTo(0.05 + 2 * critPerRank + agiCrit, 9)
+    expect(s.stats.critChance).toBeCloseTo(0.05 + agiCrit, 9)
   })
 
   it('мусорные ранги из сейва режутся по maxRank и по списку талантов', () => {
+    // ПРОВЕРЯЕТСЯ ЧИСТКА, А НЕ ЦЕПОЧКА. Миграция 29→30 обнуляет дерево
+    // целиком, и по итогу полной цепочки чистку от неё не отличить: пустой
+    // результат вышел бы в обоих случаях. Поэтому мусор подаётся сразу
+    // сейвом ПРЕДПОСЛЕДНЕЙ версии — тогда чистка остаётся единственным, что
+    // с ним происходит.
     const raw = JSON.parse(fixture('save-v11.json'))
-    const s = stateFromPayload(
-      migrateSave({
-        ...raw,
-        talents: {
-          'honed-edge': 999, // выше maxRank
-          'talent-from-the-future': 3, // такого таланта нет
-          'keen-eye': -5, // мусор
-        },
-        talentResets: -7,
-      })!,
-    )
+    let carried = raw as Record<string, unknown>
+    for (let v = 11; v < 29; v += 1) carried = MIGRATIONS[v](carried as never)
+    // Версия сразу текущая: миграции тут не при чём, проверяется ЧИСТКА
+    // внутри `stateFromPayload` — она и стоит между сейвом и состоянием.
+    const dirty = {
+      ...carried,
+      version: SAVE_VERSION,
+      talents: {
+        'wrath-honed-edge': 999, // выше maxRank
+        'talent-from-the-future': 3, // такого таланта нет
+        'wrath-keen-eye': -5, // мусор
+      },
+      talentResets: -7,
+    } as unknown as Parameters<typeof stateFromPayload>[0]
+    const s = stateFromPayload(dirty)
     // Ранг выше потолка режется по maxRank НОВОГО таланта, чужой id и мусор
     // отбрасываются вовсе — и очки за них возвращаются свободными.
     expect(s.talents['wrath-honed-edge']).toBe(TALENT_BY_ID['wrath-honed-edge'].maxRank)

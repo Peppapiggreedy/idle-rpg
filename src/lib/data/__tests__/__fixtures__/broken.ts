@@ -257,14 +257,167 @@ export function brokenCases(): BrokenCase[] {
       expect: [first(real.branches).id, 'невозможно войти'],
     },
     {
-      title: 'ряды ветки идут с дыркой — на панели останется пустая строка',
+      title: 'этажи ветки идут с дыркой — на панели останется пустая строка',
       content: {
         ...real,
         talents: real.talents.map((t) =>
           t.branch === first(real.branches).id && t.row === 2 ? { ...t, row: 9 } : t,
         ),
       },
-      expect: [first(real.branches).id, 'ряды идут'],
+      expect: [first(real.branches).id, 'этажи идут'],
+    },
+    {
+      // ЭТАЖ ОТКРЫВАЕТСЯ ЦЕЛИКОМ. Две альтернативы с разными порогами — это
+      // уже не выбор, а порядок покупок: одна открылась бы раньше другой.
+      title: 'таланты одного этажа требуют разное число очков',
+      content: {
+        ...real,
+        // Второй талант НА ТОТ ЖЕ ЭТАЖ, но со своим порогом. Одной правкой
+        // существующего таланта это не воспроизвести: пока на этаже он один,
+        // его порог и есть порог этажа.
+        talents: [
+          ...real.talents,
+          ...real.talents
+            .filter((t) => t.branch === first(real.branches).id && t.row === 3)
+            .map((t) => ({
+              ...t,
+              id: `${t.id}-двойник`,
+              requiredPointsInBranch: t.requiredPointsInBranch + 5,
+            })),
+        ],
+      },
+      expect: ['этаж 3', 'разное число очков'],
+    },
+    {
+      // ЧЕТВЁРТАЯ КЛЕТКА В РЯД НЕ ЛЕЗЕТ. Раньше правило было обратным —
+      // «два таланта в одном ряду запрещены», — и именно оно держало дерево
+      // тремя лестницами. Осталась верхняя граница, и она про экран.
+      title: 'на этаже четыре таланта — ряд не помещается на экран',
+      content: {
+        ...real,
+        talents: [
+          ...real.talents,
+          ...[1, 2, 3].map((n) => ({
+            ...first(real.talents.filter((t) => t.branch === first(real.branches).id && t.row === 2)),
+            id: `лишний-${n}`,
+          })),
+        ],
+      },
+      expect: ['на этаже 2', 'не помещается'],
+    },
+    {
+      // ПЛОСКАЯ ПРИБАВКА К ХАРАКТЕРИСТИКЕ — МЁРТВЫЙ УЗЕЛ: +3 силы это 12.5 %
+      // силы атаки на 25-м уровне и 4.2 % на сотом, а очко стоит одинаково.
+      title: 'талант даёт плоскую прибавку к базовой характеристике',
+      content: {
+        ...real,
+        talents: real.talents.map((t, index) =>
+          index === 0
+            ? {
+                ...t,
+                effect: {
+                  kind: 'modifiers' as const,
+                  mods: [{ stat: 'strength' as const, kind: 'flat' as const, value: new Decimal(3) }],
+                },
+              }
+            : t,
+        ),
+      },
+      expect: ['strength', 'БАЗОВЫХ'],
+    },
+    {
+      // Тот же довод про растущий стат: плоское число к сотому уровню
+      // становится шумом. У ДОЛЕЙ этой болезни нет, и запрет их не трогает.
+      title: 'талант даёт плоскую прибавку к растущему стату',
+      content: {
+        ...real,
+        talents: real.talents.map((t, index) =>
+          index === 0
+            ? {
+                ...t,
+                effect: {
+                  kind: 'modifiers' as const,
+                  mods: [{ stat: 'maxHp' as const, kind: 'flat' as const, value: new Decimal(50) }],
+                },
+              }
+            : t,
+        ),
+      },
+      expect: ['maxHp', 'ПЛОСКУЮ'],
+    },
+    {
+      // Талант, которого нет ни в одном пути, не покупает модель прогона:
+      // он не «слабый», он невидимый.
+      title: 'талант не входит ни в один путь своей ветки',
+      content: {
+        ...real,
+        talents: [
+          ...real.talents,
+          {
+            ...first(real.talents.filter((t) => t.branch === 'warden-wrath' && t.row === 2)),
+            id: 'вне-путей',
+          },
+        ],
+      },
+      expect: ['вне-путей', 'НИ В ОДИН путь'],
+    },
+    {
+      // Стрелка вверх: до таланта не добраться никогда — очки в опорный
+      // талант вкладываются ПОСЛЕ него.
+      title: 'стрелка-предпосылка ведёт снизу вверх',
+      content: {
+        ...real,
+        talents: real.talents.map((t) =>
+          t.row === 2 && t.branch === first(real.branches).id
+            ? {
+                ...t,
+                requires: {
+                  talentId: real.talents.find(
+                    (x) => x.branch === t.branch && x.row === 5,
+                  )!.id,
+                },
+              }
+            : t,
+        ),
+      },
+      expect: ['стрелка обязана вести', 'СВЕРХУ ВНИЗ'],
+    },
+    {
+      title: 'стрелка-предпосылка ведёт в чужую ветку',
+      content: {
+        ...real,
+        talents: real.talents.map((t) =>
+          t.row === 3 && t.branch === first(real.branches).id
+            ? {
+                ...t,
+                requires: {
+                  talentId: real.talents.find((x) => x.branch !== t.branch && x.row === 1)!.id,
+                },
+              }
+            : t,
+        ),
+      },
+      expect: ['стрелка через ветки невозможна'],
+    },
+    {
+      title: 'стрелка требует ранг выше потолка опорного таланта',
+      content: {
+        ...real,
+        talents: real.talents.map((t) =>
+          t.row === 4 && t.branch === first(real.branches).id
+            ? {
+                ...t,
+                requires: {
+                  talentId: real.talents.find(
+                    (x) => x.branch === t.branch && x.row === 1,
+                  )!.id,
+                  minRank: 99,
+                },
+              }
+            : t,
+        ),
+      },
+      expect: ['условие невыполнимо'],
     },
     {
       title: 'рецепт требует материал, которого нет в игре',

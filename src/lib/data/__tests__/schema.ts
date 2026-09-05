@@ -40,7 +40,13 @@ import {
   SOUND_PITCH_MIN_SEMITONES,
 } from '../balance'
 import type { SlotId } from '../slots'
-import type { BranchDef, TalentDef } from '../talents'
+import {
+  TALENT_STAT_RULE,
+  pathsOf,
+  type BranchDef,
+  type TalentDef,
+  type TalentStatRule,
+} from '../talents'
 import type { Zone } from '../zones'
 import type { StatId } from '../../game/stats'
 
@@ -67,6 +73,10 @@ export interface Content {
   enchantFlatStats: readonly StatId[]
   branches: readonly BranchDef[]
   talents: readonly TalentDef[]
+  /** Поля умения, объявленные настраиваемыми. Список закрыт. */
+  abilityTunable: readonly string[]
+  /** Годится ли операция для поля: реализация живёт в game/abilityTune.ts. */
+  tuneAllowed: (tune: { field: string; kind: string }) => boolean
   zones: readonly Zone[]
   dungeons: readonly DungeonDef[]
   weapons: readonly WeaponTemplate[]
@@ -654,36 +664,61 @@ export const BRANCH_SCHEMA: EntitySchema<BranchDef> = {
       report.add(where, 'в ветке нет ни одного таланта (data/talents.ts)')
       return
     }
-    // Ряды идут подряд с первого: дырка в нумерации означает, что талант
-    // потеряли при правке, и на панели останется пустая строка.
-    const rows = talents.map((t) => t.row)
-    const expected = talents.map((_, i) => i + 1)
+    // ЭТАЖ — РЯД, А НЕ ОДИН ТАЛАНТ. Считаем РАЗЛИЧНЫЕ этажи: на одном может
+    // стоять две-три альтернативы, и «ряды подряд» — про этажи, а не про
+    // записи. Дырка в нумерации означает, что этаж потеряли при правке, и на
+    // панели останется пустая строка.
+    const rows = [...new Set(talents.map((t) => t.row))].sort((a, b) => a - b)
+    const expected = rows.map((_, i) => i + 1)
     if (rows.join(',') !== expected.join(',')) {
       report.add(
         where,
-        `ряды идут как ${rows.join(', ')}, а должны подряд с первого ` +
+        `этажи идут как ${rows.join(', ')}, а должны подряд с первого ` +
           `(${expected.join(', ')}) — data/talents.ts`,
       )
     }
-    // Первый ряд обязан быть открыт сразу: иначе в ветку не войти вовсе.
-    if (talents[0].requiredPointsInBranch !== 0) {
-      report.add(
-        where,
-        `первый ряд требует ${talents[0].requiredPointsInBranch} очков в ветке — ` +
-          'в ветку невозможно войти (data/talents.ts)',
-      )
-    }
-    // Требование ряда не может быть больше, чем реально можно вложить выше.
-    let reachable = 0
-    for (const talent of talents) {
-      if (talent.requiredPointsInBranch > reachable) {
+    // ВСЕ ТАЛАНТЫ ОДНОГО ЭТАЖА ТРЕБУЮТ ОДНО И ТО ЖЕ. Иначе «этаж» перестаёт
+    // быть этажом: две альтернативы открывались бы в разное время, и выбор
+    // между ними превратился бы в порядок покупок.
+    for (const row of rows) {
+      const onRow = talents.filter((t) => t.row === row)
+      const required = [...new Set(onRow.map((t) => t.requiredPointsInBranch))]
+      if (required.length > 1) {
         report.add(
-          `талант ${talent.id}`,
-          `требует ${talent.requiredPointsInBranch} очков в ветке, а выше него ` +
-            `можно вложить только ${reachable} — талант недостижим (data/talents.ts)`,
+          `${where}, этаж ${row}`,
+          `таланты этажа требуют разное число очков (${required.join(', ')}) — ` +
+            'этаж открывается целиком или не открывается (data/talents.ts)',
         )
       }
-      reachable += talent.maxRank
+    }
+    // Первый этаж обязан быть открыт сразу: иначе в ветку не войти вовсе.
+    const firstRow = talents.filter((t) => t.row === rows[0])
+    for (const talent of firstRow) {
+      if (talent.requiredPointsInBranch !== 0) {
+        report.add(
+          where,
+          `первый этаж требует ${talent.requiredPointsInBranch} очков в ветке — ` +
+            'в ветку невозможно войти (data/talents.ts)',
+        )
+        break
+      }
+    }
+    // ДОСТИЖИМОСТЬ СЧИТАЕТСЯ ПО ЭТАЖАМ ВЫШЕ, А НЕ ПО ПРЕДЫДУЩИМ ЗАПИСЯМ.
+    // Ранги соседа по этажу в порог этого этажа не идут: чтобы открыть этаж,
+    // очки надо вложить НАД ним.
+    for (const row of rows) {
+      const above = talents
+        .filter((t) => t.row < row)
+        .reduce((sum, t) => sum + t.maxRank, 0)
+      for (const talent of talents.filter((t) => t.row === row)) {
+        if (talent.requiredPointsInBranch > above) {
+          report.add(
+            `талант ${talent.id}`,
+            `требует ${talent.requiredPointsInBranch} очков в ветке, а выше него ` +
+              `можно вложить только ${above} — талант недостижим (data/talents.ts)`,
+          )
+        }
+      }
     }
   },
 }
@@ -754,11 +789,18 @@ const FLAG_PAYLOADS: Record<
 }
 
 /**
- * СТАТЫ, КОТОРЫЕ НА САМОМ ДЕЛЕ НАСТРОЙКИ ИГРОКА. Живут в конвейере, потому
- * что считаются там же, где всё остальное, — но принадлежат не герою, а
- * игроку: он выставляет их сам. Ни талант, ни предмет их двигать не вправе.
+ * ЧТО ТАЛАНТУ МОЖНО ТРОГАТЬ — ОДНОЙ ТАБЛИЦЕЙ ИЗ ДАННЫХ.
+ *
+ * Раньше здесь стоял отдельный список «настроек игрока», а правило про
+ * плоские прибавки не было записано вовсе. Таблица `TALENT_STAT_RULE`
+ * (data/talents.ts) отвечает на оба вопроса разом и закрыта по `StatId`:
+ * новая характеристика не пройдёт проверку типов, пока про неё не решат.
  */
-const SETTING_STAT_IDS: readonly string[] = ['restThreshold']
+/** Сколько талантов помещается в один ряд на экране. */
+const FLOOR_MAX_TALENTS = 3
+
+const talentRule = (stat: string): TalentStatRule | undefined =>
+  TALENT_STAT_RULE[stat as keyof typeof TALENT_STAT_RULE]
 
 export const TALENT_SCHEMA: EntitySchema<TalentDef> = {
   kind: 'талант',
@@ -785,7 +827,12 @@ export const TALENT_SCHEMA: EntitySchema<TalentDef> = {
       // Талант-флаг включает поведение КОНКРЕТНОГО умения. Умение переименовали,
       // а талант остался — молча перестал бы работать.
       field: 'effect.abilityId',
-      get: (t) => (t.effect.kind === 'flag' && 'abilityId' in t.effect ? t.effect.abilityId : undefined),
+      get: (t) =>
+        t.effect.kind === 'ability'
+          ? t.effect.abilityId
+          : t.effect.kind === 'flag' && 'abilityId' in t.effect
+            ? t.effect.abilityId
+            : undefined,
       target: 'умение',
       which: 'которого',
       targetFile: 'data/abilities.ts',
@@ -794,6 +841,71 @@ export const TALENT_SCHEMA: EntitySchema<TalentDef> = {
   ],
   extra: (talent, content, report) => {
     const where = `талант ${talent.id}`
+    // СТРЕЛКА-ПРЕДПОСЫЛКА ВЕДЁТ ТОЛЬКО ВНИЗ И ТОЛЬКО В СВОЕЙ ВЕТКЕ.
+    //
+    // Стрелка вверх или вбок — это цикл или недостижимый узел: талант, до
+    // которого нельзя добраться, выглядит на панели как обычный, и игрок
+    // жмёт по нему до тех пор, пока не сдастся. Дерево обязано быть
+    // проходимым СВЕРХУ ВНИЗ, и проверяется это здесь, а не глазами.
+    if (talent.requires) {
+      const need = talent.requires
+      const anchor = content.talents.find((t) => t.id === need.talentId)
+      if (!anchor) {
+        report.add(
+          where,
+          `требует талант «${need.talentId}», которого нет в игре (data/talents.ts)`,
+        )
+      } else {
+        report.need(
+          anchor.branch === talent.branch,
+          where,
+          `требует талант «${need.talentId}» из ветки ${anchor.branch}, а сам стоит ` +
+            `в ${talent.branch} — стрелка через ветки невозможна (data/talents.ts)`,
+        )
+        report.need(
+          anchor.row < talent.row,
+          where,
+          `требует талант «${need.talentId}» с этажа ${anchor.row}, а сам стоит на ` +
+            `${talent.row}: стрелка обязана вести СВЕРХУ ВНИЗ, иначе до таланта ` +
+            'не добраться никогда (data/talents.ts)',
+        )
+        const rank = need.minRank ?? 1
+        report.need(
+          rank >= 1 && rank <= anchor.maxRank,
+          where,
+          `требует ${rank} ранга в «${need.talentId}», а у того максимум ` +
+            `${anchor.maxRank} — условие невыполнимо (data/talents.ts)`,
+        )
+      }
+    }
+    // ТАЛАНТ НЕ ПРАВИТ ТО, ЧТО НЕ ОБЪЯВЛЕНО НАСТРАИВАЕМЫМ. Список полей
+    // закрыт и лежит в data/abilities.ts; без этой проверки талант мог бы
+    // назвать любое поле, и правка молча не сработала бы.
+    if (talent.effect.kind === 'ability') {
+      report.need(
+        talent.effect.tune.length > 0,
+        where,
+        'эффект вида ability без единой правки — талант ничего не делает (data/talents.ts)',
+      )
+      for (const tune of talent.effect.tune) {
+        if (tune.field !== 'type' && !content.abilityTunable.includes(tune.field)) {
+          report.add(
+            where,
+            `правит поле «${tune.field}», которого нет среди настраиваемых ` +
+              '(ABILITY_TUNABLE в data/abilities.ts)',
+          )
+          continue
+        }
+        if (!content.tuneAllowed(tune)) {
+          report.add(
+            where,
+            `операция «${tune.kind}» не годится для поля «${tune.field}»: ` +
+              'величины масштабируют, пороги сдвигают в пунктах, тип заменяют ' +
+              '(ABILITY_TUNABLE в data/abilities.ts)',
+          )
+        }
+      }
+    }
     if (talent.effect.kind === 'modifiers') {
       report.need(
         talent.effect.mods.length > 0,
@@ -818,18 +930,46 @@ export const TALENT_SCHEMA: EntitySchema<TalentDef> = {
               'иначе замах уходит в ноль или в бесконечность (data/talents.ts)',
           )
         }
+        const rule = talentRule(mod.stat)
         // НАСТРОЙКА ИГРОКА — НЕ ХАРАКТЕРИСТИКА. Порог привала игрок ставит
         // ползунком и ждёт, что игра ему следует; талант, молча сдвигающий
         // его вверх, читается как поломка — на экране 60 %, а герой уходит
         // отдыхать на 72 %, и объяснения этому нигде нет. Прокачивается то,
         // чем герой ЯВЛЯЕТСЯ (например, длина привала), а не то, что он себе
         // назначил. Три таких таланта удалены в четвёртую ночь.
-        if (SETTING_STAT_IDS.includes(mod.stat)) {
+        if (rule === 'setting') {
           report.add(
             where,
             `таланту нельзя менять «${mod.stat}» — это НАСТРОЙКА игрока, а не ` +
               'характеристика героя: он ставит её сам и ждёт, что игра ей следует ' +
               '(data/talents.ts)',
+          )
+        }
+        // ЧЕТЫРЕ БАЗОВЫЕ ХАРАКТЕРИСТИКИ ТАЛАНТУ ЗАКРЫТЫ ЦЕЛИКОМ. Прокачка
+        // характеристик — это предметы и уровень; талант обязан менять то,
+        // ЧЕМ герой пользуется, а не из чего он собран. Прибавка к силе
+        // читается игроком как «+3», а стоит ровно столько же очка, сколько
+        // талант, меняющий умение.
+        if (rule === 'attribute') {
+          report.add(
+            where,
+            `таланту нельзя менять «${mod.stat}» — это одна из четырёх БАЗОВЫХ ` +
+              'характеристик: их растят предметы и уровень, а талант меняет ' +
+              'производные и умения (TALENT_STAT_RULE в data/talents.ts)',
+          )
+        }
+        // ПЛОСКАЯ ПРИБАВКА К РАСТУЩЕМУ — МЁРТВЫЙ УЗЕЛ. Она не масштабируется
+        // ни от уровня, ни от снаряжения: то, что на 25-м уровне видно, к
+        // сотому становится шумом, а цена очка остаётся прежней. У ДОЛЕЙ и
+        // СЕКУНД этой болезни нет — доля и есть процент, а время с уровнем
+        // не растёт, — поэтому запрет адресный, а не «никакого flat».
+        if (rule === 'scaling' && mod.kind === 'flat') {
+          report.add(
+            where,
+            `таланту нельзя давать ПЛОСКУЮ прибавку к «${mod.stat}» — стат растёт ` +
+              'от уровня и снаряжения, и плоское число к сотому уровню становится ' +
+              'шумом; здесь только percent или multiplier (TALENT_STAT_RULE в ' +
+              'data/talents.ts)',
           )
         }
       }
@@ -2757,13 +2897,33 @@ function checkReachable(content: Content, report: Report): void {
       `ветка ${branch.id}`,
       'в ветке нет ни одного таланта — вкладывать очки некуда (data/talents.ts)',
     )
-    const rows = inBranch.map((t) => t.row)
-    report.need(
-      new Set(rows).size === rows.length,
-      `ветка ${branch.id}`,
-      `в ветке два таланта в одном ряду (ряды: ${rows.join(', ')}) — дерево рисуется ` +
-        'по рядам (data/talents.ts)',
-    )
+    // НИ ОДНОГО НЕИСПОЛЬЗУЕМОГО ТАЛАНТА. Путь — это то, что покупает модель
+    // прогона; талант, не попавший НИ В ОДИН путь своей ветки, не мерится
+    // ничем и не сравнивается ни с чем. Он не «слабый» — он невидимый, и
+    // узнать об этом можно только прочитав данные.
+    const inPaths = new Set(pathsOf(branch.id).flatMap((path) => path.order))
+    for (const talent of inBranch) {
+      report.need(
+        inPaths.has(talent.id),
+        `талант ${talent.id}`,
+        'не входит НИ В ОДИН путь своей ветки — модель прогона его не покупает, ' +
+          'то есть он не измерен ничем (BRANCH_PATHS в data/talents.ts)',
+      )
+    }
+    // ЭТАЖ — РЯД ИЗ ОДНОГО, ДВУХ ИЛИ ТРЁХ. Раньше здесь стоял запрет на
+    // двух талантов в одном ряду — ровно та лестница, из которой дерево и
+    // делали. Осталась ВЕРХНЯЯ граница: четвёртая клетка в ряду не
+    // помещается ни на телефон, ни в ширину меню.
+    const perRow = new Map<number, number>()
+    for (const talent of inBranch) perRow.set(talent.row, (perRow.get(talent.row) ?? 0) + 1)
+    for (const [row, count] of perRow) {
+      report.need(
+        count <= FLOOR_MAX_TALENTS,
+        `ветка ${branch.id}`,
+        `на этаже ${row} ${count} талантов — больше ${FLOOR_MAX_TALENTS} в ряд не ` +
+          'помещается ни на телефон, ни в ширину меню (data/talents.ts)',
+      )
+    }
   }
 }
 

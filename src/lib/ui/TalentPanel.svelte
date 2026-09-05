@@ -1,7 +1,8 @@
 <script lang="ts">
-  // Дерево талантов: три колонки-ветки СВОЕГО класса, каждая глубиной
-  // в 61 очко. Весь текст для игрока — здесь; логика отдаёт только ранги,
-  // коды причин и структурированные эффекты.
+  // Дерево талантов СВОЕГО класса: три ветки переключаются вкладками, ветка
+  // разложена по ЭТАЖАМ, на этаже один, два или три таланта с общим порогом.
+  // Весь текст для игрока — здесь; логика отдаёт только ранги, коды причин и
+  // структурированные эффекты.
   import {
     Decimal,
     availablePoints,
@@ -10,20 +11,30 @@
     resetStatus,
     spentInBranch,
     talentStatus,
+    takeBackStatus,
     type ResetBlockReason,
     type StatId,
     type TalentBlockReason,
   } from '../game'
   import {
-    talentsInBranch,
+    TALENT_BY_ID,
+    type BranchId,
     type TalentDef,
     type TalentFlag,
     type TalentModifier,
   } from '../data/talents'
+  import { floorsOf } from './talentFloors'
   import { LEVEL_CAP, TALENT_FIRST_LEVEL } from '../data/balance'
-  import { gameState, investTalentPoint, resetTalentTree } from '../stores/game'
+  import {
+    gameState,
+    investTalentPoint,
+    resetTalentTree,
+    takeBackTalentPoint,
+  } from '../stores/game'
+  import { talentDraft } from '../stores/ui'
   import { resourceWords } from './resource'
   import { flatText } from './statText'
+  import { abilityTuneText } from './abilityText'
   import { Button, NumberText, Panel, Tag } from './kit'
   import { Icon } from './icons'
 
@@ -102,11 +113,24 @@
       'faster-revive': (e) =>
         `Воскрешение быстрее на ${'reviveMultiplier' in e ? ((1 - e.reviveMultiplier) * 100).toFixed(0) : 0}%`,
     }
+  // КАКАЯ ВЕТКА ОТКРЫТА — «где я сейчас». В сейв ему не место, и переживать
+  // перезагрузку он не должен; локальной переменной компонента достаточно.
+  let openBranch = $state<BranchId>(heroBranches($gameState)[0]?.id ?? 'warden-wrath')
+
   const REASON_TEXT: Record<TalentBlockReason, (t: TalentDef) => string> = {
     'other-class': () => 'Ветка другого класса',
     'branch-locked': (t) => `Нужно ${t.requiredPointsInBranch} очков в ветке`,
     'max-rank': () => 'Уже максимальный ранг',
     'no-points': () => 'Нет свободных очков',
+    // СТРЕЛКА НАЗЫВАЕТ ОПОРНЫЙ ТАЛАНТ ПО ИМЕНИ. «Не открыто» ничего не
+    // говорит игроку, который смотрит на дерево впервые.
+    'needs-talent': (t) => {
+      const need = t.requires
+      if (!need) return 'Нужен талант выше'
+      const anchor = TALENT_BY_ID[need.talentId]?.name ?? need.talentId
+      const rank = need.minRank ?? 1
+      return rank > 1 ? `Нужно ${rank} ранга в «${anchor}»` : `Нужен талант «${anchor}»`
+    },
   }
 
   // Текст одного модификатора за ОДИН ранг: игрок видит цену следующего очка.
@@ -122,6 +146,10 @@
 
   function effectText(talent: TalentDef): string {
     if (talent.effect.kind === 'flag') return FLAG_TEXT[talent.effect.flag](talent.effect)
+    // ТАЛАНТ, ПРАВЯЩИЙ УМЕНИЕ, ПОКАЗЫВАЕТ, ЧЕМ УМЕНИЕ СТАНЕТ. Строка
+    // собирается из тех же полей, что и описание самого умения: второй
+    // формулировки на игру быть не должно.
+    if (talent.effect.kind === 'ability') return abilityTuneText(talent.effect)
     return `${talent.effect.mods.map(modText).join(', ')} за ранг`
   }
 </script>
@@ -148,42 +176,99 @@
     {/if}
   {/snippet}
 
-  <div class="branches">
+  <!-- ТРИ ВЕТКИ ПЕРЕКЛЮЧАЮТСЯ, И ОЧКИ ВИДНЫ В КАЖДОЙ. Три дерева по тридцать
+       с лишним узлов рядом не помещаются ни на одном экране, а выбор ветки —
+       главное решение игрока: он обязан видеть, сколько уже вложено в каждую,
+       не переключаясь. -->
+  <div class="tabs" role="tablist" data-branch-tabs>
     {#each heroBranches($gameState) as branch (branch.id)}
-      <div class="branch">
-        <h3>
-          {branch.name}
-          <span class="invested">{spentInBranch($gameState.talents, branch.id)}</span>
-        </h3>
-        {#each talentsInBranch(branch.id) as talent (talent.id)}
-          {@const status = talentStatus($gameState, talent)}
-          <div class="talent" class:locked={!status.canInvest} class:taken={status.rank > 0}>
-            <div class="head">
-              <Icon name={talent.icon} /><span class="name">{talent.name}</span>
-              <span class="rank" class:full={status.rank === status.maxRank}>
-                {status.rank}/{status.maxRank}
-              </span>
-            </div>
-            <div class="effect">{effectText(talent)}</div>
-            {#if status.canInvest}
-              <Button size="sm" variant="primary" onclick={() => investTalentPoint(talent.id)}>
-                Вложить очко
-              </Button>
-            {:else}
-              <span class="reason">
-                {REASON_TEXT[status.reason ?? 'no-points'](talent)}
-                {#if status.reason === 'branch-locked'}
-                  <span class="progress">
-                    (вложено {status.pointsInBranch} из {status.requiredPointsInBranch})
-                  </span>
-                {/if}
-              </span>
-            {/if}
-          </div>
-        {/each}
-      </div>
+      {@const spent = spentInBranch($gameState.talents, branch.id)}
+      <button
+        type="button"
+        role="tab"
+        class="tab"
+        class:active={branch.id === openBranch}
+        aria-selected={branch.id === openBranch}
+        onclick={() => (openBranch = branch.id)}
+      >
+        {branch.name}
+        <span class="spent" class:some={spent > 0}>{spent}</span>
+      </button>
     {/each}
   </div>
+
+  {#each heroBranches($gameState).filter((b) => b.id === openBranch) as branch (branch.id)}
+    <div class="branch" data-branch={branch.id}>
+      {#each floorsOf(branch.id) as floor (floor.row)}
+        <!-- ЭТАЖ — РЯД. Пустых мест в ряду нет: два таланта значит два, а не
+             два и дырка. Порог этажа подписан один раз на ряд — он общий. -->
+        <div class="floor" data-floor={floor.row}>
+          <span class="gate" class:met={spentInBranch($gameState.talents, branch.id) >= floor.required}>
+            {floor.required}
+          </span>
+          <div class="row">
+            {#each floor.talents as talent (talent.id)}
+              {@const status = talentStatus($gameState, talent)}
+              {@const back = takeBackStatus($gameState, talent, $talentDraft)}
+              <div
+                class="talent"
+                class:locked={!status.canInvest && status.rank === 0}
+                class:taken={status.rank > 0}
+                data-talent={talent.id}
+              >
+                <div class="head">
+                  <Icon name={talent.icon} /><span class="name">{talent.name}</span>
+                  <span class="rank" class:full={status.rank === status.maxRank} data-rank>
+                    {status.rank}/{status.maxRank}
+                  </span>
+                </div>
+                <!-- СТРЕЛКА НАЗВАНА ПРЯМО, а не нарисована линией: линия в
+                     колонке из тринадцати рядов читается хуже имени. -->
+                {#if talent.requires}
+                  <span class="arrow" data-arrow>
+                    ↑ {TALENT_BY_ID[talent.requires.talentId]?.name ?? talent.requires.talentId}
+                    {#if (talent.requires.minRank ?? 1) > 1}({talent.requires.minRank}){/if}
+                  </span>
+                {/if}
+                <div class="effect">{effectText(talent)}</div>
+                <div class="acts">
+                  {#if status.canInvest}
+                    <Button size="sm" variant="primary" onclick={() => investTalentPoint(talent.id)}>
+                      Вложить
+                    </Button>
+                  {:else}
+                    <span class="reason" data-reason>
+                      {REASON_TEXT[status.reason ?? 'no-points'](talent)}
+                      {#if status.reason === 'branch-locked'}
+                        <span class="progress">
+                          (вложено {status.pointsInBranch} из {status.requiredPointsInBranch})
+                        </span>
+                      {/if}
+                    </span>
+                  {/if}
+                  <!-- ОТМЕНА ПОКА ЭКРАН ОТКРЫТ. Кнопка появляется только у
+                       того, что вложено В ЭТОТ ЗАХОД: остальное снимается
+                       платным сбросом, и обещать иное нельзя. -->
+                  {#if back.fromThisVisit > 0}
+                    <Button
+                      size="sm"
+                      disabled={!back.canTakeBack}
+                      title={back.reason === 'blocks-dependent'
+                        ? 'Ниже стоит талант, которому нужен этот ранг'
+                        : 'Снять очко, вложенное в этот заход'}
+                      onclick={() => takeBackTalentPoint(talent.id)}
+                    >
+                      Снять
+                    </Button>
+                  {/if}
+                </div>
+              </div>
+            {/each}
+          </div>
+        </div>
+      {/each}
+    </div>
+  {/each}
 
   {#snippet footer()}
     <Button disabled={!reset.canReset} onclick={() => resetTalentTree()}>
@@ -203,21 +288,77 @@
 {/if}
 
 <style>
-  h3 {
-    margin: 0;
+  /* ПЕРЕКЛЮЧАТЕЛЬ ВЕТОК. Три дерева по тридцать с лишним узлов рядом не
+     помещаются, а число вложенных очков видно у каждой вкладки: выбор ветки
+     — главное решение, и делать его вслепую нельзя. */
+  .tabs {
+    display: flex;
+    gap: var(--space-1);
+    margin-bottom: var(--space-3);
+  }
+  .tab {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    min-height: var(--tap-min);
+    padding: var(--space-2);
+    font: inherit;
+    color: var(--c-text-muted);
+    background: var(--c-surface-sunken);
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+  }
+  .tab.active {
+    color: var(--c-text);
+    border-color: var(--c-accent);
+    background: color-mix(in srgb, var(--c-accent) var(--tint-weak), var(--c-surface-sunken));
+  }
+  .spent {
     font-size: var(--text-xs);
-    letter-spacing: var(--tracking-wide);
-    text-transform: uppercase;
     color: var(--c-text-faint);
   }
-  .branches {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: var(--space-3);
+  .spent.some {
+    color: var(--c-xp);
   }
   .branch {
     display: flex;
     flex-direction: column;
+    gap: var(--space-2);
+  }
+  /* ЭТАЖ — РЯД. Порог слева один на ряд: он общий для всех талантов этажа,
+     и повторять его у каждой клетки значило бы сказать одно трижды. */
+  .floor {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    align-items: start;
+    gap: var(--space-2);
+  }
+  .gate {
+    min-width: 2ch;
+    padding-top: var(--space-2);
+    font-size: var(--text-xs);
+    color: var(--c-text-faint);
+    text-align: right;
+  }
+  .gate.met {
+    color: var(--c-xp);
+  }
+  .row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+    gap: var(--space-2);
+  }
+  .arrow {
+    font-size: var(--text-2xs);
+    color: var(--c-accent);
+  }
+  .acts {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
     gap: var(--space-2);
   }
   .talent {
@@ -264,13 +405,5 @@
   }
   .hint {
     color: var(--c-text-faint);
-  }
-
-  @media (min-width: 720px) {
-    .branches {
-      /* Веток три, и на широком экране они стоят рядом: дерево читается
-         целиком, а не листается. */
-      grid-template-columns: repeat(3, 1fr);
-    }
   }
 </style>

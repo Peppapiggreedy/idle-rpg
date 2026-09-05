@@ -17,6 +17,8 @@ import {
   reviveMultiplier,
   spentInBranch,
   spentPoints,
+  takeBackStatus,
+  takeBackTalent,
   talentFlags,
   talentModifiers,
   talentStatus,
@@ -33,8 +35,13 @@ import { WEAPONS } from '../data/items'
 import { CLASSES, classById } from '../data/classes'
 import {
   BRANCHES,
+  pathRanks,
+  pathsOf,
   BRANCH_DEPTH,
-  BRANCH_RANKS,
+  branchCapacity,
+  capacityAbove,
+  dependentsOf,
+  type TalentDef,
   BRANCH_ROWS,
   BRANCH_ROW_STEP,
   CONCEPT_ROWS,
@@ -82,25 +89,69 @@ function invest(state: GameState, talentId: string, times: number): GameState {
  * этажи требуют по 5 очков, а вмещают по 6, и «21-е очко» при заполнении
  * подряд уходит в четвёртый этаж, а не в пятый.
  */
-function reachRow(state: GameState, branch: BranchId, row: number): GameState {
-  const talents = talentsInBranch(branch)
-  const target = talents[row - 1]
+/**
+ * Довести героя до КОНКРЕТНОГО таланта и взять один его ранг.
+ *
+ * Раньше цель искалась по номеру этажа (`talents[row - 1]`) — с одним
+ * талантом на этаже это было одно и то же. Теперь на этаже двое-трое, и
+ * «пятый этаж» больше не адрес: цель называется по имени.
+ *
+ * Порог набирается ЧЕМ УГОДНО СВЕРХУ, а опора стрелки — отдельно и до конца:
+ * тест про конкретный талант не должен зависеть от того, в каком порядке
+ * автор ветки напечатал соседей.
+ */
+function reachTalent(state: GameState, talentId: string, avoid: string[] = []): GameState {
+  const target = TALENT_BY_ID[talentId]
   let next = state
   let spent = 0
-  for (const talent of talents.slice(0, row - 1)) {
-    const take = Math.min(talent.maxRank, target.requiredPointsInBranch - spent)
-    if (take <= 0) break
-    next = invest(next, talent.id, take)
+  const need = target.requires
+  if (need) {
+    const anchor = TALENT_BY_ID[need.talentId]
+    const take = need.minRank ?? 1
+    next = invest(next, anchor.id, take)
     spent += take
   }
+  // ПОРОГ НАБИРАЕТСЯ СВЕРХУ ВНИЗ, А ВНУТРИ ЭТАЖА — НЕЙТРАЛЬНЫМИ ВПЕРЁД.
+  //
+  // Порядок по этажам обязателен: порог этажа не пускает вкладывать вниз, и
+  // «сперва все нейтральные ветки» упирается в него на первом же шаге —
+  // именно так этот помощник и сломался, набрав 27 очков вместо 60.
+  //
+  // Нейтральные вперёд — чтобы по дороге к цели не скупались ПОВОРОТЫ,
+  // молча меняющие предмет проверки. Что нейтральным не заменить, называется
+  // списком `avoid` прямо в тесте: «Очертя голову» делает «Сокрушение»
+  // мгновенным, и тест про очередь замаха с ним теряет смысл.
+  const above = talentsInBranch(target.branch).filter(
+    (t) => t.row < target.row && !avoid.includes(t.id),
+  )
+  const rows = [...new Set(above.map((t) => t.row))].sort((a, b) => a - b)
+  for (const row of rows) {
+    if (spent >= target.requiredPointsInBranch) break
+    const onRow = above.filter((t) => t.row === row)
+    const neutral = onRow.filter((t) => t.effect.kind === 'modifiers')
+    for (const talent of [...neutral, ...onRow.filter((t) => !neutral.includes(t))]) {
+      if (spent >= target.requiredPointsInBranch) break
+      const have = rankOf(next.talents, talent.id)
+      const take = Math.min(talent.maxRank - have, target.requiredPointsInBranch - spent)
+      if (take <= 0) continue
+      const before = next
+      next = invest(next, talent.id, take)
+      if (next !== before) spent += take
+    }
+  }
   return invest(next, target.id, 1)
+}
+
+/** Все таланты ветки — короткая обёртка для проверок формы. */
+function pathsAndFloors(branch: BranchId) {
+  return talentsInBranch(branch)
 }
 
 /**
  * Вкладывает ветку до нужной глубины, по рядам сверху вниз. Списком id это
  * делать нельзя: ветки растут, и тест ломался бы от каждого нового таланта.
  */
-function fillBranch(state: GameState, branch: BranchId, points = BRANCH_DEPTH): GameState {
+function fillBranch(state: GameState, branch: BranchId, points = 1000): GameState {
   let next = state
   let left = points
   for (const talent of talentsInBranch(branch)) {
@@ -125,35 +176,132 @@ describe('данные дерева', () => {
     }
   })
 
-  it('каждая ветка ровно 61 очко глубиной: 13 этажей, шаг требования 5', () => {
-    // Глубина — не украшение: она равна числу очков за путь до сотого уровня,
-    // и от неё зависит, что «влить всё в одну ветку» — законченный выбор.
-    expect(BRANCH_DEPTH).toBe(61)
-    expect(BRANCH_RANKS).toHaveLength(BRANCH_ROWS)
+  // ГЛУБИНА И ЁМКОСТЬ — РАЗНЫЕ ВЕЛИЧИНЫ, И У КАЖДОЙ СВОЁ ИМЯ.
+  //
+  // Пока на этаже стоял один талант, они почти совпадали (60 и 61) и жили
+  // одной константой. С двумя-тремя талантами на этаже ёмкость уходит вдвое
+  // выше глубины, и всякое место, где смыслы перепутаны, ломается ТИХО.
+  it('глубина ветки — 60 очков и от наполнения не зависит', () => {
+    // Глубина задана ФОРМОЙ: тринадцатый этаж требует 5 × 12.
+    expect(BRANCH_DEPTH).toBe(60)
+    expect(BRANCH_DEPTH).toBe((BRANCH_ROWS - 1) * BRANCH_ROW_STEP)
     for (const branch of BRANCHES) {
       const talents = talentsInBranch(branch.id)
-      expect(talents.map((t) => t.row), branch.id).toEqual(BRANCH_RANKS.map((_, i) => i + 1))
-      expect(talents.map((t) => t.maxRank), branch.id).toEqual([...BRANCH_RANKS])
-      expect(
-        talents.reduce((n, t) => n + t.maxRank, 0),
-        branch.id,
-      ).toBe(BRANCH_DEPTH)
-      expect(talents.map((t) => t.requiredPointsInBranch), branch.id).toEqual(
-        BRANCH_RANKS.map((_, i) => i * BRANCH_ROW_STEP),
-      )
+      const lastRow = Math.max(...talents.map((t) => t.row))
+      expect(lastRow, branch.id).toBe(BRANCH_ROWS)
+      const capstones = talents.filter((t) => t.row === BRANCH_ROWS)
+      for (const c of capstones) expect(c.requiredPointsInBranch, c.id).toBe(BRANCH_DEPTH)
     }
-    expect(TALENTS).toHaveLength(BRANCHES.length * BRANCH_ROWS)
   })
 
-  it('концептуальные таланты стоят на своих этажах и все — флаги', () => {
-    // Три «поворота» на ветку, и каждый в один ранг: талант либо взят, либо
-    // нет. Тратить на него шесть очков значило бы размазывать поворот.
+  it('ёмкость ветки — сумма рангов, и она НЕ равна глубине', () => {
     for (const branch of BRANCHES) {
       const talents = talentsInBranch(branch.id)
+      const sum = talents.reduce((n, t) => n + t.maxRank, 0)
+      expect(branchCapacity(branch.id), branch.id).toBe(sum)
+      // Ёмкость обязана быть НЕ МЕНЬШЕ глубины, иначе до венца не добраться.
+      expect(branchCapacity(branch.id), branch.id).toBeGreaterThanOrEqual(BRANCH_DEPTH)
+    }
+  })
+
+  it('каждый этаж достижим: порог не больше того, что помещается выше', () => {
+    // Настоящий инвариант формы. Раньше его держала таблица BRANCH_RANKS —
+    // но таблица знала ранги ПО ЭТАЖУ, а с альтернативами ранг принадлежит
+    // таланту, и проверять надо ёмкость этажей выше, а не строку таблицы.
+    for (const branch of BRANCHES) {
+      for (const talent of talentsInBranch(branch.id)) {
+        expect(
+          talent.requiredPointsInBranch,
+          `${talent.id}: порог выше того, что помещается над ним`,
+        ).toBeLessThanOrEqual(capacityAbove(branch.id, talent.row))
+      }
+    }
+  })
+
+  it('этажи идут подряд с первого, требование растёт шагом', () => {
+    for (const branch of BRANCHES) {
+      const talents = talentsInBranch(branch.id)
+      const rows = [...new Set(talents.map((t) => t.row))].sort((a, b) => a - b)
+      expect(rows, branch.id).toEqual(Array.from({ length: BRANCH_ROWS }, (_, i) => i + 1))
       for (const talent of talents) {
+        expect(talent.requiredPointsInBranch, talent.id).toBe((talent.row - 1) * BRANCH_ROW_STEP)
+      }
+    }
+  })
+
+  it('концептуальный этаж — таланты в ОДИН ранг, обычный — многоранговые', () => {
+    // Три «поворота» на ветку, и каждый в один ранг: талант либо взят, либо
+    // нет. Тратить на него шесть очков значило бы размазывать поворот.
+    //
+    // ФЛАГ БОЛЬШЕ НЕ ПРИЗНАК ПОВОРОТА. Раньше проверялось «концепт ⇔ флаг», и
+    // это было верно ровно пока поворот был один на этаже. Теперь их два, и
+    // второй может быть правкой умения — «Сокрушение бьёт сразу» меняет
+    // ротацию не меньше флага, а флага для этого не нужно.
+    for (const branch of BRANCHES) {
+      for (const talent of talentsInBranch(branch.id)) {
         const concept = CONCEPT_ROWS.includes(talent.row)
-        expect(talent.effect.kind === 'flag', `${talent.id} на этаже ${talent.row}`).toBe(concept)
         if (concept) expect(talent.maxRank, talent.id).toBe(1)
+        else expect(talent.maxRank, talent.id).toBeGreaterThan(1)
+      }
+    }
+  })
+
+  it('на каждом концептуальном этаже поворот НЕ ОДИН, и хотя бы один — флаг', () => {
+    // Этаж-поворот с единственным талантом — это не поворот, а ступенька:
+    // выбора на нём нет, очко всё равно уходит в единственный узел.
+    for (const branch of BRANCHES) {
+      const floors = pathsAndFloors(branch.id)
+      for (const row of CONCEPT_ROWS) {
+        const onRow = floors.filter((t) => t.row === row)
+        // Ветка-лестница ещё не переделана — у неё поворот один; готовая
+        // ветка обязана давать выбор. Проверяем то, что верно для обеих:
+        // хотя бы один талант, и все в один ранг.
+        expect(onRow.length, `${branch.id} этаж ${row}`).toBeGreaterThanOrEqual(1)
+        expect(onRow.some((t) => t.effect.kind === 'flag'), `${branch.id} этаж ${row}`).toBe(true)
+      }
+    }
+  })
+
+  it('в Гневе на каждом этаже ЕСТЬ ВЫБОР, а на венце — два капстоуна', () => {
+    // Первая переделанная ветка. Требование, ради которого затевалась ночь:
+    // на этаже стоит больше одного таланта — иначе это лестница.
+    const floors = new Map<number, number>()
+    for (const talent of talentsInBranch(WRATH)) {
+      floors.set(talent.row, (floors.get(talent.row) ?? 0) + 1)
+    }
+    for (const [row, count] of floors) {
+      expect(count, `Гнев, этаж ${row}`).toBeGreaterThanOrEqual(2)
+      expect(count, `Гнев, этаж ${row}`).toBeLessThanOrEqual(3)
+    }
+    expect(floors.get(BRANCH_ROWS)).toBe(2)
+  })
+
+  it('в Гневе больше половины талантов правят УМЕНИЯ', () => {
+    // Ветка из процентов меняет ЧИСЛА; ветка, правящая умения, меняет
+    // РОТАЦИЮ — а ротация и есть то немногое, чем игрок в idle-игре
+    // управляет. Флаг, привязанный к умению, считается наравне с правкой.
+    const talents = talentsInBranch(WRATH)
+    const touches = talents.filter(
+      (t) => t.effect.kind === 'ability' || (t.effect.kind === 'flag' && 'abilityId' in t.effect),
+    )
+    expect(touches.length * 2).toBeGreaterThan(talents.length)
+    // И НАЧИНАЯ СО ВТОРОГО ЭТАЖА такой есть на КАЖДОМ: ветка не должна
+    // начинаться десятком процентов и вспоминать про умения к венцу.
+    for (let row = 2; row <= BRANCH_ROWS; row += 1) {
+      expect(touches.some((t) => t.row === row), `Гнев, этаж ${row}`).toBe(true)
+    }
+  })
+
+  it('НИ ОДИН талант не даёт плоскую прибавку к характеристике', () => {
+    // Правило держит content:check (TALENT_STAT_RULE), здесь — второй замок
+    // на самом заметном случае: «+3 к силе» это 12.5 % силы атаки на 25-м
+    // уровне и 4.2 % на сотом, то есть мёртвый узел, за который платят
+    // обычным очком.
+    const ATTRIBUTES = ['strength', 'agility', 'intellect', 'vitality']
+    for (const talent of TALENTS) {
+      if (talent.effect.kind !== 'modifiers') continue
+      for (const mod of talent.effect.mods) {
+        expect(ATTRIBUTES, `${talent.id}: ${mod.stat}`).not.toContain(mod.stat)
       }
     }
   })
@@ -178,6 +326,7 @@ describe('данные дерева', () => {
     for (const talent of TALENTS) {
       expect(talent.maxRank).toBeGreaterThan(0)
       if (talent.effect.kind === 'modifiers') expect(talent.effect.mods.length).toBeGreaterThan(0)
+      else if (talent.effect.kind === 'ability') expect(talent.effect.tune.length).toBeGreaterThan(0)
       else expect(talent.effect.flag).toBeTruthy()
     }
   })
@@ -194,10 +343,14 @@ describe('данные дерева', () => {
 })
 
 describe('дерево привязано к классу', () => {
-  it('герой видит ровно три свои ветки и 39 своих талантов', () => {
+  it('герой видит ровно три свои ветки и все их таланты', () => {
+    // Числом это больше не считается: талантов на этаже бывает один, два или
+    // три, и «три на тринадцать» перестало быть правдой в тот день, когда у
+    // первой ветки появились альтернативы.
     const warden = hero(TALENT_FIRST_LEVEL)
     expect(heroBranches(warden).map((b) => b.id)).toEqual(WARDEN.branchIds)
-    expect(heroTalents(warden)).toHaveLength(3 * BRANCH_ROWS)
+    const expected = WARDEN.branchIds.reduce((n, id) => n + talentsInBranch(id).length, 0)
+    expect(heroTalents(warden)).toHaveLength(expected)
     expect(heroTalents(warden).every((t) => WARDEN.branchIds.includes(t.branch))).toBe(true)
   })
 
@@ -232,27 +385,53 @@ describe('очки талантов', () => {
     expect(availablePoints(after)).toBe(3)
   })
 
-  it('за весь путь хватает на одну ветку целиком и на заход во вторую', () => {
-    // Это и есть цена выбора: ОДНА ветка закрывается целиком, на вторую
-    // остаётся заход до середины, а на третью не остаётся ничего. Хватило бы
-    // на две ветки — капстоуны перестали бы быть выбором.
+  it('НА ВЕТКУ ЦЕЛИКОМ НЕ ХВАТАЕТ — И В ЭТОМ ВСЯ ЦЕНА ВЫБОРА', () => {
+    // РАНЬШЕ БЫЛО НАОБОРОТ, и это была не цель, а следствие лестницы: при
+    // одном таланте на этаже ёмкость (61) почти совпадала с глубиной (60), и
+    // 91 очко закрывало ветку целиком да ещё заходило во вторую. Выбирать
+    // внутри ветки было нечего — очки просто лились сверху вниз.
+    //
+    // Теперь ёмкость переделанной ветки БОЛЬШЕ, чем очков за всю игру: до
+    // венца дойти можно (глубина 60), взять всё — нельзя. Дефицит и делает
+    // альтернативы на этажах альтернативами.
+    const capacity = branchCapacity(WRATH)
     const total = earnedPoints(new Decimal(LEVEL_CAP))
     expect(total).toBeGreaterThan(BRANCH_DEPTH)
-    expect(total).toBeLessThan(BRANCH_DEPTH * 2)
+    expect(total).toBeLessThan(capacity)
 
+    // До ВЕНЦА при этом добраться можно, и с большим запасом: глубина —
+    // 60 очков, а не 114.
     const capped = hero(LEVEL_CAP)
     const full = fillBranch(capped, WRATH)
-    expect(spentInBranch(full.talents, WRATH)).toBe(BRANCH_DEPTH)
-    // И капстоун взят: последний этаж — это то, ради чего ветка добивается.
-    const capstone = talentsInBranch(WRATH)[BRANCH_ROWS - 1]
-    expect(rankOf(full.talents, capstone.id)).toBe(1)
+    expect(spentInBranch(full.talents, WRATH)).toBe(total)
+    expect(availablePoints(full)).toBe(0)
+  })
 
-    // Остаток уходит во вторую ветку — и до её капстоуна не дотягивает.
-    const both = fillBranch(full, BULWARK, availablePoints(full))
-    expect(availablePoints(both)).toBe(0)
-    expect(spentInBranch(both.talents, BULWARK)).toBe(total - BRANCH_DEPTH)
-    const secondCapstone = talentsInBranch(BULWARK)[BRANCH_ROWS - 1]
-    expect(rankOf(both.talents, secondCapstone.id)).toBe(0)
+  it('ЁМКОСТЬ РЕШАЕТ, закрывается ветка целиком или нет', () => {
+    // Строка стоит рядом с предыдущей нарочно: по ней видно, что переделка
+    // ветки меняет ИМЕННО ЭТУ величину, а не что-то ещё. Ветка-лестница
+    // (ёмкость около глубины) закрывается целиком и очков на неё хватает;
+    // ветка с альтернативами — нет.
+    //
+    // Проверка идёт ПО ДАННЫМ, а не по имени ветки: имя пришлось бы менять
+    // в тот день, когда переделают следующую.
+    const total = earnedPoints(new Decimal(LEVEL_CAP))
+    // Только СВОИ ветки: в чужую очко не вложить вовсе, и «вложено ноль»
+    // там означает не выбор, а правило про класс.
+    for (const branch of BRANCHES.filter((b) => b.classId === WARDEN.id)) {
+      const capacity = branchCapacity(branch.id)
+      const filled = fillBranch(hero(LEVEL_CAP), branch.id)
+      const spent = spentInBranch(filled.talents, branch.id)
+      if (capacity <= total) {
+        // Влезает целиком — значит и вложено целиком, вместе с венцом.
+        expect(spent, branch.id).toBe(capacity)
+        const capstone = talentsInBranch(branch.id).find((t) => t.row === BRANCH_ROWS)!
+        expect(rankOf(filled.talents, capstone.id), branch.id).toBe(1)
+      } else {
+        // Не влезает — очки кончились раньше ветки, и это цена выбора.
+        expect(spent, branch.id).toBe(total)
+      }
+    }
   })
 })
 
@@ -327,7 +506,7 @@ describe('эффекты талантов', () => {
     // Первый поворот — пятый этаж, и он требует 20 очков в ветке.
     const before = fillBranch(s, WRATH, 20)
     expect(talentFlags(before.talents).size).toBe(0)
-    const after = reachRow(s, WRATH, CONCEPT_ROWS[0])
+    const after = reachTalent(s, 'wrath-rupture')
     expect(talentFlags(after.talents).has('ability-learns-effect')).toBe(true)
   })
 
@@ -340,7 +519,7 @@ describe('эффекты талантов', () => {
     const plain = useAbility(base, 'quick-strike', () => 1, () => {})
     expect(plain.activeEffects).toEqual([])
 
-    const talented = reachRow(base, WRATH, CONCEPT_ROWS[0])
+    const talented = reachTalent(base, 'wrath-rupture')
     const bleeding = useAbility(talented, 'quick-strike', () => 1, () => {})
     expect(bleeding.activeEffects).toHaveLength(1)
     expect(bleeding.activeEffects[0].abilityId).toBe('quick-strike')
@@ -350,7 +529,7 @@ describe('эффекты талантов', () => {
   it('второй поворот ветки живучести сокращает простой после смерти', () => {
     const s = hero(LEVEL_CAP)
     expect(reviveMultiplier(s.talents)).toBe(1)
-    const swift = reachRow(s, BULWARK, CONCEPT_ROWS[1])
+    const swift = reachTalent(s, talentsInBranch(BULWARK).find((t) => t.row === CONCEPT_ROWS[1])!.id)
     expect(reviveMultiplier(swift.talents)).toBeLessThan(1)
 
     // Проверяем на живом тике: герой с нулевым HP уходит в простой.
@@ -391,7 +570,10 @@ describe('эффекты талантов', () => {
       abilitySettings: manualOnlySettings(),
       monster: { ...tough.monster, maxHp: new Decimal(1e12), currentHp: new Decimal(1e12) },
     }
-    const full = reachRow(base, WRATH, CONCEPT_ROWS[2])
+    // «Очертя голову» по дороге не покупаем: оно делает «Сокрушение»
+    // мгновенным, и умение перестаёт вставать в очередь на замах — то есть
+    // проверять было бы нечего.
+    const full = reachTalent(base, 'wrath-second-swing', ['wrath-headlong'])
     const charged = TALENT_BY_ID['wrath-second-swing']
     expect(rankOf(full.talents, charged.id)).toBe(1)
     const ability = ABILITY_BY_ID['shattering-blow']
@@ -415,15 +597,85 @@ describe('эффекты талантов', () => {
   })
 })
 
-describe('fillBranchRanks — заполнение ветки для прогонов', () => {
-  it('раскладывает очки по этажам сверху вниз и не превышает потолок', () => {
+describe('пути внутри ветки — сборка для прогонов', () => {
+  const spentOf = (ranks: Record<string, number>) =>
+    Object.values(ranks).reduce((n, r) => n + r, 0)
+
+  it('очки тратятся до последнего и ни один талант не выше потолка', () => {
     const ranks = fillBranchRanks(WRATH, 21)
-    const total = Object.values(ranks).reduce((n, r) => n + r, 0)
-    expect(total).toBe(21)
+    expect(spentOf(ranks)).toBe(21)
     for (const [id, rank] of Object.entries(ranks)) {
       expect(rank, id).toBeLessThanOrEqual(TALENT_BY_ID[id].maxRank)
     }
-    expect(Object.values(fillBranchRanks(WRATH, 1000)).reduce((n, r) => n + r, 0)).toBe(BRANCH_DEPTH)
+    // Потолок заполнения — ёмкость ПУТИ. Сейчас путь перечисляет всю ветку
+    // (порядок и есть его лицо), но так будет не всегда: путь — ВЫБОРКА, и
+    // то, что он берёт не всё, было бы не дефектом, а им самим.
+    const path = pathsOf(WRATH)[0]
+    const pathCapacity = path.order.reduce((n, id) => n + TALENT_BY_ID[id].maxRank, 0)
+    expect(pathCapacity).toBeLessThanOrEqual(branchCapacity(WRATH))
+    expect(spentOf(fillBranchRanks(WRATH, 1000))).toBe(pathCapacity)
+  })
+
+  it('ПУТЬ ДОВОДИТ ДО ВЕНЦА, а жадная заливка сверху вниз — нет', () => {
+    // САМОЕ ВАЖНОЕ В ЭТОМ ФАЙЛЕ ПРО ПРОГОН. Ёмкость Гнева (114) больше, чем
+    // очков у героя сотого уровня (91): заливка «сверху вниз» тратит всё, до
+    // тринадцатого этажа так и не дойдя, то есть меряет ветку БЕЗ ВЕНЦА —
+    // ради которого её и берут. Путь лежит в данных и ставит опоры первыми.
+    const points = earnedPoints(new Decimal(LEVEL_CAP))
+    const byPath = fillBranchRanks(WRATH, points)
+    const capstones = talentsInBranch(WRATH).filter((t) => t.row === BRANCH_ROWS)
+    expect(capstones.some((t) => (byPath[t.id] ?? 0) > 0)).toBe(true)
+
+    // Та самая жадная заливка, для сравнения: она до венца не доходит.
+    let spent = 0
+    const greedy: Record<string, number> = {}
+    for (const talent of talentsInBranch(WRATH)) {
+      if (spent < talent.requiredPointsInBranch) break
+      const rank = Math.min(talent.maxRank, points - spent)
+      if (rank <= 0) break
+      greedy[talent.id] = rank
+      spent += rank
+    }
+    expect(capstones.some((t) => (greedy[t.id] ?? 0) > 0)).toBe(false)
+  })
+
+  it('путь берёт только СВОИ таланты и уважает пороги и стрелки', () => {
+    for (const branch of BRANCHES) {
+      for (const path of pathsOf(branch.id)) {
+        const own = new Set(talentsInBranch(branch.id).map((t) => t.id))
+        for (const id of path.order) expect(own.has(id), `${path.id}: ${id}`).toBe(true)
+
+        const capacity = path.order.reduce((n, id) => n + TALENT_BY_ID[id].maxRank, 0)
+        const ranks = pathRanks(path, capacity)
+        let spent = 0
+        for (const talent of talentsInBranch(branch.id)) spent += ranks[talent.id] ?? 0
+        // Путь, который сам себя не выкупает, недостижим целиком: где-то в
+        // нём талант, до которого по его же порядку не добраться.
+        expect(spent, path.id).toBe(capacity)
+        for (const talent of talentsInBranch(branch.id)) {
+          const need = talent.requires
+          if (!need || !(ranks[talent.id] ?? 0)) continue
+          expect(ranks[need.talentId] ?? 0, `${path.id}: ${talent.id}`).toBeGreaterThanOrEqual(
+            need.minRank ?? 1,
+          )
+        }
+      }
+    }
+  })
+
+  it('у переделанной ветки путей ДВА, и они берут разное', () => {
+    // Два жизнеспособных пути внутри ветки — то, ради чего на этажах и
+    // появились альтернативы. Если оба пути покупают одно и то же, выбора
+    // нет, сколько бы клеток ни стояло в ряду.
+    const paths = pathsOf(WRATH)
+    expect(paths.length).toBe(2)
+    const points = earnedPoints(new Decimal(LEVEL_CAP))
+    const [first, second] = paths.map((p) => pathRanks(p, points))
+    const differing = new Set([...Object.keys(first), ...Object.keys(second)]).size
+    expect(differing).toBeGreaterThan(Object.keys(first).length)
+    // И хотя бы один талант, взятый одним путём, вторым не берётся вовсе.
+    expect(Object.keys(first).some((id) => !(id in second))).toBe(true)
+    expect(Object.keys(second).some((id) => !(id in first))).toBe(true)
   })
 })
 
@@ -544,5 +796,204 @@ describe('ускорение: талант и предмет неразличи�
       const mods = talentModifiers({ [talent.id]: talent.maxRank }, branch.classId)
       expect(mods.filter((m) => m.stat === 'weaponSpeed')).toEqual([])
     }
+  })
+})
+
+// СТРЕЛКИ-ПРЕДПОСЫЛКИ: талант дорабатывает конкретный талант выше.
+//
+// Настоящих стрелок в данных на этой стадии ещё нет — их приносят стадии
+// 5-7, — поэтому правило проверяется на подставном таланте с настоящими
+// типами: так проверка не зависит от того, какие стрелки сегодня в дереве.
+describe('стрелки-предпосылки', () => {
+  const ANCHOR = talentsInBranch(WRATH)[0]
+
+  function withArrow<T>(minRank: number, body: (talent: TalentDef) => T): T {
+    const dependent: TalentDef = {
+      id: 'проверочная-стрелка',
+      name: 'Проверочная',
+      icon: 'talent-honed-edge',
+      branch: WRATH,
+      row: 2,
+      maxRank: 3,
+      requiredPointsInBranch: BRANCH_ROW_STEP,
+      requires: { talentId: ANCHOR.id, minRank },
+      effect: { kind: 'modifiers', mods: [{ stat: 'attackPower', kind: 'percent', value: new Decimal(0.01) }] },
+    }
+    TALENTS.push(dependent)
+    TALENT_BY_ID[dependent.id] = dependent
+    try {
+      return body(dependent)
+    } finally {
+      TALENTS.pop()
+      delete TALENT_BY_ID[dependent.id]
+    }
+  }
+
+  it('предпосылка блокирует вложение и разблокирует при наборе', () => {
+    // Стрелка требует ПОЛНЫЙ ранг опорного, а порог этажа — всего пять очков.
+    // Так проверяется именно стрелка: очков в ветке уже хватает, и отказ
+    // приходит своим кодом, а не общим «этаж закрыт».
+    withArrow(ANCHOR.maxRank, (dependent) => {
+      const rich = hero(LEVEL_CAP)
+      const primed = invest(rich, ANCHOR.id, ANCHOR.maxRank - 1)
+      expect(spentInBranch(primed.talents, WRATH)).toBeGreaterThanOrEqual(
+        dependent.requiredPointsInBranch,
+      )
+      const blocked = talentStatus(primed, dependent)
+      expect(blocked.canInvest).toBe(false)
+      expect(blocked.reason).toBe('needs-talent')
+
+      // Добрали последний ранг опорного — стрелка открылась.
+      const ready = invest(primed, ANCHOR.id, 1)
+      expect(talentStatus(ready, dependent)).toMatchObject({ canInvest: true, reason: null })
+    })
+  })
+
+  it('порог этажа проверяется РАНЬШЕ стрелки', () => {
+    // Порядок причин не косметика: порог не лечится ничем, кроме очков в
+    // ветке, и назвать надо ту причину, которая ближе к делу.
+    withArrow(1, (dependent) => {
+      const fresh = hero(TALENT_FIRST_LEVEL + 20)
+      const status = talentStatus(fresh, dependent)
+      expect(status.reason).toBe('branch-locked')
+    })
+  })
+
+  it('зависимые находятся по цепочке, а не только напрямую', () => {
+    // Снятие опорного обязано убрать ВСЮ цепочку: иначе в дереве останется
+    // узел, который по правилам не мог быть взят.
+    withArrow(1, (first) => {
+      const second: TalentDef = { ...first, id: 'вторая-стрелка', row: 3, requires: { talentId: first.id } }
+      TALENTS.push(second)
+      TALENT_BY_ID[second.id] = second
+      try {
+        const ids = dependentsOf(ANCHOR.id).map((t) => t.id)
+        expect(ids).toContain(first.id)
+        expect(ids).toContain(second.id)
+      } finally {
+        TALENTS.pop()
+        delete TALENT_BY_ID[second.id]
+      }
+    })
+  })
+
+  it('самостоятельный талант зависимых не имеет', () => {
+    expect(dependentsOf(ANCHOR.id)).toEqual([])
+  })
+})
+
+// ОТМЕНА ПОКА ЭКРАН ОТКРЫТ.
+//
+// Очко, вложенное в этот заход, снимается бесплатно; всё остальное — только
+// платным сбросом. Разница между ними — не удобство, а ЦЕНА: раздать сброс
+// бесплатно значит обесценить и сам сброс, и решение, которое игрок принимал,
+// вкладывая очко в прошлый раз.
+//
+// Заход помнит не логика, а экран (`talentDraft` в `stores/ui.ts`): в сейве
+// ему не место — это «где я сейчас», а не прогресс. Логика получает черновик
+// параметром и о том, кто его ведёт, не знает.
+describe('снятие очка в пределах открытого экрана', () => {
+  const FIRST = talentsInBranch(WRATH)[0]
+
+  it('вложенное в этот заход снимается и возвращает очко свободным', () => {
+    const base = invest(hero(LEVEL_CAP), FIRST.id, 2)
+    const before = availablePoints(base)
+    const draft = { [FIRST.id]: 2 }
+
+    const status = takeBackStatus(base, FIRST, draft)
+    expect(status).toMatchObject({ canTakeBack: true, reason: null, fromThisVisit: 2 })
+
+    const after = takeBackTalent(base, FIRST.id, draft)
+    expect(rankOf(after.talents, FIRST.id)).toBe(1)
+    // Отдельного счётчика свободных очков нет — они считаются как
+    // «заработано минус вложено», поэтому снятие возвращает очко само.
+    expect(availablePoints(after)).toBe(before + 1)
+  })
+
+  it('СЧЁТЧИК ПЛАТНЫХ СБРОСОВ НЕ ТРОГАЕТСЯ, и золото тоже', () => {
+    // Иначе бесплатная отмена дорожала бы следующий сброс — то есть была бы
+    // не бесплатной, а с отложенной ценой.
+    const base = invest(hero(LEVEL_CAP), FIRST.id, 1)
+    const after = takeBackTalent(base, FIRST.id, { [FIRST.id]: 1 })
+    expect(after.talentResets).toBe(base.talentResets)
+    expect(after.gold.eq(base.gold)).toBe(true)
+  })
+
+  it('вложенное в ПРОШЛЫЙ заход не снимается', () => {
+    // Закрыл экран — черновик пуст, и остаётся только платный сброс.
+    const base = invest(hero(LEVEL_CAP), FIRST.id, 2)
+    const status = takeBackStatus(base, FIRST, {})
+    expect(status).toMatchObject({ canTakeBack: false, reason: 'not-this-visit', fromThisVisit: 0 })
+    expect(takeBackTalent(base, FIRST.id, {})).toBe(base)
+  })
+
+  it('черновик больше вложенного не даёт снять лишнего', () => {
+    // Черновик ведёт экран, а правду о рангах знает состояние: если они
+    // разошлись (сброс при открытом экране), верить надо состоянию.
+    const base = invest(hero(LEVEL_CAP), FIRST.id, 1)
+    expect(takeBackStatus(base, FIRST, { [FIRST.id]: 5 }).fromThisVisit).toBe(1)
+    const empty = hero(LEVEL_CAP)
+    expect(takeBackStatus(empty, FIRST, { [FIRST.id]: 3 })).toMatchObject({
+      canTakeBack: false,
+      reason: 'nothing-invested',
+    })
+  })
+
+  it('снятие ОТКАЗЫВАЕТ, если обрывает стрелку, а не сносит зависимых', () => {
+    // Каскад здесь был бы бесплатным сбросом с чёрного хода: очки зависимого
+    // могли быть вложены в ПРОШЛЫЙ заход, и молча вернуть их нельзя.
+    const dependent: TalentDef = {
+      id: 'зависимый-от-снятия',
+      name: 'Зависимый',
+      icon: 'talent-honed-edge',
+      branch: WRATH,
+      row: 2,
+      maxRank: 3,
+      requiredPointsInBranch: BRANCH_ROW_STEP,
+      // Стрелка требует ПОЛНЫЙ ранг опорного: только так снятие одного очка
+      // действительно обрывает её, а порог этажа при этом уже набран.
+      requires: { talentId: FIRST.id, minRank: FIRST.maxRank },
+      effect: { kind: 'modifiers', mods: [] },
+    }
+    TALENTS.push(dependent)
+    TALENT_BY_ID[dependent.id] = dependent
+    try {
+      let state = invest(hero(LEVEL_CAP), FIRST.id, FIRST.maxRank)
+      state = invest(state, dependent.id, 1)
+      expect(rankOf(state.talents, dependent.id)).toBe(1)
+
+      const draft = { [FIRST.id]: FIRST.maxRank, [dependent.id]: 1 }
+      // Последний ранг опорного держит стрелку: снять его нельзя.
+      expect(takeBackStatus(state, FIRST, draft)).toMatchObject({
+        canTakeBack: false,
+        reason: 'blocks-dependent',
+      })
+      expect(takeBackTalent(state, FIRST.id, draft)).toBe(state)
+      // Зависимый при этом снимается свободно — и после него опорный тоже.
+      const freed = takeBackTalent(state, dependent.id, draft)
+      expect(rankOf(freed.talents, dependent.id)).toBe(0)
+      expect(takeBackStatus(freed, FIRST, draft).canTakeBack).toBe(true)
+    } finally {
+      TALENTS.pop()
+      delete TALENT_BY_ID[dependent.id]
+    }
+  })
+
+  it('снятие пересчитывает статы, а не только ранг', () => {
+    // Ранг — источник модификаторов; оставить его снятым, а статы прежними
+    // значило бы завести накопительную мутацию, которых в игре нет.
+    const talent = talentsInBranch(WRATH).find(
+      (t) => t.effect.kind === 'modifiers' && t.effect.mods.length > 0,
+    )!
+    const base = invest(hero(LEVEL_CAP), talent.id, 1)
+    const after = takeBackTalent(base, talent.id, { [talent.id]: 1 })
+    const plain = hero(LEVEL_CAP)
+    // Сравниваем ВЕСЬ блок статов: талант мог задеть что угодно, и проверять
+    // только «свои» статы значило бы поверить таланту на слово.
+    const shape = (state: GameState) =>
+      Object.fromEntries(
+        Object.entries(state.stats).map(([key, value]) => [key, value.toString()]),
+      )
+    expect(shape(after)).toEqual(shape(plain))
   })
 })

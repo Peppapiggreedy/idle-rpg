@@ -303,11 +303,21 @@ export type AbilitySlots = (string | null)[]
 export interface Rotation {
   slots: readonly (string | null)[]
   settings: AbilitySettings
+  /**
+   * РАНГИ ТАЛАНТОВ ЕДУТ ВМЕСТЕ С РОТАЦИЕЙ, и это не лишнее поле.
+   *
+   * Талант правит числа умения, а ротацию читают ВСЕ: модель боя, автокаст,
+   * оффлайн, контракты, экран. Пронеси ранги мимо — и каждый из них считал бы
+   * по БАЗОВЫМ числам, то есть обещал бы игроку не то умение, которое у него
+   * в руках. Одно поле здесь дешевле пяти правок в потребителях.
+   */
+  talents: Record<string, number>
 }
 
 export const rotationOf = (state: GameState): Rotation => ({
   slots: state.abilitySlots,
   settings: state.abilitySettings,
+  talents: state.talents,
 })
 
 /** Настройки по умолчанию: автокаст включён, резерв нулевой. Порядок здесь
