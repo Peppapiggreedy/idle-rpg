@@ -172,6 +172,22 @@ test('строка-сводка вместо сцены на 390', async ({ page
   expect(await capture(page, name)).toMatchSnapshot(`${name}.png`)
 })
 
+// ДЕРЕВО С СДЕЛАННЫМ ВЫБОРОМ. Снимок меню на «позднем» пресете показывает
+// сетку, но не показывает главного: взятый ключевой узел, запертого выбором
+// соседа и набранную стрелку рядом с ненабранной. Для этого свой пресет и
+// два снимка — на обеих ширинах, у сетки они разные.
+for (const width of SECTION_WIDTHS) {
+  test(`дерево талантов с выбранным ключевым @ ${width}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 })
+    await openPreset(page, 'tree', true)
+    await openMenu(page, 'Таланты')
+    // Запертый выбором узел на месте: без него снимок был бы про другое.
+    await expect(page.locator('[data-talent][data-group-locked]')).toHaveCount(1)
+    const name = `talents-tree-${width}`
+    expect(await capture(page, name)).toMatchSnapshot(`${name}.png`)
+  })
+}
+
 test('кукла с подсвеченным слотом во время выбора', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 })
   await openPreset(page, 'rich', true)

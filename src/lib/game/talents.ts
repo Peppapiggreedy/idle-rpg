@@ -11,6 +11,8 @@
 import { Decimal } from './numbers'
 import {
   BRANCH_BY_ID,
+  BRANCH_ROW_STEP,
+  CONCEPT_ROWS,
   TALENTS,
   TALENT_BY_ID,
   branchesOfClass,
@@ -20,6 +22,7 @@ import {
   talentsOfClass,
   requiredRank,
   dependentsOf,
+  groupHolder,
   type BranchDef,
   type BranchId,
   type TalentDef,
@@ -32,7 +35,7 @@ import {
   TALENT_RESET_COST_GROWTH,
 } from '../data/balance'
 import { ensureStats } from './stats'
-import type { GameState } from './state'
+import { pushEvent, type GameState } from './state'
 
 // Реэкспорт: чистые производные живут в данных, правила — здесь.
 export { rankOf, talentModifiers, branchesOfClass, talentsOfClass } from '../data/talents'
@@ -82,6 +85,9 @@ export type TalentBlockReason =
   | 'branch-locked'
   // Стрелка не набрана: опорный талант выше не вложен на нужный ранг.
   | 'needs-talent'
+  // Сосед по взаимоисключающей группе уже выбран: сюда нельзя, пока выбор
+  // не снят — отменой в этом заходе или платным сбросом.
+  | 'group-taken'
 
 export interface TalentStatus {
   talentId: string
@@ -91,6 +97,8 @@ export interface TalentStatus {
   reason: TalentBlockReason | null
   pointsInBranch: number // сколько уже вложено в ветку
   requiredPointsInBranch: number
+  /** Кто из группы выбран вместо этого таланта; `null` — никто или группы нет. */
+  groupTakenBy: string | null
 }
 
 /**
@@ -100,17 +108,23 @@ export interface TalentStatus {
 export function talentStatus(state: GameState, talent: TalentDef): TalentStatus {
   const rank = rankOf(state.talents, talent.id)
   const pointsInBranch = spentInBranch(state.talents, talent.branch)
+  const holder = groupHolder(state.talents, talent)
   const base = {
     talentId: talent.id,
     rank,
     maxRank: talent.maxRank,
     pointsInBranch,
     requiredPointsInBranch: talent.requiredPointsInBranch,
+    groupTakenBy: holder?.id ?? null,
   }
   const blocked = (reason: TalentBlockReason) => ({ ...base, canInvest: false, reason })
   // Дерево читается ПО КЛАССУ: ветка чужого класса не открывается ничем.
   if (BRANCH_BY_ID[talent.branch]?.classId !== state.classId) return blocked('other-class')
   if (pointsInBranch < talent.requiredPointsInBranch) return blocked('branch-locked')
+  // ГРУППА ПРОВЕРЯЕТСЯ РАНЬШЕ СТРЕЛКИ. Стрелка лечится очками — вложи в
+  // опору, и откроется; группа не лечится ничем, кроме отказа от уже
+  // сделанного выбора. Из двух причин игроку называют ту, что твёрже.
+  if (holder) return blocked('group-taken')
   // СТРЕЛКА ПРОВЕРЯЕТСЯ ПОСЛЕ ПОРОГА ЭТАЖА: порог не лечится ничем, кроме
   // очков в ветке, а стрелка — конкретным талантом, и назвать игроку надо
   // ту причину, которая ближе к делу.
@@ -132,9 +146,31 @@ export function investTalent(state: GameState, talentId: string): GameState {
   const talent = TALENT_BY_ID[talentId]
   if (!talent) return state
   if (!talentStatus(state, talent).canInvest) return state
+  const rank = rankOf(state.talents, talentId)
+  const talents = { ...state.talents, [talentId]: rank + 1 }
+  // КЛЮЧЕВОЙ ЭТАЖ — СОБЫТИЕ, И РОВНО ОДНО НА ПЕРЕСЕЧЕНИЕ ПОРОГА. Очко,
+  // которым ветка набрала порог ключевого этажа, пишет строку в журнал:
+  // выбор появился, и игрок обязан об этом узнать без окон и пауз.
+  // Отдельного флага «объявлено» в состоянии нет: пересечение снизу вверх
+  // случается один раз на заход, а снятие и сброс, вернувшие ветку под
+  // порог, честно дадут объявить его снова — он и правда снова открылся.
+  let log = state.combatLog
+  const before = spentInBranch(state.talents, talent.branch)
+  for (const row of CONCEPT_ROWS) {
+    const required = (row - 1) * BRANCH_ROW_STEP
+    if (before < required && before + 1 >= required) {
+      log = pushEvent(log, { type: 'talent-floor', branchId: talent.branch, row })
+    }
+  }
+  // ВЗЯТЫЙ КЛЮЧЕВОЙ — тоже строка: первый ранг на ключевом этаже запирает
+  // соседа, и журнал называет, что именно выбрано.
+  if (rank === 0 && CONCEPT_ROWS.includes(talent.row)) {
+    log = pushEvent(log, { type: 'talent-key', talentId })
+  }
   return ensureStats({
     ...state,
-    talents: { ...state.talents, [talentId]: rankOf(state.talents, talentId) + 1 },
+    talents,
+    combatLog: log,
     statsDirty: true, // таланты — источник статов
   })
 }

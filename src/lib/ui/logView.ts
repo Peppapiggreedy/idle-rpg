@@ -92,7 +92,18 @@ export const LOG_FILTERS = {
   loot: { label: 'Добыча', types: ['kill', 'loot', 'autosell', 'autodust', 'loot-swap', 'levelup'] },
   events: {
     label: 'События',
-    types: ['spawn', 'death', 'revive', 'zone', 'boss', 'dungeon-exit', 'dungeon-clear', 'enrage'],
+    types: [
+      'spawn',
+      'death',
+      'revive',
+      'zone',
+      'boss',
+      'dungeon-exit',
+      'dungeon-clear',
+      'enrage',
+      'talent-floor',
+      'talent-key',
+    ],
   },
 } as const satisfies Record<string, { label: string; types: CombatEvent['type'][] | null }>
 

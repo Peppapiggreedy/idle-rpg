@@ -5,6 +5,7 @@
   import { formatNumber } from '../game'
   import { gameState } from '../stores/game'
   import { ABILITY_BY_ID } from '../data/abilities'
+  import { BRANCH_BY_ID, TALENT_BY_ID, groupMates } from '../data/talents'
   import { DUNGEON_CLEAR_XP_BONUS, HEROIC_CLEAR_XP_BONUS } from '../data/dungeons'
   import { MATERIAL_BY_ID } from '../data/materials'
   import { RECIPE_BY_ID } from '../data/recipes'
@@ -119,6 +120,15 @@
         return `${e.monsterName} повержен! +${formatNumber(e.gold)} золота, +${formatNumber(e.xp)} опыта`
       case 'levelup':
         return `Новый уровень: ${formatNumber(e.level)}!`
+      case 'talent-floor':
+        return `Ветка «${BRANCH_BY_ID[e.branchId]?.name ?? e.branchId}»: открыт ключевой этаж ${e.row} — выбери одно из двух`
+      case 'talent-key': {
+        const talent = TALENT_BY_ID[e.talentId]
+        const mates = talent ? groupMates(talent) : []
+        return mates.length > 0
+          ? `Выбран ключевой талант «${talent?.name ?? e.talentId}»; ${mates.map((m) => `«${m.name}»`).join(', ')} теперь заперт`
+          : `Выбран ключевой талант «${talent?.name ?? e.talentId}»`
+      }
       case 'loot':
         return `Выпало: ${e.item.name} [${rarityName(e.item.rarity)}]`
       case 'autosell':
@@ -168,6 +178,8 @@
     effect: 'ability-rending-wound',
     kill: 'xp',
     levelup: 'xp',
+    'talent-floor': 'talent-honed-edge',
+    'talent-key': 'talent-rupture',
     loot: 'slot-trinket',
     autosell: 'gold',
     autodust: 'material-shard',
@@ -225,7 +237,7 @@
     if (e.type === 'block') return 'block'
     if (e.type === 'ability-dropped') return 'warn'
     if (e.type === 'kill') return 'kill'
-    if (e.type === 'levelup' || e.type === 'dungeon-clear') return 'good'
+    if (e.type === 'levelup' || e.type === 'dungeon-clear' || e.type === 'talent-floor' || e.type === 'talent-key') return 'good'
     if (e.type === 'loot') return 'loot'
     return ''
   }

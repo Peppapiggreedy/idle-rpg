@@ -105,7 +105,9 @@ describe('характеристика — выносливость, ось — 
     const registries = [
       'statFormat.ts',
       'ItemMods.svelte',
-      'TalentPanel.svelte',
+      // Реестр дерева талантов переехал из панели в общий текстовый модуль,
+      // когда описание ушло в подсказку и читателей стало два.
+      'talentText.ts',
       'potionText.ts',
       'StatsPanel.svelte',
     ]

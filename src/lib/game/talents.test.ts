@@ -35,6 +35,7 @@ import { WEAPONS } from '../data/items'
 import { CLASSES, classById } from '../data/classes'
 import {
   BRANCHES,
+  groupHolder,
   pathRanks,
   pathsOf,
   BRANCH_DEPTH,
@@ -140,6 +141,11 @@ function reachTalent(state: GameState, talentId: string, avoid: string[] = []): 
     }
   }
   return invest(next, target.id, 1)
+}
+
+/** Сколько рангов опоры требует стрелка таланта (0 — стрелки нет). */
+function requiredRankOf(talent: TalentDef): number {
+  return talent.requires ? (talent.requires.minRank ?? 1) : 0
 }
 
 /** Все таланты ветки — короткая обёртка для проверок формы. */
@@ -597,6 +603,25 @@ describe('эффекты талантов', () => {
   })
 })
 
+/**
+ * Сколько очков путь может вложить вообще: сумма рангов минус те члены
+ * взаимоисключающих групп, которых путь не выбирает. Выбранным считается
+ * первый по порядку пути член группы — ровно так покупает `pathRanks`.
+ */
+function reachableCapacity(path: { order: string[] }): number {
+  const chosenOfGroup = new Map<string, string>()
+  for (const id of path.order) {
+    const group = TALENT_BY_ID[id]?.exclusiveGroup
+    if (group && !chosenOfGroup.has(group)) chosenOfGroup.set(group, id)
+  }
+  return path.order.reduce((sum, id) => {
+    const talent = TALENT_BY_ID[id]
+    const group = talent.exclusiveGroup
+    if (group && chosenOfGroup.get(group) !== id) return sum
+    return sum + talent.maxRank
+  }, 0)
+}
+
 describe('пути внутри ветки — сборка для прогонов', () => {
   const spentOf = (ranks: Record<string, number>) =>
     Object.values(ranks).reduce((n, r) => n + r, 0)
@@ -607,13 +632,13 @@ describe('пути внутри ветки — сборка для прогон�
     for (const [id, rank] of Object.entries(ranks)) {
       expect(rank, id).toBeLessThanOrEqual(TALENT_BY_ID[id].maxRank)
     }
-    // Потолок заполнения — ёмкость ПУТИ. Сейчас путь перечисляет всю ветку
-    // (порядок и есть его лицо), но так будет не всегда: путь — ВЫБОРКА, и
-    // то, что он берёт не всё, было бы не дефектом, а им самим.
+    // Потолок заполнения — ДОСТИЖИМАЯ ёмкость пути: сумма рангов минус те
+    // члены взаимоисключающих групп, которые путь не выбрал. Путь перечисляет
+    // всю ветку, но в каждой группе покупается ровно один.
     const path = pathsOf(WRATH)[0]
-    const pathCapacity = path.order.reduce((n, id) => n + TALENT_BY_ID[id].maxRank, 0)
-    expect(pathCapacity).toBeLessThanOrEqual(branchCapacity(WRATH))
-    expect(spentOf(fillBranchRanks(WRATH, 1000))).toBe(pathCapacity)
+    const reachable = reachableCapacity(path)
+    expect(reachable).toBeLessThan(branchCapacity(WRATH))
+    expect(spentOf(fillBranchRanks(WRATH, 1000))).toBe(reachable)
   })
 
   it('ПУТЬ ДОВОДИТ ДО ВЕНЦА, а жадная заливка сверху вниз — нет', () => {
@@ -645,7 +670,7 @@ describe('пути внутри ветки — сборка для прогон�
         const own = new Set(talentsInBranch(branch.id).map((t) => t.id))
         for (const id of path.order) expect(own.has(id), `${path.id}: ${id}`).toBe(true)
 
-        const capacity = path.order.reduce((n, id) => n + TALENT_BY_ID[id].maxRank, 0)
+        const capacity = reachableCapacity(path)
         const ranks = pathRanks(path, capacity)
         let spent = 0
         for (const talent of talentsInBranch(branch.id)) spent += ranks[talent.id] ?? 0
@@ -995,5 +1020,254 @@ describe('снятие очка в пределах открытого экра�
         Object.entries(state.stats).map(([key, value]) => [key, value.toString()]),
       )
     expect(shape(after)).toEqual(shape(plain))
+  })
+})
+
+// ВЗАИМОИСКЛЮЧАЮЩАЯ ГРУППА: ВЛОЖИЛ В ОДНОГО — ОСТАЛЬНЫЕ ЗАПЕРТЫ.
+//
+// Ночь «три ветки» поставила на ключевых этажах по два таланта и считала,
+// что венцы «разведены путями». Путь — это порядок покупки для модели, и
+// запретить он ничего не может: оба венца брались, а на этажах 5 и 9 модель
+// сама покупала оба концепта. Механизма не было. Здесь он появляется.
+//
+// Настоящих групп в данных на этой стадии ещё нет — их назначает следующая,
+// — поэтому правило проверяется на подставной группе с настоящими типами:
+// так проверка не зависит от того, какие группы сегодня в дереве.
+describe('взаимоисключающие группы', () => {
+  const FLOOR = 5
+  const pair = () => talentsInBranch(WRATH).filter((t) => t.row === FLOOR)
+
+  /** Ставим двум талантам одного этажа общую группу на время проверки. */
+  function withGroup<T>(body: (a: TalentDef, b: TalentDef) => T): T {
+    const [a, b] = pair()
+    const saved = [a.exclusiveGroup, b.exclusiveGroup]
+    a.exclusiveGroup = 'проверочная-группа'
+    b.exclusiveGroup = 'проверочная-группа'
+    try {
+      return body(a, b)
+    } finally {
+      ;[a.exclusiveGroup, b.exclusiveGroup] = saved
+    }
+  }
+
+  /** Герой с открытым пятым этажом Гнева и свободными очками. */
+  function atFloor(): GameState {
+    let s = hero(LEVEL_CAP)
+    for (const t of talentsInBranch(WRATH).filter((x) => x.row < FLOOR)) {
+      if (spentInBranch(s.talents, WRATH) >= (FLOOR - 1) * BRANCH_ROW_STEP) break
+      s = invest(s, t.id, t.maxRank)
+    }
+    return s
+  }
+
+  it('вложение в члена группы ЗАПИРАЕТ остальных кодом group-taken', () => {
+    withGroup((a, b) => {
+      const base = atFloor()
+      expect(talentStatus(base, a).canInvest).toBe(true)
+      expect(talentStatus(base, b).canInvest).toBe(true)
+
+      const chosen = invest(base, a.id, 1)
+      const locked = talentStatus(chosen, b)
+      expect(locked).toMatchObject({ canInvest: false, reason: 'group-taken', groupTakenBy: a.id })
+      // И вложить нельзя — состояние не меняется вовсе.
+      expect(investTalent(chosen, b.id)).toBe(chosen)
+      // У выбранного статус про группу молчит: он и есть выбор.
+      expect(talentStatus(chosen, a).groupTakenBy).toBeNull()
+    })
+  })
+
+  it('группа проверяется РАНЬШЕ стрелки и ПОЗЖЕ порога этажа', () => {
+    // Порог не лечится ничем, кроме очков; группа — только отказом от
+    // выбора; стрелка — очками в опору. Из двух причин называют ту, что
+    // твёрже: поэтому порог первый, группа вторая, стрелка третья.
+    withGroup((a, b) => {
+      const early = hero(TALENT_FIRST_LEVEL + 3)
+      const chosenEarly = { ...early, talents: { [a.id]: 1 } }
+      expect(talentStatus(chosenEarly, b).reason).toBe('branch-locked')
+
+      const chosen = invest(atFloor(), a.id, 1)
+      const withArrow: TalentDef = { ...b, requires: { talentId: 'wrath-honed-edge', minRank: 99 } }
+      expect(talentStatus(chosen, withArrow).reason).toBe('group-taken')
+    })
+  })
+
+  it('бесплатная отмена в открытом экране ОСВОБОЖДАЕТ группу', () => {
+    withGroup((a, b) => {
+      const chosen = invest(atFloor(), a.id, 1)
+      expect(talentStatus(chosen, b).reason).toBe('group-taken')
+      const undone = takeBackTalent(chosen, a.id, { [a.id]: 1 })
+      expect(rankOf(undone.talents, a.id)).toBe(0)
+      expect(talentStatus(undone, b)).toMatchObject({ canInvest: true, groupTakenBy: null })
+      // И выбор можно переменить: теперь заперт первый.
+      const swapped = invest(undone, b.id, 1)
+      expect(talentStatus(swapped, a).reason).toBe('group-taken')
+    })
+  })
+
+  it('платный сброс ОСВОБОЖДАЕТ группу', () => {
+    withGroup((a, b) => {
+      const chosen = { ...invest(atFloor(), a.id, 1), gold: new Decimal(1e9) }
+      expect(talentStatus(chosen, b).reason).toBe('group-taken')
+      const reset = resetTalents(chosen)
+      expect(spentPoints(reset.talents)).toBe(0)
+      // После сброса до пятого этажа ещё дойти надо — порог, а не группа.
+      expect(talentStatus(reset, b).reason).toBe('branch-locked')
+      expect(talentStatus(reset, b).groupTakenBy).toBeNull()
+    })
+  })
+
+  it('МОДЕЛЬ ПРОГОНА уважает группу: путь берёт одного, не обоих', () => {
+    // Иначе прибор мерил бы героя, берущего оба ключевых, — того, которого
+    // в игре после этой стадии не существует.
+    withGroup((a, b) => {
+      for (const path of pathsOf(WRATH)) {
+        const ranks = pathRanks(path, 1000)
+        const taken = [a, b].filter((t) => (ranks[t.id] ?? 0) > 0)
+        expect(taken.length, `${path.name}: взяты ${taken.map((t) => t.id).join(' и ')}`).toBe(1)
+      }
+    })
+  })
+
+  it('группа названа в данных пустой строкой — не группа', () => {
+    // `exclusiveGroup: ''` не должен превращаться в одну общую группу всех
+    // талантов «без группы»: пустое имя читается как отсутствие поля.
+    const [a] = pair()
+    expect(groupHolder({ [a.id]: 1 }, { ...a, id: 'другой', exclusiveGroup: undefined })).toBeNull()
+  })
+})
+
+// КЛЮЧЕВЫЕ ЭТАЖИ — ВЫБОР, А НЕ ДВА ОЧКА ИЗ ДЕВЯНОСТА ОДНОГО.
+//
+// Этаж 5 требует 20 очков в ветке — это 30-й уровень при вложении в одну
+// ветку; этаж 9 — 50-й; этаж 13 — 70-й. Три майлстоуна всей прокачки. Пока
+// на них стояли по два таланта по одному очку и брались оба, выбора не было:
+// «одно очко и очень сильный» ломало не число, а отсутствие ОТКАЗА.
+describe('ключевые этажи Стража — взаимоисключающие пары', () => {
+  const own = BRANCHES.filter((b) => b.classId === WARDEN.id)
+
+  it('на этажах 5, 9 и 13 каждой ветки РОВНО одна группа из двух', () => {
+    for (const branch of own) {
+      for (const row of CONCEPT_ROWS) {
+        const onRow = talentsInBranch(branch.id).filter((t) => t.row === row)
+        const groups = new Set(onRow.map((t) => t.exclusiveGroup))
+        expect(onRow, `${branch.id} этаж ${row}`).toHaveLength(2)
+        expect(groups.size, `${branch.id} этаж ${row}: групп ${[...groups].join(', ')}`).toBe(1)
+        expect([...groups][0], `${branch.id} этаж ${row}: группа не названа`).toBeTruthy()
+      }
+    }
+  })
+
+  it('ни один ключевой талант не модификатор конвейера', () => {
+    // Держит и схема; здесь — второй замок на самом заметном: процент к
+    // криту майлстоуном не является.
+    for (const branch of own) {
+      for (const talent of talentsInBranch(branch.id).filter((t) => CONCEPT_ROWS.includes(t.row))) {
+        expect(talent.effect.kind, talent.id).not.toBe('modifiers')
+      }
+    }
+  })
+
+  it('взять оба ключевых одного этажа НЕВОЗМОЖНО', () => {
+    for (const branch of own) {
+      for (const row of CONCEPT_ROWS) {
+        const [a, b] = talentsInBranch(branch.id).filter((t) => t.row === row)
+        let s = hero(LEVEL_CAP)
+        // Порог этажа набирается ТОЛЬКО нейтральными талантами выше: иначе
+        // по дороге к девятому этажу купились бы ключевые пятого, и тест
+        // проверял бы не ту пару.
+        for (const t of talentsInBranch(branch.id).filter((x) => x.row < row && !CONCEPT_ROWS.includes(x.row))) {
+          if (spentInBranch(s.talents, branch.id) >= a.requiredPointsInBranch) break
+          s = invest(s, t.id, t.maxRank)
+        }
+        expect(spentInBranch(s.talents, branch.id)).toBeGreaterThanOrEqual(a.requiredPointsInBranch)
+        // Стрелки ключевых набираем честно: у пары опоры разные.
+        for (const t of [a, b]) if (t.requires) s = invest(s, t.requires.talentId, requiredRankOf(t))
+        const first = invest(s, a.id, 1)
+        expect(rankOf(first.talents, a.id), a.id).toBe(1)
+        expect(talentStatus(first, b), `${b.id} после ${a.id}`).toMatchObject({
+          canInvest: false,
+          reason: 'group-taken',
+          groupTakenBy: a.id,
+        })
+        expect(investTalent(first, b.id)).toBe(first)
+      }
+    }
+  })
+
+  it('каждая ветка проходится до венца имеющимися очками — по ОБОИМ путям', () => {
+    // Группа не должна отрезать дорогу к венцу: у каждого пути один из двух
+    // капстоунов куплен, и не потому, что очков хватило на оба.
+    const total = earnedPoints(new Decimal(LEVEL_CAP))
+    for (const branch of own) {
+      const capstones = talentsInBranch(branch.id).filter((t) => t.row === BRANCH_ROWS)
+      for (const path of pathsOf(branch.id)) {
+        const ranks = pathRanks(path, total)
+        const taken = capstones.filter((t) => (ranks[t.id] ?? 0) > 0)
+        expect(taken.length, `${branch.id} «${path.name}»: венцов взято ${taken.length}`).toBe(1)
+        for (const row of CONCEPT_ROWS) {
+          const pair = talentsInBranch(branch.id).filter((t) => t.row === row)
+          const got = pair.filter((t) => (ranks[t.id] ?? 0) > 0)
+          expect(got.length, `${branch.id} «${path.name}» этаж ${row}: ключевых взято ${got.length}`).toBe(1)
+        }
+      }
+    }
+  })
+})
+
+describe('ключевой этаж — событие журнала', () => {
+  const keyEvents = (s: GameState) =>
+    s.combatLog.filter((e) => e.type === 'talent-floor' || e.type === 'talent-key')
+  /** Вложить в верхние этажи ветки ровно `points` очков, не трогая ключевые. */
+  function fillTop(state: GameState, points: number): GameState {
+    let next = state
+    let left = points
+    for (const talent of talentsInBranch(WRATH)) {
+      if (left <= 0) break
+      if (CONCEPT_ROWS.includes(talent.row)) continue
+      const take = Math.min(left, talent.maxRank)
+      const before = next
+      next = invest(next, talent.id, take)
+      left -= spentInBranch(next.talents, WRATH) - spentInBranch(before.talents, WRATH)
+    }
+    return next
+  }
+
+  it('порог ключевого этажа объявляется ОДИН раз — тем очком, что его набрало', () => {
+    const s = hero(TALENT_FIRST_LEVEL + 60)
+    const almost = fillTop(s, 19)
+    expect(spentInBranch(almost.talents, WRATH)).toBe(19)
+    expect(keyEvents(almost)).toEqual([])
+    const opened = fillTop(almost, 1)
+    expect(spentInBranch(opened.talents, WRATH)).toBe(20)
+    expect(keyEvents(opened)).toEqual([{ type: 'talent-floor', branchId: WRATH, row: 5 }])
+    // Следующее очко порога не пересекает — второй строки нет.
+    const more = fillTop(opened, 1)
+    expect(keyEvents(more)).toHaveLength(1)
+  })
+
+  it('взятый ключевой — своя строка; обычный талант её не пишет', () => {
+    const s = hero(TALENT_FIRST_LEVEL + 60)
+    const opened = fillTop(s, 20)
+    const key = talentsInBranch(WRATH).find((t) => t.row === 5)!
+    const chosen = investTalent(opened, key.id)
+    expect(rankOf(chosen.talents, key.id)).toBe(1)
+    expect(keyEvents(chosen).map((e) => e.type)).toEqual(['talent-key', 'talent-floor'])
+    expect(keyEvents(chosen)[0]).toEqual({ type: 'talent-key', talentId: key.id })
+    // Обычный талант на обычном этаже — строк не добавляет.
+    const plain = fillTop(chosen, 1)
+    expect(keyEvents(plain)).toHaveLength(2)
+  })
+
+  it('снятие и отказ журнал не трогают', () => {
+    const s = hero(TALENT_FIRST_LEVEL + 60)
+    const opened = fillTop(s, 20)
+    const key = talentsInBranch(WRATH).find((t) => t.row === 5)!
+    const chosen = investTalent(opened, key.id)
+    const back = takeBackTalent(chosen, key.id, { [key.id]: 1 })
+    expect(rankOf(back.talents, key.id)).toBe(0)
+    expect(back.combatLog).toBe(chosen.combatLog)
+    // Запертый выбором сосед не берётся — и события не оставляет.
+    const mate = talentsInBranch(WRATH).find((t) => t.row === 5 && t.id !== key.id)!
+    expect(investTalent(chosen, mate.id)).toBe(chosen)
   })
 })

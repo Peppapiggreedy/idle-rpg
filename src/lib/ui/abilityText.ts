@@ -161,10 +161,15 @@ export function abilityLines(ability: AbilityDef, ctx: AbilityTextContext): stri
 
   // 3. КАК СРАБАТЫВАЕТ. Разница между типами видна только в бою, и знать её
   //    надо ДО того, как умение положено в ряд.
+  //    Общую задержку тратит не «мгновенное», а `triggersGcd`: у базовых
+  //    умений это одно и то же, но талант, сделавший умение мгновенным,
+  //    задержку ему не вешает — и книга не должна обещать цену, которой нет.
   lines.push(
     ability.type === 'onNextSwing'
       ? `Заменяет следующую автоатаку; ${ctx.resource.genitive} спишется в момент удара`
-      : 'Бьёт сразу, тратит общую задержку',
+      : ability.triggersGcd
+        ? 'Бьёт сразу, тратит общую задержку'
+        : 'Бьёт сразу, общей задержки не тратит',
   )
 
   // 4. ЭФФЕКТЫ ПО ФЛАГАМ. Каждый флаг описывает СВОЙ payload — ни одно число
@@ -290,8 +295,8 @@ export function abilityTuneText(effect: {
   const parts = effect.tune.map((tune) => {
     const label = TUNE_LABEL[tune.field] ?? tune.field
     if (tune.kind === 'set') {
-      const how = tune.value === 'instant' ? 'бьёт сразу' : 'заменяет автоатаку'
-      return `${label}: ${how}`
+      // Смена типа — не величина: ни «тип: …», ни «за ранг» ей не идут.
+      return tune.value === 'instant' ? 'бьёт сразу' : 'заменяет автоатаку'
     }
     if (tune.kind === 'points') {
       // ПОРОГ — В ПУНКТАХ, а не в процентах от себя: игрок читает пороги
@@ -301,5 +306,7 @@ export function abilityTuneText(effect: {
     const share = tune.kind === 'percent' ? tune.value : tune.value - 1
     return `${label} ${signed(Math.round(share * 100))} %`
   })
-  return `${name}: ${parts.join(', ')} за ранг`
+  // «За ранг» — только там, где есть что копить: у правки одним `set` ранг один.
+  const perRank = effect.tune.some((tune) => tune.kind !== 'set') ? ' за ранг' : ''
+  return `${name}: ${parts.join(', ')}${perRank}`
 }

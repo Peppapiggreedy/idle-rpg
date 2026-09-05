@@ -41,12 +41,12 @@ import {
 } from '../balance'
 import type { SlotId } from '../slots'
 import {
+  CONCEPT_ROWS,
   TALENT_STAT_RULE,
   pathsOf,
   type BranchDef,
   type TalentDef,
-  type TalentStatRule,
-} from '../talents'
+  type TalentStatRule, TREE_COLUMNS } from '../talents'
 import type { Zone } from '../zones'
 import type { StatId } from '../../game/stats'
 
@@ -841,6 +841,90 @@ export const TALENT_SCHEMA: EntitySchema<TalentDef> = {
   ],
   extra: (talent, content, report) => {
     const where = `талант ${talent.id}`
+    // КЛЮЧЕВОЙ ЭТАЖ — ПОВЕДЕНИЕ, А НЕ ЧИСЛО. Этажи 5, 9 и 13 приходятся на
+    // 30-й, 50-й и 70-й уровень при вложении в одну ветку, и это три
+    // майлстоуна всей прокачки. Процент к криту майлстоуном не является:
+    // талант на ключевом этаже обязан менять УМЕНИЕ (род 'ability') или
+    // включать поведение (флаг). Модификаторы конвейера здесь запрещены.
+    if (CONCEPT_ROWS.includes(talent.row)) {
+      report.need(
+        talent.effect.kind !== 'modifiers',
+        where,
+        `стоит на ключевом этаже ${talent.row}, а даёт модификаторы конвейера — ` +
+          'ключевой талант меняет поведение (умение или флаг), а не число ' +
+          '(data/talents.ts)',
+      )
+    }
+    // СТОЛБЕЦ В СЕТКЕ. Дерево рисуется четырьмя столбцами, и место узла —
+    // данные: на этаже с выбором расставлены ВСЕ (иначе узлы лягут друг на
+    // друга), столбцы в ряду не повторяются, а стрелка идёт вертикально —
+    // опора и зависимый стоят в одном столбце. Лестница из одного таланта на
+    // этаж столбцов не задаёт и центрируется сама.
+    const onRow = content.talents.filter((t) => t.branch === talent.branch && t.row === talent.row)
+    if (talent.col !== undefined) {
+      report.need(
+        Number.isInteger(talent.col) && talent.col >= 1 && talent.col <= TREE_COLUMNS,
+        where,
+        `столбец ${talent.col} вне сетки 1..${TREE_COLUMNS} (data/talents.ts)`,
+      )
+      for (const mate of onRow) {
+        report.need(
+          mate.id === talent.id || mate.col !== talent.col,
+          where,
+          `делит столбец ${talent.col} с «${mate.id}» на этаже ${talent.row} — узлы лягут ` +
+            'друг на друга (data/talents.ts)',
+        )
+      }
+    }
+    report.need(
+      onRow.length === 1 || talent.col !== undefined,
+      where,
+      `этаж ${talent.row} держит выбор из ${onRow.length}, а столбец у таланта не задан ` +
+        '(col в data/talents.ts)',
+    )
+    if (talent.requires && talent.col !== undefined) {
+      const anchor = content.talents.find((t) => t.id === talent.requires?.talentId)
+      report.need(
+        !anchor || anchor.col === undefined || anchor.col === talent.col,
+        where,
+        `стрелка гнётся: опора «${anchor?.id}» стоит в столбце ${anchor?.col}, а этот талант ` +
+          `в ${talent.col} — прямая линия требует одного столбца (data/talents.ts)`,
+      )
+    }
+    // ВЗАИМОИСКЛЮЧАЮЩАЯ ГРУППА — ЭТО ВЫБОР НА ОДНОМ ЭТАЖЕ, И НИЧТО ИНОЕ.
+    //
+    // Группа через ветки — выбор, который игрок не увидит целиком: одна
+    // клетка в дереве Гнева, вторая в дереве Оплота, и запертый узел в
+    // соседней вкладке выглядит сломанным. Группа через этажи — то же самое
+    // по вертикали, только хуже: талант ниже оказывается заперт тем, до чего
+    // ещё не дошли. Группа из одного члена — не выбор, а опечатка в имени:
+    // сосед назван иначе, и запрет молча не работает.
+    if (talent.exclusiveGroup) {
+      const mates = content.talents.filter(
+        (t) => t.exclusiveGroup === talent.exclusiveGroup && t.id !== talent.id,
+      )
+      report.need(
+        mates.length >= 1,
+        where,
+        `группа «${talent.exclusiveGroup}» из одного члена — исключать некого; ` +
+          'выбор это двое или трое на одном этаже (data/talents.ts)',
+      )
+      for (const mate of mates) {
+        report.need(
+          mate.branch === talent.branch,
+          where,
+          `группа «${talent.exclusiveGroup}» тянется через ветки: «${mate.id}» стоит в ` +
+            `${mate.branch}, а этот талант в ${talent.branch} (data/talents.ts)`,
+        )
+        report.need(
+          mate.row === talent.row,
+          where,
+          `группа «${talent.exclusiveGroup}» тянется через этажи: «${mate.id}» на этаже ` +
+            `${mate.row}, а этот талант на ${talent.row} — выбор живёт на ОДНОМ этаже ` +
+            '(data/talents.ts)',
+        )
+      }
+    }
     // СТРЕЛКА-ПРЕДПОСЫЛКА ВЕДЁТ ТОЛЬКО ВНИЗ И ТОЛЬКО В СВОЕЙ ВЕТКЕ.
     //
     // Стрелка вверх или вбок — это цикл или недостижимый узел: талант, до

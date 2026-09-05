@@ -42,7 +42,7 @@ function tuneOne(
 
 /** Подменяем таблицу талантов на время одной проверки. */
 function withFakeTalent<T>(
-  effect: ReturnType<typeof tuneOne>,
+  effect: ReturnType<typeof tuneOne> | (typeof TALENTS)[number]['effect'],
   rank: number,
   body: (ranks: Record<string, number>) => T,
 ): T {
@@ -127,6 +127,37 @@ describe('конвейер правок умения', () => {
       (ranks) => tuneAbility(ABILITY_BY_ID['rending-wound'], ranks),
     )
     expect(tuned.effect!.ticks).toBe(1)
+  })
+
+  it('выученный талантом эффект — часть эффективного умения', () => {
+    // Флаг `ability-learns-effect» читался одним тиком, и модель боя, книга
+    // и перебор четвёрок видели у умения пустой эффект — талант мерился
+    // нулём. Теперь эффект подшивает сам конвейер, и читают его все.
+    const QUICK = ABILITY_BY_ID['quick-strike']
+    expect(QUICK.effect).toBeUndefined()
+    const learned = {
+      kind: 'flag' as const,
+      flag: 'ability-learns-effect' as const,
+      abilityId: 'quick-strike',
+      effect: {
+        kind: 'damageOverTime' as const,
+        weaponDamagePercent: new Decimal(0.35),
+        ticks: 3,
+        tickIntervalSec: 1.5,
+      },
+    }
+    const tuned = withFakeTalent(learned, 1, (ranks) => tuneAbility(QUICK, ranks))
+    expect(tuned).not.toBe(QUICK)
+    expect(tuned.effect?.ticks).toBe(3)
+    expect(tuned.effect?.weaponDamagePercent.eq(0.35)).toBe(true)
+    // Без ранга — ТОТ ЖЕ объект: golden не должен поехать от одной формы.
+    expect(withFakeTalent(learned, 0, (ranks) => tuneAbility(QUICK, ranks))).toBe(QUICK)
+    // Своё умение сильнее выученного: у «Рваной раны» остаётся её эффект.
+    const RW = ABILITY_BY_ID['rending-wound']
+    const rw = withFakeTalent({ ...learned, abilityId: 'rending-wound' }, 1, (ranks) =>
+      tuneAbility(RW, ranks),
+    )
+    expect(rw).toBe(RW)
   })
 
   it('снятый талант возвращает умение к базе ТОЧНО', () => {

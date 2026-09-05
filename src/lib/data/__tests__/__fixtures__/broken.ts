@@ -362,6 +362,97 @@ export function brokenCases(): BrokenCase[] {
       expect: ['вне-путей', 'НИ В ОДИН путь'],
     },
     {
+      // Два узла в одном столбце лягут друг на друга.
+      title: 'два таланта этажа делят столбец',
+      content: {
+        ...real,
+        talents: real.talents.map((t) =>
+          t.id === 'wrath-headlong'
+            ? { ...t, col: first(real.talents.filter((x) => x.id === 'wrath-rupture')).col }
+            : t,
+        ),
+      },
+      expect: ['wrath-headlong', 'делит столбец'],
+    },
+    {
+      // Стрелка — прямая линия: опора и зависимый в одном столбце.
+      title: 'стрелка гнётся между столбцами',
+      content: {
+        ...real,
+        talents: real.talents.map((t) =>
+          t.id === 'wrath-open-wound'
+            ? { ...t, col: t.col === 1 ? (2 as const) : (1 as const) }
+            : t,
+        ),
+      },
+      expect: ['wrath-open-wound', 'гнётся'],
+    },
+    {
+      // Этаж с выбором обязан быть расставлен весь.
+      title: 'талант на этаже с выбором без столбца',
+      content: {
+        ...real,
+        talents: real.talents.map((t) => (t.id === 'wrath-firm-hand' ? { ...t, col: undefined } : t)),
+      },
+      expect: ['wrath-firm-hand', 'столбец у таланта не задан'],
+    },
+    {
+      // Группа из одного члена — не выбор, а опечатка в имени соседа.
+      title: 'взаимоисключающая группа из одного члена',
+      content: {
+        ...real,
+        talents: real.talents.map((t) =>
+          t.id === 'wrath-second-swing' ? { ...t, exclusiveGroup: 'одинокая' } : t,
+        ),
+      },
+      expect: ['одинокая', 'из одного члена'],
+    },
+    {
+      // Группа через этажи запирает талант тем, до чего ещё не дошли.
+      title: 'взаимоисключающая группа тянется через этажи',
+      content: {
+        ...real,
+        talents: real.talents.map((t) =>
+          t.id === 'wrath-second-swing' || t.id === 'wrath-rupture'
+            ? { ...t, exclusiveGroup: 'через-этажи' }
+            : t,
+        ),
+      },
+      expect: ['через-этажи', 'через этажи'],
+    },
+    {
+      // Группа через ветки — выбор, которого игрок не увидит целиком.
+      title: 'взаимоисключающая группа тянется через ветки',
+      content: {
+        ...real,
+        talents: real.talents.map((t) =>
+          t.id === 'wrath-second-swing' || t.id === 'bulwark-mirror-shield'
+            ? { ...t, exclusiveGroup: 'через-ветки' }
+            : t,
+        ),
+      },
+      expect: ['через-ветки', 'через ветки'],
+    },
+    {
+      // Процент к криту — не майлстоун: на ключевом этаже меняют поведение.
+      title: 'на ключевом этаже стоит модификатор конвейера',
+      content: {
+        ...real,
+        talents: real.talents.map((t) =>
+          t.id === 'wrath-headlong'
+            ? {
+                ...t,
+                effect: {
+                  kind: 'modifiers' as const,
+                  mods: [{ stat: 'critChance' as const, kind: 'flat' as const, value: new Decimal(0.05) }],
+                },
+              }
+            : t,
+        ),
+      },
+      expect: ['ключевом этаже 5', 'модификаторы конвейера'],
+    },
+    {
       // Стрелка вверх: до таланта не добраться никогда — очки в опорный
       // талант вкладываются ПОСЛЕ него.
       title: 'стрелка-предпосылка ведёт снизу вверх',

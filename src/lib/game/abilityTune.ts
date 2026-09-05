@@ -28,7 +28,7 @@ import {
   type AbilityTuneField,
 } from '../data/abilities'
 import { TALENTS, rankOf } from '../data/talents'
-import type { TalentRanks } from './talents'
+import { talentAbilityEffect, type TalentRanks } from './talents'
 
 /** Накопитель по одному полю: сдвиг, доля и произведение множителей. */
 interface Accum {
@@ -90,7 +90,15 @@ const applyD = (base: Decimal, slot: Accum | undefined): Decimal =>
  */
 export function tuneAbility(def: AbilityDef, ranks: TalentRanks): AbilityDef {
   const acc = tunesFor(ranks, def.id)
-  if (acc.size === 0) return def
+  // ВЫУЧЕННЫЙ ЭФФЕКТ — ЧАСТЬ ЭФФЕКТИВНОГО УМЕНИЯ. Флаг `ability-learns-effect`
+  // («Рваный выпад» учит Скорый выпад кровить) подшивается ЗДЕСЬ, а не только
+  // в тике: пока его читал один `effectFrom`, модель боя, перебор четвёрок,
+  // оффлайн, оси героя и книга умений видели у Скорого выпада пустой эффект
+  // и мерили талант нулём — прибор сравнивал «ноль» с «+5 %» и называл выбор
+  // односторонним. Свой эффект умения сильнее выученного: учить кровить то,
+  // что уже кровит, талант не может.
+  const learned = def.effect ? null : talentAbilityEffect(ranks, def.id)
+  if (acc.size === 0 && !learned) return def
 
   const get = (field: AbilityTuneField | 'type') => acc.get(field)
   const out: AbilityDef = {
@@ -103,15 +111,16 @@ export function tuneAbility(def: AbilityDef, ranks: TalentRanks): AbilityDef {
   const type = get('type')?.set
   if (type === 'instant' || type === 'onNextSwing') out.type = type
 
-  if (def.effect) {
+  const baseEffect = def.effect ?? learned
+  if (baseEffect) {
     out.effect = {
-      ...def.effect,
+      ...baseEffect,
       weaponDamagePercent: applyD(
-        def.effect.weaponDamagePercent,
+        baseEffect.weaponDamagePercent,
         get('effectWeaponDamagePercent'),
       ),
       // Тиков не бывает полтора: округляем к ближайшему, как и всё штучное.
-      ticks: Math.max(1, Math.round(apply(def.effect.ticks, get('effectTicks')))),
+      ticks: Math.max(1, Math.round(apply(baseEffect.ticks, get('effectTicks')))),
     }
   }
   if (def.heal) {
