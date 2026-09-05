@@ -55,8 +55,4 @@ export function reagentOf(tier: number, difficulty: DungeonDifficulty): ReagentD
   return REAGENTS.find((r) => r.tier === tier && r.difficulty === difficulty) ?? null
 }
 
-/** Старое имя оставлено ради вызовов, которым сложность не важна. */
-export function reagentOfTier(tier: number): ReagentDef | null {
-  return reagentOf(tier, 'normal')
-}
 

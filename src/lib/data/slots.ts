@@ -65,7 +65,7 @@ export const SLOT_CELL: Record<SlotId, { col: number; row: number }> = {
 
 /** Ширина и высота сетки куклы — производные, чтобы CSS не знал чисел. */
 export const DOLL_COLS = Math.max(...Object.values(SLOT_CELL).map((c) => c.col))
-export const DOLL_ROWS = Math.max(...Object.values(SLOT_CELL).map((c) => c.row))
+
 
 /**
  * НЕСЁТ ЛИ ВЕЩЬ В ЭТОМ СЛОТЕ БРОНЮ — ДАННЫМИ, а не выводом «всё, что не рука».
