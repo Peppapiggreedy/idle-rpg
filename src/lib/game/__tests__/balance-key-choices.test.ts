@@ -1,13 +1,15 @@
-// ШЕСТЬ СБОРОК ВМЕСТО ТРЁХ: ВЗАИМОИСКЛЮЧЕНИЕ ДЕЛИТ КАЖДУЮ ВЕТКУ НАДВОЕ.
+// ШЕСТЬ ПУТЕЙ ВМЕСТО ТРЁХ: ВЗАИМОИСКЛЮЧЕНИЕ ДЕЛИТ КАЖДУЮ ВЕТКУ НАДВОЕ.
 //
-// На ключевых этажах 5, 9 и 13 стоят по два таланта, и берётся один. Если
-// сборка «сторона А на всех трёх» и сборка «сторона Б на всех трёх» дают
-// одинаковую лучшую четвёрку И одинаковый профиль по осям — ключевые
-// различаются только величиной, и пара обязана быть переделана: ветка, где
-// ключевой выбор формален, хуже ветки без выбора — она обещает и не даёт.
+// На ключевых этажах 5, 9 и 13 стоят по два таланта, и берётся один. У
+// каждой ветки два ЯВНЫХ пути (`BRANCH_PATHS`), и путь — это сборка: порядок
+// покупки, свои три ключевых и четвёрка умений, под которую собран. Прибор
+// строит все шесть, перебирает для каждой все 330 четвёрок и печатает
+// профиль. Если два пути одной ветки дают одну лучшую четвёрку И один
+// профиль — ключевые различаются только величиной, и пара обязана быть
+// переделана: ветка, где ключевой выбор формален, хуже ветки без выбора —
+// она обещает и не даёт.
 //
-// Полный перебор четвёрок (C(11,4) = 330) на шесть сборок: файл живёт в
-// дорогом наборе, а не в быстром.
+// Полный перебор четвёрок на шесть сборок: файл живёт в дорогом наборе.
 import { describe, expect, it } from 'vitest'
 import { branchPoints, buildSimState, referenceBuild } from '../simulate'
 import { ensureStats } from '../stats'
@@ -21,7 +23,6 @@ import { ZONES } from '../../data/zones'
 import {
   BRANCHES,
   CONCEPT_ROWS,
-  TALENT_BY_ID,
   pathRanks,
   pathsOf,
   talentsInBranch,
@@ -43,43 +44,18 @@ const zoneFor = (level: number) =>
 
 const slotsOf = (ids: readonly string[]) => [...ids, null, null, null, null].slice(0, ABILITY_SLOTS)
 
-/** Ключевые таланты ветки: по этажам, в порядке данных. */
-function keyPairs(branch: BranchId) {
-  return CONCEPT_ROWS.map((row) => talentsInBranch(branch).filter((t) => t.row === row))
-}
-
-/**
- * Сборка «сторона N на всех ключевых этажах». Строится из ПЕРВОГО пути
- * ветки: из его порядка выбрасываются ключевые таланты другой стороны, а
- * выбранная сторона ставится первой — чтобы очков на неё точно хватило.
- * Всё остальное покупается как в пути.
- */
-function sideBuild(branch: BranchId, side: number): { path: TalentPath; ranks: Record<string, number> } {
-  const pairs = keyPairs(branch)
-  const chosen = pairs.map((pair) => pair[Math.min(side, pair.length - 1)].id)
-  const others = new Set(pairs.flat().map((t) => t.id).filter((id) => !chosen.includes(id)))
-  const base = pathsOf(branch)[0]
-  // ОПОРЫ СТРЕЛОК ИДУТ ПЕРЕД КЛЮЧЕВЫМИ. Венец со стрелкой недостижим, пока
-  // опора не набрана, а опора в общем порядке пути может стоять в хвосте — и
-  // очки кончатся раньше. Первый замер так и вышел: «Несдвигаемый» и оба
-  // ключевых Бдения со стрелками остались невзятыми.
-  const anchored: string[] = []
-  const pull = (id: string) => {
-    const need = TALENT_BY_ID[id]?.requires
-    if (need) pull(need.talentId)
-    if (!anchored.includes(id)) anchored.push(id)
-  }
-  for (const id of chosen) pull(id)
-  const order = [...anchored, ...base.order.filter((id) => !anchored.includes(id) && !others.has(id))]
-  const path: TalentPath = { id: `${base.id}:сторона-${side}`, name: `сторона ${side}`, order, abilities: base.abilities }
-  return { path, ranks: pathRanks(path, branchPoints(LEVEL_CAP)) }
-}
+const sameSet = (a: readonly string[], b: readonly string[]) =>
+  [...a].sort().join('|') === [...b].sort().join('|')
 
 interface BuildRow {
-  branch: string
-  side: number
+  branch: BranchId
+  path: TalentPath
+  /** Взятый ключевой на каждом ключевом этаже; «—» — ни одного. */
   keys: string[]
+  /** Лучшая четвёрка полным перебором. */
   four: string[]
+  /** Совпала ли лучшая четвёрка с той, под которую путь собран. */
+  fourAsDesigned: boolean
   killsPerSecond: number
   damage: number
   survival: number
@@ -91,8 +67,8 @@ interface BuildRow {
   uptime: number
 }
 
-function measure(branch: BranchId, side: number): BuildRow {
-  const { ranks } = sideBuild(branch, side)
+function measure(branch: BranchId, path: TalentPath): BuildRow {
+  const ranks = pathRanks(path, branchPoints(LEVEL_CAP))
   const base = buildSimState(referenceBuild(LEVEL_CAP, DEFAULT_CLASS.id), zoneFor(LEVEL_CAP).id, 7)
   const talented: GameState = ensureStats({ ...base, talents: ranks, statsDirty: true })
   const rows = combos(abilitiesOf(DEFAULT_CLASS.id), ABILITY_SLOTS)
@@ -118,12 +94,18 @@ function measure(branch: BranchId, side: number): BuildRow {
     abilityAll += cast.totalDamage.toNumber() * cast.castsPerSecond
     dotAll += cast.totalDamage.minus(cast.hitDamage).toNumber() * cast.castsPerSecond
   }
-  const keys = keyPairs(branch).map((pair) => pair.find((t) => (ranks[t.id] ?? 0) > 0)?.id ?? '—')
+  const keys = CONCEPT_ROWS.map(
+    (row) =>
+      talentsInBranch(branch)
+        .filter((t) => t.row === row)
+        .find((t) => (ranks[t.id] ?? 0) > 0)?.id ?? '—',
+  )
   return {
     branch,
-    side,
+    path,
     keys,
     four: best.ids,
+    fourAsDesigned: path.abilities ? sameSet(best.ids, path.abilities) : false,
     killsPerSecond: best.rate,
     damage: axes.damage.toNumber(),
     survival: axes.survival.toNumber(),
@@ -136,28 +118,61 @@ function measure(branch: BranchId, side: number): BuildRow {
 /** Заметное различие профиля: хотя бы одна ось ушла дальше, чем на эту долю. */
 const AXIS_GAP = 0.05
 /**
- * Заметное различие СОСТАВА: доля автоатаки или аптайм разошлись на столько
- * пунктов. Две сборки Гнева сходятся по темпу до долей процента — ключевые
- * там и должны быть сопоставимы по силе, — но одна бьёт кровью, другая
- * всплесками, и различие живёт в составе урона, а не в его сумме.
+ * Заметное различие СОСТАВА: доля автоатаки, доля урона по времени или аптайм
+ * разошлись на столько пунктов. Два пути Гнева сходятся по темпу до долей
+ * процента — ключевые там и должны быть сопоставимы по силе, — но один бьёт
+ * кровью, другой всплесками, и различие живёт в составе урона, а не в сумме.
  */
 const SHARE_GAP = 0.03
 
-describe('шесть сборок: выбор на ключевых этажах — настоящий', () => {
+const gap = (x: number, y: number) => Math.abs(x - y) / Math.max(x, y)
+
+/** Чем два профиля различаются — и различаются ли заметно. */
+function compare(a: BuildRow, b: BuildRow) {
+  const dmgGap = gap(a.damage, b.damage)
+  const survGap = gap(a.survival, b.survival)
+  // ТЕМП С АПТАЙМОМ. Две оси игрока по построению не видят пауз: ось урона —
+  // чистая пропускная способность без привалов, ось живучести — запас за
+  // схватку. Ветка Бдения ВСЯ про паузы, и по двум осям её стороны совпадут
+  // всегда. `killsPerSecond` модели считает цикл привала и видит их.
+  const paceGap = gap(a.killsPerSecond, b.killsPerSecond)
+  const shareGap = Math.abs(a.autoShare - b.autoShare)
+  const dotGap = Math.abs(a.dotShare - b.dotShare)
+  const uptimeGap = Math.abs(a.uptime - b.uptime)
+  const sameFour = sameSet(a.four, b.four)
+  const differs =
+    !sameFour ||
+    dmgGap > AXIS_GAP ||
+    survGap > AXIS_GAP ||
+    paceGap > AXIS_GAP ||
+    shareGap > SHARE_GAP ||
+    dotGap > SHARE_GAP ||
+    uptimeGap > SHARE_GAP
+  const text =
+    `урон ±${(dmgGap * 100).toFixed(1)} %, живучесть ±${(survGap * 100).toFixed(1)} %, ` +
+    `темп ±${(paceGap * 100).toFixed(1)} %, автоатака ±${(shareGap * 100).toFixed(1)} п.п., ` +
+    `по времени ±${(dotGap * 100).toFixed(1)} п.п., аптайм ±${(uptimeGap * 100).toFixed(1)} п.п.`
+  return { sameFour, dmgGap, survGap, paceGap, shareGap, dotGap, uptimeGap, differs, text }
+}
+
+describe('шесть путей: выбор на ключевых этажах — настоящий', () => {
   const own = BRANCHES.filter((b) => b.classId === DEFAULT_CLASS.id)
   const table: BuildRow[] = []
 
-  it('шесть сборок посчитаны и различаются внутри ветки', () => {
+  it('шесть путей посчитаны, и два пути одной ветки различаются', () => {
     // Таблица печатается ДО проверок: упавший тест обязан показать, что
     // именно совпало, а не отправлять читать код прибора.
-    for (const branch of own) table.push(measure(branch.id, 0), measure(branch.id, 1))
+    for (const branch of own) {
+      for (const path of pathsOf(branch.id)) table.push(measure(branch.id, path))
+    }
     // eslint-disable-next-line no-console
     console.table(
       table.map((r) => ({
         ветка: r.branch,
-        сторона: r.side,
+        путь: r.path.name,
         ключевые: r.keys.join(' · '),
-        четвёрка: r.four.join(' + '),
+        'лучшая четвёрка': r.four.join(' + '),
+        'как заявлено': r.fourAsDesigned ? 'да' : 'НЕТ',
         'уб/с': r.killsPerSecond.toFixed(4),
         урон: r.damage.toFixed(1),
         живучесть: r.survival.toFixed(0),
@@ -166,48 +181,64 @@ describe('шесть сборок: выбор на ключевых этажах
         'аптайм %': (r.uptime * 100).toFixed(1),
       })),
     )
+    for (const r of table) {
+      const key = `talents/${r.branch}/path-${r.path.id}`
+      dump(`${key}/kills-per-second`, r.killsPerSecond)
+      dump(`${key}/damage`, r.damage)
+      dump(`${key}/survival`, r.survival)
+      dump(`${key}/auto-share`, r.autoShare)
+      dump(`${key}/dot-share`, r.dotShare)
+      dump(`${key}/uptime`, r.uptime)
+      dump(`${key}/four-as-designed`, r.fourAsDesigned ? 1 : 0)
+      // КАЖДЫЙ ПУТЬ БЕРЁТ ОДИН КЛЮЧ НА КАЖДОМ КЛЮЧЕВОМ ЭТАЖЕ — иначе путь
+      // измеряет не выбор, а его отсутствие.
+      expect(r.keys, `${r.path.name}: ключевые этажи`).not.toContain('—')
+    }
     for (const branch of own) {
-      const a = table.find((r) => r.branch === branch.id && r.side === 0)!
-      const b = table.find((r) => r.branch === branch.id && r.side === 1)!
-      const sameFour = [...a.four].sort().join('|') === [...b.four].sort().join('|')
-      const gap = (x: number, y: number) => Math.abs(x - y) / Math.max(x, y)
-      const dmgGap = gap(a.damage, b.damage)
-      const survGap = gap(a.survival, b.survival)
-      // ТРЕТЬЕ ИЗМЕРЕНИЕ — ТЕМП С АПТАЙМОМ. Две оси игрока по построению не
-      // видят пауз: ось урона — чистая пропускная способность без привалов,
-      // ось живучести — запас за схватку. Ветка Бдения ВСЯ про паузы, и по
-      // двум осям её стороны совпадут всегда, сколько бы они ни различались
-      // в игре. `killsPerSecond` модели считает цикл привала и видит их.
-      const paceGap = gap(a.killsPerSecond, b.killsPerSecond)
-      // ЧЕТВЁРТОЕ И ПЯТОЕ — СОСТАВ. Гнев делится на кровь и всплески при
-      // равной сумме урона: разница — в том, ЧТО бьёт, и её видно только по
-      // доле автоатаки. Аптайм — то же для Бдения.
-      const shareGap = Math.abs(a.autoShare - b.autoShare)
-      const dotGap = Math.abs(a.dotShare - b.dotShare)
-      const uptimeGap = Math.abs(a.uptime - b.uptime)
-      const profileDiffers =
-        dmgGap > AXIS_GAP ||
-        survGap > AXIS_GAP ||
-        paceGap > AXIS_GAP ||
-        shareGap > SHARE_GAP ||
-        dotGap > SHARE_GAP ||
-        uptimeGap > SHARE_GAP
-      dump(`talents/${branch.id}/sides/four-differ`, sameFour ? 0 : 1)
-      dump(`talents/${branch.id}/sides/damage-gap`, dmgGap)
-      dump(`talents/${branch.id}/sides/survival-gap`, survGap)
-      dump(`talents/${branch.id}/sides/pace-gap`, paceGap)
-      dump(`talents/${branch.id}/sides/auto-share-gap`, shareGap)
-      dump(`talents/${branch.id}/sides/dot-share-gap`, dotGap)
-      dump(`talents/${branch.id}/sides/uptime-gap`, uptimeGap)
+      const [a, b] = table.filter((r) => r.branch === branch.id)
+      const c = compare(a, b)
+      dump(`talents/${branch.id}/paths/four-differ`, c.sameFour ? 0 : 1)
+      dump(`talents/${branch.id}/paths/damage-gap`, c.dmgGap)
+      dump(`talents/${branch.id}/paths/survival-gap`, c.survGap)
+      dump(`talents/${branch.id}/paths/pace-gap`, c.paceGap)
+      dump(`talents/${branch.id}/paths/auto-share-gap`, c.shareGap)
+      dump(`talents/${branch.id}/paths/dot-share-gap`, c.dotGap)
+      dump(`talents/${branch.id}/paths/uptime-gap`, c.uptimeGap)
       // ЖЁСТКО: либо четвёрка другая, либо профиль ушёл заметно.
       expect(
-        !sameFour || profileDiffers,
-        `${branch.name}: обе стороны дают ту же четвёрку и тот же профиль ` +
-          `(урон ±${(dmgGap * 100).toFixed(1)} %, живучесть ±${(survGap * 100).toFixed(1)} %, ` +
-          `темп ±${(paceGap * 100).toFixed(1)} %, автоатака ±${(shareGap * 100).toFixed(1)} п.п., ` +
-          `по времени ±${(dotGap * 100).toFixed(1)} п.п., аптайм ±${(uptimeGap * 100).toFixed(1)} п.п.) ` +
-          '— ключевые различаются только величиной',
+        c.differs,
+        `${branch.name}: «${a.path.name}» и «${b.path.name}» дают ту же четвёрку и тот же ` +
+          `профиль (${c.text}) — ключевые различаются только величиной`,
       ).toBe(true)
     }
+  }, 1_800_000)
+
+  it('Бдение против Гнева: расхождение веток — только запись, не контракт', () => {
+    // ЗАПИСЬ, А НЕ ПАДЕНИЕ. Вопрос ночи: разошлись ли ветки ПО РОДУ, а не
+    // только по силе, — Бдение про паузы и экономию, Гнев про урон. Если
+    // профили совпадают, это записывается в отчёт, и чинить это ночью
+    // нельзя: разводить ветки — это баланс.
+    if (table.length === 0) {
+      for (const branch of own) {
+        for (const path of pathsOf(branch.id)) table.push(measure(branch.id, path))
+      }
+    }
+    const wrath = table.filter((r) => r.branch === 'warden-wrath')
+    const vigil = table.filter((r) => r.branch === 'warden-vigil')
+    for (const w of wrath) {
+      for (const v of vigil) {
+        const c = compare(w, v)
+        // eslint-disable-next-line no-console
+        console.log(
+          `Гнев «${w.path.name}» против Бдения «${v.path.name}»: ${c.differs ? 'разошлись' : 'СОВПАЛИ'} — ` +
+            `${c.text}; четвёрка ${c.sameFour ? 'та же' : 'другая'}`,
+        )
+        dump(`talents/vigil-vs-wrath/${w.path.id}/${v.path.id}/pace-gap`, c.paceGap)
+        dump(`talents/vigil-vs-wrath/${w.path.id}/${v.path.id}/uptime-gap`, c.uptimeGap)
+        dump(`talents/vigil-vs-wrath/${w.path.id}/${v.path.id}/four-differ`, c.sameFour ? 0 : 1)
+      }
+    }
+    expect(wrath.length).toBe(2)
+    expect(vigil.length).toBe(2)
   }, 1_800_000)
 })
