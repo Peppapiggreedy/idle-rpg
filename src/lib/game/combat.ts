@@ -1420,8 +1420,13 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
   const sustainedDamagePerSecond = pass.damagePerSecond
   let healing = healFor(pass)
   let { netLossPerSec, cycle } = cycleFor(pass, healing)
+  // ПРИВАЛ НАЛИВАЕТ ЗАПАС — ТОЛЬКО ТАМ, ГДЕ ОН ЕГО НАЛИВАЕТ. Модель ротации
+  // опирается на это допущение (см. RestRefill), и для ярости оно ложно:
+  // отдых её не восстанавливает (`resource.restRefill` в данных класса).
+  // Оставь допущение общим — и модель обещала бы изуверу касты, которых у
+  // него нет, тем щедрее, чем чаще он отдыхает.
   const refill: RestRefill | null =
-    cycle && Number.isFinite(cycle.kills)
+    classById(s.classId).resource.restRefill && cycle && Number.isFinite(cycle.kills)
       ? // Боёв в цикле, включая тот, что кончился привалом или смертью.
         { fightSec: (cycle.kills + cycle.deathChance) * pass.killCycleSec.toNumber() }
       : null

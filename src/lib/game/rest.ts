@@ -14,6 +14,7 @@ import { zoneSpawnVariants, type Zone } from '../data/zones'
 import type { StatBlock } from './stats'
 import { restCooldownMultiplier, restDurationMultiplier } from './talents'
 import { takeFood } from './crafting'
+import { classById } from '../data/classes'
 import type { GameState } from './state'
 import type { MonsterTemplate } from '../types'
 
@@ -91,7 +92,13 @@ export function finishRest(state: GameState, progress = 1): GameState {
     restMsLeft: 0,
     restTotalMs: 0,
     currentHp: heal(state.currentHp, state.stats.maxHp),
-    currentMana: heal(state.currentMana, state.stats.maxMana),
+    // РЕСУРС НАЛИВАЕТСЯ, ТОЛЬКО ЕСЛИ ТАК СКАЗАНО В ДАННЫХ КЛАССА. Мана — да,
+    // привал и есть её окно восстановления. Ярость — нет: она приходит из
+    // боя, и выдать её за отдых значило бы платить за бездействие. Ветки по
+    // классу здесь нет — читается поле `resource.restRefill`.
+    currentMana: classById(state.classId).resource.restRefill
+      ? heal(state.currentMana, state.stats.maxMana)
+      : state.currentMana,
     // Привал — это и есть окно восстановления: продолжать выжидать паузу
     // правила задержки после него незачем.
     regenDelayMsLeft: 0,

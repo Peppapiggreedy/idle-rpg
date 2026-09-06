@@ -5,7 +5,7 @@
     value: number
     max?: number
     // Семантика цвета: за что эта полоска отвечает.
-    tone?: 'hp' | 'mana' | 'xp' | 'damage' | 'accent' | 'neutral'
+    tone?: 'hp' | 'mana' | 'rage' | 'xp' | 'damage' | 'accent' | 'neutral'
     size?: 'sm' | 'md' | 'lg'
     // Подпись слева и справа под полоской.
     label?: string
@@ -79,6 +79,12 @@
   }
   .fill.mana {
     background: var(--c-mana);
+  }
+  /* ЯРОСТЬ — СВОЙ ЦВЕТ, И ЭТО НЕ УКРАШЕНИЕ. Полоска, которая ведёт себя
+     противоположно манной (растёт в бою, тает вне его), обязана и выглядеть
+     иначе: одинаковый синий читался бы как «та же мана, только цифры другие». */
+  .fill.rage {
+    background: var(--c-rage);
   }
   .fill.xp {
     background: var(--c-xp);

@@ -1,5 +1,5 @@
 {
-  "version": 32,
+  "version": 33,
   "classId": "warden",
   "materials": {},
   "mastery": {},
@@ -141,6 +141,7 @@
     "wrath-savage-blows": 2,
     "wrath-rupture": 1
   },
+  "treeRevision": 1,
   "talentResets": 0,
   "totalTicks": "0",
   "playtimeMs": "0",
