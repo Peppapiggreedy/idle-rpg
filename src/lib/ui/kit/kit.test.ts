@@ -8,6 +8,7 @@ const KIT_DIR = new URL('./', import.meta.url)
 // Корень приложения: App.svelte — тоже компонент со стилями, и правила
 // дизайн-системы на него распространяются так же.
 const APP_DIR = new URL('../../../', import.meta.url)
+const SCENE_DIR = new URL('../../render2d/', import.meta.url)
 
 function read(dir: URL, file: string): string {
   return readFileSync(new URL(file, dir), 'utf8')
@@ -45,10 +46,16 @@ describe('дизайн-система: компоненты живут на то
   // Числом в компоненте оно завело бы второй источник рядом с токенами.
   const FONT_WEIGHT = /font-weight\s*:\s*\d/
 
+  // ОХВАТ ВКЛЮЧАЕТ СЦЕНУ. Правило записано про КОМПОНЕНТЫ, а сцена — это
+  // компоненты; но обход в неё не заходил, и в `Scene2D.svelte` спокойно жили
+  // `gap: 0.15rem` и `gap: 0.3rem` — отступы мимо шкалы 4/8/12/16/24/32.
+  // Сторож, чей охват уже правила, которое он держит, ловит не нарушения, а
+  // те нарушения, до которых дотянулся.
   const files = [
     ['App.svelte', read(APP_DIR, 'App.svelte')] as const,
     ...svelteFiles(UI_DIR).map((f) => [`ui/${f}`, read(UI_DIR, f)] as const),
     ...svelteFiles(KIT_DIR).map((f) => [`ui/kit/${f}`, read(KIT_DIR, f)] as const),
+    ...svelteFiles(SCENE_DIR).map((f) => [`render2d/${f}`, read(SCENE_DIR, f)] as const),
   ]
 
   // Стили лежат в блоке <style> — разметку и скрипт не проверяем: там

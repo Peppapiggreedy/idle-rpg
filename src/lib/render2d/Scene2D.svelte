@@ -682,7 +682,7 @@
     display: flex;
     flex-direction: column;
     align-items: stretch;
-    gap: 0.15rem;
+    gap: var(--space-1);
   }
   .plate.hero {
     left: var(--hero-x);
@@ -699,7 +699,7 @@
     display: flex;
     align-items: baseline;
     justify-content: center;
-    gap: 0.3rem;
+    gap: var(--space-1);
     min-width: 0;
     line-height: 1;
     text-shadow: var(--shadow-sm);
@@ -769,10 +769,28 @@
     line-height: 1;
     white-space: nowrap;
     text-shadow: var(--shadow-md);
-    /* Стартует над полоской здоровья и поднимается, тая к концу. */
-    bottom: calc(var(--head) + 1.4rem + var(--life) * 2.4rem);
-    transform: translateX(calc(-50% + var(--drift) * 1.6rem));
+    /* СТАРТУЕТ НАД ПОЛОСКОЙ ЗДОРОВЬЯ И ПОДНИМАЕТСЯ, ТАЯ К КОНЦУ.
+       Подъём идёт ТРАНСФОРМОМ, а не `bottom`, и это не вкусовщина.
+       `bottom` — свойство РАСКЛАДКИ: каждое изменение `--life` заставляет
+       браузер пересчитать положение элемента, тогда как `translateY`
+       считается композитором. Правило проекта про сцену так и звучит —
+       «обычные элементы и CSS-трансформы», — и `bottom` из него выпадал.
+
+       ПЕРЕХОД ОБЯЗАТЕЛЕН, потому что кадров у числа девять. Сцена
+       перерисовывается по подписке на состояние, то есть десять раз в
+       секунду (таймеров в ней нет — это правило, закреплённое тестом), и за
+       900 мс жизни число получает девять обновлений. Без перехода оно не
+       плывёт, а прыгает девятью ступенями. У фигур это сделано именно так
+       (`transition: transform var(--dur-fast)`), у числа не было. */
+    bottom: calc(var(--head) + 1.4rem);
+    transform: translate(
+      calc(-50% + var(--drift) * 1.6rem),
+      calc(var(--life) * -2.4rem)
+    );
     opacity: calc(1 - var(--life) * var(--life));
+    transition:
+      transform var(--dur-fast) linear,
+      opacity var(--dur-fast) linear;
   }
   .floater.hero {
     left: var(--hero-x);
