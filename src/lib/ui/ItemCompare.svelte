@@ -10,6 +10,7 @@
   // над карточкой, и без него оно перехватывало бы нажатия кнопок под собой.
   import { Decimal, compareItem, type StatId } from '../game'
   import { axisRows } from './axisText'
+  import { placeTip } from './tipPlace'
   import { gameState } from '../stores/game'
   import { formatStatDelta, isImprovement, SHOWN_STAT_IDS, statNames } from './statFormat'
   import { RARITY_BY_ID } from '../data/rarity'
@@ -72,10 +73,14 @@
   // форматирования здесь быть не должно.
   const rows = $derived(axisRows(cmp.axes, cmp.markedAxes))
 
-  // Границы экрана: не хватает места справа — открываемся слева, не хватает
-  // снизу — выше курсора. Проверка идёт по РЕАЛЬНОМУ размеру окна после
-  // отрисовки, а не по догадке о нём.
-  const GAP = 14
+  // Границы экрана считает ОБЩАЯ `placeTip` — та же, что у окна надетого на
+  // кукле и у подсказки дерева талантов. Здесь лежала её побуквенная копия
+  // (свой `GAP = 14` и своя пара тернарников), хотя правило записано прямо:
+  // «два окна у одного курсора обязаны переворачиваться одинаково». Копия
+  // считала то же самое ДО ЗНАКА — и именно поэтому расхождение никто бы не
+  // заметил до первой правки одной из двух формул.
+  //
+  // Проверка идёт по РЕАЛЬНОМУ размеру окна после отрисовки, а не по догадке.
   let box = $state<HTMLElement | null>(null)
   let size = $state({ w: 320, h: 240 })
   $effect(() => {
@@ -83,12 +88,11 @@
     const rect = box.getBoundingClientRect()
     if (rect.width !== size.w || rect.height !== size.h) size = { w: rect.width, h: rect.height }
   })
-  const left = $derived(
-    x + GAP + size.w > window.innerWidth ? Math.max(4, x - GAP - size.w) : x + GAP,
+  const pos = $derived(
+    placeTip(x, y, size, { width: window.innerWidth, height: window.innerHeight }),
   )
-  const top = $derived(
-    y + GAP + size.h > window.innerHeight ? Math.max(4, y - GAP - size.h) : y + GAP,
-  )
+  const left = $derived(pos.left)
+  const top = $derived(pos.top)
 </script>
 
 <div

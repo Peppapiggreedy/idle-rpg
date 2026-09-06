@@ -32,6 +32,7 @@ const COST_SECONDS: Record<string, number> = {
   'balance-pacing.test.ts': 182,
   'balance-model.test.ts': 160,
   'balance-style.test.ts': 113,
+  'dungeon-ladder.test.ts': 85,
   'balance-temple.test.ts': 28,
   'power-budget.test.ts': 24,
   'level-gap.test.ts': 1,
@@ -68,6 +69,7 @@ export default defineConfig({
       'src/lib/game/__tests__/run.test.ts',
       'src/lib/game/level-gap.test.ts',
       'src/lib/game/__tests__/gold.test.ts',
+      'src/lib/game/__tests__/dungeon-ladder.test.ts',
     ],
     // Прогон баланса печатает таблицы — они нужны в выводе как есть.
     disableConsoleIntercept: true,

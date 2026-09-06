@@ -83,14 +83,6 @@ export function statNames(classId: string | undefined | null): Record<StatId, st
 
 const asDecimal = (v: Decimal | number): Decimal => (v instanceof Decimal ? v : new Decimal(v))
 
-/** Значение характеристики так, как его читает игрок. */
-export function formatStatValue(stat: StatId, value: Decimal | number): string {
-  if (SECONDS_STATS.includes(stat)) return `${Number(value).toFixed(2)}с`
-  const d = asDecimal(value)
-  if (PERCENT_STATS.includes(stat)) return `${d.times(100).toFixed(0)}%`
-  if (stat === 'critMultiplier') return `×${d.toFixed(1)}`
-  return d.abs().gte(100) ? d.toFixed(0) : d.toFixed(1)
-}
 
 /**
  * ИЗМЕНЕНИЕ характеристики со знаком. Для секунд знак переворачивать НЕ надо:

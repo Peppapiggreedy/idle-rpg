@@ -656,21 +656,12 @@ export function recipesOf(profession: ProfessionId): RecipeDef[] {
   return RECIPES.filter((r) => r.profession === profession)
 }
 
-/** Все id еды: по ним привал ищет, чем себя сократить. */
-export const FOOD_IDS: string[] = RECIPES.filter(
-  (r): r is RecipeDef & { output: FoodOutput } => r.output.kind === 'food',
-).map((r) => r.output.id)
-
 export const FOOD_BY_ID: Record<string, FoodOutput> = Object.fromEntries(
   RECIPES.filter((r): r is RecipeDef & { output: FoodOutput } => r.output.kind === 'food').map(
     (r) => [r.output.id, r.output],
   ),
 )
 
-/** Сколько ЕДИНИЦ материалов стоит рецепт — для проверки соразмерности. */
-export function recipeCost(recipe: RecipeDef): number {
-  return recipe.inputs.reduce((sum, i) => sum + i.count, 0)
-}
 
 /** Префикс source у модификаторов зелий: по нему их видно и в раскладке
  *  статов, и там, где модель боя обязана их ВЫЧИСТИТЬ (режим 'auto'). */
