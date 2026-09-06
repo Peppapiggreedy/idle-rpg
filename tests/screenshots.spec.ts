@@ -43,6 +43,39 @@ const SCENE_WIDTHS = [390, 1280] as const
 // «посмотреть игру до merge» не должно зависеть от результата сравнения.
 const CURRENT_DIR = join('test-results', 'current')
 
+/**
+ * Высота страницы, прочитанная ПОСЛЕ перерасчёта, а не сразу.
+ *
+ * ЭТО И БЫЛО ПРИЧИНОЙ МИГАЮЩЕГО СНИМКА ДЕРЕВА. `setViewportSize` возвращает
+ * управление раньше, чем браузер пересчитает раскладку, и следующий за ним
+ * `scrollHeight` отдаёт ПРОШЛОЕ число. Замер на пресете `tree` при 390:
+ *
+ *   окно 900  -> страница 1317
+ *   окно 1317 -> страница 1519   (у страницы есть высота, зависящая от окна)
+ *   окно 1519 -> страница 1519   — сошлось
+ *
+ * Со старым чтением цикл на втором шаге видел «1317 при окне 1317», считал
+ * это сходимостью и снимал кадр при окне 1317 — то есть в НЕсошедшемся
+ * состоянии. Успеет ли перерасчёт до чтения, решала загруженность машины:
+ * по одному снимок сходился всегда, на полном прогоне падал примерно раз из
+ * трёх, и падал ВЕРТИКАЛЬНЫМ СДВИГОМ при совпадающем до знака тексте — ровно
+ * тем, что и должно случиться, когда одна и та же страница снята при двух
+ * разных высотах окна.
+ *
+ * Два кадра ожидания — не «на всякий случай»: первый доводит до конца
+ * перерасчёт, второй гарантирует, что мы читаем уже отрисованное состояние.
+ */
+async function pageHeight(page: Page): Promise<number> {
+  return page.evaluate(
+    () =>
+      new Promise<number>((done) => {
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => done(document.documentElement.scrollHeight)),
+        )
+      }),
+  )
+}
+
 async function capture(page: Page, name: string): Promise<Buffer> {
   // Свой шрифт лежит рядом с игрой, но дождаться его всё равно надо: иначе
   // первый кадр нарисуется запасным начертанием и эталон не сойдётся.
@@ -65,8 +98,8 @@ async function capture(page: Page, name: string): Promise<Buffer> {
   // того, что попало под первый обмер.
   const size = page.viewportSize()
   if (size) {
-    for (let i = 0; i < 4; i += 1) {
-      const full = await page.evaluate(() => document.documentElement.scrollHeight)
+    for (let i = 0; i < 6; i += 1) {
+      const full = await pageHeight(page)
       const current = page.viewportSize()
       if (!current || full === current.height) break
       await page.setViewportSize({ width: size.width, height: full })
