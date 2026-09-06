@@ -27,7 +27,7 @@ import {
 } from '../simulate'
 import { BRANCHES } from '../../data/talents'
 import { ENCHANTS } from '../../data/enchants'
-import { RECIPES } from '../../data/recipes'
+import { RECIPES, type RecipeDef } from '../../data/recipes'
 import { craftedItem } from '../crafting'
 import { SLOT_IDS, type SlotId } from '../../data/slots'
 import { LEVEL_CAP, POTION_UNLOCK_LEVEL, POWER_BUDGET } from '../../data/balance'
@@ -258,6 +258,44 @@ describe('бюджет силы Стража на потолке', () => {
         .filter((m) => m.kind !== 'base')
         .reduce((acc, m) => acc + m.value.toNumber(), 0)
     expect(sum(assembled), 'статы сборки не урезаны — платы не было').toBeLessThan(sum(plain))
+  }, 600_000)
+
+  it('адресность крафта: чего стоит закрыть невезучий слот', () => {
+    // ЦЕННОСТЬ КРАФТА — НЕ В СИЛЕ, А В АДРЕСНОСТИ, и до этой строки она была
+    // словами в CLAUDE.md. Здесь она становится числом: сколько стоит герою
+    // тот слот, по которому рулетка молчит десять уровней.
+    const LAG = 10
+    const craftable = RECIPES.filter(
+      (r): r is (typeof RECIPES)[number] & { output: Extract<RecipeDef['output'], { kind: 'item' }> } =>
+        r.output.kind === 'item' && !r.output.boonId && r.output.level === LEVEL_CAP,
+    )
+    expect(craftable.length, 'на последней полосе нечего сковать').toBeGreaterThan(0)
+    const rows = craftable.map((recipe) => {
+      const fresh = craftedItem(recipe.output, 9201)!
+      const stale = craftedItem({ ...recipe.output, level: recipe.output.level - LAG }, 9202)!
+      const wear = (item: typeof fresh) =>
+        ensureStats({
+          ...withRelic,
+          equipment: { ...withRelic.equipment, [item.slot]: item },
+          statsDirty: true,
+        })
+      const mult = rate(wear(fresh)).killsPerSecond.div(rate(wear(stale)).killsPerSecond).toNumber()
+      return { рецепт: recipe.id, слот: fresh.slot, множитель: Number(mult.toFixed(3)) }
+    })
+    // eslint-disable-next-line no-console
+    console.table(rows)
+    const corridor = POWER_BUDGET.craft
+    // ЛУЧШИЙ из слотов, а не средний: адресность — это ответ на вопрос «мне
+    // не везёт ВОТ ЗДЕСЬ», и меряется она тем слотом, который игрок и чинит.
+    const best = dump(
+      `power/${DEFAULT_CLASS.id}/level-${String(LEVEL_CAP).padStart(3, '0')}/multiplier/craft/value`,
+      Math.max(...rows.map((r) => r.множитель)),
+    )
+    expect(corridor.min, 'пол коридора выше единицы').toBeGreaterThan(1)
+    expect(best, 'крафт не закрывает отставший слот').toBeGreaterThanOrEqual(corridor.min)
+    expect(best, 'крафт закрывает слишком много — это уже не адресность').toBeLessThanOrEqual(
+      corridor.max,
+    )
   }, 600_000)
 
   it('доли урона: умения и проки жёстко, автоатака — предупреждением', () => {

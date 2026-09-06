@@ -284,3 +284,80 @@ describe('сейв: выученное переживает перезагруз
     }
   })
 })
+
+describe('мёртвых рецептов нет: собирается каждый', () => {
+  it('герой, у которого есть всё, собирает ВСЕ рецепты игры', () => {
+    // Самая простая проверка на мёртвый контент и самая полезная: рецепт,
+    // который не собирается ни при каких обстоятельствах, — это строка в
+    // списке, отвечающая игроку «нет» навсегда. Ловится он только так, потому
+    // что каждая отдельная причина отказа по-своему законна.
+    const materials: Record<string, Decimal> = {}
+    for (const recipe of RECIPES) {
+      for (const input of recipe.inputs) materials[input.materialId] = new Decimal(999)
+    }
+    const everything: GameState = {
+      ...createInitialState(1),
+      level: new Decimal(100),
+      gold: new Decimal('1e30'),
+      materials,
+      mastery: { smithing: MASTERY_MAX, herbalism: MASTERY_MAX },
+      knownRecipeIds: Object.fromEntries(RECIPES.map((r) => [r.id, true])),
+      templeBestWave: 999,
+      templeCleared: true,
+    }
+    const dead = RECIPES.filter((r) => !recipeStatus(everything, r).canCraft).map(
+      (r) => `${r.id}: ${recipeStatus(everything, r).reason}`,
+    )
+    expect(dead, `не собираются:\n${dead.join('\n')}`).toEqual([])
+  })
+
+  it('каждый рецепт даёт то, что где-то нужно', () => {
+    // Обратная сторона: передел, который никто не тратит, — тупик. Правило
+    // держит и content:check на слепке контента; здесь оно проверяется на
+    // живых данных, вместе с остальными свойствами лестницы.
+    for (const recipe of RECIPES) {
+      if (recipe.output.kind !== 'reagent') continue
+      const id = recipe.output.id
+      expect(
+        RECIPES.some((r) => r.inputs.some((i) => i.materialId === id)),
+        `${recipe.id}: его выход не тратит никто`,
+      ).toBe(true)
+    }
+  })
+})
+
+describe('стопроцентный дроп рецепта НЕ двигает лестницу предметов', () => {
+  // Гарантированный рецепт — самое подозрительное место всей стадии: если бы
+  // он выдавал вещь, которой не бывает в дропе, лестница предметов поехала бы
+  // вслед за ним, а с ней темп, цена боя и ворота подземелий.
+  it('боссовый рецепт даёт РЕДКУЮ вещь — то же, что хорошая находка', () => {
+    for (const recipe of BOSS) {
+      expect(recipe.output.kind).toBe('item')
+      if (recipe.output.kind !== 'item') continue
+      expect(['uncommon', 'rare'], recipe.id).toContain(recipe.output.rarity)
+    }
+  })
+
+  it('вещь стоит НЕ МЕНЬШЕ двух полных прохождений', () => {
+    // Реагент падает с последнего босса ровно по одному за пройденную
+    // цепочку. Рецепт гарантирован — а ВЕЩЬ нет: за неё платят походами.
+    for (const recipe of BOSS) {
+      const source = recipe.source
+      if (source.kind !== 'boss') continue
+      const dungeon = DUNGEONS.find((d) => d.id === source.dungeonId)!
+      const need = recipe.inputs.find((i) => i.materialId === dungeon.reagentId)
+      expect(need, `${recipe.id}: не просит реагент своего подземелья`).toBeTruthy()
+      expect(need!.count, recipe.id).toBeGreaterThanOrEqual(2)
+    }
+  })
+
+  it('уровень вещи не выше своей полосы', () => {
+    // Третья сторона того же: гарантированный рецепт не может выдать вещь
+    // ГЛУБЖЕ, чем полоса, на которой стоит его подземелье.
+    for (const recipe of BOSS) {
+      if (recipe.output.kind !== 'item') continue
+      const band = bandForLevel(recipe.output.level)
+      expect(recipe.output.level, recipe.id).toBeLessThanOrEqual(band.maxLevel)
+    }
+  })
+})
