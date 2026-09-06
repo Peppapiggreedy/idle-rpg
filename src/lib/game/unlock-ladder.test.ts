@@ -311,7 +311,11 @@ describe('порог привала ползунком', () => {
       )
       expect(branchCapacity(branchId), branchId).toBeGreaterThanOrEqual(BRANCH_DEPTH)
     }
-    const replaced = ['vigil-swift-camp', 'instinct-light-camp', 'instinct-restless']
+    // ТРЕТИЙ ID СМЕНИЛСЯ ВМЕСТЕ С ДЕРЕВОМ. Ночь ярости пересобрала ветки
+    // Изувера целиком, и «Неугомонный» переехал на ключевой этаж; место
+    // удалённого таланта на ПОРОГ привала держит «Волчий привал» — тот же
+    // род (длина привала, процентом), тот же смысл проверки.
+    const replaced = ['vigil-swift-camp', 'instinct-light-camp', 'instinct-wolf-camp']
     for (const id of replaced) {
       const talent = TALENT_BY_ID[id]
       expect(talent, id).toBeDefined()
