@@ -1432,12 +1432,17 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
   // из конвейера статов — настройка игрока плюс таланты. Чистая потеря за
   // бой — уже с лечением умением.
   const cycleFor = (pass: Pass, healing: HealCycle | null) => {
-    const netLossPerFight = Decimal.max(
-      (healing ? new Decimal(healing.netLossPerFight) : pass.grossLossPerFight).minus(
-        pass.leechPerFight,
-      ),
-      new Decimal(0),
-    )
+    // ВЫЧИТАЕМ, НО НЕ ЗАЖИМАЕМ НУЛЁМ. Отрицательная чистая потеря — законное
+    // состояние: в отставшей зоне регенерация покрывает входящее с запасом, и
+    // цикл фарма ниже сам решает, что привалов не будет вовсе. Зажим стоил
+    // ОДНОГО контракта Стража: в зонах, где потеря и так отрицательна, «минус»
+    // превращался в ноль, аптайм чуть менялся, и две соседние зоны лестницы
+    // дохода менялись местами. Правило ночи («половина отпечатка,
+    // принадлежащая Стражу, не двигается») поймало это ровно за тем, зачем
+    // оно и написано.
+    const netLossPerFight = (
+      healing ? new Decimal(healing.netLossPerFight) : pass.grossLossPerFight
+    ).minus(pass.leechPerFight)
     const netLossPerSec = netLossPerFight.div(pass.killCycleSec)
     const cycle = netLossPerSec.gt(0)
       ? farmCycle({
