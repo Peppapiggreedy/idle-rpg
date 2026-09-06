@@ -48,6 +48,9 @@
     if (recipe.output.kind === 'potion') {
       return `Склянка: ${Math.round(recipe.output.durationSec / 60)} мин действия`
     }
+    // Промежуточный реагент — не вещь: слота и редкости у него нет, а есть
+    // место в пути к вещи. Так и называется.
+    if (recipe.output.kind === 'reagent') return 'Передел: идёт в лучшую вещь полосы'
     return `${SLOT_NAMES[recipe.output.slot]}, ${rarityName(recipe.output.rarity)}`
   }
 
@@ -69,6 +72,8 @@
       parts.push(`Склянка, ${Math.round(out.durationSec / 60)} мин действия`)
       parts.push(potionEffectText({ ...recipe, output: out } as PotionRecipe))
       parts.push('Зелья пьются только руками: ни автокаст, ни оффлайн их не трогают.')
+    } else if (out.kind === 'reagent') {
+      parts.push('Передел: сам не надевается, но без него не собрать лучшую вещь полосы.')
     } else {
       const item = craftedItem(out, 0)
       parts.push(`${SLOT_NAMES[out.slot]} · ${rarityName(out.rarity)} · ${out.level} ур.`)

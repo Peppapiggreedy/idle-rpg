@@ -1817,6 +1817,24 @@ export const RECIPE_SCHEMA: EntitySchema<RecipeDef> = {
           )
         }
       }
+    } else if (output.kind === 'reagent') {
+      // ПЕРЕДЕЛ ССЫЛАЕТСЯ НА ПРОМЕЖУТОЧНЫЙ РЕАГЕНТ, И ТОЛЬКО НА НЕГО.
+      // Рецепт, «производящий» обычный реагент, сделал бы второй передел
+      // бессмысленным: то же самое падает с мобов бесплатно.
+      const made = content.reagents.find((r) => r.id === output.id)
+      report.need(
+        made !== undefined,
+        where,
+        `делает реагент «${output.id}», которого нет в data/reagents.ts`,
+      )
+      if (made) {
+        report.need(
+          made.role === 'crafted',
+          where,
+          `делает реагент «${output.id}» с ролью «${made.role}»: переделом можно ` +
+            'получить только промежуточный, остальные добываются (data/reagents.ts)',
+        )
+      }
     } else {
       report.need(
         output.id.startsWith('food:'),
@@ -2982,6 +3000,73 @@ function checkReachable(content: Content, report: Report): void {
       `самая глубокая полоса кончается на ${top.max}, а LEVEL_CAP = ` +
         `${content.balance.levelCap}: на последних уровнях герою не с кем драться ` +
         '(data/zones.ts)',
+    )
+  }
+
+  // --- Кузнечное: на каждой полосе есть что сковать ---
+  //
+  // ЭТО И ЕСТЬ СТОРОЖ ПРОТИВ ВОЗВРАЩЕНИЯ ДЫР. Лестница стояла на уровнях
+  // 13, 13, 23, 23, 58, 72, 80, 90, 100 — тридцать пять уровней молчания в
+  // середине, и увидеть это можно было только выписав числа в столбик.
+  // Полоса без рецепта означает, что игрок пришёл, а ремесло ему нечего
+  // предложить; проверка называет полосу поимённо.
+  const smithing = content.recipes.filter(
+    (r) => r.profession === 'smithing' && r.output.kind === 'item',
+  )
+  for (const band of BAND_IDS) {
+    const here = smithing.filter((r) => bandForLevel(recipeLevel(r as RecipeDef)).id === band)
+    report.need(
+      here.length > 0,
+      `полоса ${band}`,
+      'на ней нечего сковать: у кузнечного нет ни одного рецепта этой глубины ' +
+        '(data/recipes.ts)',
+    )
+  }
+
+  // --- Кузнечное: слоты на соседних полосах разные ---
+  //
+  // Три шлема подряд — это не лестница, а один и тот же ответ трижды.
+  // Адресность («чиню тот слот, где не повезло») требует, чтобы за невезучие
+  // поножи не предлагали третью голову. Сравниваются ОБЫЧНЫЕ вещи полос:
+  // лучшая вещь полосы стоит на своём слоте намеренно и в чередование не
+  // входит.
+  const byBand = new Map<string, string[]>()
+  for (const recipe of smithing) {
+    if (recipe.output.kind !== 'item') continue
+    const band = bandForLevel(recipeLevel(recipe as RecipeDef)).id
+    byBand.set(band, [...(byBand.get(band) ?? []), recipe.output.slot])
+  }
+  const ordered = BAND_IDS.filter((b) => byBand.has(b))
+  for (let i = 1; i < ordered.length; i += 1) {
+    const prev = byBand.get(ordered[i - 1]) ?? []
+    const here = byBand.get(ordered[i]) ?? []
+    report.need(
+      here.some((slot) => !prev.includes(slot)),
+      `полоса ${ordered[i]}`,
+      `все её слоты (${here.join(', ')}) уже были на предыдущей полосе — ` +
+        'лестница предлагает одно и то же дважды (data/recipes.ts)',
+    )
+  }
+
+  // --- Промежуточные реагенты: их делают и их тратят ---
+  //
+  // Две стороны одной достижимости, и обе обязательны. Промежуточный без
+  // рецепта — недостижимый контент: он лежит в реестре, а взять его негде.
+  // Промежуточный, который никто не тратит, — тупик: игрок его сделает и
+  // обнаружит, что дальше пути нет. Оба случая читаются как поломка ремесла,
+  // а не данных, поэтому ловятся здесь.
+  for (const reagent of content.reagents) {
+    if (reagent.role !== 'crafted') continue
+    report.need(
+      content.recipes.some((r) => r.output.kind === 'reagent' && r.output.id === reagent.id),
+      `реагент ${reagent.id}`,
+      'помечен промежуточным, но его не делает ни один рецепт — взять его негде ' +
+        '(data/recipes.ts)',
+    )
+    report.need(
+      content.recipes.some((r) => r.inputs?.some((i) => i.materialId === reagent.id)),
+      `реагент ${reagent.id}`,
+      'его никто не тратит: передел ведёт в тупик (data/recipes.ts)',
     )
   }
 

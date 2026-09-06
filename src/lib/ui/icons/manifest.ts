@@ -302,6 +302,14 @@ export const ICONS = {
   'reagent-dell-bloom': { file: 'lorc/spiral-bloom.svg', author: 'Lorc' },
   'reagent-bluff-obsidian': { file: 'lorc/dripping-stone.svg', author: 'Lorc' },
 
+  // --- Промежуточные реагенты: второй передел кузнечного ---
+  'reagent-flood-billet': { file: 'delapouite/clay-brick.svg', author: 'Delapouite' },
+  'reagent-sulfur-billet': { file: 'lorc/anvil-impact.svg', author: 'Lorc' },
+  'reagent-pass-billet': { file: 'delapouite/brick-pile.svg', author: 'Delapouite' },
+  'reagent-salt-billet': { file: 'lorc/stone-tablet.svg', author: 'Lorc' },
+  'reagent-rime-billet': { file: 'lorc/cubes.svg', author: 'Lorc' },
+  'reagent-dell-billet': { file: 'lorc/heavy-thorny-triskelion.svg', author: 'Lorc' },
+
   // --- Интерфейс ---
   log: { file: 'lorc/scroll-unfurled.svg', author: 'Lorc' },
   // Автокаст: рука — жмёшь сам, механизм — жмёт игра. Пара, а не одна

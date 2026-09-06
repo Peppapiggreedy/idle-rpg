@@ -186,7 +186,28 @@ const BOSS: ReagentDef[] = [
   },
 ]
 
-export const REAGENTS: ReagentDef[] = [...COMMON, ...BOSS]
+// ---------------------------------------------------------------------------
+// Промежуточные: не выпадают вовсе, куются из обычных
+// ---------------------------------------------------------------------------
+//
+// Появляются С СЕРЕДИНЫ ЛЕСТНИЦЫ и ни строкой раньше. Второй передел — это
+// не лишнее нажатие, а длина пути: игрок заранее знает, сколько руды стоит
+// за лучшей вещью полосы, и копит осмысленно. На первых полосах ремесло ещё
+// учится, и второй шаг там был бы налогом на новичка.
+//
+// Ни веса, ни источника у них нет — и это проверяется, а не подразумевается:
+// стоит промежуточному получить хоть один источник, второй передел
+// становится необязательным, то есть исчезает.
+const CRAFTED: ReagentDef[] = [
+  { id: 'flood-billet', name: 'Ярусная крица', icon: 'reagent-flood-billet', role: 'crafted', band: 'flood' },
+  { id: 'sulfur-billet', name: 'Серный слиток', icon: 'reagent-sulfur-billet', role: 'crafted', band: 'sulfur' },
+  { id: 'pass-billet', name: 'Перевальный слиток', icon: 'reagent-pass-billet', role: 'crafted', band: 'pass' },
+  { id: 'salt-billet', name: 'Соляная крица', icon: 'reagent-salt-billet', role: 'crafted', band: 'salt' },
+  { id: 'rime-billet', name: 'Стылый слиток', icon: 'reagent-rime-billet', role: 'crafted', band: 'rime' },
+  { id: 'dell-billet', name: 'Падевая крица', icon: 'reagent-dell-billet', role: 'crafted', band: 'dell' },
+]
+
+export const REAGENTS: ReagentDef[] = [...COMMON, ...BOSS, ...CRAFTED]
 
 export const REAGENT_BY_ID: Record<string, ReagentDef> = Object.fromEntries(
   REAGENTS.map((r) => [r.id, r]),

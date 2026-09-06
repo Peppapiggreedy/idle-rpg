@@ -9,6 +9,7 @@ import { tick } from './tick'
 import { craft, materialCount, recipeStatus, rollZoneReagent, takeFood } from './crafting'
 import { restDurationMs, startRest } from './rest'
 import { REAGENTS, commonReagentsInBand } from '../data/reagents'
+import { LEVEL_BANDS } from '../data/bands'
 import { bandForLevel } from '../data/bands'
 import {
   CRAFT_TOLL_HOURS,
@@ -81,25 +82,49 @@ const legendarySmithing = () =>
   recipesOf('smithing').filter((r) => recipeUnlockLevel(r) >= LEVEL_CAP)
 
 describe('данные профессий', () => {
-  it('четыре профессии, у кулинарии 3-4 рецепта, у кузнечного 4-5 рядовых', () => {
+  it('четыре профессии, у кулинарии 3-4 рецепта, у кузнечного полная лестница', () => {
     // Кулинария, кузнечное дело, травничество и реликварий: каждая отвечает
     // на свой вопрос, и ни одна не дублирует другую.
     expect(PROFESSIONS).toHaveLength(4)
     expect(recipesOf('cooking').length).toBeGreaterThanOrEqual(3)
     expect(recipesOf('cooking').length).toBeLessThanOrEqual(4)
-    // Рядовые рецепты кузнеца — подстраховка от невезения; легендарные
-    // реликты на реагентах героики считаются отдельно: это конец лестницы,
-    // а не запасной вариант.
-    expect(everydaySmithing().length).toBeGreaterThanOrEqual(4)
-    expect(everydaySmithing().length).toBeLessThanOrEqual(5)
+    // ЧИСЛО РЯДОВЫХ БОЛЬШЕ НЕ КОРИДОР «4-5», И ЭТО ПЕРЕПИСАНО НАМЕРЕННО.
+    // Прежняя лестница стояла на пяти рецептах и уровнях 13, 13, 23, 23, 58 —
+    // тридцать пять уровней молчания в середине. Теперь правило другое: по
+    // вещи на КАЖДУЮ из десяти полос, и проверяется именно оно, а не
+    // количество (количество из него следует).
+    // Считается по ВСЕМ смитинговым вещам, а не только по «рядовым»:
+    // деление на рядовые и легендарные идёт по потолку уровня, и вещь
+    // последней полосы стоит ровно на нём — она попала бы во вторую корзину
+    // и полоса осталась бы «пустой» при полном рецепте.
+    const bands = new Set(
+      recipesOf('smithing')
+        .filter((r) => r.output.kind === 'item')
+        .map((r) => bandForLevel(recipeLevel(r)).id),
+    )
+    expect(bands.size, 'полос без рецепта быть не должно').toBe(LEVEL_BANDS.length)
     expect(legendarySmithing().length).toBeGreaterThan(0)
   })
 
-  it('у кузнечного дела по рецепту на разные слоты, а не пять на один', () => {
-    const slots = everydaySmithing().map((r) =>
-      r.output.kind === 'item' ? r.output.slot : null,
-    )
-    expect(new Set(slots).size).toBe(slots.length)
+  it('слоты кузнечного не повторяются на соседних полосах', () => {
+    // Не «все слоты разные» — рецептов теперь больше, чем слотов, и повтор
+    // через полосу законен. Нельзя другое: три шлема подряд, когда за
+    // невезучие поножи предлагают третью голову.
+    const byBand = new Map<string, string[]>()
+    for (const recipe of everydaySmithing()) {
+      if (recipe.output.kind !== 'item') continue
+      const band = bandForLevel(recipeLevel(recipe)).id
+      byBand.set(band, [...(byBand.get(band) ?? []), recipe.output.slot])
+    }
+    const ordered = LEVEL_BANDS.map((b) => b.id).filter((b) => byBand.has(b))
+    for (let i = 1; i < ordered.length; i += 1) {
+      const prev = byBand.get(ordered[i - 1]) ?? []
+      const here = byBand.get(ordered[i]) ?? []
+      expect(
+        here.some((slot) => !prev.includes(slot)),
+        `полоса ${ordered[i]}: те же слоты, что на предыдущей`,
+      ).toBe(true)
+    }
   })
 
   it('уровней у профессий нет: в данных нет ни одного требования по опыту', () => {
@@ -309,7 +334,10 @@ describe('пошлина крафта', () => {
           ? recipe.output.procId
             ? 'unique'
             : 'item'
-          : recipe.output.kind
+          : // Передел платит как еда: он не даёт надеваемого, только шаг к нему.
+            recipe.output.kind === 'reagent'
+            ? 'food'
+            : recipe.output.kind
       ]
       const expected = goldPerHourAt(recipeLevel(recipe)).times(hours).ceil()
       expect(craftToll(recipe).toNumber(), recipe.id).toBe(expected.toNumber())

@@ -165,8 +165,24 @@ export function craftToll(recipe: RecipeDef): Decimal {
       ? recipe.output.procId
         ? 'unique'
         : 'item'
-      : recipe.output.kind
+      : // ПЕРЕДЕЛ ПЛАТИТ КАК ЕДА, а не как вещь. Он не даёт ничего надеваемого
+        // — только следующий шаг к вещи, — и пошлина вещи, взятая дважды за
+        // один предмет, сделала бы двухпередельный путь просто дороже.
+        recipe.output.kind === 'reagent'
+        ? 'food'
+        : recipe.output.kind
   return goldPerHourAt(recipeLevel(recipe)).times(CRAFT_TOLL_HOURS[kind]).ceil()
+}
+
+/**
+ * ПРОМЕЖУТОЧНЫЙ РЕАГЕНТ НА ВЫХОДЕ. Третий вид выхода рядом с едой и
+ * склянкой: в сумку не ложится, места не занимает, а ложится в тот же мешок,
+ * что и добыча. Своего пути у него нет — тот же `craft`, та же пошлина.
+ */
+export interface ReagentOutput {
+  kind: 'reagent'
+  /** Id реагента из `data/reagents.ts`, роль которого обязана быть `crafted`. */
+  id: string
 }
 
 export interface RecipeInput {
@@ -238,7 +254,7 @@ export interface RecipeDef {
   /** С какого уровня рецепт доступен. Не задан — с первого. */
   unlockLevel?: number
   inputs: RecipeInput[]
-  output: FoodOutput | ItemOutput | PotionOutput
+  output: FoodOutput | ItemOutput | PotionOutput | ReagentOutput
 }
 
 const CRAFT_RECIPES: RecipeDef[] = [
@@ -274,103 +290,470 @@ const CRAFT_RECIPES: RecipeDef[] = [
     output: { kind: 'food', id: 'food:salted-jerky', name: 'Солёная вяленина', icon: 'recipe-jerky' },
   },
 
-  // --- Кузнечное дело: по рецепту на слот брони и один на руку ---
+  // --- КУЗНЕЧНОЕ ДЕЛО: ЛЕСТНИЦА БЕЗ ДЫР ---
+  //
+  // Было 13, 13, 23, 23, 58 — и тридцать пять уровней молчания в середине.
+  // Стало по вещи на КАЖДУЮ полосу: рецепт есть везде, куда игрок приходит,
+  // и держит это `content:check` правилом, а не вниманием.
+  //
+  // СЛОТЫ ИДУТ ПО ОЧЕРЕДИ. На соседних полосах они разные — иначе три шлема
+  // подряд, и адресность («чиню тот слот, где не повезло») не работает: за
+  // невезучие поножи предлагали бы третью голову.
+  //
+  // УРОВЕНЬ ВЕЩИ — ВЕРХ ЕЁ ПОЛОСЫ, и `unlockLevel` равен ему же. Рецепт
+  // становится осмысленным тогда, когда игрок полосу уже прошёл и знает,
+  // чего ему не хватает; открытый раньше, он обещал бы то, на что нет
+  // реагентов. Сила при этом равна ХОРОШЕЙ НАХОДКЕ той же полосы, не выше —
+  // ценность крафта в адресности, а не в силе (таблица в docs/CRAFT.md).
   {
     id: 'forged-helm',
     name: 'Кованый шлем',
     icon: 'slot-head',
     profession: 'smithing',
+    unlockLevel: 10,
     inputs: [
-      { materialId: 'quarry-ore', count: 4 },
-      { materialId: 'bog-hide', count: 2 },
+      { materialId: 'quarry-ore', count: 5 },
     ],
     output: {
       kind: 'item',
       slot: 'head',
       rarity: 'uncommon',
-      level: 13,
+      level: 10,
       attribute: 'intellect',
       adjective: 'Кованый',
     },
   },
   {
     id: 'forged-cuirass',
-    name: 'Кованый панцирь',
+    name: 'Бороздовый панцирь',
     icon: 'slot-chest',
     profession: 'smithing',
+    unlockLevel: 20,
     inputs: [
-      { materialId: 'quarry-ore', count: 6 },
-      { materialId: 'bog-hide', count: 3 },
+      { materialId: 'bog-hide', count: 5 },
+      { materialId: 'furrow-rust', count: 3 },
     ],
     output: {
       kind: 'item',
       slot: 'chest',
       rarity: 'uncommon',
-      level: 13,
+      level: 20,
       attribute: 'vitality',
-      adjective: 'Кованый',
-    },
-  },
-  {
-    id: 'forged-greaves',
-    name: 'Кованые поножи',
-    icon: 'slot-legs',
-    profession: 'smithing',
-    inputs: [
-      { materialId: 'quarry-ore', count: 5 },
-      { materialId: 'ember-shard', count: 1 },
-    ],
-    output: {
-      kind: 'item',
-      slot: 'legs',
-      rarity: 'uncommon',
-      level: 23,
-      attribute: 'strength',
-      adjective: 'Кованый',
+      adjective: 'Бороздовый',
     },
   },
   {
     id: 'forged-fang',
-    name: 'Кованый змеезуб',
+    name: 'Стеклёный змеезуб',
     icon: 'slot-weapon',
     profession: 'smithing',
+    unlockLevel: 30,
     inputs: [
-      { materialId: 'quarry-ore', count: 6 },
-      { materialId: 'ember-shard', count: 2 },
+      { materialId: 'ember-shard', count: 5 },
+      { materialId: 'glass-sliver', count: 3 },
     ],
     output: {
       kind: 'item',
       slot: 'mainHand',
       rarity: 'uncommon',
-      level: 23,
+      level: 30,
       templateId: 'fang',
-      adjective: 'Кованый',
+      adjective: 'Стеклёный',
+    },
+  },
+  {
+    id: 'forged-greaves',
+    name: 'Штольневые поножи',
+    icon: 'slot-legs',
+    profession: 'smithing',
+    unlockLevel: 40,
+    inputs: [
+      { materialId: 'shaft-iron', count: 5 },
+      { materialId: 'root-fibre', count: 3 },
+    ],
+    output: {
+      kind: 'item',
+      slot: 'legs',
+      rarity: 'uncommon',
+      level: 40,
+      attribute: 'strength',
+      adjective: 'Штольневый',
     },
   },
   {
     id: 'forged-bulwark',
-    name: 'Кованый заслон',
+    name: 'Ярусный заслон',
     icon: 'slot-offhand',
     profession: 'smithing',
+    unlockLevel: 50,
     inputs: [
-      { materialId: 'quarry-ore', count: 5 },
-      // ТЕРРАСНЫЙ ШЛАК, А НЕ СТЫЛАЯ СОЛЬ, и это починка настоящей дыры.
-      // Заслон стоит на 58 уровне, а соль лежит на полосе 71-80: собрать его
-      // на своём уровне было нельзя, и снаружи это выглядело не поломкой, а
-      // пустотой в лестнице кузнечного. Шлак — обычный реагент полосы 51-60,
-      // то есть ровно той, где заслон и осмыслен. Правило теперь держит
-      // content:check, а не внимательность.
-      { materialId: 'terrace-slag', count: 2 },
+      { materialId: 'tier-scale', count: 5 },
+      { materialId: 'mould-cap', count: 3 },
     ],
     output: {
       kind: 'item',
       slot: 'offHand',
       rarity: 'uncommon',
-      level: 58,
+      level: 50,
       templateId: 'bulwark',
-      adjective: 'Кованый',
+      adjective: 'Ярусный',
     },
   },
+  {
+    id: 'forged-gauntlets',
+    name: 'Серные рукавицы',
+    icon: 'slot-hands',
+    profession: 'smithing',
+    unlockLevel: 60,
+    inputs: [
+      { materialId: 'terrace-slag', count: 5 },
+      { materialId: 'sulfur-crust', count: 3 },
+    ],
+    output: {
+      kind: 'item',
+      slot: 'hands',
+      rarity: 'uncommon',
+      level: 60,
+      attribute: 'agility',
+      adjective: 'Серный',
+    },
+  },
+  {
+    id: 'forged-charm',
+    name: 'Перевальный оберег',
+    icon: 'slot-trinket',
+    profession: 'smithing',
+    unlockLevel: 70,
+    inputs: [
+      { materialId: 'pass-flint', count: 5 },
+      { materialId: 'wormwood-resin', count: 3 },
+    ],
+    output: {
+      kind: 'item',
+      slot: 'trinket',
+      rarity: 'uncommon',
+      level: 70,
+      attribute: 'agility',
+      adjective: 'Перевальный',
+    },
+  },
+  {
+    id: 'forged-crown',
+    name: 'Соляной венец',
+    icon: 'slot-head',
+    profession: 'smithing',
+    unlockLevel: 80,
+    inputs: [
+      { materialId: 'emery-grit', count: 5 },
+      { materialId: 'rime-salt', count: 3 },
+    ],
+    output: {
+      kind: 'item',
+      slot: 'head',
+      rarity: 'uncommon',
+      level: 80,
+      attribute: 'intellect',
+      adjective: 'Соляной',
+    },
+  },
+  {
+    id: 'forged-carapace',
+    name: 'Стылый панцирь',
+    icon: 'slot-chest',
+    profession: 'smithing',
+    unlockLevel: 90,
+    inputs: [
+      { materialId: 'crookwood-knot', count: 5 },
+      { materialId: 'hoar-quartz', count: 3 },
+    ],
+    output: {
+      kind: 'item',
+      slot: 'chest',
+      rarity: 'uncommon',
+      level: 90,
+      attribute: 'vitality',
+      adjective: 'Стылый',
+    },
+  },
+  {
+    id: 'forged-cleaver',
+    name: 'Падевый тесак',
+    icon: 'slot-weapon',
+    profession: 'smithing',
+    unlockLevel: 100,
+    inputs: [
+      { materialId: 'bluff-obsidian', count: 5 },
+      { materialId: 'dell-bloom', count: 3 },
+    ],
+    output: {
+      kind: 'item',
+      slot: 'mainHand',
+      rarity: 'uncommon',
+      level: 100,
+      templateId: 'crusher',
+      adjective: 'Падевый',
+    },
+  },
+
+  // --- ПРОМЕЖУТОЧНЫЕ: ДВА ПЕРЕДЕЛА ВМЕСТО ОДНОГО ---
+  //
+  // С середины лестницы у каждой полосы есть свой передел: обычные реагенты
+  // сплавляются в крицу или слиток, и уже он идёт в лучшую вещь полосы.
+  // Смысл не в лишнем нажатии, а в том, что путь к лучшей вещи становится
+  // ДЛИННЕЕ И ВИДНЕЕ: игрок заранее знает, сколько руды за ним стоит, и
+  // копит осмысленно. Ниже середины передела нет намеренно — там ремесло
+  // ещё учится, и второй шаг был бы налогом на новичка.
+  {
+    id: 'smelt-flood-billet',
+    name: 'Ярусная крица',
+    icon: 'reagent-flood-billet',
+    profession: 'smithing',
+    unlockLevel: 50,
+    inputs: [
+      { materialId: 'tier-scale', count: 6 },
+      { materialId: 'mould-cap', count: 4 },
+    ],
+    output: { kind: 'reagent', id: 'flood-billet' },
+  },
+  {
+    id: 'smelt-sulfur-billet',
+    name: 'Серный слиток',
+    icon: 'reagent-sulfur-billet',
+    profession: 'smithing',
+    unlockLevel: 60,
+    inputs: [
+      { materialId: 'terrace-slag', count: 6 },
+      { materialId: 'sulfur-crust', count: 4 },
+    ],
+    output: { kind: 'reagent', id: 'sulfur-billet' },
+  },
+  {
+    id: 'smelt-pass-billet',
+    name: 'Перевальный слиток',
+    icon: 'reagent-pass-billet',
+    profession: 'smithing',
+    unlockLevel: 70,
+    inputs: [
+      { materialId: 'pass-flint', count: 6 },
+      { materialId: 'wormwood-resin', count: 4 },
+    ],
+    output: { kind: 'reagent', id: 'pass-billet' },
+  },
+  {
+    id: 'smelt-salt-billet',
+    name: 'Соляная крица',
+    icon: 'reagent-salt-billet',
+    profession: 'smithing',
+    unlockLevel: 80,
+    inputs: [
+      { materialId: 'emery-grit', count: 6 },
+      { materialId: 'rime-salt', count: 4 },
+    ],
+    output: { kind: 'reagent', id: 'salt-billet' },
+  },
+  {
+    id: 'smelt-rime-billet',
+    name: 'Стылый слиток',
+    icon: 'reagent-rime-billet',
+    profession: 'smithing',
+    unlockLevel: 90,
+    inputs: [
+      { materialId: 'crookwood-knot', count: 6 },
+      { materialId: 'hoar-quartz', count: 4 },
+    ],
+    output: { kind: 'reagent', id: 'rime-billet' },
+  },
+  {
+    id: 'smelt-dell-billet',
+    name: 'Падевая крица',
+    icon: 'reagent-dell-billet',
+    profession: 'smithing',
+    unlockLevel: 100,
+    inputs: [
+      { materialId: 'bluff-obsidian', count: 6 },
+      { materialId: 'dell-bloom', count: 4 },
+    ],
+    output: { kind: 'reagent', id: 'dell-billet' },
+  },
+
+  // --- ЛУЧШАЯ ВЕЩЬ ПОЛОСЫ: БЕЗ ПОДЗЕМЕЛЬЯ НЕ СОБРАТЬ ---
+  //
+  // Каждая просит БОССОВЫЙ реагент своей полосы, а с середины лестницы — ещё
+  // и промежуточный. Это и есть гейт: сколько ни фарми зону, лучшую вещь
+  // полосы она не даст. Редкость на ступень выше обычной вещи той же полосы,
+  // и это по-прежнему «хорошая находка», а не сверх неё.
+  {
+    id: 'silt-greaves',
+    name: 'Тинные поножи',
+    icon: 'slot-legs',
+    profession: 'smithing',
+    unlockLevel: 20,
+    inputs: [
+      { materialId: 'reagent-silt-clot', count: 2 },
+      { materialId: 'bog-hide', count: 6 },
+    ],
+    output: {
+      kind: 'item',
+      slot: 'legs',
+      rarity: 'rare',
+      level: 20,
+      attribute: 'vitality',
+      name: 'Тинные поножи',
+    },
+  },
+  {
+    id: 'sinter-gloves',
+    name: 'Спёковые рукавицы',
+    icon: 'slot-hands',
+    profession: 'smithing',
+    unlockLevel: 30,
+    inputs: [
+      { materialId: 'reagent-drift-sinter', count: 2 },
+      { materialId: 'ember-shard', count: 6 },
+    ],
+    output: {
+      kind: 'item',
+      slot: 'hands',
+      rarity: 'rare',
+      level: 30,
+      attribute: 'agility',
+      name: 'Спёковые рукавицы',
+    },
+  },
+  {
+    id: 'sediment-charm',
+    name: 'Осадочный оберег',
+    icon: 'slot-trinket',
+    profession: 'smithing',
+    unlockLevel: 40,
+    inputs: [
+      { materialId: 'reagent-sediment-core', count: 2 },
+      { materialId: 'shaft-iron', count: 6 },
+    ],
+    output: {
+      kind: 'item',
+      slot: 'trinket',
+      rarity: 'rare',
+      level: 40,
+      attribute: 'intellect',
+      name: 'Осадочный оберег',
+    },
+  },
+  {
+    id: 'growth-helm',
+    name: 'Наростный шлем',
+    icon: 'slot-head',
+    profession: 'smithing',
+    unlockLevel: 50,
+    inputs: [
+      { materialId: 'reagent-sulfur-growth', count: 2 },
+      { materialId: 'flood-billet', count: 2 },
+    ],
+    output: {
+      kind: 'item',
+      slot: 'head',
+      rarity: 'rare',
+      level: 50,
+      attribute: 'strength',
+      name: 'Наростный шлем',
+    },
+  },
+  {
+    id: 'windglass-mail',
+    name: 'Ветровой панцирь',
+    icon: 'slot-chest',
+    profession: 'smithing',
+    unlockLevel: 60,
+    inputs: [
+      { materialId: 'reagent-wind-glass', count: 2 },
+      { materialId: 'sulfur-billet', count: 2 },
+    ],
+    output: {
+      kind: 'item',
+      slot: 'chest',
+      rarity: 'rare',
+      level: 60,
+      attribute: 'vitality',
+      name: 'Ветровой панцирь',
+    },
+  },
+  {
+    id: 'brine-blade',
+    name: 'Рассольный клинок',
+    icon: 'slot-weapon',
+    profession: 'smithing',
+    unlockLevel: 70,
+    inputs: [
+      { materialId: 'reagent-brine-crystal', count: 2 },
+      { materialId: 'pass-billet', count: 2 },
+    ],
+    output: {
+      kind: 'item',
+      slot: 'mainHand',
+      rarity: 'rare',
+      level: 70,
+      templateId: 'bastard',
+      name: 'Рассольный клинок',
+    },
+  },
+  {
+    id: 'vein-bulwark',
+    name: 'Жильный заслон',
+    icon: 'slot-offhand',
+    profession: 'smithing',
+    unlockLevel: 80,
+    inputs: [
+      { materialId: 'reagent-rime-vein', count: 2 },
+      { materialId: 'salt-billet', count: 2 },
+    ],
+    output: {
+      kind: 'item',
+      slot: 'offHand',
+      rarity: 'rare',
+      level: 80,
+      templateId: 'bulwark',
+      name: 'Жильный заслон',
+    },
+  },
+  {
+    id: 'mute-gloves',
+    name: 'Немые рукавицы',
+    icon: 'slot-hands',
+    profession: 'smithing',
+    unlockLevel: 90,
+    inputs: [
+      { materialId: 'reagent-mute-shard', count: 2 },
+      { materialId: 'rime-billet', count: 2 },
+    ],
+    output: {
+      kind: 'item',
+      slot: 'hands',
+      rarity: 'rare',
+      level: 90,
+      attribute: 'strength',
+      name: 'Немые рукавицы',
+    },
+  },
+  {
+    id: 'votive-bulwark',
+    name: 'Обетный заслон',
+    icon: 'slot-offhand',
+    profession: 'smithing',
+    unlockLevel: 100,
+    inputs: [
+      { materialId: 'trial-token', count: 2 },
+      { materialId: 'dell-billet', count: 2 },
+    ],
+    output: {
+      kind: 'item',
+      slot: 'offHand',
+      rarity: 'rare',
+      level: 100,
+      templateId: 'bulwark',
+      name: 'Обетный заслон',
+    },
+  },
+
   // --- Травничество: три склянки, три разных ответа на «чего не хватает» ---
   //
   // Числа держит контракт шага 34: ручная игра С зельями к автокасту БЕЗ них

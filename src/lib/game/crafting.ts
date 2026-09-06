@@ -254,10 +254,15 @@ export function craft(state: GameState, recipeId: string): GameState {
   // сравнивалась бы с потолком, который она сама только что подвинула.
   const mastery = withMastery(state, recipe)
   const event: CombatEvent = { type: 'craft', recipeId: recipe.id }
-  if (recipe.output.kind === 'food' || recipe.output.kind === 'potion') {
-    // Еда и зелья — такие же счётчики, как материал: одна порция расходуется
-    // привалом, одна склянка — глотком. Места в сумке ни та, ни другая не
-    // занимают, поэтому и проверки на inventory-full у них нет.
+  if (
+    recipe.output.kind === 'food' ||
+    recipe.output.kind === 'potion' ||
+    recipe.output.kind === 'reagent'
+  ) {
+    // Еда, зелья и промежуточные реагенты — такие же счётчики, как добыча:
+    // одна порция расходуется привалом, одна склянка — глотком, крица —
+    // следующим рецептом. Места в сумке ни одно из трёх не занимает, поэтому
+    // и проверки на inventory-full у них нет.
     const id = recipe.output.id
     return advanceQuests(
       {
