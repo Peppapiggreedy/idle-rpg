@@ -14,6 +14,7 @@ import type { StatId } from '../../../game/stats'
 import type { SlotId } from '../../slots'
 import { CLASS_BY_ID, type ClassDef } from '../../classes'
 import type { ShieldTemplate, WeaponTemplate } from '../../items'
+import { masteryToKnow, type RecipeDef } from '../../recipes'
 import { realContent } from '../content'
 import type { Content } from '../schema'
 
@@ -50,6 +51,23 @@ function bossReagent(real: Content) {
 function deepestCommon(real: Content) {
   const commons = real.reagents.filter((r) => r.role === 'common')
   return commons[commons.length - 1] ?? first(real.reagents)
+}
+
+/** Рецепт, который роняет последний босс первого подземелья. */
+function bossRecipeId(real: Content): string {
+  const last = first(real.dungeons).bosses[first(real.dungeons).bosses.length - 1]
+  const found = real.recipes.find(
+    (r) => r.source.kind === 'boss' && r.source.bossId === last.id,
+  )
+  return (found ?? first(real.recipes)).id
+}
+
+/** Первая ступень лестницы мастерства: та, что открыта с нулевого мастерства. */
+function firstMasteryId(real: Content): string {
+  const found = real.recipes.find(
+    (r) => r.source.kind === 'mastery' && masteryToKnow(r as RecipeDef) === 0,
+  )
+  return (found ?? first(real.recipes)).id
 }
 
 /**
@@ -1591,6 +1609,63 @@ export function brokenCases(): BrokenCase[] {
         ),
       },
       expect: ['покупка', 'прибавка к сумке'],
+    },
+    // --- ЧЕТЫРЕ ПОЛОМКИ ПРО ИСТОЧНИКИ РЕЦЕПТОВ ---
+    //
+    // Стадия «рецепт становится добычей» завела четыре правила, и без битого
+    // образца каждое из них — просто строчка кода, которая, может быть, что-то
+    // проверяет.
+    {
+      title: 'у рецепта нет источника — взять его неоткуда',
+      content: {
+        ...real,
+        recipes: patch(real.recipes, first(real.recipes).id, {
+          source: undefined as unknown as (typeof real.recipes)[number]['source'],
+        }),
+      },
+      expect: [first(real.recipes).id, 'источник не назван'],
+    },
+    {
+      title: 'рецепт падает не с последнего босса цепочки',
+      content: {
+        ...real,
+        recipes: patch(real.recipes, bossRecipeId(real), {
+          source: {
+            kind: 'boss' as const,
+            dungeonId: first(real.dungeons).id,
+            bossId: first(real.dungeons).bosses[0].id,
+          },
+        }),
+      },
+      expect: [bossRecipeId(real), 'не с последнего'],
+    },
+    {
+      title: 'один босс назначен источником для двух рецептов',
+      content: {
+        ...real,
+        recipes: patch(real.recipes, first(real.recipes).id, {
+          source: real.recipes.find((r) => r.source.kind === 'boss')!.source,
+        }),
+      },
+      expect: ['назначен источником сразу'],
+    },
+    {
+      title: 'у последнего босса подземелья нет своего рецепта',
+      content: {
+        ...real,
+        recipes: real.recipes.filter((r) => r.id !== bossRecipeId(real)),
+      },
+      expect: ['не роняет ни одного рецепта'],
+    },
+    {
+      title: 'лестница мастерства не начинается с нуля',
+      content: {
+        ...real,
+        // Убираем ПЕРВУЮ ступень профессии: остальные требуют мастерства,
+        // а расти теперь не на чем — профессия заперта сама на себя.
+        recipes: real.recipes.filter((r) => r.id !== firstMasteryId(real)),
+      },
+      expect: ['учить не на чем'],
     },
   ]
 }

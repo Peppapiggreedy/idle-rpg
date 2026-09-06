@@ -12,7 +12,7 @@ import { Decimal } from './numbers'
 import { createInitialState, tick, type GameState } from './tick'
 import { createRng } from './rng'
 import { craft, masteryGain, masteryOf } from './crafting'
-import { RECIPES, RECIPE_BY_ID, recipeLevel, type RecipeDef } from '../data/recipes'
+import { RECIPES, RECIPE_BY_ID, masteryToKnow, recipeLevel, type RecipeDef } from '../data/recipes'
 import {
   MASTERY_MAX,
   MASTERY_PER_CRAFT,
@@ -212,12 +212,17 @@ describe('старый сейв мигрирует в осмысленное м�
 
 describe('мастерство переживает круг сейв → загрузка', () => {
   it('крафт двигает ТОЛЬКО свою профессию, и ровно на прибавку', () => {
-    // Рецепт берётся САМЫЙ ГЛУБОКИЙ: на сорока двух очках мелкий уже не
-    // учит, и тест мерил бы потолок вместо переноса числа. Это и есть
-    // система в работе — но проверяется здесь другое.
-    const deep = RECIPES.filter((r) => r.profession === 'smithing').sort(
-      (a, b) => recipeLevel(b) - recipeLevel(a),
-    )[0]
+    // Рецепт берётся САМЫЙ ГЛУБОКИЙ ИЗ ИЗВЕСТНЫХ на этом мастерстве, и обе
+    // половины важны. Мелкий на сорока двух очках уже не учит — тест мерил бы
+    // потолок; тот, до которого герой не дорос ступенью, он попросту не знает
+    // (рецепт стал добычей) — и крафт не состоялся бы вовсе.
+    const deep = RECIPES.filter(
+      (r) =>
+        r.profession === 'smithing' &&
+        r.source.kind === 'mastery' &&
+        masteryToKnow(r) <= 42 &&
+        masteryCeilingForLevel(recipeLevel(r)) > 42,
+    ).sort((a, b) => recipeLevel(b) - recipeLevel(a))[0]
     const before = ready({ mastery: { smithing: 42, herbalism: 8 } })
     const after = craft(before, RECIPE_BY_ID[deep.id].id)
     expect(masteryOf(after, 'smithing')).toBe(42 + MASTERY_PER_CRAFT)

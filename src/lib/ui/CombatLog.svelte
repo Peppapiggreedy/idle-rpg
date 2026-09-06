@@ -70,6 +70,8 @@
         return `Собрано: ${REAGENT_BY_ID[e.materialId]?.name ?? e.materialId}`
       case 'craft':
         return `Готово: ${RECIPE_BY_ID[e.recipeId]?.name ?? e.recipeId}`
+      case 'recipe':
+        return `Выучен рецепт: «${RECIPE_BY_ID[e.recipeId]?.name ?? e.recipeId}»`
       case 'quest-complete':
         return e.chainComplete
           ? 'Цепочка заданий пройдена — врата рейда открыты!'
@@ -198,6 +200,7 @@
     // ровно про неё. Заводить вторую такую же незачем.
     material: 'material-ore',
     craft: 'profession-smithing',
+    recipe: 'recipe-broth',
     'quest-complete': 'raid-gate',
     'temple-start': 'temple',
     'temple-result': 'temple-wave',

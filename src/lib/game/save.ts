@@ -52,7 +52,14 @@ import {
   masteryFromLevel,
 } from '../data/mastery'
 import type { ProfessionId } from '../data/recipes'
-import { FOOD_BY_ID, POTION_RECIPE_BY_ID, isBagId } from '../data/recipes'
+import {
+  FOOD_BY_ID,
+  POTION_RECIPE_BY_ID,
+  RECIPE_BY_ID,
+  RECIPES,
+  isBagId,
+  recipeUnlockLevel,
+} from '../data/recipes'
 import { BRANCHES, TALENT_BY_ID, talentsInBranch, talentsOfClass } from '../data/talents'
 import {
   ALL_DUNGEONS,
@@ -108,7 +115,7 @@ const OFFLINE_LOOT_SALT = 0x9e37_79b9
 /** Все хваты одним списком: сейв принимает только их. */
 const GRIPS: Grip[] = ['one', 'two', 'shield']
 
-export const SAVE_VERSION = 31
+export const SAVE_VERSION = 32
 
 /**
  * ТАЛАНТЫ, УДАЛЁННЫЕ ИЗ ДЕРЕВА, — списком и с причиной.
@@ -201,6 +208,16 @@ export interface SavePayloadV21 {
    * не появляются вовсе.
    */
   mastery: Record<string, number>
+  /**
+   * ВЫУЧЕННЫЕ РЕЦЕПТЫ — списком id, а не объектом с true: в сейве это
+   * множество, и вторая форма записи того же множества («выучен: false»)
+   * породила бы вопрос, чем оно отличается от отсутствия ключа.
+   *
+   * Лежат тут ТОЛЬКО боссовые и мировые. Ступень мастерства и рубеж храма
+   * выводятся из своих счётчиков, и записывать их вторым следом нельзя —
+   * следы разъезжаются.
+   */
+  knownRecipeIds: string[]
   /** Пыль зачарования: величина растущая, поэтому строкой. */
   enchantDust: string
   /** Идентификатор игры: из него и из даты считается сид забега по храму.
@@ -397,6 +414,11 @@ export function payloadFromState(state: GameState, lastTimestamp: number): SaveP
     mastery: Object.fromEntries(
       Object.entries(state.mastery).filter(([, value]) => value > 0),
     ),
+    // Чужой id в список не попадает: рецепт мог быть переименован или убран,
+    // и тащить его дальше значит хранить мусор вечно.
+    knownRecipeIds: Object.keys(state.knownRecipeIds)
+      .filter((id) => state.knownRecipeIds[id] === true && id in RECIPE_BY_ID)
+      .sort(),
     // Нулевые и чужие зелья в сейв не пишем — это мусор, а не прогресс.
     activePotions: state.activePotions
       .filter((p) => p.msLeft > 0 && p.recipeId in POTION_RECIPE_BY_ID)
@@ -495,6 +517,20 @@ function masteryFromSaved(raw: unknown): Record<string, number> {
     if (!hasMastery(id as ProfessionId)) continue
     if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) continue
     out[id] = Math.min(Math.floor(value), MASTERY_MAX)
+  }
+  return out
+}
+
+/**
+ * Выученные рецепты из сейва. Мягко, как и всё остальное: чужой id
+ * отбрасывается, не роняя загрузку. Список превращается в множество —
+ * состоянию удобнее спрашивать «знаю ли», а не искать перебором.
+ */
+function knownRecipesFromSaved(raw: unknown): Record<string, boolean> {
+  if (!Array.isArray(raw)) return {}
+  const out: Record<string, boolean> = {}
+  for (const id of raw) {
+    if (typeof id === 'string' && id in RECIPE_BY_ID) out[id] = true
   }
   return out
 }
@@ -864,6 +900,7 @@ export function stateFromPayload(p: SavePayloadV21): GameState {
     inventory: Array.isArray(p.inventory) ? p.inventory.map(itemFromSaved) : [],
     materials: materialsFromSaved(p.materials),
     mastery: masteryFromSaved(p.mastery),
+    knownRecipeIds: knownRecipesFromSaved(p.knownRecipeIds),
     // Порция, потраченная на прерванный привал, не возвращается: перезагрузка
     // не должна становиться способом сэкономить еду.
     restSpeedupSource:
@@ -1117,6 +1154,26 @@ export const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
   // Цена следующего сброса растёт от `talentResets`; подними мы его здесь —
   // и подарок обернулся бы подорожанием, то есть был бы не подарком, а
   // отложенным счётом. Игра пересобрала дерево, игрок за это не платит.
+  // 31 -> 32: РЕЦЕПТ СТАЛ ДОБЫЧЕЙ, и ветеран не должен обнаружить, что у него
+  // отобрали половину кузни.
+  //
+  // До этой версии знание было производной уровня: дорос — знаешь всё. Значит
+  // герой СОРОКОВОГО уровня уже умел ковать всё, что открыто сороковым, и
+  // ровно это ему и возвращается: боссовые и мировые рецепты, до уровня
+  // которых он дошёл. Не больше — рецепты выше его уровня он и раньше не знал.
+  //
+  // Ступень мастерства и рубежи храма сюда не пишутся вовсе: они выводятся из
+  // своих счётчиков, и запись была бы вторым следом того же самого.
+  31: (raw) => {
+    const level = Number.parseFloat(String(raw.level ?? '1'))
+    const reached = Number.isFinite(level) ? level : 1
+    const known = RECIPES.filter(
+      (r) =>
+        (r.source.kind === 'boss' || r.source.kind === 'world') &&
+        recipeUnlockLevel(r) <= reached,
+    ).map((r) => r.id)
+    return { ...raw, version: 32, knownRecipeIds: known }
+  },
   // 30 -> 31: у ремёсел появилось МАСТЕРСТВО, и ветеран не должен обнаружить
   // себя новиком.
   //

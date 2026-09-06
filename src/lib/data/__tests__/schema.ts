@@ -30,8 +30,15 @@ import type { ReagentDef } from '../reagents'
 import { MASTERY_MAX, MASTERY_RANK_STEP, type MasteryRankDef } from '../mastery'
 import { BAND_IDS, bandById, bandDepth, bandForLevel, type BandId } from '../bands'
 import type { GoldUpgradeDef } from '../upgrades'
-import { craftToll, recipeLevel } from '../recipes'
-import type { ProfessionDef, RecipeDef } from '../recipes'
+import { craftToll, masteryToKnow, recipeLevel } from '../recipes'
+import type { ProfessionDef, RecipeDef, RecipeSource } from '../recipes'
+
+/**
+ * ВИДЫ ИСТОЧНИКОВ — списком, а не типом. Проверка обязана ловить рецепт,
+ * который пришёл из данных с чужим или пустым источником: типы такого не
+ * пропустят внутри проекта, а сюда попадает и то, что собрано шаблоном.
+ */
+const SOURCE_KINDS: RecipeSource['kind'][] = ['basic', 'mastery', 'boss', 'world', 'temple']
 import type { RarityDef } from '../rarity'
 import type { SoundCue } from '../sounds'
 import {
@@ -1716,6 +1723,59 @@ export const RECIPE_SCHEMA: EntitySchema<RecipeDef> = {
         '(data/recipes.ts, CRAFT_TOLL_HOURS)',
     )
 
+    // --- ИСТОЧНИК: РЕЦЕПТ БЕЗ НЕГО — РЕЦЕПТ, КОТОРОГО НЕОТКУДА ВЗЯТЬ ---
+    //
+    // Поле обязательное и по типам, но проверка нужна отдельно: сгенерированные
+    // рецепты (реликвии по данжам) типы проходят, а забыть источник в шаблоне
+    // так же легко, как в литерале.
+    const source = (recipe as RecipeDef).source
+    report.need(
+      Boolean(source) && SOURCE_KINDS.includes(source?.kind as RecipeSource['kind']),
+      where,
+      `источник не назван или неизвестен: «${source?.kind ?? '—'}». Рецепт без ` +
+        'источника игрок не сможет объяснить себе сам (data/recipes.ts)',
+    )
+    if (source?.kind === 'boss') {
+      const dungeon = content.dungeons.find((d) => d.id === source.dungeonId)
+      report.need(
+        Boolean(dungeon),
+        where,
+        `падает с босса подземелья «${source.dungeonId}», которого нет в ` +
+          'data/dungeons.ts',
+      )
+      if (dungeon) {
+        const index = dungeon.bosses.findIndex((b) => b.id === source.bossId)
+        report.need(
+          index >= 0,
+          where,
+          `падает с босса «${source.bossId}», которого нет в цепочке ` +
+            `«${dungeon.id}» (data/dungeons.ts)`,
+        )
+        // ТОЛЬКО С ПОСЛЕДНЕГО. Подземелье — жёсткие ворота, и рецепт за них
+        // обязан требовать всю цепочку: выданный на середине, он достаётся
+        // тому, кто до конца не дошёл, — то есть перестаёт быть наградой за
+        // ворота. С последнего же падает и реагент: одна дверь, один ключ.
+        report.need(
+          index < 0 || index === dungeon.bosses.length - 1,
+          where,
+          `падает с ${index + 1}-го босса цепочки «${dungeon.id}», а не с ` +
+            'последнего: рецепт за подземелье обязан требовать цепочку целиком ' +
+            '(data/recipes.ts)',
+        )
+      }
+    }
+    if (source?.kind === 'world') {
+      // Мировой рецепт падает с мобов СВОЕЙ полосы. Полоса без зон означает,
+      // что ронять его некому — рецепт есть, а найти его нельзя.
+      const band = bandForLevel(level).id
+      report.need(
+        content.zones.some((z) => bandForLevel(z.monsterLevelRange.max).id === band),
+        where,
+        `мировой рецепт стоит на полосе «${band}», где нет ни одной зоны: ` +
+          'ронять его некому (data/recipes.ts)',
+      )
+    }
+
     const output = recipe.output
     if (output.kind === 'item') {
       report.need(
@@ -3083,6 +3143,60 @@ function checkReachable(content: Content, report: Report): void {
       `полоса ${band}`,
       'на ней не падает ни один обычный реагент — ремёсла на этой глубине мертвы ' +
         '(data/reagents.ts)',
+    )
+  }
+
+  // --- Источники рецептов: у каждого босса ровно один рецепт ---
+  //
+  // ДВЕ СТОРОНЫ ОДНОГО ПРАВИЛА, и обе обязательны. Босс, назначенный
+  // источником дважды, выдал бы два рецепта за один заход — то есть цена
+  // второго стала бы нулевой. Босс без рецепта — наоборот: последний в
+  // цепочке роняет реагент и молчит, и вся дорога «сходи в подземелье за
+  // рецептом» на этом тире просто отсутствует, а заметить это можно только
+  // выписав восемь данжей в столбик.
+  const bossSources = new Map<string, string[]>()
+  for (const recipe of content.recipes) {
+    const source = (recipe as RecipeDef).source
+    if (source?.kind !== 'boss') continue
+    const key = `${source.dungeonId}:${source.bossId}`
+    bossSources.set(key, [...(bossSources.get(key) ?? []), recipe.id])
+  }
+  for (const [key, ids] of bossSources) {
+    report.need(
+      ids.length === 1,
+      `босс ${key}`,
+      `назначен источником сразу для ${ids.length} рецептов (${ids.join(', ')}): ` +
+        'один заход выдал бы оба, и цена второго стала бы нулевой (data/recipes.ts)',
+    )
+  }
+  for (const dungeon of content.dungeons) {
+    const last = dungeon.bosses[dungeon.bosses.length - 1]
+    if (!last) continue
+    report.need(
+      bossSources.has(`${dungeon.id}:${last.id}`),
+      `подземелье ${dungeon.id}`,
+      `его последний босс («${last.name}») не роняет ни одного рецепта: за этот ` +
+        'тир ходить не за чем, кроме реагента (data/recipes.ts)',
+    )
+  }
+
+  // --- Лестница мастерства начинается с нуля ---
+  //
+  // Мастерство растёт ТОЛЬКО крафтом. Профессия, у которой первый рецепт
+  // требует мастерства, заперта сама на себя: учить не на чем, потому что
+  // учиться не на чем. Порог выводится из полос самой профессии
+  // (`masteryToKnow`), поэтому нулевая ступень обязана существовать — иначе
+  // вывод где-то соскользнул.
+  for (const profession of content.professions) {
+    const ladder = content.recipes.filter(
+      (r) => r.profession === profession.id && (r as RecipeDef).source?.kind === 'mastery',
+    )
+    if (ladder.length === 0) continue
+    report.need(
+      ladder.some((r) => masteryToKnow(r as RecipeDef) === 0),
+      `профессия ${profession.id}`,
+      'все её рецепты требуют мастерства, а растёт оно только крафтом: ' +
+        'первый рецепт учить не на чем (data/recipes.ts)',
     )
   }
 

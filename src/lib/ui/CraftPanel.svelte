@@ -18,12 +18,17 @@
   import { REAGENTS, REAGENT_BY_ID } from '../data/reagents'
   import { PROFESSIONS, professionUnlocked, recipesOf, type RecipeDef } from '../data/recipes'
   import { SLOT_NAMES } from '../data/slots'
+  import { recipeSourceText, unknownRecipeText } from './recipeText'
   import { rarityName } from './kit'
   import { Button, NumberText, Panel, Tooltip } from './kit'
   import { Icon } from './icons'
 
   const REASON_TEXT: Record<CraftBlockReason, string> = {
     level: 'Рецепт откроется позже',
+    // «Не знаю» — не то же самое, что «не дорос»: у первого есть адрес, и
+    // адрес этот подписан строкой ниже. Слово на кнопке зависит от источника:
+    // рецепт лестницы придёт сам, за остальными надо идти.
+    unknown: 'Рецепт не найден',
     locked: 'Награда храма: дойди до своего рубежа волн',
     materials: 'Не хватает материалов',
     gold: 'Не хватает золота',
@@ -158,6 +163,12 @@
                 </div>
               </div>
             </Tooltip>
+            <!-- НЕИЗВЕСТНЫЙ РЕЦЕПТ ПОДПИСАН ИСТОЧНИКОМ, а не просто погашен.
+                 Строка отвечает на единственный вопрос, который у игрока
+                 к серому рецепту и есть: куда за ним идти. -->
+            {#if status.reason === 'unknown'}
+              <p class="source">{recipeSourceText(recipe)}</p>
+            {/if}
             <ul class="inputs">
               <!-- ПОШЛИНА ВИДНА ДО НАЖАТИЯ, и это половина смысла шага: цена,
                    о которой узнаёшь после клика, — не цена, а сюрприз. Строка
@@ -186,7 +197,11 @@
               title={status.reason ? REASON_TEXT[status.reason] : ''}
               onclick={() => craftRecipe(recipe.id)}
             >
-              {status.canCraft ? 'Собрать' : REASON_TEXT[status.reason!]}
+              {status.canCraft
+                ? 'Собрать'
+                : status.reason === 'unknown'
+                  ? unknownRecipeText(recipe)
+                  : REASON_TEXT[status.reason!]}
             </Button>
           </li>
         {/each}
@@ -254,6 +269,11 @@
   }
   .recipe.blocked {
     color: var(--c-text-muted);
+  }
+  .source {
+    margin: 0;
+    font-size: var(--text-xs);
+    color: var(--c-text-faint);
   }
   .head {
     display: flex;

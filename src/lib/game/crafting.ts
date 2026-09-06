@@ -3,7 +3,8 @@
 // Уровней у профессий нет: рецепт либо собирается из того, что есть, либо
 // нет. Отказ — отдельный КОД, текст причины рендерит UI (правило проекта).
 import { Decimal } from './numbers'
-import { craftToll, recipeUnlockLevel, type ProfessionId } from '../data/recipes'
+import { craftToll, recipeUnlockLevel } from '../data/recipes'
+import { masteryOf, recipeKnown } from './recipeBook'
 import { recipeUnlocked } from '../data/temple'
 import {
   FOOD_BY_ID,
@@ -14,8 +15,7 @@ import {
 import { RARITY_BY_ID } from '../data/rarity'
 import { ARMOR_NOUNS, SHIELD_BY_ID, WEAPON_BY_ID } from '../data/items'
 import { MATERIAL_DROP_CHANCE, REAGENT_DROP_CHANCE } from '../data/balance'
-import { ZONES } from '../data/zones'
-import { bandForLevel, type BandId } from '../data/bands'
+import { zoneBand } from '../data/zones'
 import { inventorySize } from './upgrades'
 import { REAGENT_BY_ID, commonReagentsInBand, type ReagentDef } from '../data/reagents'
 import {
@@ -51,18 +51,9 @@ export function materialCount(state: GameState, id: string): Decimal {
  * сравниваются ТОЛЬКО внутри полосы, поэтому «частый» и «редкий» значат одно
  * и то же на любой глубине.
  */
-/**
- * Полоса зоны — тоже раз и навсегда. Зон двадцать, полос десять, и обе
- * величины заданы данными: искать полосу перебором на каждое убийство значит
- * платить за то, что не меняется никогда.
- */
-const BAND_BY_ZONE: Record<string, BandId> = Object.fromEntries(
-  ZONES.map((zone) => [zone.id, bandForLevel(zone.monsterLevelRange.max).id]),
-)
-
 export function rollZoneReagent(zoneId: string, rng: Rng): ReagentDef | null {
   if (rng() >= MATERIAL_DROP_CHANCE) return null
-  const band = BAND_BY_ZONE[zoneId]
+  const band = zoneBand(zoneId)
   if (!band) return null
   const pool = commonReagentsInBand(band)
   if (pool.length === 0) return null
@@ -83,7 +74,13 @@ export function addMaterial(state: GameState, id: string, count = 1): GameState 
 }
 
 /** Почему рецепт не собрать. null — собирается. */
-export type CraftBlockReason = 'level' | 'locked' | 'materials' | 'gold' | 'inventory-full'
+export type CraftBlockReason =
+  | 'level'
+  | 'unknown'
+  | 'locked'
+  | 'materials'
+  | 'gold'
+  | 'inventory-full'
 
 export interface RecipeStatus {
   recipe: RecipeDef
@@ -117,6 +114,10 @@ export function recipeStatus(state: GameState, recipe: RecipeDef): RecipeStatus 
   })
   // Уровень — первым: эта причина не лечится ни материалами, ни местом в сумке.
   if (state.level.lt(recipeUnlockLevel(recipe))) return blocked('level')
+  // ЗНАНИЕ — ВТОРЫМ, и это не то же самое, что уровень. «Не знаю рецепта»
+  // лечится походом за ним, а не ожиданием: игра обязана назвать причину до
+  // нажатия, а не после. Слово подставляет UI по источнику из данных.
+  if (!recipeKnown(state, recipe)) return blocked('unknown', [])
   // Рецепт-награда храма заперт, пока рекорд по волнам не дорос до рубежа.
   // Правило живёт в данных (recipeUnlocked): списка «выданных наград» в
   // состоянии нет, открывает их сам рекорд.
@@ -209,11 +210,6 @@ export function rollBossReagent(
 }
 
 /** Собрать рецепт. Нельзя — состояние не меняется вовсе. */
-/** Мастерство героя в профессии. Отсутствие — ноль, а не undefined. */
-export function masteryOf(state: GameState, profession: ProfessionId): number {
-  return state.mastery[profession] ?? 0
-}
-
 /**
  * Сколько мастерства даст ЭТОТ крафт: полную прибавку или ноль.
  *
@@ -313,4 +309,9 @@ export function takeFood(state: GameState): { state: GameState; foodId: string |
   return { state, foodId: null }
 }
 
+// Мастерство читается ОДНОЙ функцией на игру (game/recipeBook.ts): её же
+// спрашивает книга рецептов, когда решает, дорос ли герой до ступени.
+// Здесь она пере-экспортирована, потому что для вызывающего «мастерство» —
+// часть ремесла, а не отдельная тема.
+export { masteryOf }
 export { REAGENT_BY_ID }
