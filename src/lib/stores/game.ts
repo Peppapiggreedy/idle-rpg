@@ -282,10 +282,6 @@ export function setSimulationSpeed(multiplier: number): void {
   loop?.setSpeed(multiplier)
 }
 
-export function stopGameLoop(): void {
-  loop?.stop()
-  loop = null
-}
 
 /** Продажа предмета из инвентаря по клику из UI. */
 export function sellInventoryItem(itemId: string): void {

@@ -120,10 +120,3 @@ export function attachUiSounds(): () => void {
   }
 }
 
-export function stopAudio(): void {
-  stop?.()
-  stop = null
-  engine?.dispose()
-  engine = null
-  player = null
-}

@@ -39,7 +39,7 @@ export type QuestGoal =
 
 /** Виды целей списком — по нему content:check и UI обходят их все. */
 export const QUEST_GOAL_KINDS = ['kill', 'dungeon', 'craft', 'level'] as const
-export type QuestGoalKind = (typeof QUEST_GOAL_KINDS)[number]
+
 
 /**
  * Награда в ЕДИНИЦАХ ИГРОКА, а не в голых числах.

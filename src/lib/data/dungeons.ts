@@ -302,7 +302,7 @@ export const TIER_GROWTH = {
  * сущность: один и тот же DungeonSpec разворачивается в две цепочки.
  */
 export type DungeonDifficulty = 'normal' | 'heroic'
-export const DUNGEON_DIFFICULTIES: readonly DungeonDifficulty[] = ['normal', 'heroic']
+
 
 /** Тир лут-пула: с какого качества начинается цепочка находок данжа.
  *  Третий тир — героический: эпик там пол, а не потолок. */

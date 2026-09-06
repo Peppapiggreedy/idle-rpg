@@ -57,8 +57,6 @@ export const BRANCH_DEPTH = (BRANCH_ROWS - 1) * BRANCH_ROW_STEP // 60
  */
 export const CONCEPT_ROWS: readonly number[] = [5, 9, 13]
 
-/** Последний этаж — капстоун ветки. */
-export const CAPSTONE_ROW = BRANCH_ROWS
 
 // ---------------------------------------------------------------------------
 // Ветки

@@ -14,12 +14,8 @@ import { applyXp, xpToNextLevel } from './formulas'
 import { QUEST_CHAIN, type QuestDef, type QuestGoal, type QuestReward } from '../data/quests'
 import { representativeMonster, zoneForMonsterLevel } from '../data/zones'
 import { pushEvent, type GameState } from './state'
-import type { CombatEvent, QuestProgress } from '../types'
+import type { CombatEvent } from '../types'
 
-/** Пустой прогресс: цепочка не начата. */
-export function emptyQuestProgress(): QuestProgress {
-  return { done: {}, counter: 0 }
-}
 
 export function isQuestDone(state: GameState, questId: string): boolean {
   return state.questProgress.done[questId] === true

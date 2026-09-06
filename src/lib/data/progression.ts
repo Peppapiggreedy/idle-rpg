@@ -170,9 +170,6 @@ export const PROGRESSION: ProgressionStep[] = [
   },
 ]
 
-export const PROGRESSION_BY_ID: Record<string, ProgressionStep> = Object.fromEntries(
-  PROGRESSION.map((s) => [s.id, s]),
-)
 
 /** Все механики, перечисленные в лестнице, — для проверки целостности. */
 export const MECHANIC_IDS: readonly MechanicId[] = [

@@ -60,10 +60,6 @@ export function handSpeed(stats: StatBlock, hand: Hand): number {
   return hand === 'off' ? stats.offhandSpeed : stats.weaponSpeed
 }
 
-/** Время между ударами этой руки с учётом haste. Ускорение одно на обе. */
-export function handSwingTime(stats: StatBlock, hand: Hand): number {
-  return hand === 'off' ? stats.offhandSwingTime : stats.swingTime
-}
 
 /** Бьёт ли левая рука вообще: пустая рука урона не наносит. */
 export function hasOffhand(stats: StatBlock): boolean {
@@ -668,9 +664,6 @@ export function advanceProcCooldowns(
   return changed ? next : cooldowns
 }
 
-export function procReady(state: GameState, proc: ProcDef): boolean {
-  return (state.procCooldownsMs[proc.id] ?? 0) <= 0
-}
 
 /** Что сработало за тик. Урон или лечение — ровно одно из двух. */
 export interface ProcFire {

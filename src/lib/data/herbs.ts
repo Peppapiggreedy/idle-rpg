@@ -115,9 +115,5 @@ export function herbsInZone(zoneId: string): HerbDef[] {
   return HERBS.filter((h) => h.zoneIds.includes(zoneId))
 }
 
-/** Сколько пучков в минуту даёт зона по каждой траве — вход в расчёт аптайма. */
-export function zoneHerbYield(zoneId: string): Record<string, number> {
-  return Object.fromEntries(herbsInZone(zoneId).map((h) => [h.id, h.perMinute]))
-}
 
 

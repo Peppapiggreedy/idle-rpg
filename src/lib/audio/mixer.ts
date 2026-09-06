@@ -11,7 +11,6 @@
 import {
   SOUND_AGGREGATE_MS,
   SOUND_DUCK_DB,
-  SOUND_PITCH_MAX_SEMITONES,
   SOUND_PITCH_MIN_SEMITONES,
   SOUND_VOICE_LIMIT,
 } from '../data/balance'
@@ -58,8 +57,6 @@ export interface PlanResult {
   plan: CuePlan | null
 }
 
-/** Почему кью не прозвучал. Наружу отдаётся кодом — текст рендерит отладка. */
-export type SkipReason = 'aggregated' | 'voices'
 
 const dbToGain = (db: number): number => Math.pow(10, db / 20)
 
@@ -148,7 +145,3 @@ export function duckFactor(state: MixerState, nowMs: number, category: SoundCate
   return category === 'loot' ? 1 : dbToGain(SOUND_DUCK_DB)
 }
 
-export const SOUND_PITCH_LIMITS = {
-  min: SOUND_PITCH_MIN_SEMITONES,
-  max: SOUND_PITCH_MAX_SEMITONES,
-}
