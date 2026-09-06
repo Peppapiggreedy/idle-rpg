@@ -37,10 +37,10 @@ export function recipeSourceText(recipe: RecipeDef): string {
     case 'boss': {
       const dungeon = DUNGEON_BY_ID[source.dungeonId]
       const boss = bossName(source.dungeonId, source.bossId)
-      if (!dungeon) return 'Падает с босса подземелья'
-      return boss
-        ? `Падает с ${boss} — ${dungeon.name}`
-        : `Падает с последнего босса: ${dungeon.name}`
+      if (!dungeon) return 'Роняет босс подземелья'
+      // ИМЯ БОССА СТОИТ В ИМЕНИТЕЛЬНОМ, и фраза построена под него: «падает с
+      // Утопший король» — не по-русски, а склонять имена из данных нечем.
+      return boss ? `Роняет ${boss} · ${dungeon.name}` : `Роняет последний босс · ${dungeon.name}`
     }
     case 'world': {
       const band = bandForLevel(recipeLevel(recipe))
@@ -51,7 +51,15 @@ export function recipeSourceText(recipe: RecipeDef): string {
   }
 }
 
-/** Короткая пометка для кнопки: почему собрать нельзя. */
+/**
+ * Короткая пометка для кнопки: почему собрать нельзя.
+ *
+ * Код отказа один на все источники (`unknown`), а слово РАЗНОЕ: «ещё не по
+ * руке» — это про умение, «рубеж не взят» — про храм, «не найден» — про
+ * находку. Одно слово на три причины отправляло бы игрока не туда.
+ */
 export function unknownRecipeText(recipe: RecipeDef): string {
-  return recipe.source.kind === 'mastery' ? 'Ещё не по руке' : 'Рецепт не найден'
+  if (recipe.source.kind === 'mastery') return 'Ещё не по руке'
+  if (recipe.source.kind === 'temple') return 'Рубеж храма не взят'
+  return 'Рецепт не найден'
 }

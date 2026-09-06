@@ -5,12 +5,14 @@
 import { Decimal } from './numbers'
 import { craftToll, recipeUnlockLevel } from '../data/recipes'
 import { masteryOf, recipeKnown } from './recipeBook'
-import { recipeUnlocked } from '../data/temple'
 import {
   FOOD_BY_ID,
   RECIPE_BY_ID,
+  RAW_COST_MAX_DEPTH,
+  RECIPE_BY_REAGENT,
   type ItemOutput,
   type RecipeDef,
+  type RecipeInput,
 } from '../data/recipes'
 import { RARITY_BY_ID } from '../data/rarity'
 import { ARMOR_NOUNS, SHIELD_BY_ID, WEAPON_BY_ID } from '../data/items'
@@ -68,6 +70,40 @@ export function rollZoneReagent(zoneId: string, rng: Rng): ReagentDef | null {
   return pool[pool.length - 1]
 }
 
+/**
+ * ПОЛНАЯ ЦЕНА РЕЦЕПТА СЫРЬЁМ: переделы развёрнуты в то, из чего они сами
+ * делаются.
+ *
+ * Двухпередельный путь тем и отличается от однопередельного, что его цена не
+ * видна: «Наростный шлем» просит две крицы, а за каждой стоит дюжина чешуи и
+ * восемь шляпок. Игрок, читающий только верхнюю строку, копит не на то и
+ * узнаёт об этом на кнопке.
+ *
+ * ГЛУБИНА ОГРАНИЧЕНА (`RAW_COST_MAX_DEPTH` в data/recipes.ts), и это не
+ * перестраховка: цепочка переделов в данных может закольцеваться (передел,
+ * просящий сам себя через соседа), и тогда развёртка не кончится никогда.
+ * Само число живёт В ДАННЫХ, рядом с цепочками, которые оно и ограничивает.
+ */
+export function rawCost(recipe: RecipeDef, depth = 0): RecipeInput[] {
+  const out = new Map<string, number>()
+  for (const input of recipe.inputs) {
+    const source = depth < RAW_COST_MAX_DEPTH ? RECIPE_BY_REAGENT[input.materialId] : undefined
+    if (!source) {
+      out.set(input.materialId, (out.get(input.materialId) ?? 0) + input.count)
+      continue
+    }
+    for (const deeper of rawCost(source, depth + 1)) {
+      out.set(deeper.materialId, (out.get(deeper.materialId) ?? 0) + deeper.count * input.count)
+    }
+  }
+  return [...out].map(([materialId, count]) => ({ materialId, count }))
+}
+
+/** Есть ли у рецепта передел: только тогда «полная цена» отличается от входов. */
+export function hasIntermediate(recipe: RecipeDef): boolean {
+  return recipe.inputs.some((i) => i.materialId in RECIPE_BY_REAGENT)
+}
+
 export function addMaterial(state: GameState, id: string, count = 1): GameState {
   return {
     ...state,
@@ -76,13 +112,7 @@ export function addMaterial(state: GameState, id: string, count = 1): GameState 
 }
 
 /** Почему рецепт не собрать. null — собирается. */
-export type CraftBlockReason =
-  | 'level'
-  | 'unknown'
-  | 'locked'
-  | 'materials'
-  | 'gold'
-  | 'inventory-full'
+export type CraftBlockReason = 'level' | 'unknown' | 'materials' | 'gold' | 'inventory-full'
 
 export interface RecipeStatus {
   recipe: RecipeDef
@@ -119,13 +149,13 @@ export function recipeStatus(state: GameState, recipe: RecipeDef): RecipeStatus 
   // ЗНАНИЕ — ВТОРЫМ, и это не то же самое, что уровень. «Не знаю рецепта»
   // лечится походом за ним, а не ожиданием: игра обязана назвать причину до
   // нажатия, а не после. Слово подставляет UI по источнику из данных.
+  //
+  // ГЕЙТ ЗНАНИЯ ОДИН НА ВСЕ ИСТОЧНИКИ, включая храм: рубеж волн и флаг
+  // зачистки читает та же `recipeKnown` (через `recipeUnlocked` в данных).
+  // Отдельный код 'locked' стоял здесь, пока храм был единственным запертым
+  // источником; с четырьмя источниками он превратился бы в мёртвую ветку —
+  // до неё не доходило бы ни одного рецепта.
   if (!recipeKnown(state, recipe)) return blocked('unknown', [])
-  // Рецепт-награда храма заперт, пока рекорд по волнам не дорос до рубежа.
-  // Правило живёт в данных (recipeUnlocked): списка «выданных наград» в
-  // состоянии нет, открывает их сам рекорд.
-  if (!recipeUnlocked(recipe.id, state.templeBestWave, state.templeCleared)) {
-    return blocked('locked', [])
-  }
   if (missing.length > 0) return blocked('materials')
   // ЗОЛОТО ПОСЛЕ МАТЕРИАЛОВ и до места в сумке. Порядок не случаен: материалы
   // копятся сами, пока герой в зоне, а золото игрок тратит и на другое —

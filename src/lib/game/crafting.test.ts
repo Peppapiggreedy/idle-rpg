@@ -6,7 +6,15 @@ import { STEP_MS } from './loop'
 import { createInitialState, manualOnlySettings, type GameState } from './state'
 import { ensureStats } from './stats'
 import { tick } from './tick'
-import { craft, materialCount, recipeStatus, rollZoneReagent, takeFood } from './crafting'
+import {
+  craft,
+  hasIntermediate,
+  materialCount,
+  rawCost,
+  recipeStatus,
+  rollZoneReagent,
+  takeFood,
+} from './crafting'
 import { restDurationMs, startRest } from './rest'
 import { REAGENTS, commonReagentsInBand } from '../data/reagents'
 import { LEVEL_BANDS } from '../data/bands'
@@ -17,6 +25,7 @@ import {
   PROFESSIONS,
   RECIPES,
   RECIPE_BY_ID,
+  RECIPE_BY_REAGENT,
   craftToll,
   goldPerHourAt,
   recipeLevel,
@@ -392,5 +401,47 @@ describe('пошлина крафта', () => {
     // тогда, когда всё остальное уже есть.
     const broke = hero({ materials: {}, gold: new Decimal(0) })
     expect(recipeStatus(broke, BROTH).reason).toBe('materials')
+  })
+})
+
+describe('полная цена сырьём: передел развёрнут', () => {
+  it('рецепт без передела платит ровно тем, что у него на входе', () => {
+    // Развёртка не должна «улучшать» обычный рецепт: у него полная цена и
+    // есть его входы, и вторая копия тех же чисел на экране читалась бы как
+    // ещё одна цена.
+    const plain = RECIPES.find((r) => !hasIntermediate(r))!
+    expect(rawCost(plain)).toEqual(
+      plain.inputs.map((i) => ({ materialId: i.materialId, count: i.count })),
+    )
+  })
+
+  it('рецепт с переделом разворачивается в сырьё и умножает на количество', () => {
+    const withStep = RECIPES.find((r) => hasIntermediate(r))
+    expect(withStep, 'в игре нет ни одного рецепта с переделом').toBeTruthy()
+    if (!withStep) return
+    const step = withStep.inputs.find((i) => RECIPE_BY_REAGENT[i.materialId])!
+    const source = RECIPE_BY_REAGENT[step.materialId]
+    const raw = rawCost(withStep)
+    // Промежуточного в полной цене нет вовсе — он развёрнут.
+    expect(raw.some((i) => i.materialId === step.materialId)).toBe(false)
+    // А сырьё передела вошло, помноженное на то, сколько переделов нужно.
+    for (const input of source.inputs) {
+      const row = raw.find((i) => i.materialId === input.materialId)
+      expect(row, input.materialId).toBeTruthy()
+      expect(row!.count).toBeGreaterThanOrEqual(input.count * step.count)
+    }
+  })
+
+  it('одинаковое сырьё из разных веток складывается, а не дублируется', () => {
+    for (const recipe of RECIPES) {
+      const raw = rawCost(recipe)
+      expect(new Set(raw.map((i) => i.materialId)).size, recipe.id).toBe(raw.length)
+    }
+  })
+
+  it('развёртка кончается на любых данных', () => {
+    // Цепочка переделов в данных может закольцеваться; цикл ловит
+    // content:check, но функция обязана вернуть ответ при любых данных.
+    for (const recipe of RECIPES) expect(rawCost(recipe).length).toBeGreaterThan(0)
   })
 })
