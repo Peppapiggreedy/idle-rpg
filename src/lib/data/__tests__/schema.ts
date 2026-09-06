@@ -28,6 +28,7 @@ import type { TempleDef } from '../temple'
 import { QUEST_CHAIN, type QuestDef } from '../quests'
 import { MECHANIC_IDS, type ProgressionStep } from '../progression'
 import type { ReagentDef } from '../reagents'
+import type { GoldUpgradeDef } from '../upgrades'
 import { craftToll, recipeLevel } from '../recipes'
 import type { ProfessionDef, RecipeDef } from '../recipes'
 import type { RarityDef } from '../rarity'
@@ -85,6 +86,8 @@ export interface Content {
   classes: readonly ClassDef[]
   materials: readonly MaterialDef[]
   progression: readonly ProgressionStep[]
+  /** Покупки за золото (GOLD_UPGRADES). */
+  upgrades: readonly GoldUpgradeDef[]
   reagents: readonly ReagentDef[]
   recipes: readonly RecipeDef[]
   professions: readonly ProfessionDef[]
@@ -2507,6 +2510,63 @@ export const BACKGROUND_SCHEMA: EntitySchema<BackgroundBand> = {
   },
 }
 
+/**
+ * ПОКУПКИ ЗА ЗОЛОТО. Семь сущностей с `id`, `name` и `icon` жили мимо
+ * `content:check` c самого своего появления: список покрытия в
+ * `integrity.test.ts` ведётся руками, и файл в него просто не дописали.
+ * Дубликат id, пустое имя и ссылка на несуществующий значок не роняли ничего.
+ *
+ * Диапазоны здесь не выдуманы, а взяты из смысла лестницы: покупка появляется
+ * не раньше первого уровня и не позже потолка игры, а цена в ЧАСАХ дохода
+ * своего уровня положительна — бесплатная ступень не была бы ступенью.
+ */
+export const UPGRADE_SCHEMA: EntitySchema<GoldUpgradeDef> = {
+  kind: 'покупка за золото',
+  file: 'data/upgrades.ts',
+  entities: (c) => c.upgrades,
+  id: (u) => u.id,
+  name: (u) => u.name,
+  icon: (u) => u.icon,
+  numbers: [
+    {
+      field: 'level',
+      get: (u) => u.level,
+      min: 1,
+      integer: true,
+      why: 'покупка появляется на уровне героя, а уровни идут от первого',
+    },
+    {
+      field: 'costHours',
+      get: (u) => u.costHours,
+      min: 0.01,
+      why: 'цена — доля часового дохода; бесплатная ступень не ступень',
+    },
+  ],
+  extra: (upgrade, content, report) => {
+    // Потолок берётся ИЗ ДАННЫХ, как у соседних схем: своего числа здесь быть
+    // не должно — оно разъехалось бы с LEVEL_CAP на первой правке.
+    report.need(
+      upgrade.level <= content.balance.levelCap,
+      `покупка ${upgrade.id}`,
+      `уровень ${upgrade.level} выше потолка ${content.balance.levelCap}: её никто не увидит (data/upgrades.ts)`,
+    )
+    // Описание — обещание игроку прямо на кнопке. Пустое означает кнопку без
+    // подписи, и заметить это можно только глазами.
+    report.need(
+      typeof upgrade.description === 'string' && upgrade.description.trim().length > 0,
+      `покупка ${upgrade.id}`,
+      'без описания: на кнопке нечего показать (data/upgrades.ts)',
+    )
+    // Место в сумке измеряется штуками. Ноль мест — покупка, которая ничего
+    // не делает, и стоит она при этом золота.
+    report.need(
+      upgrade.effect.kind !== 'bag' || (Number.isInteger(upgrade.effect.slots) && upgrade.effect.slots > 0),
+      `покупка ${upgrade.id}`,
+      'прибавка к сумке не целая или не положительная (data/upgrades.ts)',
+    )
+  },
+}
+
 export const SCHEMAS = [
   ABILITY_SCHEMA,
   BRANCH_SCHEMA,
@@ -2526,6 +2586,7 @@ export const SCHEMAS = [
   QUEST_SCHEMA,
   REAGENT_SCHEMA,
   PROGRESSION_SCHEMA,
+  UPGRADE_SCHEMA,
   RECIPE_SCHEMA,
   RARITY_SCHEMA,
   SPRITE_SCHEMA,

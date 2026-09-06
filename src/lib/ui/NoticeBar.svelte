@@ -1,5 +1,12 @@
 <script lang="ts">
-  import { backupSaveString, dismissNotice, saveNotice, type NoticeCode } from '../stores/game'
+  import {
+    backupSaveString,
+    dismissNotice,
+    saveNotice,
+    unreadableSaveFields,
+    type NoticeCode,
+  } from '../stores/game'
+  import type { SaveFieldCode } from '../game/save'
   import { Button } from './kit'
 
   // Весь текст уведомлений живёт здесь: стор и логика оперируют кодами.
@@ -21,7 +28,27 @@
     'save-load-failed': 'Не удалось загрузить сохранение — игра начата заново.',
     'import-invalid': 'Не удалось прочитать строку сейва — проверь, что скопирована целиком.',
     'import-success': 'Сейв импортирован. Прежний герой сохранён — его можно вернуть строкой ниже.',
+    // Текст без перечня был бы тем же «что-то пошло не так»: перечень
+    // подставляется ниже, из кодов.
+    'save-fields-unreadable': 'Сохранение прочитано не полностью.',
   }
+
+  // Слово на код поля. Игрок не знает про payload и его ключи — он знает про
+  // уровень, зоны и сумку.
+  const FIELD_NAMES: Record<SaveFieldCode, string> = {
+    level: 'уровень',
+    gold: 'золото',
+    currentXp: 'опыт',
+    enchantDust: 'пыль',
+    classId: 'класс',
+    talents: 'вложенные таланты',
+    unlockedZoneIds: 'открытые зоны',
+    inventory: 'сумка',
+    equipment: 'надетое',
+    materials: 'материалы',
+  }
+
+  const fieldList = $derived($unreadableSaveFields.map((f) => FIELD_NAMES[f]).join(', '))
 
   // Прежнее сохранение показываем ровно там, где оно ещё может пригодиться:
   // на экране отказа загрузки и сразу после импорта. Дальше игрок начнёт
@@ -31,6 +58,9 @@
     'save-newer-version',
     'save-unsupported-version',
     'import-success',
+    // Здесь копия нужнее всего: игра ИДЁТ, автосохранение затрёт оригинал
+    // через несколько секунд, и строка ниже — единственный путь назад.
+    'save-fields-unreadable',
   ]
   const backup = $derived($saveNotice && RECOVERABLE.includes($saveNotice) ? backupSaveString() : null)
 
@@ -52,7 +82,10 @@
 {#if $saveNotice}
   <div class="notice" role="status">
     <div class="body">
-      <span>{MESSAGES[$saveNotice]}</span>
+      <span>
+        {MESSAGES[$saveNotice]}{#if $saveNotice === 'save-fields-unreadable' && fieldList}
+          Не прочиталось: {fieldList} — эти значения взяты по умолчанию, остальной прогресс на месте.{/if}
+      </span>
       {#if backup}
         <div class="rescue">
           <span class="hint">Прежнее сохранение уцелело — сохрани строку, пока не начал заново.</span>

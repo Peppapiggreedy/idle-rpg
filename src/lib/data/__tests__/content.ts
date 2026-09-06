@@ -48,6 +48,7 @@ import { PROCS } from '../procs'
 import { BOSS_ABILITIES, HEROIC } from '../heroic'
 import { TEMPLES } from '../temple'
 import { QUESTS, QUEST_CHAIN } from '../quests'
+import { GOLD_UPGRADES } from '../upgrades'
 import { PROGRESSION } from '../progression'
 import { REAGENTS } from '../reagents'
 import { PROFESSIONS, PROFESSION_UNLOCK_LEVEL, RECIPES } from '../recipes'
@@ -129,6 +130,7 @@ export function realContent(): Content {
     dustByRarity: DUST_BY_RARITY,
     enchantFlatStats: ENCHANT_FLAT_STATS,
     progression: PROGRESSION,
+    upgrades: GOLD_UPGRADES,
     reagents: REAGENTS,
     recipes: RECIPES,
     professions: PROFESSIONS,

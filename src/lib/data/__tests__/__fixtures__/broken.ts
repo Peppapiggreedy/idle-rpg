@@ -1479,5 +1479,38 @@ export function brokenCases(): BrokenCase[] {
       },
       expect: ['украшение', 'части брони и щиты', 'SLOT_DEFENSE'],
     },
+    {
+      // Покупки за золото жили мимо content:check вовсе. Дубликат id — самая
+      // дешёвая из возможных поломок: `upgradeById` вернёт первую, вторая
+      // станет недостижимой, и заметить это можно только в игре.
+      title: 'две покупки с одинаковым id',
+      content: {
+        ...real,
+        upgrades: real.upgrades.map((u, i) =>
+          i === 1 ? { ...u, id: real.upgrades[0].id } : u,
+        ),
+      },
+      expect: ['покупка за золото', real.upgrades[0].id],
+    },
+    {
+      title: 'покупка ссылается на несуществующий значок',
+      content: {
+        ...real,
+        upgrades: real.upgrades.map((u, i) =>
+          i === 0 ? { ...u, icon: 'нет-такого-значка' as typeof u.icon } : u,
+        ),
+      },
+      expect: ['покупка за золото', 'нет-такого-значка'],
+    },
+    {
+      title: 'покупка сумки не даёт мест',
+      content: {
+        ...real,
+        upgrades: real.upgrades.map((u, i) =>
+          i === 0 ? { ...u, effect: { kind: 'bag' as const, slots: 0 } } : u,
+        ),
+      },
+      expect: ['покупка', 'прибавка к сумке'],
+    },
   ]
 }

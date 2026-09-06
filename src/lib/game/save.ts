@@ -43,10 +43,10 @@ import {
   LEVEL_CAP,
 } from '../data/balance'
 import { ABILITIES, ABILITY_BY_ID } from '../data/abilities'
-import { DEFAULT_CLASS, classById } from '../data/classes'
+import { CLASS_BY_ID, DEFAULT_CLASS, classById } from '../data/classes'
 import { MATERIAL_BY_ID } from '../data/materials'
 import { FOOD_BY_ID, POTION_RECIPE_BY_ID, isBagId } from '../data/recipes'
-import { BRANCHES, talentsInBranch, talentsOfClass } from '../data/talents'
+import { BRANCHES, TALENT_BY_ID, talentsInBranch, talentsOfClass } from '../data/talents'
 import {
   ALL_DUNGEONS,
   DUNGEONS,
@@ -275,6 +275,13 @@ export interface SaveStorage {
 export interface SaveDeps {
   storage?: SaveStorage
   now?: () => number
+  /**
+   * Отдать догон оффлайна НЕПРОКРУЧЕННЫМ вместо того, чтобы считать его на
+   * месте. Ставит это только загрузка страницы: ей нужен экран раньше, чем
+   * числа. Умолчание — прежнее поведение, поэтому ни один существующий
+   * вызывающий об этом флаге не знает.
+   */
+  defer?: boolean
 }
 
 /**
@@ -1644,20 +1651,56 @@ const emptyLoot = (): OfflineLoot => ({
 // Оффлайн-прогресс одним агрегатом, без проигрывания тиков. Темп боя берётся
 // из zoneRate, а тот зовёт estimateCombatRate — ту же функцию, что и онлайн,
 // чтобы формула боя не жила в двух местах.
-export function applyOfflineProgress(
+/**
+ * ДОГОН ОФФЛАЙНА, КОТОРЫЙ КРУТИТСЯ ПО ЧАСТЯМ.
+ *
+ * Арифметика та же, что была, и это главное требование правки: разрезание —
+ * про то, КОГДА считается, а не про то, ЧТО получается. Шаг остался шагом по
+ * `OFFLINE_CHUNK_MS`, порядок бросков лута не изменился, и результат обязан
+ * совпадать с прежним ДО ПОСЛЕДНЕГО ЧИСЛА. Разошлось — разрезали неправильно,
+ * и это не повод «уточнить ожидание» (держит `offline-chunked.test.ts`).
+ *
+ * ЗАЧЕМ. Замер аудита: двенадцать часов простоя — 664 мс ОДНИМ синхронным
+ * блоком, и приходится он ровно на открытие вкладки, когда игрок ждёт экрана.
+ * Шагов внутри было почти пятьсот, но шли они одним циклом, без выхода в
+ * событийный цикл: браузеру нечем было ни нарисовать кадр, ни ответить на
+ * нажатие.
+ *
+ * ЧИСЛА ШАГОВ ЗА РАЗ В ЛОГИКЕ НЕТ: сколько крутить — решает вызывающий. Стору
+ * нужен кадр, тесту и симуляции — весь остаток разом. Часов здесь тоже нет,
+ * `step` меряет ШАГИ, а не миллисекунды: догон обязан остаться
+ * детерминированным при любой раскладке по кадрам.
+ */
+export interface OfflineCatchup {
+  /** Прокручено ли всё. */
+  done(): boolean
+  /** Доля выполненного, 0..1 — для полоски на экране. */
+  progress(): number
+  /** Прокрутить не больше `chunks` шагов. */
+  step(chunks: number): void
+  /** Итог. Зовётся после того, как `done()` стал истиной. */
+  finish(): { state: GameState; report: OfflineReport | null }
+}
+
+/** Догон, которому нечего считать: готов сразу и отдаёт готовый ответ. */
+function settled(result: { state: GameState; report: OfflineReport | null }): OfflineCatchup {
+  return { done: () => true, progress: () => 1, step: () => {}, finish: () => result }
+}
+
+export function startOfflineProgress(
   state: GameState,
   elapsedMs: number,
   // Поток случайности лута. Свой, а не общий с симуляцией: оффлайн считается
   // при загрузке, и вычерпывать из него ход игры нельзя. Сид — из состояния,
   // поэтому загрузка остаётся детерминированной.
   rng: Rng = createRng(state.rngSeed ^ OFFLINE_LOOT_SALT),
-): { state: GameState; report: OfflineReport | null } {
+): OfflineCatchup {
   let cappedMs = Math.min(elapsedMs, OFFLINE_CAP_MS)
-  if (cappedMs <= 0) return { state, report: null }
+  if (cappedMs <= 0) return settled({ state, report: null })
   // Активного забега здесь уже быть не может: его снимает resumeOutside при
   // загрузке сейва. Проверка оставлена сторожем для прямых вызовов — считать
   // оффлайн по боссу нельзя, цепочка сама себя не проходит.
-  if (state.dungeonRun || state.templeRun) return { state, report: null }
+  if (state.dungeonRun || state.templeRun) return settled({ state, report: null })
   // Герой ушёл в оффлайн мёртвым: сперва тратим время на воскрешение.
   if (state.heroState === 'dead') {
     const reviveMs = Math.min(state.reviveMsLeft, cappedMs)
@@ -1670,7 +1713,7 @@ export function applyOfflineProgress(
         : {}),
     }
     if (state.heroState === 'dead' || cappedMs <= 0)
-      return { state, report: null }
+      return settled({ state, report: null })
   }
   // Оффлайн считаем по темпу ТЕКУЩЕЙ ЗОНЫ, а не по мобу, который случайно
   // стоял перед героем в момент выхода: за восемь часов он перебьёт весь пул.
@@ -1712,7 +1755,10 @@ export function applyOfflineProgress(
   // Лог оффлайн не пишет — ни здесь, ни в склянках. Сотня находок вытеснила
   // бы из лога весь бой, к которому игрок возвращается.
   const logBefore = s.combatLog
-  for (let left = cappedMs; left > 0; left -= OFFLINE_CHUNK_MS) {
+  const totalMs = cappedMs
+  let left = cappedMs
+  const step = (chunks: number): void => {
+    for (let i = 0; i < chunks && left > 0; i += 1) {
     const seconds = new Decimal(Math.min(OFFLINE_CHUNK_MS, left)).div(1000)
     if (!rateLevel.eq(s.level)) {
       rate = zoneRate(s, zone, 'auto')
@@ -1769,24 +1815,58 @@ export function applyOfflineProgress(
         loot.kept += 1
       }
     }
+      left -= OFFLINE_CHUNK_MS
+    }
   }
-  s = { ...s, combatLog: logBefore }
-  // Травы набегают ВРЕМЕНЕМ, поэтому оффлайн срезает их одним вызовом, тем
-  // же куском игрового времени и с тем же урезанием. Отдельной модели у сбора
-  // нет — иначе оффлайн и онлайн разошлись бы молча.
-  s = gatherHerbs(s, cappedMs * OFFLINE_EFFICIENCY)
-  // Склянки ДОЖИГАЮТСЯ полным временем, без урезания: придержать зелье,
-  // закрыв вкладку, нельзя. Событий в лог оффлайн не пишет.
-  s = advancePotions(s, cappedMs, false)
-  // Дробные убийства копим по шагам и округляем один раз, в самом конце.
-  kills = kills.floor()
-  if (kills.lte(0)) return { state: s, report: null }
+  const finish = (): { state: GameState; report: OfflineReport | null } => {
+    // Лог обрезается ЗДЕСЬ, а не по ходу шагов: `stashLoot` пишет событие,
+    // и по нему же читается, что сделала политика сумки (см. выше). Снимать
+    // события сразу значило бы завести вторую копию этих правил.
+    s = { ...s, combatLog: logBefore }
+    // Травы набегают ВРЕМЕНЕМ, поэтому оффлайн срезает их одним вызовом, тем
+    // же куском игрового времени и с тем же урезанием. Отдельной модели у сбора
+    // нет — иначе оффлайн и онлайн разошлись бы молча.
+    s = gatherHerbs(s, cappedMs * OFFLINE_EFFICIENCY)
+    // Склянки ДОЖИГАЮТСЯ полным временем, без урезания: придержать зелье,
+    // закрыв вкладку, нельзя. Событий в лог оффлайн не пишет.
+    s = advancePotions(s, cappedMs, false)
+    // Дробные убийства копим по шагам и округляем один раз, в самом конце.
+    kills = kills.floor()
+    if (kills.lte(0)) return { state: s, report: null }
+    return {
+      // Золото автопродажи уже лежит в s.gold: его туда положила stashLoot.
+      // Здесь прибавляется только заработок за убийства.
+      state: { ...s, gold: s.gold.plus(gold) },
+      report: { elapsedMs: cappedMs, kills, gold, xp, zoneId: zone.id, interrupted: null, loot },
+    }
+  }
   return {
-    // Золото автопродажи уже лежит в s.gold: его туда положила stashLoot.
-    // Здесь прибавляется только заработок за убийства.
-    state: { ...s, gold: s.gold.plus(gold) },
-    report: { elapsedMs: cappedMs, kills, gold, xp, zoneId: zone.id, interrupted: null, loot },
+    done: () => left <= 0,
+    progress: () => (totalMs <= 0 ? 1 : Math.min(1, (totalMs - Math.max(0, left)) / totalMs)),
+    step,
+    finish,
   }
+}
+
+/**
+ * Догон одним куском — прежняя дверь для тестов, симуляции и всего, что не
+ * рисует экран. Крутит тот же степпер до конца, поэтому расходиться с
+ * покадровым путём ей не с чего.
+ *
+ * Шагов за раз ровно ОДИН, и «весь остаток разом» одним большим числом здесь
+ * не пишется: такое число — константа в логике, а число в логике живёт в
+ * `src/lib/data` (правило проекта, держится `rules.test.ts`). Заводить ради
+ * счётчика цикла строку баланса было бы враньём о том, что это за число,
+ * а разница в цене — четыре сотни лишних вызовов на восьмичасовой догон.
+ */
+export function applyOfflineProgress(
+  state: GameState,
+  elapsedMs: number,
+  rng: Rng = createRng(state.rngSeed ^ OFFLINE_LOOT_SALT),
+): { state: GameState; report: OfflineReport | null } {
+  const run = startOfflineProgress(state, elapsedMs, rng)
+  while (!run.done()) run.step(1)
+  return run.finish()
 }
 
 /** Почему сохранить не удалось. Текст по коду рендерит UI, как и везде. */
@@ -1881,10 +1961,155 @@ export type LoadErrorReason =
   /** Хранилище недоступно целиком: читать нечего и писать некуда. */
   | 'storage-unavailable'
 
+/**
+ * ЧТО ИМЕННО НЕ ПРОЧИТАЛОСЬ. Наружу идёт КОДОМ, слово рисует UI — как у
+ * отказов экипировки и умений.
+ *
+ * ЗАЧЕМ ОТДЕЛЬНАЯ ПРОВЕРКА, ЕСЛИ ПОЛЯ И ТАК ЧИТАЮТСЯ МЯГКО. Мягкое чтение
+ * (`parseDec(x, '0')`, `typeof x === 'number' ? x : 0`) заведено НАМЕРЕННО и
+ * остаётся: сейв прошлой версии без нового поля обязан читаться, и падать на
+ * нём нельзя. Но у мягкости есть цена, и до сих пор её платил игрок: строка
+ * `"абв"` в уровне читалась как единица МОЛЧА, пустой список зон молча
+ * забирал доступ, а ближайшее автосохранение затирало оригинал. Отличить
+ * «поля нет, потому что сейв старый» от «поле есть, но в нём мусор» может
+ * только проверка, которая смотрит на СЫРОЕ значение до приведения.
+ *
+ * ПРАВИЛО РАЗБОРА ОДНО: `undefined` — это не порча. Отсутствующее поле
+ * законно (миграции для того и нужны), а вот присутствующее и нечитаемое —
+ * порча, и о ней игрок узнаёт.
+ */
+export type SaveFieldCode =
+  | 'level'
+  | 'gold'
+  | 'currentXp'
+  | 'enchantDust'
+  | 'classId'
+  | 'talents'
+  | 'unlockedZoneIds'
+  | 'inventory'
+  | 'equipment'
+  | 'materials'
+
+/** Присутствует ли поле вообще: `undefined` и `null` — «нет», а не «мусор». */
+const present = (v: unknown): boolean => v !== undefined && v !== null
+
+/** Читается ли значение как конечное неотрицательное число величины. */
+function readsAsAmount(v: unknown): boolean {
+  if (typeof v !== 'string' && typeof v !== 'number') return false
+  let d: Decimal
+  try {
+    d = new Decimal(String(v))
+  } catch {
+    return false
+  }
+  return Number.isFinite(d.mantissa) && Number.isFinite(d.exponent) && d.gte(0)
+}
+
+/**
+ * Поля сейва, которые есть, но прочитать их как задумано нельзя.
+ *
+ * Список закрыт и покрывает ровно то, где мягкое чтение теряет ПРОГРЕСС:
+ * величины героя, его класс, вложенные очки, открытые зоны и три хранилища
+ * вещей. Косметика и таймеры сюда не входят намеренно — «сбился таймер
+ * регенерации» это не потеря прогресса, а «пропали зоны» это она.
+ */
+export function unreadableFields(p: SavePayloadV21): SaveFieldCode[] {
+  const bad: SaveFieldCode[] = []
+  const raw = p as unknown as Record<string, unknown>
+
+  // Уровень: величина, не меньше единицы и не больше потолка игры. Сейв,
+  // заявляющий 1e9, эта игра не писала — читать его как сотый значит принять
+  // чужие числа за свои.
+  if (present(raw.level)) {
+    if (!readsAsAmount(raw.level)) bad.push('level')
+    else {
+      const d = new Decimal(String(raw.level))
+      if (d.lt(1) || d.gt(LEVEL_CAP)) bad.push('level')
+    }
+  }
+  for (const [key, code] of [
+    ['gold', 'gold'],
+    ['currentXp', 'currentXp'],
+    ['enchantDust', 'enchantDust'],
+  ] as ReadonlyArray<readonly [string, SaveFieldCode]>) {
+    if (present(raw[key]) && !readsAsAmount(raw[key])) bad.push(code)
+  }
+
+  // Класс: неизвестный id деградирует до дефолтного, и это правильно — но
+  // молча так делать нельзя, у героя сменится весь набор умений.
+  if (present(raw.classId) && !(typeof raw.classId === 'string' && raw.classId in CLASS_BY_ID)) {
+    bad.push('classId')
+  }
+
+  // Таланты: объект «id → ранг». Неизвестный id, дробный, отрицательный или
+  // превышающий maxRank ранг — вложенные очки, которые молча пропадут.
+  if (present(raw.talents)) {
+    const t = raw.talents
+    if (typeof t !== 'object' || Array.isArray(t)) bad.push('talents')
+    else {
+      const ranks = t as Record<string, unknown>
+      const broken = Object.entries(ranks).some(([id, rank]) => {
+        const def = TALENT_BY_ID[id]
+        if (!def) return true
+        return (
+          typeof rank !== 'number' ||
+          !Number.isInteger(rank) ||
+          rank < 0 ||
+          rank > def.maxRank
+        )
+      })
+      if (broken) bad.push('talents')
+    }
+  }
+
+  // Зоны. ПУСТОЙ СПИСОК — НЕ ПОРЧА, и это стоило мне одного красного теста:
+  // стартовые четыре открыты ПО ПОСТРОЕНИЮ (`game/zones.ts:47`), в сейв они
+  // не пишутся вовсе, и у нового героя здесь законно `{}`. Порча выглядит
+  // иначе: не тот тип (массив вместо объекта — так `unlockedZonesFromSaved`
+  // молча вернёт пусто) либо ключ, которого в игре нет, — открытая зона,
+  // которой не существует, означает, что список писала не эта игра.
+  if (present(raw.unlockedZoneIds)) {
+    const z = raw.unlockedZoneIds
+    if (typeof z !== 'object' || Array.isArray(z)) bad.push('unlockedZoneIds')
+    else {
+      const known = new Set(ZONES.map((zone) => zone.id))
+      const saved = z as Record<string, unknown>
+      const broken = Object.entries(saved).some(
+        ([id, open]) => !known.has(id) || typeof open !== 'boolean',
+      )
+      if (broken) bad.push('unlockedZoneIds')
+    }
+  }
+
+  if (present(raw.inventory) && !Array.isArray(raw.inventory)) bad.push('inventory')
+  if (present(raw.equipment) && (typeof raw.equipment !== 'object' || Array.isArray(raw.equipment)))
+    bad.push('equipment')
+  if (present(raw.materials) && (typeof raw.materials !== 'object' || Array.isArray(raw.materials)))
+    bad.push('materials')
+
+  return bad
+}
+
 export type LoadResult =
   | { kind: 'fresh' }
   | { kind: 'error'; reason: LoadErrorReason }
-  | { kind: 'loaded'; state: GameState; offline: OfflineReport | null }
+  /**
+   * `unreadable` — поля, которые пришлось прочитать умолчанием. Пустой список
+   * — обычная загрузка; непустой означает, что копия сейва СДЕЛАНА и игроку
+   * есть что сказать.
+   */
+  | {
+      kind: 'loaded'
+      state: GameState
+      offline: OfflineReport | null
+      unreadable: SaveFieldCode[]
+      /**
+       * Непрокрученный догон — только при `deps.defer`. Состояние в `state`
+       * тогда ДО начисления, а `offline` пуст: и то и другое отдаёт `finish()`
+       * после того, как вызывающий домотает степпер.
+       */
+      catchup?: OfflineAccrual
+    }
 
 export function loadGame(deps: SaveDeps = {}): LoadResult {
   const storage = deps.storage ?? defaultStorage()
@@ -1916,16 +2141,29 @@ export function loadGame(deps: SaveDeps = {}): LoadResult {
   if (read.kind === 'error') return keep(read.reason)
   const payload = read.payload
 
+  // КОПИЯ ДЕЛАЕТСЯ И ПРИ ПОДОЗРИТЕЛЬНОМ ЧТЕНИИ, а не только при отказе. Это
+  // главное в разборе полей: сам разбор лишь НАЗЫВАЕТ потерю, а вернуть
+  // прогресс может только копия — сейв читается успешно, игра запускается, и
+  // ближайшее автосохранение затирает оригинал через несколько секунд.
+  const unreadable = unreadableFields(payload)
+  if (unreadable.length > 0) backupRawSave(raw as string, { storage })
+
   // Читаем ДО загрузки: она расформирует забег, и по состоянию его уже не видно.
   const interrupted = interruptedRunOf(payload)
   // Отрицательная разница (часы перевели назад) — ничего не начисляем;
   // lastTimestamp обновится ближайшим сохранением.
-  const { state, offline } = accrueAway(
-    stateFromPayload(payload),
-    now() - payload.lastTimestamp,
-    interrupted,
-  )
-  return { kind: 'loaded', state, offline }
+  const loaded = stateFromPayload(payload)
+  const awayMs = now() - payload.lastTimestamp
+  // ЗАГРУЗКА СТРАНИЦЫ НЕ ОБЯЗАНА СЧИТАТЬ ВСЁ СРАЗУ. Замер аудита: двенадцать
+  // часов простоя — 664 мс одним синхронным блоком ровно в момент открытия
+  // вкладки. С `defer` догон отдаётся вызывающему непрокрученным, и стор
+  // крутит его по кадрам, показывая полоску; всё остальное (тесты, симуляция,
+  // возврат из фона) идёт прежней дверью и получает готовый ответ.
+  if (deps.defer) {
+    return { kind: 'loaded', state: loaded, offline: null, unreadable, catchup: deferredAccrual(loaded, awayMs, interrupted) }
+  }
+  const { state, offline } = accrueAway(loaded, awayMs, interrupted)
+  return { kind: 'loaded', state, offline, unreadable }
 }
 
 /**
@@ -1942,11 +2180,44 @@ function accrueAway(
   elapsedMs: number,
   interrupted: InterruptedRun | null,
 ): { state: GameState; offline: OfflineReport | null } {
-  if (elapsedMs <= 0) return { state, offline: null }
-  const { state: next, report } = applyOfflineProgress(state, elapsedMs)
-  // Про оборванный забег модалка обязана сказать вслух: молча пропавшая
-  // цепочка боссов читается как потеря прогресса, а не как правило.
-  return { state: next, offline: report ? { ...report, interrupted } : null }
+  const run = deferredAccrual(state, elapsedMs, interrupted)
+  while (!run.done()) run.step(1)
+  return run.finish()
+}
+
+/**
+ * Тот же догон, но НЕ ПРОКРУЧЕННЫЙ: отдаётся вызывающему, чтобы тот сам решил,
+ * за сколько кадров его крутить. Загрузка страницы крутит по кадру, всё
+ * остальное — одним куском через `accrueAway` выше.
+ */
+function deferredAccrual(
+  state: GameState,
+  elapsedMs: number,
+  interrupted: InterruptedRun | null,
+): OfflineAccrual {
+  if (elapsedMs <= 0) {
+    return { done: () => true, progress: () => 1, step: () => {}, finish: () => ({ state, offline: null }) }
+  }
+  const run = startOfflineProgress(state, elapsedMs)
+  return {
+    done: run.done,
+    progress: run.progress,
+    step: run.step,
+    finish: () => {
+      const { state: next, report } = run.finish()
+      // Про оборванный забег модалка обязана сказать вслух: молча пропавшая
+      // цепочка боссов читается как потеря прогресса, а не как правило.
+      return { state: next, offline: report ? { ...report, interrupted } : null }
+    },
+  }
+}
+
+/** Догон вместе с расформированным забегом: то, что нужно загрузке страницы. */
+export interface OfflineAccrual {
+  done(): boolean
+  progress(): number
+  step(chunks: number): void
+  finish(): { state: GameState; offline: OfflineReport | null }
 }
 
 /**

@@ -8,6 +8,7 @@
 // сказать.
 //
 // Тот же файл запускает `npm run content:check`.
+import { readdirSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { brokenCases } from './__fixtures__/broken'
 import { realContent } from './content'
@@ -19,6 +20,46 @@ describe('целостность контента', () => {
     // Список замечаний печатается целиком: упавший тест обязан сразу говорить,
     // что чинить, а не отправлять читать проверку.
     expect(issues, `\n${formatIssues(issues)}\n`).toEqual([])
+  })
+
+  it('НИ ОДИН файл data/ не проходит мимо решения: покрыт или назван исключением', () => {
+    // СТОРОЖ НА САМ СПИСОК ПОКРЫТИЯ. Список ниже ведётся руками, и это его
+    // единственная слабость: `data/upgrades.ts` не дописали в него при
+    // появлении, и семь покупок с id, name и icon прожили мимо проверки всю
+    // свою жизнь — дубликат id и ссылка на несуществующий значок не роняли
+    // ничего. Заметить такое чтением списка нельзя: в нём видно то, что есть,
+    // а не то, чего нет.
+    //
+    // Поэтому решение теперь ОБЯЗАТЕЛЬНО для каждого файла: он либо покрыт
+    // схемой, либо стоит в исключениях С ПРИЧИНОЙ. Новый файл не проходит
+    // молча ни туда, ни сюда — тест назовёт его по имени.
+    const covered = new Set(SCHEMAS.map((s) => s.file))
+    // Почему файл не нуждается в схеме — по одной строке на каждый.
+    const NO_ENTITIES: Record<string, string> = {
+      'data/balance.ts': 'числа баланса, а не сущности с id; их диапазоны проверяет BALANCE_SCHEMA',
+      'data/loot.ts': 'правила рулетки: веса и цены, сущностей с id не заводит',
+      'data/monsters.ts': 'архетипы и формула масштаба; мобы приезжают внутрь зон и проверяются с ними',
+      'data/render.ts': 'длительности и размеры сцены — не контент',
+      'data/slots.ts': 'слоты проверяются как часть экипировки (SLOT_IDS в схемах вещей)',
+      'data/stats.ts': 'имена статов — не контент',
+      'data/upgrade.ts': 'правила двух осей апгрейда, а не список сущностей',
+    }
+    const files = readdirSync('src/lib/data')
+      .filter((f) => f.endsWith('.ts'))
+      .map((f) => `data/${f}`)
+    for (const file of files) {
+      expect(
+        covered.has(file) || file in NO_ENTITIES,
+        `${file} не покрыт схемой и не назван исключением — добавь схему в schema.ts ` +
+          'или строку с причиной в NO_ENTITIES',
+      ).toBe(true)
+    }
+    // И обратно: исключение, которое обзавелось схемой, из списка уходит —
+    // иначе он копит мёртвые строки, как всякий список без обратной проверки.
+    for (const file of Object.keys(NO_ENTITIES)) {
+      expect(covered.has(file), `${file} уже покрыт схемой — убери его из NO_ENTITIES`).toBe(false)
+      expect(files, `${file} в NO_ENTITIES, но такого файла нет`).toContain(file)
+    }
   })
 
   it('проверены все типы данных, у которых есть свой файл в data/', () => {
@@ -50,6 +91,7 @@ describe('целостность контента', () => {
       'data/sounds.ts',
       'data/sprites.ts',
       'data/talents.ts',
+      'data/upgrades.ts',
       'data/zones.ts',
     ]) {
       expect(covered, `${file} без схемы`).toContain(file)

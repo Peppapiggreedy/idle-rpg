@@ -64,6 +64,7 @@
   import DebugOverlay from './lib/ui/DebugOverlay.svelte'
   import DebugPanel from './lib/ui/DebugPanel.svelte'
   import NoticeBar from './lib/ui/NoticeBar.svelte'
+  import { offlineCatchupProgress } from './lib/stores/game'
   import OfflineModal from './lib/ui/OfflineModal.svelte'
   import LootReveal from './lib/ui/LootReveal.svelte'
   import ClassPicker from './lib/ui/ClassPicker.svelte'
@@ -153,6 +154,16 @@
          на телефоне. Название осталось там, где оно нужно, — в заголовке
          вкладки. Уведомление остаётся: оно появляется редко и по делу. -->
     <NoticeBar />
+
+    <!-- СЧЁТ ОТСУТСТВИЯ ВИДЕН, А НЕ ВЫГЛЯДИТ ПОДВИСАНИЕМ. Догон крутится по
+         кадрам (см. `runCatchup` в stores/game.ts), и пока он идёт, игрок
+         должен понимать, что игра занята делом. Строка живёт ровно эти
+         несколько кадров и исчезает сама. -->
+    {#if $offlineCatchupProgress !== null}
+      <div class="catchup" role="status">
+        Считаю, что накопилось, пока тебя не было… {Math.round($offlineCatchupProgress * 100)} %
+      </div>
+    {/if}
 
     <!-- ПОСТОЯННАЯ ЗОНА: три полосы и ничего больше. Одна сетка на всю зону,
          чтобы столбцы кнопок и ряд действий стояли по одним колонкам.
@@ -280,6 +291,17 @@
 <DebugPanel />
 
 <style>
+  /* Строка счёта отсутствия. Токены, как и всё остальное: своих чисел у неё
+     нет — иначе она разъедется с остальным интерфейсом на первой правке. */
+  .catchup {
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius-md);
+    background: var(--c-surface);
+    color: var(--c-text-dim);
+    font-size: var(--fs-sm);
+  }
+
   main {
     max-width: 72rem;
     margin: 0 auto;
