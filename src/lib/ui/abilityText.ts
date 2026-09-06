@@ -55,6 +55,14 @@ export const ABILITY_ROLE: Record<string, string> = {
   'gut-rip': 'Дешёвый заполнитель: бьёт часто и почти ничего не стоит.',
   'blood-frenzy': 'Кровотечение: бьёт сразу и добавляет урон следом.',
   'skull-splitter': 'Козырь урона: дорогой и редкий удар, зато самый крупный.',
+  'blood-letting': 'Разгон: ничего не стоит и сама даёт четверть ярости. Против пустого начала боя.',
+  'blood-thirst': 'Вампиризм: возвращает здоровье долей нанесённого урона. Лечение, которое платит ударом.',
+  'sinew-tear': 'Детонатор: съедает кровотечение, и тем сильнее, чем полнее полоска ярости.',
+  'dug-in': 'Стойкость: входящее смягчается с каждым пропущенным ударом. Награда за долгий бой.',
+  reckoning: 'Добивание: бьёт израненного и возвращает пятую часть ярости следующему бою.',
+  'blood-price': 'Обмен: платит здоровьем за ярость. Когда бить нечем, а полоска пуста.',
+  'blood-roar': 'Окно: восемь секунд умения не стоят ничего. Против ямы ресурса, а не отката.',
+  berserk: 'Обмен наоборот: свой урон выше, входящий жёстче. Держится сама и занимает слот.',
 }
 
 /**
@@ -189,9 +197,13 @@ export function abilityLines(ability: AbilityDef, ctx: AbilityTextContext): stri
     lines.push(`${hits} слабее на ${pct(ability.weaken.damageShare)}`)
   }
   if (ability.detonate) {
+    const growth = ability.detonate.resourceMultiplier ?? 0
     lines.push(
       `Съедает кровотечение с цели и наносит его остаток разом, ` +
-        `×${ability.detonate.multiplier}`,
+        `×${ability.detonate.multiplier}` +
+        (growth > 0
+          ? ` и до ×${Math.round((ability.detonate.multiplier + growth) * 10) / 10} на полной полоске`
+          : ''),
     )
   }
   if (ability.absorb) {
@@ -226,9 +238,53 @@ export function abilityLines(ability: AbilityDef, ctx: AbilityTextContext): stri
     )
   }
   if (ability.stance) {
+    // ОБМЕН ЧИТАЕТСЯ В ОБЕ СТОРОНЫ. Обратная стойка — тот же флаг с обратным
+    // знаком, и «урон ниже на −25 %» было бы не описанием, а опечаткой.
+    const up = ability.stance.damageShare < 0
     lines.push(
-      `Свой урон ниже на ${pct(ability.stance.damageShare)}, входящий мягче на ` +
-        `${pct(ability.stance.mitigationShare)}, ${sec(ability.stance.durationSec)}`,
+      up
+        ? `Свой урон выше на ${pct(-ability.stance.damageShare)}, входящий жёстче на ` +
+            `${pct(-ability.stance.mitigationShare)}, ${sec(ability.stance.durationSec)}`
+        : `Свой урон ниже на ${pct(ability.stance.damageShare)}, входящий мягче на ` +
+            `${pct(ability.stance.mitigationShare)}, ${sec(ability.stance.durationSec)}`,
+    )
+  }
+  if (ability.generate) {
+    lines.push(
+      `Даёт ${pct(ability.generate.resourceShare)} запаса ≈ ` +
+        `${formatNumber(ctx.stats.maxMana.times(ability.generate.resourceShare))} ${ctx.resource.genitive}`,
+    )
+  }
+  if (ability.leech) {
+    lines.push(`Возвращает здоровьем ${pct(ability.leech.healShare)} нанесённого урона`)
+  }
+  if (ability.resolve) {
+    lines.push(
+      `Входящее мягче на ${pct(ability.resolve.perHitTaken)} с каждого пропущенного удара, ` +
+        `до ${pct(ability.resolve.maxShare)}, ${sec(ability.resolve.durationSec)}`,
+    )
+  }
+  if (ability.refund) {
+    lines.push(`Возвращает ${pct(ability.refund.resourceShare)} запаса ${ctx.resource.genitive}`)
+  }
+  if (ability.bloodPrice) {
+    lines.push(
+      `Платит ${pct(ability.bloodPrice.hpShare)} здоровья за ` +
+        `${pct(ability.bloodPrice.resourceShare)} запаса ${ctx.resource.genitive}`,
+    )
+  }
+  if (ability.window) {
+    lines.push(`${sec(ability.window.durationSec)}: умения ничего не стоят`)
+  }
+  if (ability.autocast?.heroHpAbove !== undefined) {
+    lines.push(`Автокаст жмёт при здоровье выше ${pct(ability.autocast.heroHpAbove)}`)
+  }
+  if (ability.autocast?.targetHpAbove !== undefined) {
+    lines.push(`Автокаст жмёт по цели выше ${pct(ability.autocast.targetHpAbove)} здоровья`)
+  }
+  if (ability.autocast?.resourceBelow !== undefined) {
+    lines.push(
+      `Автокаст жмёт, пока ${ctx.resource.genitive} меньше ${pct(ability.autocast.resourceBelow)}`,
     )
   }
 
@@ -282,6 +338,16 @@ const TUNE_LABEL: Record<string, string> = {
   executeBelowHpShare: 'порог добивания',
   brandAutocastAboveHpShare: 'порог автокаста клейма',
   healAutocastBelowHpShare: 'порог автокаста лечения',
+  generateResourceShare: 'прибавка ресурса',
+  leechHealShare: 'вампиризм',
+  resolveMaxShare: 'потолок упора',
+  resolvePerHitTaken: 'прирост упора за удар',
+  resolveDurationSec: 'длительность упора',
+  refundResourceShare: 'возврат ресурса',
+  bloodPriceResourceShare: 'ярость за здоровье',
+  windowDurationSec: 'длительность окна',
+  detonateResourceMultiplier: 'детонация от ресурса',
+  autocastHeroHpAbove: 'порог автокаста по здоровью',
   type: 'тип',
 }
 

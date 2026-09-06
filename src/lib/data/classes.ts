@@ -219,7 +219,22 @@ export const CLASSES: ClassDef[] = [
       // стоять. Чуть больше здоровья и чуть меньше уклончивости.
       { stat: 'maxHp', kind: 'percent', value: new Decimal(0.1) },
     ],
-    abilityIds: ['gut-rip', 'blood-frenzy', 'skull-splitter'],
+    // ПОРЯДОК — ПО УРОВНЮ ОТКРЫТИЯ, и первые четыре и есть ряд действий по
+    // умолчанию: заполнитель, разгон, кровотечение и вампиризм. Ряд самодостаточен
+    // с шестого уровня — умение, дающее ресурс, стоит вторым, а не последним.
+    abilityIds: [
+      'gut-rip',
+      'blood-letting',
+      'blood-frenzy',
+      'blood-thirst',
+      'skull-splitter',
+      'sinew-tear',
+      'dug-in',
+      'reckoning',
+      'blood-price',
+      'blood-roar',
+      'berserk',
+    ],
     branchIds: ['reaver-carnage', 'reaver-sinew', 'reaver-instinct'],
     // ЧТО ЛЕЖИТ В СТАРТОВОМ КОМПЛЕКТЕ И ПОЧЕМУ ТАК МАЛО.
     //

@@ -160,7 +160,17 @@ export function tuneAbility(
     }
   }
   if (def.detonate) {
-    out.detonate = { multiplier: apply(def.detonate.multiplier, get('detonateMultiplier')) }
+    out.detonate = {
+      multiplier: apply(def.detonate.multiplier, get('detonateMultiplier')),
+      ...(def.detonate.resourceMultiplier === undefined
+        ? {}
+        : {
+            resourceMultiplier: apply(
+              def.detonate.resourceMultiplier,
+              get('detonateResourceMultiplier'),
+            ),
+          }),
+    }
   }
   if (def.absorb) {
     out.absorb = {
@@ -194,6 +204,43 @@ export function tuneAbility(
       damageShare: apply(def.stance.damageShare, get('stanceDamageShare')),
       mitigationShare: apply(def.stance.mitigationShare, get('stanceMitigationShare')),
       durationSec: apply(def.stance.durationSec, get('stanceDurationSec')),
+    }
+  }
+  if (def.generate) {
+    out.generate = {
+      resourceShare: apply(def.generate.resourceShare, get('generateResourceShare')),
+    }
+  }
+  if (def.leech) {
+    out.leech = { healShare: apply(def.leech.healShare, get('leechHealShare')) }
+  }
+  if (def.resolve) {
+    out.resolve = {
+      perHitTaken: apply(def.resolve.perHitTaken, get('resolvePerHitTaken')),
+      maxShare: apply(def.resolve.maxShare, get('resolveMaxShare')),
+      durationSec: apply(def.resolve.durationSec, get('resolveDurationSec')),
+    }
+  }
+  if (def.refund) {
+    out.refund = {
+      resourceShare: apply(def.refund.resourceShare, get('refundResourceShare')),
+    }
+  }
+  if (def.bloodPrice) {
+    out.bloodPrice = {
+      hpShare: def.bloodPrice.hpShare,
+      resourceShare: apply(def.bloodPrice.resourceShare, get('bloodPriceResourceShare')),
+    }
+  }
+  if (def.window) {
+    out.window = { durationSec: apply(def.window.durationSec, get('windowDurationSec')) }
+  }
+  if (def.autocast) {
+    out.autocast = {
+      ...def.autocast,
+      ...(def.autocast.heroHpAbove === undefined
+        ? {}
+        : { heroHpAbove: apply(def.autocast.heroHpAbove, get('autocastHeroHpAbove')) }),
     }
   }
   return out

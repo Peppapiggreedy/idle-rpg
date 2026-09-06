@@ -32,6 +32,14 @@ export const ICONS = {
   'ability-gut-rip': { file: 'delapouite/cleaver.svg', author: 'Delapouite' },
   'ability-blood-frenzy': { file: 'lorc/fire-punch.svg', author: 'Lorc' },
   'ability-skull-splitter': { file: 'lorc/battle-axe.svg', author: 'Lorc' },
+  'ability-blood-letting': { file: 'lorc/dripping-blade.svg', author: 'Lorc' },
+  'ability-blood-thirst': { file: 'lorc/heart-drop.svg', author: 'Lorc' },
+  'ability-sinew-tear': { file: 'lorc/claw-slashes.svg', author: 'Lorc' },
+  'ability-dug-in': { file: 'lorc/spiked-armor.svg', author: 'Lorc' },
+  'ability-reckoning': { file: 'lorc/decapitation.svg', author: 'Lorc' },
+  'ability-blood-price': { file: 'skoll/blood.svg', author: 'Skoll' },
+  'ability-blood-roar': { file: 'lorc/shouting.svg', author: 'Lorc' },
+  'ability-berserk': { file: 'delapouite/enrage.svg', author: 'Delapouite' },
 
   // --- Таланты: ветка «Ярость» ---
   'talent-honed-edge': { file: 'lorc/saber-slash.svg', author: 'Lorc' },
