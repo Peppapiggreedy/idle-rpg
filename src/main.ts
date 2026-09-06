@@ -1,6 +1,8 @@
 import { mount } from 'svelte'
 import './app.css'
 import App from './App.svelte'
+import BalancePage from './lib/ui/BalancePage.svelte'
+import ShowcasePage from './lib/ui/ShowcasePage.svelte'
 import { debugRoute, presetName } from './lib/ui/route'
 import { loadPreset } from './lib/ui/preset'
 import {
@@ -54,15 +56,11 @@ function startGame(): void {
 // на них не запускается вовсе: ни прибор, ни витрина не должны фармить
 // за игрока и трогать его сейв.
 if (route === 'balance') {
-  import('./lib/ui/BalancePage.svelte').then((m) => {
-    mount(m.default, { target })
-    markReady('balance')
-  })
+  mount(BalancePage, { target })
+  markReady('balance')
 } else if (route === 'ui') {
-  import('./lib/ui/ShowcasePage.svelte').then((m) => {
-    mount(m.default, { target })
-    markReady('ui')
-  })
+  mount(ShowcasePage, { target })
+  markReady('ui')
 } else if (preset) {
   // Режим съёмки: заранее заданное состояние, без цикла и без сейва.
   // Неизвестное имя пресета — не повод показать пустой экран: играем обычно.

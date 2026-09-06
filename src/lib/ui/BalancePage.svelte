@@ -2,23 +2,14 @@
   // Страница прогона баланса: те же таблицы, что печатает тест
   // game/__tests__/balance.test.ts, только посчитанные на лету. Весь текст —
   // здесь; simulate() отдаёт голые числа.
-  import { formatNumber } from '../game'
-  // ПРЯМО ИЗ `game/simulate`, А НЕ ЧЕРЕЗ ОБЩИЙ БАРРЕЛЬ `game/index.ts`.
-  // Страница грузится лениво (только по `?debug=1`), но пока эти четыре
-  // имени шли через баррель, весь headless-прогон оставался в ОСНОВНОМ
-  // куске: баррель попадает в главный чанк, а вместе с ним и всё, что он
-  // реэкспортирует. Замер: основной кусок 785 → 750 КБ.
   import {
     BALANCE_PRESET,
-    currentCell,
-    pacingTable,
-    referenceBuild,
+    formatNumber,
     simulate,
     spreadOf,
-    ttkDrift,
-    type PacingRow,
     type SimResult,
-  } from '../game/simulate'
+  } from '../game'
+  import { currentCell, pacingTable, referenceBuild, ttkDrift, type PacingRow } from '../game/simulate'
   import { Decimal } from '../game'
   import {
     TTK_AHEAD_MIN,
