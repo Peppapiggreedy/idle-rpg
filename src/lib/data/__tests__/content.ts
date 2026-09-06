@@ -41,7 +41,9 @@ import { DROP_CHANCE, SHIELD_SHARE } from '../loot'
 import { RARITIES } from '../rarity'
 import { SOUNDS } from '../sounds'
 import { CLASSES } from '../classes'
-import { MATERIALS } from '../materials'
+import { REAGENTS } from '../reagents'
+import { BOONS } from '../boons'
+import { MASTERY_RANKS } from '../mastery'
 import { HERBS } from '../herbs'
 import { DUST_BY_RARITY, ENCHANTS, ENCHANT_FLAT_STATS } from '../enchants'
 import { PROCS } from '../procs'
@@ -50,7 +52,6 @@ import { TEMPLES } from '../temple'
 import { QUESTS, QUEST_CHAIN } from '../quests'
 import { GOLD_UPGRADES } from '../upgrades'
 import { PROGRESSION } from '../progression'
-import { REAGENTS } from '../reagents'
 import { PROFESSIONS, PROFESSION_UNLOCK_LEVEL, RECIPES } from '../recipes'
 import { SLOT_DEFENSE, SLOT_DROP_WEIGHTS, SLOT_ICONS, SLOT_IDS, SLOT_NAMES } from '../slots'
 import { BRANCHES, TALENTS } from '../talents'
@@ -120,7 +121,6 @@ export function realContent(): Content {
     spriteIconNames: spriteIconNames(),
     sounds: SOUNDS,
     classes: CLASSES,
-    materials: MATERIALS,
     herbs: HERBS,
     enchants: ENCHANTS,
     procs: PROCS,
@@ -132,6 +132,8 @@ export function realContent(): Content {
     progression: PROGRESSION,
     upgrades: GOLD_UPGRADES,
     reagents: REAGENTS,
+    masteryRanks: MASTERY_RANKS,
+    boons: BOONS,
     recipes: RECIPES,
     professions: PROFESSIONS,
     audioFiles: audioFiles(),

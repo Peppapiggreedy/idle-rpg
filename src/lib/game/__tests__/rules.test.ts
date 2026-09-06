@@ -19,7 +19,7 @@ import { CLASSES } from '../../data/classes'
 import { ALL_DUNGEONS } from '../../data/dungeons'
 import { RARITIES } from '../../data/rarity'
 import { SLOT_IDS } from '../../data/slots'
-import { MATERIALS } from '../../data/materials'
+import { REAGENTS } from '../../data/reagents'
 import { HERBS } from '../../data/herbs'
 import { ENCHANTS } from '../../data/enchants'
 import { PROCS } from '../../data/procs'
@@ -170,7 +170,7 @@ export function contentIds(): Set<string> {
     ...ALL_DUNGEONS.map((d) => d.id),
     ...RARITIES.map((r) => r.id),
     ...SLOT_IDS,
-    ...MATERIALS.map((m) => m.id),
+    ...REAGENTS.map((m) => m.id),
     ...HERBS.map((h) => h.id),
     ...ENCHANTS.map((e) => e.id),
     ...PROCS.map((p) => p.id),

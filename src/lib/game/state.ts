@@ -198,6 +198,22 @@ export interface GameState {
   inventory: Item[]
   /** Материалы и готовая еда: id -> количество. Свой мешок, вне инвентаря. */
   materials: Record<string, Decimal>
+  /**
+   * МАСТЕРСТВО ПО ПРОФЕССИЯМ, 0..100. Обычный `number`, а не `Decimal`:
+   * величина ограничена сотней по построению и расти неограниченно не может.
+   * Профессии без шкалы (кулинария, реликварий) в объекте просто не
+   * появляются — отсутствие и есть «шкалы нет».
+   */
+  mastery: Record<string, number>
+  /**
+   * ВЫУЧЕННЫЕ РЕЦЕПТЫ — только те, у которых нет другого следа.
+   *
+   * Здесь лежат боссовые и мировые: их выдаёт событие, и восстановить их
+   * иначе как записью нельзя. Рецепты мастерства сюда НЕ пишутся — они
+   * выводятся из самой шкалы; храмовые — из рекорда по волнам. Второй
+   * счётчик того же самого разъехался бы с первым (см. game/recipeBook.ts).
+   */
+  knownRecipeIds: Record<string, boolean>
   itemSeq: number // служебный счётчик для уникальных id предметов
   rngSeed: number // служебный сид потока случайности (в сейв пока не пишется)
   // Активный забег по данжу; null — герой снаружи. Прогресс цепочки живёт
@@ -312,13 +328,35 @@ export interface Rotation {
    * в руках. Одно поле здесь дешевле пяти правок в потребителях.
    */
   talents: Record<string, number>
+  /**
+   * СВОЙСТВА НАДЕТЫХ ВЕЩЕЙ — по тому же доводу, что и ранги талантов рядом.
+   * Сборка правит умение (`data/boons.ts`), а ротацию читают все: модель боя,
+   * автокаст, оффлайн, контракты, книга умений. Пронеси свойства мимо — и
+   * каждый из них считал бы по умению, которого у героя в руках нет.
+   */
+  boons: readonly string[]
 }
 
 export const rotationOf = (state: GameState): Rotation => ({
   slots: state.abilitySlots,
   settings: state.abilitySettings,
   talents: state.talents,
+  boons: equippedBoons(state.equipment),
 })
+
+/**
+ * Свойства всех надетых вещей. Порядок — порядок слотов: два свойства на
+ * одно поле складывались бы одинаково в любом порядке, но список обязан быть
+ * воспроизводимым — по нему сравниваются состояния.
+ */
+export function equippedBoons(equipment: GameState['equipment']): string[] {
+  const out: string[] = []
+  for (const slot of SLOT_IDS) {
+    const boon = equipment[slot]?.boonId
+    if (boon) out.push(boon)
+  }
+  return out
+}
 
 /** Настройки по умолчанию: автокаст включён, резерв нулевой. Порядок здесь
  *  не задаётся — он живёт в `abilitySlots`. */
@@ -561,6 +599,8 @@ export function createInitialState(
     lastSurvivedZoneId: null,
     inventory: [],
     materials: {},
+    mastery: {},
+    knownRecipeIds: {},
     itemSeq: 0,
     rngSeed,
     // Первый моб — из безопасной зоны; поток случайности берём от того же сида,

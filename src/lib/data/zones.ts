@@ -11,6 +11,7 @@ import {
   type MonsterArchetype,
   type MonsterRole,
 } from './monsters'
+import { bandForLevel, type BandId } from './bands'
 import type { MonsterTemplate } from '../types'
 
 export interface Zone {
@@ -321,6 +322,23 @@ export const ZONES: Zone[] = [
 export const ZONE_BY_ID: Record<string, Zone> = Object.fromEntries(
   ZONES.map((z) => [z.id, z]),
 )
+
+/**
+ * ПОЛОСА ЗОНЫ — раз и навсегда. Зон двадцать, полос десять, обе величины
+ * заданы данными и не меняются никогда: искать полосу перебором на каждое
+ * убийство значит платить за то, что известно на старте.
+ *
+ * Живёт ЗДЕСЬ, а не у того, кому первому понадобилось: по полосе зоны падают
+ * и реагенты, и мировые рецепты, и второй такой карты быть не должно.
+ */
+const BAND_BY_ZONE: Record<string, BandId> = Object.fromEntries(
+  ZONES.map((zone) => [zone.id, bandForLevel(zone.monsterLevelRange.max).id]),
+)
+
+/** Полоса, на которой стоит зона. Чужой id — null, а не выдуманная полоса. */
+export function zoneBand(zoneId: string): BandId | null {
+  return BAND_BY_ZONE[zoneId] ?? null
+}
 
 // Зона, куда возвращают, когда возвращаться больше некуда. Первая безопасная
 // в списке — контракт данных: хотя бы одна зона обязана быть isSafe.

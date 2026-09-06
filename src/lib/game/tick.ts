@@ -35,6 +35,7 @@ import { pushEvent, spawnMonster, type ActiveEffect, type GameState } from './st
 import { ensureStats } from './stats'
 import { emit as busEmit } from './events'
 import {
+  RECIPE_WORLD_CHANCE,
   REGEN_TICK_S,
   RESPAWN_DELAY_MS,
   REVIVE_DELAY_MS,
@@ -50,7 +51,7 @@ import {
   queuedAbilityDropReason,
 } from './abilities'
 import { finishRest, needsRest, startRest } from './rest'
-import { addMaterial, rollMaterial } from './crafting'
+import { addMaterial, rollZoneReagent } from './crafting'
 import { classById } from '../data/classes'
 import { advancePotions, gatherHerbs } from './potions'
 import {
@@ -102,6 +103,7 @@ function extraSwings(chance: number, rng: Rng): number {
   return chance > 0 && rng() < chance ? 1 : 0
 }
 import { rollBossReagent } from './crafting'
+import { bossRecipeToLearn, learnRecipe, rollWorldRecipe } from './recipeBook'
 import { bossDispel, bossSwingTime } from './bossAbilities'
 import { advanceTemple, clearTempleWave, leaveTemple } from './temple'
 import { freshEvents } from './events'
@@ -488,7 +490,7 @@ const applyMaterialDrop: TickStep = (s, ctx) => {
   // и шансы редкости предметов не сдвигают. Бросок идёт ДО дропа предмета —
   // порядок фиксирован, иначе прогоны с сидом перестанут воспроизводиться.
   let next = s
-  const material = rollMaterial(s.currentZoneId, ctx.rng)
+  const material = rollZoneReagent(s.currentZoneId, ctx.rng)
   if (material) {
     next = {
       ...addMaterial(next, material.id),
@@ -498,12 +500,39 @@ const applyMaterialDrop: TickStep = (s, ctx) => {
   // Реагент — только с боссов данжа. Индекс босса ещё указывает на убитого:
   // цепочку двигает applyRespawn, и он идёт позже.
   const dungeon = activeDungeon(s)
-  if (!dungeon || !s.dungeonRun) return next
+  if (!dungeon || !s.dungeonRun) {
+    // МИРОВОЙ РЕЦЕПТ — только снаружи подземелья: он «падает с любого моба
+    // СВОЕЙ ПОЛОСЫ», а у боссов своя, куда более щедрая дорога. Бросок не
+    // делается вовсе, когда учить нечего (см. rollWorldRecipe), поэтому
+    // поток случайности в полосах без ненайденных рецептов не двигается.
+    const found = rollWorldRecipe(next, s.currentZoneId, RECIPE_WORLD_CHANCE, ctx.rng)
+    if (!found) return next
+    return {
+      ...learnRecipe(next, found.id),
+      combatLog: pushEvent(next.combatLog, { type: 'recipe', recipeId: found.id }),
+    }
+  }
+  const boss = dungeon.bosses[s.dungeonRun.bossIndex]
   const reagent = rollBossReagent(dungeon, s.dungeonRun.bossIndex, ctx.rng)
-  if (!reagent) return next
+  if (reagent) {
+    next = {
+      ...addMaterial(next, reagent.id),
+      combatLog: pushEvent(next.combatLog, { type: 'material', materialId: reagent.id }),
+    }
+  }
+  // РЕЦЕПТ БОССА ПАДАЕТ СО СТОПРОЦЕНТНОЙ ВЕРОЯТНОСТЬЮ — броска нет вовсе.
+  // Подземелье это жёсткие ворота, и выдавать за них лотерейный билет значит
+  // заставлять ходить заново за тем же самым.
+  //
+  // ВТОРОЙ ЗАХОД ПРОХОДИТ МОЛЧА, и это НОРМАЛЬНЫЙ случай, а не край: при
+  // стопроцентном дропе он наступает у каждого, кто пошёл за реагентом. Отдаём
+  // только реагент — «рецепта нет, вот тебе золото» игра не говорит, потому
+  // что такого правила у неё нет ни для чего другого.
+  const learned = boss ? bossRecipeToLearn(next, dungeon.id, boss.id) : null
+  if (!learned) return next
   return {
-    ...addMaterial(next, reagent.id),
-    combatLog: pushEvent(next.combatLog, { type: 'material', materialId: reagent.id }),
+    ...learnRecipe(next, learned.id),
+    combatLog: pushEvent(next.combatLog, { type: 'recipe', recipeId: learned.id }),
   }
 }
 

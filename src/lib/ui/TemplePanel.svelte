@@ -5,7 +5,7 @@
   //
   // Весь текст здесь; логика отдаёт коды причин, номера волн и id рецептов.
   import { TEMPLE, recipeUnlockWave, templeStatus, type TempleBlockReason } from '../game'
-  import { MATERIAL_BY_ID } from '../data/materials'
+  import { REAGENT_BY_ID } from '../data/reagents'
   import { RECIPE_BY_ID } from '../data/recipes'
   import { ZONE_BY_ID } from '../data/zones'
   import { enterTempleRun, gameState } from '../stores/game'
@@ -91,7 +91,7 @@
     <li class="milestone" class:open={$gameState.templeCleared}>
       <Icon name="temple-wave" />
       <span class="text">
-        Все {TEMPLE.floors} этажей — «{MATERIAL_BY_ID[TEMPLE.clearReward.materialId]?.name ??
+        Все {TEMPLE.floors} этажей — «{REAGENT_BY_ID[TEMPLE.clearReward.materialId]?.name ??
           TEMPLE.clearReward.materialId}» и рецепт «{RECIPE_BY_ID[TEMPLE.clearReward.recipeId]
           ?.name ?? TEMPLE.clearReward.recipeId}»
         <span class="sub">

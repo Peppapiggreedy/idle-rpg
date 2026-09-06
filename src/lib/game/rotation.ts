@@ -106,7 +106,7 @@ export function abilitiesByPriority(
     if (onlyAutocast && !setting.autocast) continue
     // ЭФФЕКТИВНОЕ, А НЕ БАЗОВОЕ. Отсюда таланты доходят до модели боя,
     // автокаста и оффлайна разом: все они читают ротацию.
-    out.push(tuneAbility(ability, rotation.talents))
+    out.push(tuneAbility(ability, rotation.talents, rotation.boons))
   }
   return out
 }

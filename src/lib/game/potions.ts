@@ -23,6 +23,7 @@ import {
   POTION_TARGET_UPTIME,
   POTION_UNLOCK_LEVEL,
 } from '../data/balance'
+import { HERB_BY_ID } from '../data/herbs'
 import { applyModifiers, collectModifiers, ensureStats, type StatBlock } from './stats'
 import { pushEvent, type ActivePotion, type GameState } from './state'
 
@@ -307,10 +308,19 @@ export function potionSupply(
   const needPerMinute: Record<string, number> = {}
   let share = Number.POSITIVE_INFINITY
   for (const input of recipe.inputs) {
+    // СЧИТАЮТСЯ ТОЛЬКО ТРАВЫ. У двухпередельного настоя на входе стоит
+    // вытяжка — она не срезается временем, а варится, и её снабжение это
+    // снабжение ЕЁ собственных трав, посчитанное на шаг раньше. Считать её
+    // «травой, которой в зоне не растёт» значило бы объявить любой второй
+    // передел необеспеченным по построению.
+    if (!(input.materialId in HERB_BY_ID)) continue
     const need = potionsPerMinute * input.count
     needPerMinute[input.materialId] = need
     share = Math.min(share, need > 0 ? (gotPerMinute[input.materialId] ?? 0) / need : share)
   }
+  // Настой без единой травы на входе обеспечен по построению: всё, что ему
+  // нужно, уже сварено.
+  if (!Number.isFinite(share)) share = Number.POSITIVE_INFINITY
   return { recipeId: recipe.id, needPerMinute, gotPerMinute, share }
 }
 

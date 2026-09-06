@@ -9,6 +9,8 @@
 //
 // Сейчас все картинки — цветные силуэты-заглушки, нарисованные для проекта.
 
+import { LEVEL_BANDS } from './bands'
+
 export interface SpriteAsset {
   id: string
   /** Путь от корня public/: `sprites/<файл>.svg`. */
@@ -140,22 +142,17 @@ export const MONSTER_SPRITE_BY_ARCHETYPE: Readonly<Record<string, string>> = {
 }
 
 /**
- * Фоны по полосам уровней: десять картинок, по одной на две зоны. Полосы
- * идут подряд без дыр и наложений от первого уровня до потолка — иначе моб
- * какого-то уровня остался бы без фона; сплошность держит проверка контента.
+ * Фоны по полосам уровней: десять картинок, по одной на две зоны.
+ *
+ * САМИ ПОЛОСЫ ЖИВУТ НЕ ЗДЕСЬ, а в `data/bands.ts`: по той же разметке теперь
+ * разложены реагенты, а второй разметки уровней в игре быть не должно. Здесь
+ * остались КАРТИНКИ — путь выводится из id полосы, как и назывался.
  */
-export const BACKGROUND_BANDS: readonly BackgroundBand[] = [
-  { id: 'meadow', minLevel: 1, maxLevel: 10, path: 'sprites/bg-meadow.svg', ...PLACEHOLDER },
-  { id: 'furrows', minLevel: 11, maxLevel: 20, path: 'sprites/bg-furrows.svg', ...PLACEHOLDER },
-  { id: 'glass', minLevel: 21, maxLevel: 30, path: 'sprites/bg-glass.svg', ...PLACEHOLDER },
-  { id: 'mines', minLevel: 31, maxLevel: 40, path: 'sprites/bg-mines.svg', ...PLACEHOLDER },
-  { id: 'flood', minLevel: 41, maxLevel: 50, path: 'sprites/bg-flood.svg', ...PLACEHOLDER },
-  { id: 'sulfur', minLevel: 51, maxLevel: 60, path: 'sprites/bg-sulfur.svg', ...PLACEHOLDER },
-  { id: 'pass', minLevel: 61, maxLevel: 70, path: 'sprites/bg-pass.svg', ...PLACEHOLDER },
-  { id: 'salt', minLevel: 71, maxLevel: 80, path: 'sprites/bg-salt.svg', ...PLACEHOLDER },
-  { id: 'rime', minLevel: 81, maxLevel: 90, path: 'sprites/bg-rime.svg', ...PLACEHOLDER },
-  { id: 'dell', minLevel: 91, maxLevel: 100, path: 'sprites/bg-dell.svg', ...PLACEHOLDER },
-]
+export const BACKGROUND_BANDS: readonly BackgroundBand[] = LEVEL_BANDS.map((band) => ({
+  ...band,
+  path: `sprites/bg-${band.id}.svg`,
+  ...PLACEHOLDER,
+}))
 
 export const MONSTER_SPRITE_BY_ID: Readonly<Record<string, SpriteAsset>> = Object.fromEntries(
   MONSTER_SPRITES.map((sprite) => [sprite.id, sprite]),

@@ -6,15 +6,26 @@ import { STEP_MS } from './loop'
 import { createInitialState, manualOnlySettings, type GameState } from './state'
 import { ensureStats } from './stats'
 import { tick } from './tick'
-import { craft, materialCount, recipeStatus, rollMaterial, takeFood } from './crafting'
+import {
+  craft,
+  hasIntermediate,
+  materialCount,
+  rawCost,
+  recipeStatus,
+  rollZoneReagent,
+  takeFood,
+} from './crafting'
 import { restDurationMs, startRest } from './rest'
-import { MATERIALS, materialsInZone } from '../data/materials'
+import { REAGENTS, commonReagentsInBand } from '../data/reagents'
+import { LEVEL_BANDS } from '../data/bands'
+import { bandForLevel } from '../data/bands'
 import {
   CRAFT_TOLL_HOURS,
   FOOD_BY_ID,
   PROFESSIONS,
   RECIPES,
   RECIPE_BY_ID,
+  RECIPE_BY_REAGENT,
   craftToll,
   goldPerHourAt,
   recipeLevel,
@@ -80,25 +91,49 @@ const legendarySmithing = () =>
   recipesOf('smithing').filter((r) => recipeUnlockLevel(r) >= LEVEL_CAP)
 
 describe('данные профессий', () => {
-  it('четыре профессии, у кулинарии 3-4 рецепта, у кузнечного 4-5 рядовых', () => {
+  it('четыре профессии, у кулинарии 3-4 рецепта, у кузнечного полная лестница', () => {
     // Кулинария, кузнечное дело, травничество и реликварий: каждая отвечает
     // на свой вопрос, и ни одна не дублирует другую.
     expect(PROFESSIONS).toHaveLength(4)
     expect(recipesOf('cooking').length).toBeGreaterThanOrEqual(3)
     expect(recipesOf('cooking').length).toBeLessThanOrEqual(4)
-    // Рядовые рецепты кузнеца — подстраховка от невезения; легендарные
-    // реликты на реагентах героики считаются отдельно: это конец лестницы,
-    // а не запасной вариант.
-    expect(everydaySmithing().length).toBeGreaterThanOrEqual(4)
-    expect(everydaySmithing().length).toBeLessThanOrEqual(5)
+    // ЧИСЛО РЯДОВЫХ БОЛЬШЕ НЕ КОРИДОР «4-5», И ЭТО ПЕРЕПИСАНО НАМЕРЕННО.
+    // Прежняя лестница стояла на пяти рецептах и уровнях 13, 13, 23, 23, 58 —
+    // тридцать пять уровней молчания в середине. Теперь правило другое: по
+    // вещи на КАЖДУЮ из десяти полос, и проверяется именно оно, а не
+    // количество (количество из него следует).
+    // Считается по ВСЕМ смитинговым вещам, а не только по «рядовым»:
+    // деление на рядовые и легендарные идёт по потолку уровня, и вещь
+    // последней полосы стоит ровно на нём — она попала бы во вторую корзину
+    // и полоса осталась бы «пустой» при полном рецепте.
+    const bands = new Set(
+      recipesOf('smithing')
+        .filter((r) => r.output.kind === 'item')
+        .map((r) => bandForLevel(recipeLevel(r)).id),
+    )
+    expect(bands.size, 'полос без рецепта быть не должно').toBe(LEVEL_BANDS.length)
     expect(legendarySmithing().length).toBeGreaterThan(0)
   })
 
-  it('у кузнечного дела по рецепту на разные слоты, а не пять на один', () => {
-    const slots = everydaySmithing().map((r) =>
-      r.output.kind === 'item' ? r.output.slot : null,
-    )
-    expect(new Set(slots).size).toBe(slots.length)
+  it('слоты кузнечного не повторяются на соседних полосах', () => {
+    // Не «все слоты разные» — рецептов теперь больше, чем слотов, и повтор
+    // через полосу законен. Нельзя другое: три шлема подряд, когда за
+    // невезучие поножи предлагают третью голову.
+    const byBand = new Map<string, string[]>()
+    for (const recipe of everydaySmithing()) {
+      if (recipe.output.kind !== 'item') continue
+      const band = bandForLevel(recipeLevel(recipe)).id
+      byBand.set(band, [...(byBand.get(band) ?? []), recipe.output.slot])
+    }
+    const ordered = LEVEL_BANDS.map((b) => b.id).filter((b) => byBand.has(b))
+    for (let i = 1; i < ordered.length; i += 1) {
+      const prev = byBand.get(ordered[i - 1]) ?? []
+      const here = byBand.get(ordered[i]) ?? []
+      expect(
+        here.some((slot) => !prev.includes(slot)),
+        `полоса ${ordered[i]}: те же слоты, что на предыдущей`,
+      ).toBe(true)
+    }
   })
 
   it('уровней у профессий нет: в данных нет ни одного требования по опыту', () => {
@@ -112,31 +147,59 @@ describe('данные профессий', () => {
     expect(/требует|requirement|experience|опыт/i.test(json)).toBe(false)
   })
 
-  it('каждый материал падает хотя бы в одной существующей зоне', () => {
-    const ids = ZONES.map((z) => z.id)
-    for (const material of MATERIALS) {
-      // Исключение ровно одно и названо в самих данных: материал-НАГРАДА
-      // не падает нигде и падать не должен — его выдают за достижение.
-      if (material.award !== undefined) {
-        expect(material.zoneIds, material.id).toEqual([])
+  it('у каждого обычного реагента есть зоны его полосы, у остальных зон нет', () => {
+    // Списка зон у реагента больше нет: полоса называет их сама. Проверяется
+    // то же самое, что и раньше, — «добываемое добывается, недобываемое не
+    // притворяется добываемым», только спрашивается это у полосы.
+    const zonesOf = (band: string) =>
+      ZONES.filter((z) => bandForLevel(z.monsterLevelRange.max).id === band)
+    for (const reagent of REAGENTS) {
+      if (reagent.role === 'common') {
+        expect(zonesOf(reagent.band).length, reagent.id).toBeGreaterThan(0)
+        expect(reagent.weight, reagent.id).toBeGreaterThan(0)
         continue
       }
-      expect(material.zoneIds.length, material.id).toBeGreaterThan(0)
-      for (const id of material.zoneIds) expect(ids, material.id).toContain(id)
+      // Боссовый и промежуточный в зонах не падают вовсе — у них другой путь.
+      expect(commonReagentsInBand(reagent.band).map((r) => r.id), reagent.id).not.toContain(
+        reagent.id,
+      )
     }
   })
 })
 
 describe('материалы падают своим броском', () => {
   it('бросок выше шанса не даёт ничего и пул зоны не трогает', () => {
-    expect(rollMaterial(ZONES[0].id, () => MATERIAL_DROP_CHANCE)).toBeNull()
+    expect(rollZoneReagent(ZONES[0].id, () => MATERIAL_DROP_CHANCE)).toBeNull()
+  })
+
+  it('доля выпадения не изменилась: на каждой полосе есть чем платить', () => {
+    // ОБЩАЯ ДОЛЯ МАТЕРИАЛОВ В ЛУТЕ ОБЯЗАНА ОСТАТЬСЯ ПРЕЖНЕЙ, и держится она
+    // ровно одним свойством: пул полосы НИКОГДА не пуст. Шанс броска не
+    // трогали (MATERIAL_DROP_CHANCE), а второй бросок только выбирает, что
+    // именно выпало, — значит на каждый убийственный тик приходится та же
+    // доля добычи, что и до переезда на полосы.
+    //
+    // Пустой пул был бы тихой потерей: бросок прошёл, а в мешок не легло
+    // ничего. Проверяется поэтому не «доля равна 0.35» (это сам конструктор
+    // броска), а то, из чего доля складывается.
+    for (const zone of ZONES) {
+      const pool = commonReagentsInBand(bandForLevel(zone.monsterLevelRange.max).id)
+      expect(pool.length, `${zone.id}: полоса без обычных реагентов`).toBeGreaterThan(0)
+      const total = pool.reduce((sum, r) => sum + (r.weight ?? 0), 0)
+      expect(total, `${zone.id}: суммарный вес рулетки нулевой`).toBeGreaterThan(0)
+      // Бросок ровно на границе шанса не даёт ничего, чуть ниже — даёт всегда.
+      expect(rollZoneReagent(zone.id, () => MATERIAL_DROP_CHANCE), zone.id).toBeNull()
+      expect(rollZoneReagent(zone.id, seqRng([0, 0])), zone.id).not.toBeNull()
+    }
   })
 
   it('материал берётся из пула СВОЕЙ зоны', () => {
     for (const zone of ZONES) {
-      const pool = materialsInZone(zone.id).map((m) => m.id)
+      const pool = commonReagentsInBand(bandForLevel(zone.monsterLevelRange.max).id).map(
+        (m) => m.id,
+      )
       if (pool.length === 0) continue
-      const rolled = rollMaterial(zone.id, seqRng([0, 0.999999]))
+      const rolled = rollZoneReagent(zone.id, seqRng([0, 0.999999]))
       expect(pool, zone.id).toContain(rolled!.id)
     }
   })
@@ -280,7 +343,10 @@ describe('пошлина крафта', () => {
           ? recipe.output.procId
             ? 'unique'
             : 'item'
-          : recipe.output.kind
+          : // Передел платит как еда: он не даёт надеваемого, только шаг к нему.
+            recipe.output.kind === 'reagent'
+            ? 'food'
+            : recipe.output.kind
       ]
       const expected = goldPerHourAt(recipeLevel(recipe)).times(hours).ceil()
       expect(craftToll(recipe).toNumber(), recipe.id).toBe(expected.toNumber())
@@ -335,5 +401,47 @@ describe('пошлина крафта', () => {
     // тогда, когда всё остальное уже есть.
     const broke = hero({ materials: {}, gold: new Decimal(0) })
     expect(recipeStatus(broke, BROTH).reason).toBe('materials')
+  })
+})
+
+describe('полная цена сырьём: передел развёрнут', () => {
+  it('рецепт без передела платит ровно тем, что у него на входе', () => {
+    // Развёртка не должна «улучшать» обычный рецепт: у него полная цена и
+    // есть его входы, и вторая копия тех же чисел на экране читалась бы как
+    // ещё одна цена.
+    const plain = RECIPES.find((r) => !hasIntermediate(r))!
+    expect(rawCost(plain)).toEqual(
+      plain.inputs.map((i) => ({ materialId: i.materialId, count: i.count })),
+    )
+  })
+
+  it('рецепт с переделом разворачивается в сырьё и умножает на количество', () => {
+    const withStep = RECIPES.find((r) => hasIntermediate(r))
+    expect(withStep, 'в игре нет ни одного рецепта с переделом').toBeTruthy()
+    if (!withStep) return
+    const step = withStep.inputs.find((i) => RECIPE_BY_REAGENT[i.materialId])!
+    const source = RECIPE_BY_REAGENT[step.materialId]
+    const raw = rawCost(withStep)
+    // Промежуточного в полной цене нет вовсе — он развёрнут.
+    expect(raw.some((i) => i.materialId === step.materialId)).toBe(false)
+    // А сырьё передела вошло, помноженное на то, сколько переделов нужно.
+    for (const input of source.inputs) {
+      const row = raw.find((i) => i.materialId === input.materialId)
+      expect(row, input.materialId).toBeTruthy()
+      expect(row!.count).toBeGreaterThanOrEqual(input.count * step.count)
+    }
+  })
+
+  it('одинаковое сырьё из разных веток складывается, а не дублируется', () => {
+    for (const recipe of RECIPES) {
+      const raw = rawCost(recipe)
+      expect(new Set(raw.map((i) => i.materialId)).size, recipe.id).toBe(raw.length)
+    }
+  })
+
+  it('развёртка кончается на любых данных', () => {
+    // Цепочка переделов в данных может закольцеваться; цикл ловит
+    // content:check, но функция обязана вернуть ответ при любых данных.
+    for (const recipe of RECIPES) expect(rawCost(recipe).length).toBeGreaterThan(0)
   })
 })

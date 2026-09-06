@@ -1,7 +1,9 @@
 {
-  "version": 30,
+  "version": 32,
   "classId": "warden",
   "materials": {},
+  "mastery": {},
+  "knownRecipeIds": [],
   "activePotions": [],
   "enchantDust": "0",
   "saveId": 202,

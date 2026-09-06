@@ -165,9 +165,7 @@ export const ICONS = {
   'reagent-rime-core': { file: 'lorc/frozen-orb.svg', author: 'Lorc' },
   'reagent-mute-stone': { file: 'lorc/tombstone.svg', author: 'Lorc' },
 
-  'recipe-relic-blade': { file: 'lorc/relic-blade.svg', author: 'Lorc' },
   'recipe-relic-plate': { file: 'lorc/breastplate.svg', author: 'Lorc' },
-  'recipe-relic-charm': { file: 'lorc/gem-chain.svg', author: 'Lorc' },
 
   // --- Храм испытаний ---
   temple: { file: 'delapouite/greek-temple.svg', author: 'Delapouite' },
@@ -282,6 +280,35 @@ export const ICONS = {
   'reagent-brine-crystal': { file: 'lorc/gems.svg', author: 'Lorc' },
   'reagent-rime-vein': { file: 'lorc/frozen-block.svg', author: 'Lorc' },
   'reagent-mute-shard': { file: 'lorc/rune-stone.svg', author: 'Lorc' },
+
+  // --- Обычные реагенты полос: по одному-двум на каждую из десяти ---
+  // Шесть прежних материалов зон свои иконки сохранили (material-*): у них
+  // не поменялось ничего, кроме того, что теперь у каждого одна полоса.
+  'reagent-furrow-rust': { file: 'lorc/rock.svg', author: 'Lorc' },
+  'reagent-glass-sliver': { file: 'lorc/cracked-glass.svg', author: 'Lorc' },
+  'reagent-shaft-iron': { file: 'delapouite/stone-pile.svg', author: 'Delapouite' },
+  'reagent-root-fibre': { file: 'delapouite/plant-roots.svg', author: 'Delapouite' },
+  'reagent-tier-scale': { file: 'lorc/scale-mail.svg', author: 'Lorc' },
+  'reagent-mould-cap': { file: 'lorc/mushroom-gills.svg', author: 'Lorc' },
+  'reagent-sulfur-crust': { file: 'lorc/acid-blob.svg', author: 'Lorc' },
+  'reagent-terrace-slag': { file: 'lorc/stone-block.svg', author: 'Lorc' },
+  'reagent-pass-flint': { file: 'delapouite/flint-spark.svg', author: 'Delapouite' },
+  'reagent-wormwood-resin': { file: 'lorc/curled-leaf.svg', author: 'Lorc' },
+  'reagent-emery-grit': { file: 'lorc/dust-cloud.svg', author: 'Lorc' },
+  'reagent-crookwood-knot': { file: 'delapouite/wood-beam.svg', author: 'Delapouite' },
+  'reagent-hoar-quartz': { file: 'lorc/crystal-cluster.svg', author: 'Lorc' },
+  'reagent-dell-bloom': { file: 'lorc/spiral-bloom.svg', author: 'Lorc' },
+  'reagent-bluff-obsidian': { file: 'lorc/dripping-stone.svg', author: 'Lorc' },
+
+  // --- Промежуточные реагенты: второй передел кузнечного ---
+  'reagent-flood-billet': { file: 'delapouite/clay-brick.svg', author: 'Delapouite' },
+  'reagent-sulfur-billet': { file: 'lorc/anvil-impact.svg', author: 'Lorc' },
+  'reagent-pass-billet': { file: 'delapouite/brick-pile.svg', author: 'Delapouite' },
+  'reagent-salt-billet': { file: 'lorc/stone-tablet.svg', author: 'Lorc' },
+  'reagent-rime-billet': { file: 'lorc/cubes.svg', author: 'Lorc' },
+  'reagent-dell-billet': { file: 'lorc/heavy-thorny-triskelion.svg', author: 'Lorc' },
+  'reagent-rime-extract': { file: 'lorc/bubbling-flask.svg', author: 'Lorc' },
+  'reagent-dell-extract': { file: 'lorc/potion-ball.svg', author: 'Lorc' },
 
   // --- Интерфейс ---
   log: { file: 'lorc/scroll-unfurled.svg', author: 'Lorc' },

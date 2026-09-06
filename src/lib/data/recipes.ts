@@ -9,7 +9,22 @@
 import { Decimal } from '../game/numbers'
 import type { StatModifier } from '../game/stats'
 import { HERB_BY_ID } from './herbs'
-import { MATERIAL_BY_ID } from './materials'
+import { bandForLevel, type BandId } from './bands'
+import { masteryCeilingForBand } from './mastery'
+import { REAGENTS, reagentBandLevels } from './reagents'
+
+/**
+ * ВОСЕМЬ ИМЕННЫХ РЕАГЕНТОВ ГЕРОИКИ — по одному с последнего босса каждой из
+ * восьми героик. Список СЧИТАЕТСЯ из реестра, а не переписан руками: девятая
+ * героика добавит девятый реагент, и сборка потребует его сама.
+ */
+export const HEROIC_REAGENT_IDS: string[] = REAGENTS.filter(
+  (r) => r.source?.kind === 'dungeon' && r.source.difficulty === 'heroic',
+)
+  .sort((a, b) => (a.source?.kind === 'dungeon' && b.source?.kind === 'dungeon'
+    ? a.source.tier - b.source.tier
+    : 0))
+  .map((r) => r.id)
 import { ZONE_BY_ID, representativeMonster, zoneForMonsterLevel } from './zones'
 import type { IconName } from '../ui/icons/manifest'
 import type { SlotId } from './slots'
@@ -112,19 +127,30 @@ export function recipeLevel(recipe: RecipeDef): number {
   // сколько стоит самый труднодоступный из его входов.
   let level = recipe.unlockLevel ?? 1
   for (const input of recipe.inputs) {
-    let shallowest = Number.POSITIVE_INFINITY
-    for (const zoneId of materialZoneIds(input.materialId)) {
-      const zone = ZONE_BY_ID[zoneId]
-      if (zone) shallowest = Math.min(shallowest, zone.monsterLevelRange.max)
-    }
-    if (Number.isFinite(shallowest)) level = Math.max(level, shallowest)
+    const shallowest = inputShallowestLevel(input.materialId)
+    if (shallowest !== null) level = Math.max(level, shallowest)
   }
   return level
 }
 
-/** Где падает материал, трава или реагент. Пусто — добывается не в зоне. */
-function materialZoneIds(materialId: string): readonly string[] {
-  return MATERIAL_BY_ID[materialId]?.zoneIds ?? HERB_BY_ID[materialId]?.zoneIds ?? []
+/**
+ * Насколько глубоко надо зайти за одним входом. У реагента это ВЕРХ ЕГО
+ * ПОЛОСЫ — обе зоны полосы роняют его одинаково, и мельчайшая из них ровно
+ * одна. У травы по-прежнему список зон: трава срезается временем и растёт в
+ * нескольких полосах сразу (полосы ей раздаёт стадия травничества).
+ *
+ * Боссовые и промежуточные реагенты зон не имеют вовсе — по ним цена не
+ * считается, её задаёт `unlockLevel` рецепта.
+ */
+function inputShallowestLevel(materialId: string): number | null {
+  const band = reagentBandLevels(materialId)
+  if (band) return band.max
+  let shallowest = Number.POSITIVE_INFINITY
+  for (const zoneId of HERB_BY_ID[materialId]?.zoneIds ?? []) {
+    const zone = ZONE_BY_ID[zoneId]
+    if (zone) shallowest = Math.min(shallowest, zone.monsterLevelRange.max)
+  }
+  return Number.isFinite(shallowest) ? shallowest : null
 }
 
 /**
@@ -154,8 +180,24 @@ export function craftToll(recipe: RecipeDef): Decimal {
       ? recipe.output.procId
         ? 'unique'
         : 'item'
-      : recipe.output.kind
+      : // ПЕРЕДЕЛ ПЛАТИТ КАК ЕДА, а не как вещь. Он не даёт ничего надеваемого
+        // — только следующий шаг к вещи, — и пошлина вещи, взятая дважды за
+        // один предмет, сделала бы двухпередельный путь просто дороже.
+        recipe.output.kind === 'reagent'
+        ? 'food'
+        : recipe.output.kind
   return goldPerHourAt(recipeLevel(recipe)).times(CRAFT_TOLL_HOURS[kind]).ceil()
+}
+
+/**
+ * ПРОМЕЖУТОЧНЫЙ РЕАГЕНТ НА ВЫХОДЕ. Третий вид выхода рядом с едой и
+ * склянкой: в сумку не ложится, места не занимает, а ложится в тот же мешок,
+ * что и добыча. Своего пути у него нет — тот же `craft`, та же пошлина.
+ */
+export interface ReagentOutput {
+  kind: 'reagent'
+  /** Id реагента из `data/reagents.ts`, роль которого обязана быть `crafted`. */
+  id: string
 }
 
 export interface RecipeInput {
@@ -196,6 +238,9 @@ export interface ItemOutput {
    *  предмет только называет id: так один прок нельзя описать дважды
    *  по-разному, а внутренний кулдаун у него один на всю игру. */
   procId?: string
+  /** Свойство сборки (data/boons.ts). Вещь с ним отдаёт долю своих статов —
+   *  считает это `craftedItem`, там же, где числа округляются. */
+  boonId?: string
 }
 
 /** Модификатор зелья БЕЗ source: source проставляется как 'potion:<id>'. */
@@ -219,15 +264,48 @@ export interface PotionOutput {
   mods: PotionModifier[]
 }
 
+/**
+ * ОТКУДА БЕРЁТСЯ РЕЦЕПТ. До этой стадии — ниоткуда: дорос уровнем, знаешь всё.
+ *
+ * ЧЕТЫРЕ ИСТОЧНИКА, И У КАЖДОГО СВОЯ РОЛЬ. Это не четыре способа выдать одно и
+ * то же: каждый отвечает на свой вопрос игрока «а это откуда?».
+ *   `mastery` — ЛЕСТНИЦА РЕМЕСЛА. Базовые рецепты полосы приходят сами, когда
+ *               мастерство доросло до её порога. Ничего не хранится: знание
+ *               ВЫВОДИТСЯ из мастерства, как доступные очки талантов
+ *               выводятся из «заработано минус вложено».
+ *   `boss`    — ТИРОВЫЙ РЕЦЕПТ. Падает с назначенного босса СО СТОПРОЦЕНТНОЙ
+ *               вероятностью, а не с шансом: подземелье — жёсткие ворота, и
+ *               выдавать за них лотерейный билет значит заставлять ходить
+ *               заново за тем же самым.
+ *   `world`   — РЕДКИЙ МИРОВОЙ. Малый шанс с любого моба своей полосы. Это
+ *               единственный источник, где рецепт именно НАХОДЯТ.
+ *   `temple`  — ХРАМ: рубеж волн или полная зачистка. Правило живёт в
+ *               `data/temple.ts` и остаётся там — второй копии не заводим.
+ * Плюс `basic` — «учить нечего»: кулинария и реликварий остаются простыми,
+ * и это решение, а не недоделка (см. MASTERY_PROFESSIONS).
+ */
+export type RecipeSource =
+  | { kind: 'basic' }
+  | { kind: 'mastery' }
+  | { kind: 'boss'; dungeonId: string; bossId: string }
+  | { kind: 'world' }
+  | { kind: 'temple' }
+
 export interface RecipeDef {
   id: string
   name: string
   icon: IconName
   profession: ProfessionId
+  /**
+   * ОТКУДА ОН ВЗЯЛСЯ. Поле обязательное: рецепт без источника — это рецепт,
+   * который игрок не может объяснить себе сам. Держит и проверка типов, и
+   * `content:check` (там же ловится босс, назначенный дважды).
+   */
+  source: RecipeSource
   /** С какого уровня рецепт доступен. Не задан — с первого. */
   unlockLevel?: number
   inputs: RecipeInput[]
-  output: FoodOutput | ItemOutput | PotionOutput
+  output: FoodOutput | ItemOutput | PotionOutput | ReagentOutput
 }
 
 const CRAFT_RECIPES: RecipeDef[] = [
@@ -237,6 +315,7 @@ const CRAFT_RECIPES: RecipeDef[] = [
     name: 'Травяной отвар',
     icon: 'recipe-broth',
     profession: 'cooking',
+    source: { kind: 'basic' },
     inputs: [{ materialId: 'meadow-herb', count: 3 }],
     output: { kind: 'food', id: 'food:herb-broth', name: 'Травяной отвар', icon: 'recipe-broth' },
   },
@@ -245,6 +324,7 @@ const CRAFT_RECIPES: RecipeDef[] = [
     name: 'Сытная похлёбка',
     icon: 'recipe-stew',
     profession: 'cooking',
+    source: { kind: 'basic' },
     inputs: [
       { materialId: 'lean-meat', count: 2 },
       { materialId: 'meadow-herb', count: 2 },
@@ -256,6 +336,7 @@ const CRAFT_RECIPES: RecipeDef[] = [
     name: 'Солёная вяленина',
     icon: 'recipe-jerky',
     profession: 'cooking',
+    source: { kind: 'basic' },
     inputs: [
       { materialId: 'lean-meat', count: 3 },
       { materialId: 'rime-salt', count: 1 },
@@ -263,97 +344,495 @@ const CRAFT_RECIPES: RecipeDef[] = [
     output: { kind: 'food', id: 'food:salted-jerky', name: 'Солёная вяленина', icon: 'recipe-jerky' },
   },
 
-  // --- Кузнечное дело: по рецепту на слот брони и один на руку ---
+  // --- КУЗНЕЧНОЕ ДЕЛО: ЛЕСТНИЦА БЕЗ ДЫР ---
+  //
+  // Было 13, 13, 23, 23, 58 — и тридцать пять уровней молчания в середине.
+  // Стало по вещи на КАЖДУЮ полосу: рецепт есть везде, куда игрок приходит,
+  // и держит это `content:check` правилом, а не вниманием.
+  //
+  // СЛОТЫ ИДУТ ПО ОЧЕРЕДИ. На соседних полосах они разные — иначе три шлема
+  // подряд, и адресность («чиню тот слот, где не повезло») не работает: за
+  // невезучие поножи предлагали бы третью голову.
+  //
+  // УРОВЕНЬ ВЕЩИ — ВЕРХ ЕЁ ПОЛОСЫ, и `unlockLevel` равен ему же. Рецепт
+  // становится осмысленным тогда, когда игрок полосу уже прошёл и знает,
+  // чего ему не хватает; открытый раньше, он обещал бы то, на что нет
+  // реагентов. Сила при этом равна ХОРОШЕЙ НАХОДКЕ той же полосы, не выше —
+  // ценность крафта в адресности, а не в силе (таблица в docs/CRAFT.md).
   {
     id: 'forged-helm',
     name: 'Кованый шлем',
     icon: 'slot-head',
     profession: 'smithing',
+    source: { kind: 'mastery' },
+    unlockLevel: 10,
     inputs: [
-      { materialId: 'quarry-ore', count: 4 },
-      { materialId: 'bog-hide', count: 2 },
+      { materialId: 'quarry-ore', count: 5 },
     ],
     output: {
       kind: 'item',
       slot: 'head',
       rarity: 'uncommon',
-      level: 13,
+      level: 10,
       attribute: 'intellect',
       adjective: 'Кованый',
     },
   },
   {
     id: 'forged-cuirass',
-    name: 'Кованый панцирь',
+    name: 'Бороздовый панцирь',
     icon: 'slot-chest',
     profession: 'smithing',
+    source: { kind: 'mastery' },
+    unlockLevel: 20,
     inputs: [
-      { materialId: 'quarry-ore', count: 6 },
-      { materialId: 'bog-hide', count: 3 },
+      { materialId: 'bog-hide', count: 5 },
+      { materialId: 'furrow-rust', count: 3 },
     ],
     output: {
       kind: 'item',
       slot: 'chest',
       rarity: 'uncommon',
-      level: 13,
+      level: 20,
       attribute: 'vitality',
-      adjective: 'Кованый',
-    },
-  },
-  {
-    id: 'forged-greaves',
-    name: 'Кованые поножи',
-    icon: 'slot-legs',
-    profession: 'smithing',
-    inputs: [
-      { materialId: 'quarry-ore', count: 5 },
-      { materialId: 'ember-shard', count: 1 },
-    ],
-    output: {
-      kind: 'item',
-      slot: 'legs',
-      rarity: 'uncommon',
-      level: 23,
-      attribute: 'strength',
-      adjective: 'Кованый',
+      adjective: 'Бороздовый',
     },
   },
   {
     id: 'forged-fang',
-    name: 'Кованый змеезуб',
+    name: 'Стеклёный змеезуб',
     icon: 'slot-weapon',
     profession: 'smithing',
+    source: { kind: 'mastery' },
+    unlockLevel: 30,
     inputs: [
-      { materialId: 'quarry-ore', count: 6 },
-      { materialId: 'ember-shard', count: 2 },
+      { materialId: 'ember-shard', count: 5 },
+      { materialId: 'glass-sliver', count: 3 },
     ],
     output: {
       kind: 'item',
       slot: 'mainHand',
       rarity: 'uncommon',
-      level: 23,
+      level: 30,
       templateId: 'fang',
-      adjective: 'Кованый',
+      adjective: 'Стеклёный',
+    },
+  },
+  {
+    id: 'forged-greaves',
+    name: 'Штольневые поножи',
+    icon: 'slot-legs',
+    profession: 'smithing',
+    source: { kind: 'mastery' },
+    unlockLevel: 40,
+    inputs: [
+      { materialId: 'shaft-iron', count: 5 },
+      { materialId: 'root-fibre', count: 3 },
+    ],
+    output: {
+      kind: 'item',
+      slot: 'legs',
+      rarity: 'uncommon',
+      level: 40,
+      attribute: 'strength',
+      adjective: 'Штольневый',
     },
   },
   {
     id: 'forged-bulwark',
-    name: 'Кованый заслон',
+    name: 'Ярусный заслон',
     icon: 'slot-offhand',
     profession: 'smithing',
+    source: { kind: 'mastery' },
+    unlockLevel: 50,
     inputs: [
-      { materialId: 'quarry-ore', count: 5 },
-      { materialId: 'rime-salt', count: 2 },
+      { materialId: 'tier-scale', count: 5 },
+      { materialId: 'mould-cap', count: 3 },
     ],
     output: {
       kind: 'item',
       slot: 'offHand',
       rarity: 'uncommon',
-      level: 58,
+      level: 50,
       templateId: 'bulwark',
-      adjective: 'Кованый',
+      adjective: 'Ярусный',
     },
   },
+  {
+    id: 'forged-gauntlets',
+    name: 'Серные рукавицы',
+    icon: 'slot-hands',
+    profession: 'smithing',
+    source: { kind: 'mastery' },
+    unlockLevel: 60,
+    inputs: [
+      { materialId: 'terrace-slag', count: 5 },
+      { materialId: 'sulfur-crust', count: 3 },
+    ],
+    output: {
+      kind: 'item',
+      slot: 'hands',
+      rarity: 'uncommon',
+      level: 60,
+      attribute: 'agility',
+      adjective: 'Серный',
+    },
+  },
+  {
+    id: 'forged-charm',
+    name: 'Перевальный оберег',
+    icon: 'slot-trinket',
+    profession: 'smithing',
+    source: { kind: 'mastery' },
+    unlockLevel: 70,
+    inputs: [
+      { materialId: 'pass-flint', count: 5 },
+      { materialId: 'wormwood-resin', count: 3 },
+    ],
+    output: {
+      kind: 'item',
+      slot: 'trinket',
+      rarity: 'uncommon',
+      level: 70,
+      attribute: 'agility',
+      adjective: 'Перевальный',
+    },
+  },
+  {
+    id: 'forged-crown',
+    name: 'Соляной венец',
+    icon: 'slot-head',
+    profession: 'smithing',
+    source: { kind: 'mastery' },
+    unlockLevel: 80,
+    inputs: [
+      { materialId: 'emery-grit', count: 5 },
+      { materialId: 'rime-salt', count: 3 },
+    ],
+    output: {
+      kind: 'item',
+      slot: 'head',
+      rarity: 'uncommon',
+      level: 80,
+      attribute: 'intellect',
+      adjective: 'Соляной',
+    },
+  },
+  {
+    id: 'forged-carapace',
+    name: 'Стылый панцирь',
+    icon: 'slot-chest',
+    profession: 'smithing',
+    source: { kind: 'mastery' },
+    unlockLevel: 90,
+    inputs: [
+      { materialId: 'crookwood-knot', count: 5 },
+      { materialId: 'hoar-quartz', count: 3 },
+    ],
+    output: {
+      kind: 'item',
+      slot: 'chest',
+      rarity: 'uncommon',
+      level: 90,
+      attribute: 'vitality',
+      adjective: 'Стылый',
+    },
+  },
+  {
+    id: 'forged-cleaver',
+    name: 'Падевый тесак',
+    icon: 'slot-weapon',
+    profession: 'smithing',
+    source: { kind: 'mastery' },
+    unlockLevel: 100,
+    inputs: [
+      { materialId: 'bluff-obsidian', count: 5 },
+      { materialId: 'dell-bloom', count: 3 },
+    ],
+    output: {
+      kind: 'item',
+      slot: 'mainHand',
+      rarity: 'uncommon',
+      level: 100,
+      templateId: 'crusher',
+      adjective: 'Падевый',
+    },
+  },
+
+  // --- ПРОМЕЖУТОЧНЫЕ: ДВА ПЕРЕДЕЛА ВМЕСТО ОДНОГО ---
+  //
+  // С середины лестницы у каждой полосы есть свой передел: обычные реагенты
+  // сплавляются в крицу или слиток, и уже он идёт в лучшую вещь полосы.
+  // Смысл не в лишнем нажатии, а в том, что путь к лучшей вещи становится
+  // ДЛИННЕЕ И ВИДНЕЕ: игрок заранее знает, сколько руды за ним стоит, и
+  // копит осмысленно. Ниже середины передела нет намеренно — там ремесло
+  // ещё учится, и второй шаг был бы налогом на новичка.
+  {
+    id: 'smelt-flood-billet',
+    name: 'Ярусная крица',
+    icon: 'reagent-flood-billet',
+    profession: 'smithing',
+    source: { kind: 'mastery' },
+    unlockLevel: 50,
+    inputs: [
+      { materialId: 'tier-scale', count: 6 },
+      { materialId: 'mould-cap', count: 4 },
+    ],
+    output: { kind: 'reagent', id: 'flood-billet' },
+  },
+  {
+    id: 'smelt-sulfur-billet',
+    name: 'Серный слиток',
+    icon: 'reagent-sulfur-billet',
+    profession: 'smithing',
+    source: { kind: 'mastery' },
+    unlockLevel: 60,
+    inputs: [
+      { materialId: 'terrace-slag', count: 6 },
+      { materialId: 'sulfur-crust', count: 4 },
+    ],
+    output: { kind: 'reagent', id: 'sulfur-billet' },
+  },
+  {
+    id: 'smelt-pass-billet',
+    name: 'Перевальный слиток',
+    icon: 'reagent-pass-billet',
+    profession: 'smithing',
+    source: { kind: 'mastery' },
+    unlockLevel: 70,
+    inputs: [
+      { materialId: 'pass-flint', count: 6 },
+      { materialId: 'wormwood-resin', count: 4 },
+    ],
+    output: { kind: 'reagent', id: 'pass-billet' },
+  },
+  {
+    id: 'smelt-salt-billet',
+    name: 'Соляная крица',
+    icon: 'reagent-salt-billet',
+    profession: 'smithing',
+    source: { kind: 'mastery' },
+    unlockLevel: 80,
+    inputs: [
+      { materialId: 'emery-grit', count: 6 },
+      { materialId: 'rime-salt', count: 4 },
+    ],
+    output: { kind: 'reagent', id: 'salt-billet' },
+  },
+  {
+    id: 'smelt-rime-billet',
+    name: 'Стылый слиток',
+    icon: 'reagent-rime-billet',
+    profession: 'smithing',
+    source: { kind: 'mastery' },
+    unlockLevel: 90,
+    inputs: [
+      { materialId: 'crookwood-knot', count: 6 },
+      { materialId: 'hoar-quartz', count: 4 },
+    ],
+    output: { kind: 'reagent', id: 'rime-billet' },
+  },
+  {
+    id: 'smelt-dell-billet',
+    name: 'Падевая крица',
+    icon: 'reagent-dell-billet',
+    profession: 'smithing',
+    source: { kind: 'mastery' },
+    unlockLevel: 100,
+    inputs: [
+      { materialId: 'bluff-obsidian', count: 6 },
+      { materialId: 'dell-bloom', count: 4 },
+    ],
+    output: { kind: 'reagent', id: 'dell-billet' },
+  },
+
+  // --- ЛУЧШАЯ ВЕЩЬ ПОЛОСЫ: БЕЗ ПОДЗЕМЕЛЬЯ НЕ СОБРАТЬ ---
+  //
+  // Каждая просит БОССОВЫЙ реагент своей полосы, а с середины лестницы — ещё
+  // и промежуточный. Это и есть гейт: сколько ни фарми зону, лучшую вещь
+  // полосы она не даст. Редкость на ступень выше обычной вещи той же полосы,
+  // и это по-прежнему «хорошая находка», а не сверх неё.
+  {
+    id: 'silt-greaves',
+    name: 'Тинные поножи',
+    icon: 'slot-legs',
+    profession: 'smithing',
+    source: { kind: 'boss', dungeonId: 'sunken-barrow', bossId: 'drowned-king' },
+    unlockLevel: 20,
+    inputs: [
+      { materialId: 'reagent-silt-clot', count: 2 },
+      { materialId: 'bog-hide', count: 6 },
+    ],
+    output: {
+      kind: 'item',
+      slot: 'legs',
+      rarity: 'rare',
+      level: 20,
+      attribute: 'vitality',
+      name: 'Тинные поножи',
+    },
+  },
+  {
+    id: 'sinter-gloves',
+    name: 'Спёковые рукавицы',
+    icon: 'slot-hands',
+    profession: 'smithing',
+    source: { kind: 'boss', dungeonId: 'ninth-drift', bossId: 'ninth-master' },
+    unlockLevel: 30,
+    inputs: [
+      { materialId: 'reagent-drift-sinter', count: 2 },
+      { materialId: 'ember-shard', count: 6 },
+    ],
+    output: {
+      kind: 'item',
+      slot: 'hands',
+      rarity: 'rare',
+      level: 30,
+      attribute: 'agility',
+      name: 'Спёковые рукавицы',
+    },
+  },
+  {
+    id: 'sediment-charm',
+    name: 'Осадочный оберег',
+    icon: 'slot-trinket',
+    profession: 'smithing',
+    source: { kind: 'boss', dungeonId: 'tier-cisterns', bossId: 'stillwater-lord' },
+    unlockLevel: 40,
+    inputs: [
+      { materialId: 'reagent-sediment-core', count: 2 },
+      { materialId: 'shaft-iron', count: 6 },
+    ],
+    output: {
+      kind: 'item',
+      slot: 'trinket',
+      rarity: 'rare',
+      level: 40,
+      attribute: 'intellect',
+      name: 'Осадочный оберег',
+    },
+  },
+  {
+    id: 'growth-helm',
+    name: 'Наростный шлем',
+    icon: 'slot-head',
+    profession: 'smithing',
+    source: { kind: 'boss', dungeonId: 'boiling-adits', bossId: 'cauldron-elder' },
+    unlockLevel: 50,
+    inputs: [
+      { materialId: 'reagent-sulfur-growth', count: 2 },
+      { materialId: 'flood-billet', count: 2 },
+    ],
+    output: {
+      kind: 'item',
+      slot: 'head',
+      rarity: 'rare',
+      level: 50,
+      attribute: 'strength',
+      name: 'Наростный шлем',
+    },
+  },
+  {
+    id: 'windglass-mail',
+    name: 'Ветровой панцирь',
+    icon: 'slot-chest',
+    profession: 'smithing',
+    source: { kind: 'boss', dungeonId: 'wind-galleries', bossId: 'booming-herald' },
+    unlockLevel: 60,
+    inputs: [
+      { materialId: 'reagent-wind-glass', count: 2 },
+      { materialId: 'sulfur-billet', count: 2 },
+    ],
+    output: {
+      kind: 'item',
+      slot: 'chest',
+      rarity: 'rare',
+      level: 60,
+      attribute: 'vitality',
+      name: 'Ветровой панцирь',
+    },
+  },
+  {
+    id: 'brine-blade',
+    name: 'Рассольный клинок',
+    icon: 'slot-weapon',
+    profession: 'smithing',
+    source: { kind: 'boss', dungeonId: 'salt-womb', bossId: 'brine-pillar' },
+    unlockLevel: 70,
+    inputs: [
+      { materialId: 'reagent-brine-crystal', count: 2 },
+      { materialId: 'pass-billet', count: 2 },
+    ],
+    output: {
+      kind: 'item',
+      slot: 'mainHand',
+      rarity: 'rare',
+      level: 70,
+      templateId: 'bastard',
+      name: 'Рассольный клинок',
+    },
+  },
+  {
+    id: 'vein-bulwark',
+    name: 'Жильный заслон',
+    icon: 'slot-offhand',
+    profession: 'smithing',
+    source: { kind: 'boss', dungeonId: 'rime-catacombs', bossId: 'glaze-colossus' },
+    unlockLevel: 80,
+    inputs: [
+      { materialId: 'reagent-rime-vein', count: 2 },
+      { materialId: 'salt-billet', count: 2 },
+    ],
+    output: {
+      kind: 'item',
+      slot: 'offHand',
+      rarity: 'rare',
+      level: 80,
+      templateId: 'bulwark',
+      name: 'Жильный заслон',
+    },
+  },
+  {
+    id: 'mute-gloves',
+    name: 'Немые рукавицы',
+    icon: 'slot-hands',
+    profession: 'smithing',
+    source: { kind: 'boss', dungeonId: 'bluff-hollow', bossId: 'bluff-frame' },
+    unlockLevel: 90,
+    inputs: [
+      { materialId: 'reagent-mute-shard', count: 2 },
+      { materialId: 'rime-billet', count: 2 },
+    ],
+    output: {
+      kind: 'item',
+      slot: 'hands',
+      rarity: 'rare',
+      level: 90,
+      attribute: 'strength',
+      name: 'Немые рукавицы',
+    },
+  },
+  {
+    id: 'votive-bulwark',
+    name: 'Обетный заслон',
+    icon: 'slot-offhand',
+    profession: 'smithing',
+    source: { kind: 'world' },
+    unlockLevel: 100,
+    inputs: [
+      { materialId: 'trial-token', count: 2 },
+      { materialId: 'dell-billet', count: 2 },
+    ],
+    output: {
+      kind: 'item',
+      slot: 'offHand',
+      rarity: 'rare',
+      level: 100,
+      templateId: 'bulwark',
+      name: 'Обетный заслон',
+    },
+  },
+
   // --- Травничество: три склянки, три разных ответа на «чего не хватает» ---
   //
   // Числа держит контракт шага 34: ручная игра С зельями к автокасту БЕЗ них
@@ -365,6 +844,7 @@ const CRAFT_RECIPES: RecipeDef[] = [
     name: 'Настой ярости',
     icon: 'potion-fury',
     profession: 'herbalism',
+    source: { kind: 'mastery' },
     inputs: [
       { materialId: 'bitterleaf', count: 2 },
       { materialId: 'emberroot', count: 1 },
@@ -389,6 +869,7 @@ const CRAFT_RECIPES: RecipeDef[] = [
     name: 'Настой ветрокорня',
     icon: 'potion-wind',
     profession: 'herbalism',
+    source: { kind: 'mastery' },
     inputs: [
       { materialId: 'emberroot', count: 2 },
       { materialId: 'hoarbloom', count: 1 },
@@ -413,6 +894,7 @@ const CRAFT_RECIPES: RecipeDef[] = [
     name: 'Настой стылоцвета',
     icon: 'potion-stone',
     profession: 'herbalism',
+    source: { kind: 'mastery' },
     inputs: [
       { materialId: 'hoarbloom', count: 2 },
       { materialId: 'bitterleaf', count: 1 },
@@ -433,41 +915,195 @@ const CRAFT_RECIPES: RecipeDef[] = [
       ],
     },
   },
-  // --- Легендарные уникумы на реагентах ГЕРОИКИ ---
+
+  // --- Травничество: полоса за полосой, а не три склянки на сотню уровней ---
   //
-  // Открываются на сотом: это последняя вещь, которую можно сделать руками, и
-  // добывается она только вторым проходом по лестнице. Реагенты просятся из
-  // РАЗНЫХ героик — одной любимой не обойтись, надо пройти всю лестницу.
+  // Было три зелья без единого уровня на всю игру: механика открывалась на
+  // сороковом и с тех пор не менялась вовсе. Стало по склянке на каждую
+  // полосу травничества (41-100), и РОЛИ У НИХ РАЗНЫЕ — не «то же самое, но
+  // числа больше». Разные роли и есть смысл набора: игрок выбирает, чего ему
+  // не хватает, а не варит самое дорогое.
+  //
+  // Уровень у каждой проставлен ЯВНО (`unlockLevel`). Раньше он считался по
+  // мельчайшей зоне входов и совпадал у всех трёх: три склянки открывались
+  // разом и больше не появлялось ничего.
   {
-    id: 'relic-fang',
-    name: 'Реликтовый змеезуб',
-    icon: 'recipe-relic-blade',
-    profession: 'smithing',
-    unlockLevel: LEVEL_CAP,
+    id: 'stoneheart-draught',
+    name: 'Каменное сердце',
+    icon: 'potion-stone',
+    profession: 'herbalism',
+    source: { kind: 'mastery' },
+    unlockLevel: 60,
+    // ТРАВЫ БЕРУТСЯ ТЕ, ЧТО РАСТУТ НА ЭТОЙ ПОЛОСЕ. Стылоцвет пропускает
+    // серную полосу намеренно (у каждой травы своя пропущенная зона), и
+    // рецепт на нём был бы недостижим ровно там, где открывается.
     inputs: [
-      { materialId: 'reagent-mute-stone', count: 2 },
-      { materialId: 'reagent-seething-coal', count: 3 },
-      { materialId: 'ember-shard', count: 8 },
+      { materialId: 'emberroot', count: 2 },
+      { materialId: 'bitterleaf', count: 2 },
     ],
     output: {
-      kind: 'item',
-      slot: 'mainHand',
-      rarity: 'legendary',
-      level: 100,
-      templateId: 'fang',
-      adjective: 'Реликтовый',
+      kind: 'potion',
+      id: 'potion:stoneheart-draught',
+      name: 'Каменное сердце',
+      icon: 'potion-stone',
+      durationSec: POTION_DURATION_SEC,
+      // РОЛЬ: возврат ресурса. Ни урона, ни живучести — только мана, и
+      // поэтому склянка осмысленна ровно там, где ротация упирается в неё.
+      mods: [{ stat: 'manaRegen', kind: 'flat', value: new Decimal(1.6) }],
     },
   },
   {
-    id: 'relic-cuirass',
-    name: 'Реликтовый панцирь',
+    id: 'sureguard-draught',
+    name: 'Твёрдый заслон',
+    icon: 'potion-wind',
+    profession: 'herbalism',
+    source: { kind: 'mastery' },
+    unlockLevel: 70,
+    inputs: [
+      { materialId: 'bitterleaf', count: 2 },
+      { materialId: 'hoarbloom', count: 2 },
+    ],
+    output: {
+      kind: 'potion',
+      id: 'potion:sureguard-draught',
+      name: 'Твёрдый заслон',
+      icon: 'potion-wind',
+      durationSec: POTION_DURATION_SEC,
+      // РОЛЬ СИТУАТИВНАЯ: снижение входящего. В зоне оно почти не нужно —
+      // герой и так не гибнет; перед подземельем оно решает схватку, где
+      // босс снимает четыре пятых запаса.
+      mods: [{ stat: 'damageReduction', kind: 'flat', value: new Decimal(0.08) }],
+    },
+  },
+  {
+    id: 'keeneye-draught',
+    name: 'Острый глаз',
+    icon: 'potion-fury',
+    profession: 'herbalism',
+    source: { kind: 'mastery' },
+    unlockLevel: 80,
+    inputs: [
+      { materialId: 'emberroot', count: 2 },
+      { materialId: 'bitterleaf', count: 2 },
+    ],
+    output: {
+      kind: 'potion',
+      id: 'potion:keeneye-draught',
+      name: 'Острый глаз',
+      icon: 'potion-fury',
+      durationSec: POTION_DURATION_SEC,
+      // РОЛЬ: критический удар. Отличается от «урона» тем, что множит
+      // всплески, а не ровный поток, — и потому по-разному ложится на
+      // сборки с большим и малым замахом.
+      mods: [{ stat: 'critChance', kind: 'flat', value: new Decimal(0.07) }],
+    },
+  },
+
+  // --- Двухпередельные настои: верхние полосы ---
+  //
+  // Тот же приём, что у кузнечного: травы сперва сводятся в вытяжку, и уже
+  // она идёт в настой. Появляется только на двух верхних полосах — там, где
+  // у игрока уже есть и травы, и повод возиться.
+  {
+    id: 'distil-rime-extract',
+    name: 'Стылая вытяжка',
+    icon: 'reagent-rime-extract',
+    profession: 'herbalism',
+    source: { kind: 'mastery' },
+    unlockLevel: 90,
+    inputs: [
+      { materialId: 'hoarbloom', count: 4 },
+      { materialId: 'bitterleaf', count: 3 },
+    ],
+    output: { kind: 'reagent', id: 'rime-extract' },
+  },
+  {
+    id: 'rimeguard-draught',
+    name: 'Стылая броня',
+    icon: 'potion-stone',
+    profession: 'herbalism',
+    source: { kind: 'world' },
+    unlockLevel: 90,
+    inputs: [
+      { materialId: 'rime-extract', count: 1 },
+      { materialId: 'emberroot', count: 2 },
+    ],
+    output: {
+      kind: 'potion',
+      id: 'potion:rimeguard-draught',
+      name: 'Стылая броня',
+      icon: 'potion-stone',
+      durationSec: POTION_DURATION_SEC,
+      // РОЛЬ: живучесть запасом, а не снижением. Второй ответ на тот же
+      // вопрос, и оба нужны: снижение работает против крупных ударов, запас
+      // против длинной череды мелких.
+      mods: [{ stat: 'maxHp', kind: 'percent', value: new Decimal(0.12) }],
+    },
+  },
+  {
+    id: 'distil-dell-extract',
+    name: 'Падевая вытяжка',
+    icon: 'reagent-dell-extract',
+    profession: 'herbalism',
+    source: { kind: 'mastery' },
+    unlockLevel: 100,
+    inputs: [
+      { materialId: 'bitterleaf', count: 4 },
+      { materialId: 'emberroot', count: 3 },
+    ],
+    output: { kind: 'reagent', id: 'dell-extract' },
+  },
+  {
+    id: 'lastbreath-draught',
+    name: 'Последний вдох',
+    icon: 'potion-fury',
+    profession: 'herbalism',
+    source: { kind: 'world' },
+    unlockLevel: 100,
+    inputs: [
+      { materialId: 'dell-extract', count: 1 },
+      { materialId: 'hoarbloom', count: 2 },
+    ],
+    output: {
+      kind: 'potion',
+      id: 'potion:lastbreath-draught',
+      name: 'Последний вдох',
+      icon: 'potion-fury',
+      durationSec: POTION_DURATION_SEC,
+      // РОЛЬ СИТУАТИВНАЯ, вторая: восстановление после смерти. Реген
+      // здоровья не двигает ни темп, ни цену боя, но сокращает возвращение
+      // в строй — то есть работает ровно тогда, когда всё остальное уже нет.
+      mods: [{ stat: 'hpRegen', kind: 'flat', value: new Decimal(4) }],
+    },
+  },
+  // --- ЛЕГЕНДАРНАЯ СБОРКА: одна вещь вместо трёх, и она не «сильнее» ---
+  //
+  // ЧТО БЫЛО. Три «реликтовых» уникума на героических реагентах: змеезуб,
+  // панцирь и оберег, по два-четыре реагента каждый. Отличались они от редкой
+  // вещи своего уровня ровно величиной чисел — тем же самым, только больше, —
+  // и планировать их заранее было незачем: любая из трёх собиралась из своей
+  // пары данжей, а восьмая ступень лестницы для них не требовалась вовсе.
+  //
+  // ЧТО СТАЛО. Одна сборка, и она требует ВОСЕМЬ ИМЕННЫХ РЕАГЕНТОВ — по
+  // одному с последнего босса каждой из восьми героик — плюс верхний передел
+  // кузнечного. Пропустить нельзя ни одну: любимой парой данжей её не собрать.
+  //
+  // И ГЛАВНОЕ: СИЛЫ ОНА НЕ ДОБАВЛЯЕТ. Свойство (`data/boons.ts`) оплачено
+  // долей её собственных статов, сумма нулевая, и держит это отдельная строка
+  // в бюджете силы. Вещь не сильнее легендарки своего уровня — она ДРУГАЯ:
+  // переводит статы в аптайм через лечение.
+  {
+    id: 'assembly-eight-locks',
+    name: 'Панцирь восьми затворов',
     icon: 'recipe-relic-plate',
     profession: 'smithing',
+    // Рецепт — редкая мировая находка: последняя вещь, которую делают руками,
+    // и знать о ней заранее незачем.
+    source: { kind: 'world' as const },
     unlockLevel: LEVEL_CAP,
     inputs: [
-      { materialId: 'reagent-rime-core', count: 2 },
-      { materialId: 'reagent-brine-druse', count: 3 },
-      { materialId: 'quarry-ore', count: 10 },
+      ...HEROIC_REAGENT_IDS.map((materialId) => ({ materialId, count: 1 })),
+      { materialId: 'dell-billet', count: 2 },
     ],
     output: {
       kind: 'item',
@@ -475,28 +1111,8 @@ const CRAFT_RECIPES: RecipeDef[] = [
       rarity: 'legendary',
       level: 100,
       attribute: 'vitality',
-      adjective: 'Реликтовый',
-    },
-  },
-  {
-    id: 'relic-charm',
-    name: 'Реликтовый оберег',
-    icon: 'recipe-relic-charm',
-    profession: 'smithing',
-    unlockLevel: LEVEL_CAP,
-    inputs: [
-      { materialId: 'reagent-drowned-whorl', count: 2 },
-      { materialId: 'reagent-booming-whirl', count: 2 },
-      { materialId: 'reagent-bottom-tear', count: 2 },
-      { materialId: 'reagent-drift-charge', count: 2 },
-    ],
-    output: {
-      kind: 'item',
-      slot: 'trinket',
-      rarity: 'legendary',
-      level: 100,
-      attribute: 'agility',
-      adjective: 'Реликтовый',
+      name: 'Панцирь восьми затворов',
+      boonId: 'eight-locks',
     },
   },
   // --- Награды Храма испытаний: открываются рубежами волн, а не материалами ---
@@ -508,6 +1124,7 @@ const CRAFT_RECIPES: RecipeDef[] = [
     name: 'Храмовый наруч',
     icon: 'slot-hands',
     profession: 'smithing',
+    source: { kind: 'temple' },
     inputs: [
       { materialId: 'rime-salt', count: 4 },
       { materialId: 'bog-hide', count: 3 },
@@ -526,6 +1143,7 @@ const CRAFT_RECIPES: RecipeDef[] = [
     name: 'Храмовый шлем',
     icon: 'slot-head',
     profession: 'smithing',
+    source: { kind: 'temple' },
     inputs: [
       { materialId: 'rime-salt', count: 6 },
       { materialId: 'ember-shard', count: 4 },
@@ -544,6 +1162,7 @@ const CRAFT_RECIPES: RecipeDef[] = [
     name: 'Храмовый амулет',
     icon: 'slot-trinket',
     profession: 'smithing',
+    source: { kind: 'temple' },
     inputs: [
       { materialId: 'ember-shard', count: 8 },
       { materialId: 'rime-salt', count: 8 },
@@ -565,6 +1184,7 @@ const CRAFT_RECIPES: RecipeDef[] = [
     name: 'Венец испытаний',
     icon: 'slot-head',
     profession: 'smithing',
+    source: { kind: 'temple' },
     inputs: [
       { materialId: 'trial-token', count: 1 },
       { materialId: 'rime-salt', count: 12 },
@@ -602,6 +1222,11 @@ export const UNIQUE_RECIPES: RecipeDef[] = DUNGEONS.map((dungeon) => {
     name: relic.name,
     icon: relic.icon,
     profession: 'relics' as const,
+    // РЕЛИКВАРИЙ ОСТАЁТСЯ ПРОСТЫМ — как и кулинария, и это решение, а не
+    // недоделка: восемь именных вещей по реагентам подземелий не образуют
+    // лестницы, вдоль которой можно расти. Рецепт известен, гейт — сами
+    // реагенты: пять полных прохождений своего данжа.
+    source: { kind: 'basic' as const },
     unlockLevel: UNIQUE_RECIPE_LEVEL,
     inputs: [{ materialId: dungeon.reagentId, count: RELIC_REAGENT_COST }],
     output: {
@@ -623,6 +1248,112 @@ export const RECIPES: RecipeDef[] = [...CRAFT_RECIPES, ...UNIQUE_RECIPES]
 export const RECIPE_BY_ID: Record<string, RecipeDef> = Object.fromEntries(
   RECIPES.map((r) => [r.id, r]),
 )
+
+/**
+ * Кто делает этот промежуточный реагент. Нужен ровно одному вопросу — «во
+ * сколько сырья обходится вещь на переделе»: без него игрок видит «крица ×2»
+ * и не знает, что за ней стоят двенадцать чешуек и восемь шляпок.
+ */
+/**
+ * НАСКОЛЬКО ГЛУБОКОЙ БЫВАЕТ ЦЕПОЧКА ПЕРЕДЕЛОВ. Сейчас их два («сырьё →
+ * крица → вещь»), запас взят вчетверо: развёртка полной цены обязана
+ * кончаться при ЛЮБЫХ данных, в том числе при закольцованной цепочке,
+ * которую кто-то опишет по ошибке. Сам цикл ловит content:check, но у
+ * функции не должно быть способа зациклиться.
+ */
+export const RAW_COST_MAX_DEPTH = 4
+
+export const RECIPE_BY_REAGENT: Record<string, RecipeDef> = Object.fromEntries(
+  RECIPES.filter((r) => r.output.kind === 'reagent').map((r) => [
+    (r.output as ReagentOutput).id,
+    r,
+  ]),
+)
+
+
+// ---------------------------------------------------------------------------
+// ИСТОЧНИКИ: где рецепт лежит и чем он открывается
+// ---------------------------------------------------------------------------
+
+/**
+ * ПОРОГ МАСТЕРСТВА, С КОТОРОГО РЕЦЕПТ СТАНОВИТСЯ ИЗВЕСТЕН, — ВЫВЕДЕННЫЙ, А НЕ
+ * НАЗНАЧЕННЫЙ.
+ *
+ * Правило одно: рецепт полосы открывается ПОТОЛКОМ ПРЕДЫДУЩЕЙ полосы этой же
+ * профессии. То есть «доучил полосу — открылась следующая»: пять крафтов на
+ * ступень, ровно та цена, под которую посчитан `MASTERY_PER_CRAFT`.
+ *
+ * Числом в данных этот порог держать нельзя. Порог мастерства и уровень
+ * рецепта — про одно и то же место лестницы, и, записанные врозь, они
+ * разъезжаются на первой же перестановке рецепта.
+ *
+ * ПРЕДЫДУЩАЯ ПОЛОСА СЧИТАЕТСЯ ПО САМОЙ ПРОФЕССИИ, а не по всей лестнице
+ * полос. Травничество начинается с сорок первого уровня, и порог «потолок
+ * полосы 31-40» был бы для него недостижим: мастерство растёт только
+ * крафтом, а крафтить на той полосе травнику нечего.
+ */
+let MASTERY_KNOW: Record<string, number> | null = null
+
+function masteryThresholds(): Record<string, number> {
+  if (MASTERY_KNOW) return MASTERY_KNOW
+  const out: Record<string, number> = {}
+  for (const profession of PROFESSIONS) {
+    const ladder = RECIPES.filter(
+      (r) => r.profession === profession.id && r.source.kind === 'mastery',
+    ).sort((a, b) => recipeLevel(a) - recipeLevel(b))
+    const bands: BandId[] = []
+    for (const recipe of ladder) {
+      const band = bandForLevel(recipeLevel(recipe)).id
+      if (!bands.includes(band)) bands.push(band)
+    }
+    for (const recipe of ladder) {
+      const index = bands.indexOf(bandForLevel(recipeLevel(recipe)).id)
+      out[recipe.id] = index <= 0 ? 0 : masteryCeilingForBand(bands[index - 1])
+    }
+  }
+  MASTERY_KNOW = out
+  return out
+}
+
+/** Сколько мастерства нужно, чтобы знать рецепт. Не из лестницы — ноль. */
+export function masteryToKnow(recipe: RecipeDef): number {
+  return masteryThresholds()[recipe.id] ?? 0
+}
+
+/** Ключ «босс такого-то данжа»: один босс — один рецепт, это держит content:check. */
+export function bossKey(dungeonId: string, bossId: string): string {
+  return `${dungeonId}:${bossId}`
+}
+
+const RECIPE_BY_BOSS: Record<string, RecipeDef> = Object.fromEntries(
+  RECIPES.filter((r) => r.source.kind === 'boss').map((r) => [
+    bossKey(
+      (r.source as Extract<RecipeSource, { kind: 'boss' }>).dungeonId,
+      (r.source as Extract<RecipeSource, { kind: 'boss' }>).bossId,
+    ),
+    r,
+  ]),
+)
+
+/** Какой рецепт роняет этот босс. null — никакой, и это обычный случай. */
+export function bossRecipe(dungeonId: string, bossId: string): RecipeDef | null {
+  return RECIPE_BY_BOSS[bossKey(dungeonId, bossId)] ?? null
+}
+
+/**
+ * Мировые рецепты полосы. Считается один раз: перебирать полсотни рецептов
+ * на каждое убийство — платить за то, что не меняется никогда.
+ */
+const WORLD_BY_BAND: Record<string, RecipeDef[]> = {}
+for (const recipe of RECIPES) {
+  if (recipe.source.kind !== 'world') continue
+  const band = bandForLevel(recipeLevel(recipe)).id
+  WORLD_BY_BAND[band] = [...(WORLD_BY_BAND[band] ?? []), recipe]
+}
+
+export function worldRecipesInBand(band: BandId): RecipeDef[] {
+  return WORLD_BY_BAND[band] ?? []
+}
 
 /** Уровень открытия рецепта. Одно место, где живёт умолчание. */
 /**

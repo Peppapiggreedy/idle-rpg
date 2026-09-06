@@ -14,6 +14,7 @@ import type { StatId } from '../../../game/stats'
 import type { SlotId } from '../../slots'
 import { CLASS_BY_ID, type ClassDef } from '../../classes'
 import type { ShieldTemplate, WeaponTemplate } from '../../items'
+import { masteryToKnow, type RecipeDef } from '../../recipes'
 import { realContent } from '../content'
 import type { Content } from '../schema'
 
@@ -27,9 +28,65 @@ function first<T>(list: readonly T[]): T {
   return list[0]
 }
 
-/** Первый ДОБЫВАЕМЫЙ материал: у материала-награды свои правила. */
-function minedMaterial(real: Content) {
-  return real.materials.find((m) => m.award === undefined) ?? first(real.materials)
+/** Реагент последнего подземелья: у него источник — данж, а не храм. */
+function lastDungeonReagent(real: Content) {
+  const fromDungeons = real.reagents.filter((r) => r.source?.kind === 'dungeon')
+  return fromDungeons[fromDungeons.length - 1] ?? first(real.reagents)
+}
+
+/** Первый ОБЫЧНЫЙ реагент: у боссового и промежуточного свои правила. */
+function commonReagent(real: Content) {
+  return real.reagents.find((r) => r.role === 'common') ?? first(real.reagents)
+}
+
+/** Первый БОССОВЫЙ реагент подземелья: на нём видно разъезд роли и источника. */
+function bossReagent(real: Content) {
+  return (
+    real.reagents.find((r) => r.role === 'boss' && r.source?.kind === 'dungeon') ??
+    first(real.reagents)
+  )
+}
+
+/** Самый глубокий обычный реагент — им ломается правило «не глубже своей полосы». */
+function deepestCommon(real: Content) {
+  const commons = real.reagents.filter((r) => r.role === 'common')
+  return commons[commons.length - 1] ?? first(real.reagents)
+}
+
+/** Рецепт, который роняет последний босс первого подземелья. */
+function bossRecipeId(real: Content): string {
+  const last = first(real.dungeons).bosses[first(real.dungeons).bosses.length - 1]
+  const found = real.recipes.find(
+    (r) => r.source.kind === 'boss' && r.source.bossId === last.id,
+  )
+  return (found ?? first(real.recipes)).id
+}
+
+/** Первая ступень лестницы мастерства: та, что открыта с нулевого мастерства. */
+function firstMasteryId(real: Content): string {
+  const found = real.recipes.find(
+    (r) => r.source.kind === 'mastery' && masteryToKnow(r as RecipeDef) === 0,
+  )
+  return (found ?? first(real.recipes)).id
+}
+
+/**
+ * Самый мелкий рецепт ВЕЩИ: в него и подставляется слишком глубокий вход.
+ *
+ * Именно вещи, а не еды: у расходника уровень СЧИТАЕТСЯ ПО ВХОДАМ, поэтому
+ * глубокий вход утащил бы за собой и уровень рецепта — нарушения не вышло бы
+ * вовсе. У вещи уровень записан прямо (`output.level`) и от входов не
+ * зависит; ровно на такой паре правило и ломается в живой игре.
+ */
+function shallowRecipe(real: Content) {
+  const items = real.recipes.filter((r) => r.output.kind === 'item')
+  return (
+    [...items].sort(
+      (a, b) =>
+        (a.output.kind === 'item' ? a.output.level : 0) -
+        (b.output.kind === 'item' ? b.output.level : 0),
+    )[0] ?? first(real.recipes)
+  )
 }
 
 /** Зона с самой высокой полосой мобов: в неё удобно «ошибочно» ставить вход. */
@@ -213,17 +270,6 @@ export function brokenCases(): BrokenCase[] {
         }),
       },
       expect: [real.zones[1].id, 'налезает', 'data/zones.ts'],
-    },
-    {
-      title: 'в зоне не падает ни одного материала: ремёсла в ней мертвы',
-      content: {
-        ...real,
-        materials: real.materials.map((m) => ({
-          ...m,
-          zoneIds: m.zoneIds.filter((id) => id !== real.zones[1].id),
-        })),
-      },
-      expect: [real.zones[1].id, 'материал', 'data/materials.ts'],
     },
     {
       title: 'скорость оружия ушла в ноль',
@@ -518,25 +564,74 @@ export function brokenCases(): BrokenCase[] {
           inputs: [{ materialId: 'нет-такого', count: 1 }],
         }),
       },
-      expect: [first(real.recipes).id, 'нет-такого', 'data/materials.ts'],
+      expect: [first(real.recipes).id, 'нет-такого', 'data/reagents.ts'],
     },
     {
-      title: 'материал не падает ни в одной зоне — рецепты с ним недостижимы',
+      // ПЯТЬ ПОЛОМОК ПРО РОЛИ И ПОЛОСЫ РЕАГЕНТОВ. Каждая — одно из правил
+      // стадии «реагенты встают на полосы»: без битого образца правило
+      // остаётся обещанием, а не проверкой.
+      title: 'реагент стоит на полосе, которой нет',
       content: {
         ...real,
-        // Берём ДОБЫВАЕМЫЙ материал: у материала-награды пустой список зон
-        // законен, и поломка на нём не показала бы ничего.
-        materials: patch(real.materials, minedMaterial(real).id, { zoneIds: [] }),
+        reagents: patch(real.reagents, commonReagent(real).id, {
+          band: 'нет-полосы' as never,
+        }),
       },
-      expect: [minedMaterial(real).id, 'не падает ни в одной зоне'],
+      expect: [commonReagent(real).id, 'нет-полосы'],
     },
     {
-      title: 'материал падает в зоне, которой нет',
+      title: 'обычный реагент без веса рулетки — не выпадет никогда',
       content: {
         ...real,
-        materials: patch(real.materials, first(real.materials).id, { zoneIds: ['нет-зоны'] }),
+        reagents: patch(real.reagents, commonReagent(real).id, { weight: undefined }),
       },
-      expect: [first(real.materials).id, 'нет-зоны'],
+      expect: [commonReagent(real).id, 'без веса рулетки'],
+    },
+    {
+      title: 'обычный реагент роняет босс подземелья — роль и источник разошлись',
+      content: {
+        ...real,
+        reagents: patch(real.reagents, bossReagent(real).id, {
+          role: 'common',
+          weight: 5,
+          source: undefined,
+        }),
+      },
+      expect: [bossReagent(real).id, 'роняет босс подземелья'],
+    },
+    {
+      title: 'боссовый реагент без источника: непонятно, кто его роняет',
+      content: {
+        ...real,
+        reagents: patch(real.reagents, bossReagent(real).id, { source: undefined }),
+      },
+      expect: [bossReagent(real).id, 'без источника'],
+    },
+    {
+      title: 'промежуточный реагент выпадает — второй передел стал необязательным',
+      content: {
+        ...real,
+        reagents: patch(real.reagents, commonReagent(real).id, { role: 'crafted' }),
+      },
+      expect: [commonReagent(real).id, 'не выпадает'],
+    },
+    {
+      title: 'полоса без обычного реагента — ремёсла на этой глубине мертвы',
+      content: {
+        ...real,
+        reagents: real.reagents.filter((r) => r.band !== commonReagent(real).band),
+      },
+      expect: [commonReagent(real).band, 'ни один обычный реагент'],
+    },
+    {
+      title: 'рецепт просит реагент полосы глубже своей — собрать его нельзя',
+      content: {
+        ...real,
+        recipes: patch(real.recipes, shallowRecipe(real).id, {
+          inputs: [{ materialId: deepestCommon(real).id, count: 1 }],
+        }),
+      },
+      expect: [shallowRecipe(real).id, 'лежит глубже'],
     },
     {
       title: 'трава не растёт ни в одной зоне — зелья с ней недостижимы',
@@ -1156,10 +1251,13 @@ export function brokenCases(): BrokenCase[] {
       title: 'реагент, которого не роняет ни один данж',
       content: {
         ...real,
-        dungeons: real.dungeons.filter((d) => d.id !== real.dungeons[real.dungeons.length - 1].id),
+        // Убираем ПОСЛЕДНИЙ данж — его реагент остаётся без источника.
+        // Берём именно подземельный реагент: у храмового источник другой,
+        // и поломка на нём показала бы не то правило.
+        dungeons: real.dungeons.filter((d) => d.reagentId !== lastDungeonReagent(real).id),
       },
       expect: [
-        real.reagents[real.reagents.length - 1].id,
+        lastDungeonReagent(real).id,
         'не роняет ни один данж',
         'data/dungeons.ts',
       ],
@@ -1511,6 +1609,95 @@ export function brokenCases(): BrokenCase[] {
         ),
       },
       expect: ['покупка', 'прибавка к сумке'],
+    },
+    // --- ЧЕТЫРЕ ПОЛОМКИ ПРО ИСТОЧНИКИ РЕЦЕПТОВ ---
+    //
+    // Стадия «рецепт становится добычей» завела четыре правила, и без битого
+    // образца каждое из них — просто строчка кода, которая, может быть, что-то
+    // проверяет.
+    {
+      title: 'у рецепта нет источника — взять его неоткуда',
+      content: {
+        ...real,
+        recipes: patch(real.recipes, first(real.recipes).id, {
+          source: undefined as unknown as (typeof real.recipes)[number]['source'],
+        }),
+      },
+      expect: [first(real.recipes).id, 'источник не назван'],
+    },
+    {
+      title: 'рецепт падает не с последнего босса цепочки',
+      content: {
+        ...real,
+        recipes: patch(real.recipes, bossRecipeId(real), {
+          source: {
+            kind: 'boss' as const,
+            dungeonId: first(real.dungeons).id,
+            bossId: first(real.dungeons).bosses[0].id,
+          },
+        }),
+      },
+      expect: [bossRecipeId(real), 'не с последнего'],
+    },
+    {
+      title: 'один босс назначен источником для двух рецептов',
+      content: {
+        ...real,
+        recipes: patch(real.recipes, first(real.recipes).id, {
+          source: real.recipes.find((r) => r.source.kind === 'boss')!.source,
+        }),
+      },
+      expect: ['назначен источником сразу'],
+    },
+    {
+      title: 'у последнего босса подземелья нет своего рецепта',
+      content: {
+        ...real,
+        recipes: real.recipes.filter((r) => r.id !== bossRecipeId(real)),
+      },
+      expect: ['не роняет ни одного рецепта'],
+    },
+    {
+      title: 'лестница мастерства не начинается с нуля',
+      content: {
+        ...real,
+        // Убираем ПЕРВУЮ ступень профессии: остальные требуют мастерства,
+        // а расти теперь не на чем — профессия заперта сама на себя.
+        recipes: real.recipes.filter((r) => r.id !== firstMasteryId(real)),
+      },
+      expect: ['учить не на чем'],
+    },
+    // --- ТРИ ПОЛОМКИ ПРО СВОЙСТВО СБОРКИ ---
+    //
+    // Правило одно: свойство правит умение и ОПЛАЧЕНО статами вещи. Ломается
+    // оно с трёх сторон — некому платить, нечем платить, некого править.
+    {
+      title: 'свойство сборки правит несуществующее умение',
+      content: {
+        ...real,
+        boons: patch(real.boons, first(real.boons).id, { abilityId: 'нет-такого-умения' }),
+      },
+      expect: [first(real.boons).id, 'нет-такого-умения'],
+    },
+    {
+      title: 'свойство сборки достаётся даром',
+      content: {
+        ...real,
+        boons: patch(real.boons, first(real.boons).id, { statShare: 0 }),
+      },
+      expect: [first(real.boons).id, 'statShare'],
+    },
+    {
+      title: 'свойство сборки не носит ни один рецепт',
+      content: {
+        ...real,
+        recipes: real.recipes.map((r) =>
+          r.output.kind === 'item' && r.output.boonId
+            ? { ...r, output: { ...r.output, boonId: undefined } }
+            : r,
+        ),
+      },
+      expect: ['не несёт ни один рецепт'],
     },
   ]
 }

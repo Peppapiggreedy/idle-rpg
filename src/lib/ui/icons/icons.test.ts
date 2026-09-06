@@ -6,14 +6,13 @@ import { SLOT_ICONS, SLOT_IDS } from '../../data/slots'
 import { STAT_ICONS } from '../../data/stats'
 import { TALENTS } from '../../data/talents'
 import { CLASSES } from '../../data/classes'
-import { MATERIALS } from '../../data/materials'
+import { REAGENTS } from '../../data/reagents'
 import { HERBS } from '../../data/herbs'
 import { ENCHANTS } from '../../data/enchants'
 import { PROCS } from '../../data/procs'
 import { BOSS_ABILITIES, HEROIC } from '../../data/heroic'
 import { TEMPLES } from '../../data/temple'
 import { QUESTS } from '../../data/quests'
-import { REAGENTS } from '../../data/reagents'
 import { PROFESSIONS, RECIPES } from '../../data/recipes'
 import { PROGRESSION } from '../../data/progression'
 import { ZONES } from '../../data/zones'
@@ -31,7 +30,6 @@ const used: IconName[] = [
   ...SLOT_IDS.map((s) => SLOT_ICONS[s]),
   ...Object.values(STAT_ICONS),
   ...CLASSES.map((c) => c.icon),
-  ...MATERIALS.map((m) => m.icon),
   ...REAGENTS.map((r) => r.icon),
   ...PROGRESSION.map((s) => s.icon),
   ...PROFESSIONS.map((p) => p.icon),

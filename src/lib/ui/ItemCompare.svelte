@@ -16,6 +16,7 @@
   import { RARITY_BY_ID } from '../data/rarity'
   import { itemSlotLabel } from './itemText'
   import EnchantLine from './EnchantLine.svelte'
+  import BoonLine from './BoonLine.svelte'
   import ItemMods from './ItemMods.svelte'
   import { rarityStyle } from './kit'
   import type { Item } from '../types'
@@ -149,6 +150,7 @@
   <div class="own">
     <ItemMods mods={item.mods} />
     <EnchantLine {item} separated />
+    <BoonLine {item} separated />
   </div>
 </div>
 

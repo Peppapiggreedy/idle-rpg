@@ -22,6 +22,7 @@ import { createRng, randomSeed } from './rng'
 import { TEMPLE, TEMPLE_BY_ID } from '../data/temple'
 import { advancePotions, gatherHerbs } from './potions'
 import { ENCHANT_BY_ID } from '../data/enchants'
+import { BOON_BY_ID } from '../data/boons'
 import { PROC_BY_ID } from '../data/procs'
 import { ensureStats, STAT_IDS, type ModifierKind, type StatId, type StatModifier } from './stats'
 import { SLOT_IDS, type SlotId } from '../data/slots'
@@ -44,8 +45,22 @@ import {
 } from '../data/balance'
 import { ABILITIES, ABILITY_BY_ID } from '../data/abilities'
 import { CLASS_BY_ID, DEFAULT_CLASS, classById } from '../data/classes'
-import { MATERIAL_BY_ID } from '../data/materials'
-import { FOOD_BY_ID, POTION_RECIPE_BY_ID, isBagId } from '../data/recipes'
+import { REAGENT_BY_ID } from '../data/reagents'
+import {
+  MASTERY_MAX,
+  MASTERY_PROFESSIONS,
+  hasMastery,
+  masteryFromLevel,
+} from '../data/mastery'
+import type { ProfessionId } from '../data/recipes'
+import {
+  FOOD_BY_ID,
+  POTION_RECIPE_BY_ID,
+  RECIPE_BY_ID,
+  RECIPES,
+  isBagId,
+  recipeUnlockLevel,
+} from '../data/recipes'
 import { BRANCHES, TALENT_BY_ID, talentsInBranch, talentsOfClass } from '../data/talents'
 import {
   ALL_DUNGEONS,
@@ -101,7 +116,7 @@ const OFFLINE_LOOT_SALT = 0x9e37_79b9
 /** Все хваты одним списком: сейв принимает только их. */
 const GRIPS: Grip[] = ['one', 'two', 'shield']
 
-export const SAVE_VERSION = 30
+export const SAVE_VERSION = 32
 
 /**
  * ТАЛАНТЫ, УДАЛЁННЫЕ ИЗ ДЕРЕВА, — списком и с причиной.
@@ -149,6 +164,8 @@ export interface SavedItem {
   enchantId?: string
   /** Прок вещи. Нет поля — прока нет. */
   procId?: string
+  /** Свойство сборки. Нет поля — свойства нет. */
+  boonId?: string
   mods: SavedModifier[]
 }
 
@@ -186,8 +203,24 @@ export interface SavePayloadV21 {
    * поднимут `SAVE_VERSION` — тип поедет следом сам.
    */
   version: typeof SAVE_VERSION
-  /** Мешок: материалы, травы, еда и склянки — id -> количество строкой. */
+  /** Мешок: реагенты, травы, еда и склянки — id -> количество строкой. */
   materials: Record<string, string>
+  /**
+   * Мастерство по профессиям, 0..100. Числами, а не строками: величина
+   * ограничена сотней и растущей не бывает. Профессии без шкалы в объекте
+   * не появляются вовсе.
+   */
+  mastery: Record<string, number>
+  /**
+   * ВЫУЧЕННЫЕ РЕЦЕПТЫ — списком id, а не объектом с true: в сейве это
+   * множество, и вторая форма записи того же множества («выучен: false»)
+   * породила бы вопрос, чем оно отличается от отсутствия ключа.
+   *
+   * Лежат тут ТОЛЬКО боссовые и мировые. Ступень мастерства и рубеж храма
+   * выводятся из своих счётчиков, и записывать их вторым следом нельзя —
+   * следы разъезжаются.
+   */
+  knownRecipeIds: string[]
   /** Пыль зачарования: величина растущая, поэтому строкой. */
   enchantDust: string
   /** Идентификатор игры: из него и из даты считается сид забега по храму.
@@ -321,6 +354,7 @@ function savedFromItem(item: Item): SavedItem {
     ...(item.grip ? { grip: item.grip } : {}),
     ...(item.enchantId ? { enchantId: item.enchantId } : {}),
     ...(item.procId ? { procId: item.procId } : {}),
+    ...(item.boonId ? { boonId: item.boonId } : {}),
     mods: item.mods.map((m) => ({
       stat: m.stat,
       kind: m.kind,
@@ -379,6 +413,16 @@ export function payloadFromState(state: GameState, lastTimestamp: number): SaveP
         .filter(([, count]) => count.gt(0))
         .map(([id, count]) => [id, count.toString()]),
     ),
+    // Нулевое мастерство в сейв не пишем: «не начинал» и «сбросилось в ноль»
+    // выглядят одинаково, а отсутствие ключа читается однозначно.
+    mastery: Object.fromEntries(
+      Object.entries(state.mastery).filter(([, value]) => value > 0),
+    ),
+    // Чужой id в список не попадает: рецепт мог быть переименован или убран,
+    // и тащить его дальше значит хранить мусор вечно.
+    knownRecipeIds: Object.keys(state.knownRecipeIds)
+      .filter((id) => state.knownRecipeIds[id] === true && id in RECIPE_BY_ID)
+      .sort(),
     // Нулевые и чужие зелья в сейв не пишем — это мусор, а не прогресс.
     activePotions: state.activePotions
       .filter((p) => p.msLeft > 0 && p.recipeId in POTION_RECIPE_BY_ID)
@@ -458,11 +502,41 @@ function materialsFromSaved(raw: unknown): Record<string, Decimal> {
   for (const [id, count] of Object.entries(raw as Record<string, unknown>)) {
     // Своими считаются материалы, травы, еда и склянки — всё, что вообще
     // может лежать в мешке. Забытый вид молча пропал бы при загрузке.
-    if (!(id in MATERIAL_BY_ID) && !isBagId(id)) continue
+    if (!(id in REAGENT_BY_ID) && !isBagId(id)) continue
     const value = parseDec(count, '0')
     if (value.gt(0)) result[id] = value.floor()
   }
   return result
+}
+
+/**
+ * Мастерство из сейва. Читается МЯГКО, как и всё остальное: чужой ключ,
+ * дробь и отрицательное значение отбрасываются, а не роняют загрузку.
+ * Потолок тоже здесь: сейв с двумястами очками — это не двести очков.
+ */
+function masteryFromSaved(raw: unknown): Record<string, number> {
+  if (typeof raw !== 'object' || raw === null) return {}
+  const out: Record<string, number> = {}
+  for (const [id, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!hasMastery(id as ProfessionId)) continue
+    if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) continue
+    out[id] = Math.min(Math.floor(value), MASTERY_MAX)
+  }
+  return out
+}
+
+/**
+ * Выученные рецепты из сейва. Мягко, как и всё остальное: чужой id
+ * отбрасывается, не роняя загрузку. Список превращается в множество —
+ * состоянию удобнее спрашивать «знаю ли», а не искать перебором.
+ */
+function knownRecipesFromSaved(raw: unknown): Record<string, boolean> {
+  if (!Array.isArray(raw)) return {}
+  const out: Record<string, boolean> = {}
+  for (const id of raw) {
+    if (typeof id === 'string' && id in RECIPE_BY_ID) out[id] = true
+  }
+  return out
 }
 
 function itemFromSaved(raw: SavedItem, index: number): Item {
@@ -489,6 +563,11 @@ function itemFromSaved(raw: SavedItem, index: number): Item {
   // Прок принимаем только СВОЙ: неизвестный молча отбрасывается, а предмет
   // остаётся носимым — терять из-за переименования вещь целиком нельзя.
   const procId = typeof raw.procId === 'string' && raw.procId in PROC_BY_ID ? raw.procId : undefined
+  // Свойство сборки — по тому же правилу, что и прок: чужое отбрасывается, а
+  // вещь остаётся носимой. Статы у неё при этом УЖЕ урезаны (скидка списана
+  // на генерации), и вернуть их некому — но вещь без свойства всё ещё вещь,
+  // а потерянная вещь это потерянный прогресс.
+  const boonId = typeof raw.boonId === 'string' && raw.boonId in BOON_BY_ID ? raw.boonId : undefined
   return {
     id: typeof raw.id === 'string' ? raw.id : `item-restored-${index}`,
     name: typeof raw.name === 'string' ? raw.name : FALLBACK_ITEM_NAME,
@@ -498,6 +577,7 @@ function itemFromSaved(raw: SavedItem, index: number): Item {
     ...(grip ? { grip } : {}),
     ...(enchantId ? { enchantId } : {}),
     ...(procId ? { procId } : {}),
+    ...(boonId ? { boonId } : {}),
     mods,
   }
 }
@@ -829,6 +909,8 @@ export function stateFromPayload(p: SavePayloadV21): GameState {
     abilityCasts: parseDec(p.abilityCasts, '0'),
     inventory: Array.isArray(p.inventory) ? p.inventory.map(itemFromSaved) : [],
     materials: materialsFromSaved(p.materials),
+    mastery: masteryFromSaved(p.mastery),
+    knownRecipeIds: knownRecipesFromSaved(p.knownRecipeIds),
     // Порция, потраченная на прерванный привал, не возвращается: перезагрузка
     // не должна становиться способом сэкономить еду.
     restSpeedupSource:
@@ -1082,6 +1164,46 @@ export const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
   // Цена следующего сброса растёт от `talentResets`; подними мы его здесь —
   // и подарок обернулся бы подорожанием, то есть был бы не подарком, а
   // отложенным счётом. Игра пересобрала дерево, игрок за это не платит.
+  // 31 -> 32: РЕЦЕПТ СТАЛ ДОБЫЧЕЙ, и ветеран не должен обнаружить, что у него
+  // отобрали половину кузни.
+  //
+  // До этой версии знание было производной уровня: дорос — знаешь всё. Значит
+  // герой СОРОКОВОГО уровня уже умел ковать всё, что открыто сороковым, и
+  // ровно это ему и возвращается: боссовые и мировые рецепты, до уровня
+  // которых он дошёл. Не больше — рецепты выше его уровня он и раньше не знал.
+  //
+  // Ступень мастерства и рубежи храма сюда не пишутся вовсе: они выводятся из
+  // своих счётчиков, и запись была бы вторым следом того же самого.
+  31: (raw) => {
+    const level = Number.parseFloat(String(raw.level ?? '1'))
+    const reached = Number.isFinite(level) ? level : 1
+    const known = RECIPES.filter(
+      (r) =>
+        (r.source.kind === 'boss' || r.source.kind === 'world') &&
+        recipeUnlockLevel(r) <= reached,
+    ).map((r) => r.id)
+    return { ...raw, version: 32, knownRecipeIds: known }
+  },
+  // 30 -> 31: у ремёсел появилось МАСТЕРСТВО, и ветеран не должен обнаружить
+  // себя новиком.
+  //
+  // Ноль был бы формально честен — до этой версии мастерства не было, значит
+  // и не заработано ничего. Но игрок сотого уровня, скующий вещи всю игру,
+  // прочитал бы такой ноль как отобранный прогресс. Поэтому мастерство
+  // ВЫВОДИТСЯ ИЗ УРОВНЯ по той же лестнице полос, по которой оно и растёт:
+  // герой получает ровно тот потолок, до которого дошёл бы, крафтя по пути.
+  //
+  // Обеим профессиям сразу и одинаково: разделять их нечем — какой из них
+  // ветеран занимался, в старом сейве не записано.
+  30: (raw) => {
+    const level = Number.parseFloat(String(raw.level ?? '1'))
+    const value = masteryFromLevel(Number.isFinite(level) ? level : 1)
+    return {
+      ...raw,
+      version: 31,
+      mastery: Object.fromEntries(MASTERY_PROFESSIONS.map((p) => [p, value])),
+    }
+  },
   29: (raw) => ({
     ...raw,
     version: 30,

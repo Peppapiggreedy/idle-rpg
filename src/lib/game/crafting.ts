@@ -3,22 +3,34 @@
 // Уровней у профессий нет: рецепт либо собирается из того, что есть, либо
 // нет. Отказ — отдельный КОД, текст причины рендерит UI (правило проекта).
 import { Decimal } from './numbers'
-import { MATERIAL_BY_ID, materialsInZone, type MaterialDef } from '../data/materials'
 import { craftToll, recipeUnlockLevel } from '../data/recipes'
-import { recipeUnlocked } from '../data/temple'
+import { masteryOf, recipeKnown } from './recipeBook'
 import {
   FOOD_BY_ID,
   RECIPE_BY_ID,
+  RAW_COST_MAX_DEPTH,
+  RECIPE_BY_REAGENT,
   type ItemOutput,
   type RecipeDef,
+  type RecipeInput,
 } from '../data/recipes'
 import { RARITY_BY_ID } from '../data/rarity'
 import { ARMOR_NOUNS, SHIELD_BY_ID, WEAPON_BY_ID } from '../data/items'
 import { MATERIAL_DROP_CHANCE, REAGENT_DROP_CHANCE } from '../data/balance'
+import { zoneBand } from '../data/zones'
 import { inventorySize } from './upgrades'
-import { REAGENT_BY_ID, type ReagentDef } from '../data/reagents'
+import { REAGENT_BY_ID, commonReagentsInBand, type ReagentDef } from '../data/reagents'
+import {
+  MASTERY_MAX,
+  MASTERY_PER_CRAFT,
+  hasMastery,
+  masteryCeilingForLevel,
+} from '../data/mastery'
+import { recipeLevel } from '../data/recipes'
 import type { DungeonDef } from '../data/dungeons'
-import { armorMods, shieldMods, weaponMods } from './loot'
+import { armorMods, discounted, shieldMods, weaponMods } from './loot'
+import { BOON_BY_ID } from '../data/boons'
+import type { StatModifier } from './stats'
 import { pushEvent, type GameState } from './state'
 import type { Rng } from './rng'
 import { advanceQuests } from './quests'
@@ -30,22 +42,66 @@ export function materialCount(state: GameState, id: string): Decimal {
 }
 
 /**
- * Бросок материала с убитого моба. Пул СВОЙ, отдельный от лута: материалы не
+ * Бросок реагента с убитого моба. Пул СВОЙ, отдельный от лута: реагенты не
  * занимают слот в сумке и не сдвигают шансы редкости предметов.
  *
- * Порядок бросков фиксирован: шанс -> материал из пула зоны.
+ * ПУЛ БЕРЁТСЯ ПО ПОЛОСЕ, А НЕ ПО СПИСКУ ЗОН. Раньше у каждого материала был
+ * свой рукописный список зон, и списки расползались через всю карту: руда
+ * падала с шестого уровня по восьмидесятый, соль — в четырёх зонах врозь.
+ * Теперь у реагента ровно одна полоса (`data/reagents.ts`), а зона знает свою
+ * полосу по уровню мобов — списков не осталось вовсе.
+ *
+ * Порядок бросков фиксирован: шанс -> реагент из пула полосы. Веса
+ * сравниваются ТОЛЬКО внутри полосы, поэтому «частый» и «редкий» значат одно
+ * и то же на любой глубине.
  */
-export function rollMaterial(zoneId: string, rng: Rng): MaterialDef | null {
+export function rollZoneReagent(zoneId: string, rng: Rng): ReagentDef | null {
   if (rng() >= MATERIAL_DROP_CHANCE) return null
-  const pool = materialsInZone(zoneId)
+  const band = zoneBand(zoneId)
+  if (!band) return null
+  const pool = commonReagentsInBand(band)
   if (pool.length === 0) return null
-  const total = pool.reduce((sum, m) => sum + m.weight, 0)
+  const total = pool.reduce((sum, m) => sum + (m.weight ?? 0), 0)
   let roll = rng() * total
-  for (const material of pool) {
-    roll -= material.weight
-    if (roll < 0) return material
+  for (const reagent of pool) {
+    roll -= reagent.weight ?? 0
+    if (roll < 0) return reagent
   }
   return pool[pool.length - 1]
+}
+
+/**
+ * ПОЛНАЯ ЦЕНА РЕЦЕПТА СЫРЬЁМ: переделы развёрнуты в то, из чего они сами
+ * делаются.
+ *
+ * Двухпередельный путь тем и отличается от однопередельного, что его цена не
+ * видна: «Наростный шлем» просит две крицы, а за каждой стоит дюжина чешуи и
+ * восемь шляпок. Игрок, читающий только верхнюю строку, копит не на то и
+ * узнаёт об этом на кнопке.
+ *
+ * ГЛУБИНА ОГРАНИЧЕНА (`RAW_COST_MAX_DEPTH` в data/recipes.ts), и это не
+ * перестраховка: цепочка переделов в данных может закольцеваться (передел,
+ * просящий сам себя через соседа), и тогда развёртка не кончится никогда.
+ * Само число живёт В ДАННЫХ, рядом с цепочками, которые оно и ограничивает.
+ */
+export function rawCost(recipe: RecipeDef, depth = 0): RecipeInput[] {
+  const out = new Map<string, number>()
+  for (const input of recipe.inputs) {
+    const source = depth < RAW_COST_MAX_DEPTH ? RECIPE_BY_REAGENT[input.materialId] : undefined
+    if (!source) {
+      out.set(input.materialId, (out.get(input.materialId) ?? 0) + input.count)
+      continue
+    }
+    for (const deeper of rawCost(source, depth + 1)) {
+      out.set(deeper.materialId, (out.get(deeper.materialId) ?? 0) + deeper.count * input.count)
+    }
+  }
+  return [...out].map(([materialId, count]) => ({ materialId, count }))
+}
+
+/** Есть ли у рецепта передел: только тогда «полная цена» отличается от входов. */
+export function hasIntermediate(recipe: RecipeDef): boolean {
+  return recipe.inputs.some((i) => i.materialId in RECIPE_BY_REAGENT)
 }
 
 export function addMaterial(state: GameState, id: string, count = 1): GameState {
@@ -56,7 +112,7 @@ export function addMaterial(state: GameState, id: string, count = 1): GameState 
 }
 
 /** Почему рецепт не собрать. null — собирается. */
-export type CraftBlockReason = 'level' | 'locked' | 'materials' | 'gold' | 'inventory-full'
+export type CraftBlockReason = 'level' | 'unknown' | 'materials' | 'gold' | 'inventory-full'
 
 export interface RecipeStatus {
   recipe: RecipeDef
@@ -90,12 +146,16 @@ export function recipeStatus(state: GameState, recipe: RecipeDef): RecipeStatus 
   })
   // Уровень — первым: эта причина не лечится ни материалами, ни местом в сумке.
   if (state.level.lt(recipeUnlockLevel(recipe))) return blocked('level')
-  // Рецепт-награда храма заперт, пока рекорд по волнам не дорос до рубежа.
-  // Правило живёт в данных (recipeUnlocked): списка «выданных наград» в
-  // состоянии нет, открывает их сам рекорд.
-  if (!recipeUnlocked(recipe.id, state.templeBestWave, state.templeCleared)) {
-    return blocked('locked', [])
-  }
+  // ЗНАНИЕ — ВТОРЫМ, и это не то же самое, что уровень. «Не знаю рецепта»
+  // лечится походом за ним, а не ожиданием: игра обязана назвать причину до
+  // нажатия, а не после. Слово подставляет UI по источнику из данных.
+  //
+  // ГЕЙТ ЗНАНИЯ ОДИН НА ВСЕ ИСТОЧНИКИ, включая храм: рубеж волн и флаг
+  // зачистки читает та же `recipeKnown` (через `recipeUnlocked` в данных).
+  // Отдельный код 'locked' стоял здесь, пока храм был единственным запертым
+  // источником; с четырьмя источниками он превратился бы в мёртвую ветку —
+  // до неё не доходило бы ни одного рецепта.
+  if (!recipeKnown(state, recipe)) return blocked('unknown', [])
   if (missing.length > 0) return blocked('materials')
   // ЗОЛОТО ПОСЛЕ МАТЕРИАЛОВ и до места в сумке. Порядок не случаен: материалы
   // копятся сами, пока герой в зоне, а золото игрок тратит и на другое —
@@ -115,6 +175,12 @@ export function craftedItem(output: ItemOutput, seq: number): Item | null {
   const id = `craft-${seq}`
   // Прок — ссылка, а не копия чисел: см. комментарий у Item.procId.
   const proc = output.procId ? { procId: output.procId } : {}
+  // СВОЙСТВО СБОРКИ ОПЛАЧЕНО СТАТАМИ ЭТОЙ ЖЕ ВЕЩИ, и списывается доля ЗДЕСЬ —
+  // на генерации, в одной точке с округлением. Показывать полные числа и
+  // считать урезанные значило бы врать карточкой.
+  const boon = output.boonId ? BOON_BY_ID[output.boonId] : undefined
+  const boonRef = boon ? { boonId: boon.id } : {}
+  const pay = (mods: StatModifier[]) => (boon ? discounted(mods, boon.statShare) : mods)
   // У уникальной вещи имя СОБСТВЕННОЕ, а не «Кованый X»: её планируют заранее
   // и знают по имени.
   const named = (fallbackNoun: string) =>
@@ -129,8 +195,9 @@ export function craftedItem(output: ItemOutput, seq: number): Item | null {
         slot: output.slot,
         level: output.level,
         grip: template.grip,
-        mods: shieldMods(template, rarity, output.level),
+        mods: pay(shieldMods(template, rarity, output.level)),
         ...proc,
+        ...boonRef,
       }
     }
     const template = output.templateId ? WEAPON_BY_ID[output.templateId] : undefined
@@ -142,8 +209,9 @@ export function craftedItem(output: ItemOutput, seq: number): Item | null {
       slot: output.slot,
       level: output.level,
       grip: template.grip,
-      mods: weaponMods(template, rarity, output.slot, output.level),
+      mods: pay(weaponMods(template, rarity, output.slot, output.level)),
       ...proc,
+      ...boonRef,
     }
   }
   // Атрибут кованой брони обязан быть назван в рецепте — это держит
@@ -156,8 +224,9 @@ export function craftedItem(output: ItemOutput, seq: number): Item | null {
     rarity: rarity.id,
     slot: output.slot,
     level: output.level,
-    mods: armorMods(output.slot, rarity, output.level, output.attribute),
+    mods: pay(armorMods(output.slot, rarity, output.level, output.attribute)),
     ...proc,
+    ...boonRef,
   }
 }
 
@@ -182,6 +251,31 @@ export function rollBossReagent(
 }
 
 /** Собрать рецепт. Нельзя — состояние не меняется вовсе. */
+/**
+ * Сколько мастерства даст ЭТОТ крафт: полную прибавку или ноль.
+ *
+ * Ноль бывает по двум причинам, и обе осмысленны для игрока. Профессия без
+ * мастерства (кулинария, реликварий) шкалы не имеет вовсе. Рецепт ниже
+ * своего потолка — «этому я уже научился»: чтобы расти дальше, надо перейти
+ * к следующему тиру, а не молотить самый дешёвый рецепт.
+ *
+ * Прибавка ПОЛНАЯ ИЛИ НИКАКАЯ, без затухания у границы: дробное мастерство
+ * читалось бы как проценты процентов, а ступень — вещь пороговая.
+ */
+export function masteryGain(state: GameState, recipe: RecipeDef): number {
+  if (!hasMastery(recipe.profession)) return 0
+  const have = masteryOf(state, recipe.profession)
+  if (have >= masteryCeilingForLevel(recipeLevel(recipe))) return 0
+  return Math.min(MASTERY_PER_CRAFT, MASTERY_MAX - have)
+}
+
+/** Новое мастерство после крафта. Профессия без шкалы остаётся как была. */
+function withMastery(state: GameState, recipe: RecipeDef): GameState['mastery'] {
+  const gain = masteryGain(state, recipe)
+  if (gain <= 0) return state.mastery
+  return { ...state.mastery, [recipe.profession]: masteryOf(state, recipe.profession) + gain }
+}
+
 export function craft(state: GameState, recipeId: string): GameState {
   const recipe = RECIPE_BY_ID[recipeId]
   if (!recipe) return state
@@ -193,16 +287,25 @@ export function craft(state: GameState, recipeId: string): GameState {
   }
   // Пошлина списывается ОДИН раз и здесь: у обеих веток ниже она общая.
   const gold = state.gold.minus(status.toll)
+  // МАСТЕРСТВО СЧИТАЕТСЯ ОТ СОСТОЯНИЯ ДО КРАФТА, и это важно: иначе прибавка
+  // сравнивалась бы с потолком, который она сама только что подвинула.
+  const mastery = withMastery(state, recipe)
   const event: CombatEvent = { type: 'craft', recipeId: recipe.id }
-  if (recipe.output.kind === 'food' || recipe.output.kind === 'potion') {
-    // Еда и зелья — такие же счётчики, как материал: одна порция расходуется
-    // привалом, одна склянка — глотком. Места в сумке ни та, ни другая не
-    // занимают, поэтому и проверки на inventory-full у них нет.
+  if (
+    recipe.output.kind === 'food' ||
+    recipe.output.kind === 'potion' ||
+    recipe.output.kind === 'reagent'
+  ) {
+    // Еда, зелья и промежуточные реагенты — такие же счётчики, как добыча:
+    // одна порция расходуется привалом, одна склянка — глотком, крица —
+    // следующим рецептом. Места в сумке ни одно из трёх не занимает, поэтому
+    // и проверки на inventory-full у них нет.
     const id = recipe.output.id
     return advanceQuests(
       {
         ...state,
         gold,
+        mastery,
         materials: { ...materials, [id]: (materials[id] ?? new Decimal(0)).plus(1) },
         combatLog: pushEvent(state.combatLog, event),
       },
@@ -218,6 +321,7 @@ export function craft(state: GameState, recipeId: string): GameState {
     {
       ...state,
       gold,
+      mastery,
       materials,
       inventory: [...state.inventory, item],
       itemSeq: state.itemSeq + 1,
@@ -246,4 +350,9 @@ export function takeFood(state: GameState): { state: GameState; foodId: string |
   return { state, foodId: null }
 }
 
-export { MATERIAL_BY_ID }
+// Мастерство читается ОДНОЙ функцией на игру (game/recipeBook.ts): её же
+// спрашивает книга рецептов, когда решает, дорос ли герой до ступени.
+// Здесь она пере-экспортирована, потому что для вызывающего «мастерство» —
+// часть ремесла, а не отдельная тема.
+export { masteryOf }
+export { REAGENT_BY_ID }
