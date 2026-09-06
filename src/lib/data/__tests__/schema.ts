@@ -27,6 +27,7 @@ import type { TempleDef } from '../temple'
 import { QUEST_CHAIN, type QuestDef } from '../quests'
 import { MECHANIC_IDS, type ProgressionStep } from '../progression'
 import type { ReagentDef } from '../reagents'
+import { MASTERY_MAX, MASTERY_RANK_STEP, type MasteryRankDef } from '../mastery'
 import { BAND_IDS, bandById, bandDepth, bandForLevel, type BandId } from '../bands'
 import type { GoldUpgradeDef } from '../upgrades'
 import { craftToll, recipeLevel } from '../recipes'
@@ -88,6 +89,7 @@ export interface Content {
   /** Покупки за золото (GOLD_UPGRADES). */
   upgrades: readonly GoldUpgradeDef[]
   reagents: readonly ReagentDef[]
+  masteryRanks: readonly MasteryRankDef[]
   recipes: readonly RecipeDef[]
   professions: readonly ProfessionDef[]
   /** Пути звуковых файлов, реально лежащих в public/. */
@@ -2620,6 +2622,43 @@ export const UPGRADE_SCHEMA: EntitySchema<GoldUpgradeDef> = {
   },
 }
 
+export const MASTERY_SCHEMA: EntitySchema<MasteryRankDef> = {
+  kind: 'ступень мастерства',
+  file: 'data/mastery.ts',
+  entities: (c) => c.masteryRanks,
+  id: (r) => r.id,
+  name: (r) => r.name,
+  numbers: [
+    {
+      field: 'from',
+      get: (r) => r.from,
+      min: 0,
+      max: MASTERY_MAX,
+      integer: true,
+      why: 'ступень начинается со значения мастерства, а оно лежит между нулём и сотней',
+    },
+  ],
+  extra: (rank, content, report) => {
+    const ranks = content.masteryRanks
+    const index = ranks.findIndex((r) => r.id === rank.id)
+    const where = `ступень мастерства ${rank.id}`
+    // ЛЕСТНИЦА БЕЗ ДЫР И БЕЗ НАХЛЁСТОВ. Ступени читаются игроком как ровный
+    // ряд, и неровный шаг он прочитает как поломку, а не как замысел: одна
+    // ступень окажется вдвое длиннее соседней без единой причины на экране.
+    if (index === 0) {
+      report.need(rank.from === 0, where, 'первая ступень обязана начинаться с нуля (data/mastery.ts)')
+      return
+    }
+    const prev = ranks[index - 1]
+    report.need(
+      rank.from - prev.from === MASTERY_RANK_STEP,
+      where,
+      `шаг от «${prev.id}» равен ${rank.from - prev.from}, а обещан ` +
+        `${MASTERY_RANK_STEP} (data/mastery.ts)`,
+    )
+  },
+}
+
 export const SCHEMAS = [
   ABILITY_SCHEMA,
   BRANCH_SCHEMA,
@@ -2637,6 +2676,7 @@ export const SCHEMAS = [
   TEMPLE_SCHEMA,
   QUEST_SCHEMA,
   REAGENT_SCHEMA,
+  MASTERY_SCHEMA,
   PROGRESSION_SCHEMA,
   UPGRADE_SCHEMA,
   RECIPE_SCHEMA,

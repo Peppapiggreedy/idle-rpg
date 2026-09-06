@@ -3,7 +3,7 @@
 // Уровней у профессий нет: рецепт либо собирается из того, что есть, либо
 // нет. Отказ — отдельный КОД, текст причины рендерит UI (правило проекта).
 import { Decimal } from './numbers'
-import { craftToll, recipeUnlockLevel } from '../data/recipes'
+import { craftToll, recipeUnlockLevel, type ProfessionId } from '../data/recipes'
 import { recipeUnlocked } from '../data/temple'
 import {
   FOOD_BY_ID,
@@ -14,10 +14,17 @@ import {
 import { RARITY_BY_ID } from '../data/rarity'
 import { ARMOR_NOUNS, SHIELD_BY_ID, WEAPON_BY_ID } from '../data/items'
 import { MATERIAL_DROP_CHANCE, REAGENT_DROP_CHANCE } from '../data/balance'
-import { ZONE_BY_ID } from '../data/zones'
-import { bandForLevel } from '../data/bands'
+import { ZONES } from '../data/zones'
+import { bandForLevel, type BandId } from '../data/bands'
 import { inventorySize } from './upgrades'
 import { REAGENT_BY_ID, commonReagentsInBand, type ReagentDef } from '../data/reagents'
+import {
+  MASTERY_MAX,
+  MASTERY_PER_CRAFT,
+  hasMastery,
+  masteryCeilingForLevel,
+} from '../data/mastery'
+import { recipeLevel } from '../data/recipes'
 import type { DungeonDef } from '../data/dungeons'
 import { armorMods, shieldMods, weaponMods } from './loot'
 import { pushEvent, type GameState } from './state'
@@ -44,11 +51,20 @@ export function materialCount(state: GameState, id: string): Decimal {
  * сравниваются ТОЛЬКО внутри полосы, поэтому «частый» и «редкий» значат одно
  * и то же на любой глубине.
  */
+/**
+ * Полоса зоны — тоже раз и навсегда. Зон двадцать, полос десять, и обе
+ * величины заданы данными: искать полосу перебором на каждое убийство значит
+ * платить за то, что не меняется никогда.
+ */
+const BAND_BY_ZONE: Record<string, BandId> = Object.fromEntries(
+  ZONES.map((zone) => [zone.id, bandForLevel(zone.monsterLevelRange.max).id]),
+)
+
 export function rollZoneReagent(zoneId: string, rng: Rng): ReagentDef | null {
   if (rng() >= MATERIAL_DROP_CHANCE) return null
-  const zone = ZONE_BY_ID[zoneId]
-  if (!zone) return null
-  const pool = commonReagentsInBand(bandForLevel(zone.monsterLevelRange.max).id)
+  const band = BAND_BY_ZONE[zoneId]
+  if (!band) return null
+  const pool = commonReagentsInBand(band)
   if (pool.length === 0) return null
   const total = pool.reduce((sum, m) => sum + (m.weight ?? 0), 0)
   let roll = rng() * total
@@ -193,6 +209,36 @@ export function rollBossReagent(
 }
 
 /** Собрать рецепт. Нельзя — состояние не меняется вовсе. */
+/** Мастерство героя в профессии. Отсутствие — ноль, а не undefined. */
+export function masteryOf(state: GameState, profession: ProfessionId): number {
+  return state.mastery[profession] ?? 0
+}
+
+/**
+ * Сколько мастерства даст ЭТОТ крафт: полную прибавку или ноль.
+ *
+ * Ноль бывает по двум причинам, и обе осмысленны для игрока. Профессия без
+ * мастерства (кулинария, реликварий) шкалы не имеет вовсе. Рецепт ниже
+ * своего потолка — «этому я уже научился»: чтобы расти дальше, надо перейти
+ * к следующему тиру, а не молотить самый дешёвый рецепт.
+ *
+ * Прибавка ПОЛНАЯ ИЛИ НИКАКАЯ, без затухания у границы: дробное мастерство
+ * читалось бы как проценты процентов, а ступень — вещь пороговая.
+ */
+export function masteryGain(state: GameState, recipe: RecipeDef): number {
+  if (!hasMastery(recipe.profession)) return 0
+  const have = masteryOf(state, recipe.profession)
+  if (have >= masteryCeilingForLevel(recipeLevel(recipe))) return 0
+  return Math.min(MASTERY_PER_CRAFT, MASTERY_MAX - have)
+}
+
+/** Новое мастерство после крафта. Профессия без шкалы остаётся как была. */
+function withMastery(state: GameState, recipe: RecipeDef): GameState['mastery'] {
+  const gain = masteryGain(state, recipe)
+  if (gain <= 0) return state.mastery
+  return { ...state.mastery, [recipe.profession]: masteryOf(state, recipe.profession) + gain }
+}
+
 export function craft(state: GameState, recipeId: string): GameState {
   const recipe = RECIPE_BY_ID[recipeId]
   if (!recipe) return state
@@ -204,6 +250,9 @@ export function craft(state: GameState, recipeId: string): GameState {
   }
   // Пошлина списывается ОДИН раз и здесь: у обеих веток ниже она общая.
   const gold = state.gold.minus(status.toll)
+  // МАСТЕРСТВО СЧИТАЕТСЯ ОТ СОСТОЯНИЯ ДО КРАФТА, и это важно: иначе прибавка
+  // сравнивалась бы с потолком, который она сама только что подвинула.
+  const mastery = withMastery(state, recipe)
   const event: CombatEvent = { type: 'craft', recipeId: recipe.id }
   if (recipe.output.kind === 'food' || recipe.output.kind === 'potion') {
     // Еда и зелья — такие же счётчики, как материал: одна порция расходуется
@@ -214,6 +263,7 @@ export function craft(state: GameState, recipeId: string): GameState {
       {
         ...state,
         gold,
+        mastery,
         materials: { ...materials, [id]: (materials[id] ?? new Decimal(0)).plus(1) },
         combatLog: pushEvent(state.combatLog, event),
       },
@@ -229,6 +279,7 @@ export function craft(state: GameState, recipeId: string): GameState {
     {
       ...state,
       gold,
+      mastery,
       materials,
       inventory: [...state.inventory, item],
       itemSeq: state.itemSeq + 1,

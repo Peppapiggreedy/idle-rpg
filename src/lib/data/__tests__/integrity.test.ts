@@ -86,6 +86,7 @@ describe('целостность контента', () => {
       'data/temple.ts',
       'data/quests.ts',
       'data/progression.ts',
+      'data/mastery.ts',
       'data/recipes.ts',
       'data/dungeons.ts',
       'data/items.ts',

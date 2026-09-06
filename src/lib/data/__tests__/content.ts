@@ -42,6 +42,7 @@ import { RARITIES } from '../rarity'
 import { SOUNDS } from '../sounds'
 import { CLASSES } from '../classes'
 import { REAGENTS } from '../reagents'
+import { MASTERY_RANKS } from '../mastery'
 import { HERBS } from '../herbs'
 import { DUST_BY_RARITY, ENCHANTS, ENCHANT_FLAT_STATS } from '../enchants'
 import { PROCS } from '../procs'
@@ -130,6 +131,7 @@ export function realContent(): Content {
     progression: PROGRESSION,
     upgrades: GOLD_UPGRADES,
     reagents: REAGENTS,
+    masteryRanks: MASTERY_RANKS,
     recipes: RECIPES,
     professions: PROFESSIONS,
     audioFiles: audioFiles(),

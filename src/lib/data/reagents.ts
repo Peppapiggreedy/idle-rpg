@@ -35,7 +35,7 @@
 // её штуки.
 import type { IconName } from '../ui/icons/manifest'
 import type { BandId } from './bands'
-import { bandById, bandDepth } from './bands'
+import { BAND_IDS, bandById, bandDepth } from './bands'
 import type { DungeonDifficulty } from './dungeons'
 
 export type ReagentRole = 'common' | 'boss' | 'crafted'
@@ -207,9 +207,20 @@ export function reagentOf(tier: number, difficulty: DungeonDifficulty): ReagentD
 /**
  * Обычные реагенты полосы — тот самый пул, из которого моб роняет добычу.
  * Порядок совпадает с порядком в списке: рулетка детерминирована.
+ *
+ * СЧИТАЕТСЯ ОДИН РАЗ НА ЗАГРУЗКЕ, а не на каждый бросок. Это не
+ * преждевременная оптимизация: пул спрашивают НА КАЖДОЕ УБИЙСТВО, и фильтр
+ * по всему списку реагентов создавал бы там новый массив тридцать восемь раз
+ * подряд. Прежний код фильтровал семь материалов и был незаметен; после
+ * переезда на полосы список вырос впятеро, и тик стал заметно дороже —
+ * контрактный тест «оффлайн не выгоднее живой игры» начал падать ПО СРОКУ.
  */
+const COMMON_BY_BAND: Record<BandId, ReagentDef[]> = Object.fromEntries(
+  BAND_IDS.map((band) => [band, REAGENTS.filter((r) => r.role === 'common' && r.band === band)]),
+) as Record<BandId, ReagentDef[]>
+
 export function commonReagentsInBand(band: BandId): ReagentDef[] {
-  return REAGENTS.filter((r) => r.role === 'common' && r.band === band)
+  return COMMON_BY_BAND[band] ?? []
 }
 
 /**
