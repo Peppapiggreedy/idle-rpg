@@ -48,6 +48,13 @@ function fingerprint(result: { state: GameState; report: OfflineReport | null })
     itemSeq: state.itemSeq,
     inventory: state.inventory.map((i) => `${i.id}:${i.name}:${i.rarity}:${i.level}`),
     materials: JSON.stringify(state.materials),
+    // ЛОГ — ТОЖЕ ЧАСТЬ ИТОГА, и попал он сюда не из осторожности. Разрезая
+    // догон, я потерял строку, которая обрезает лог обратно, и покадровый
+    // путь совпадал с одним куском ровно потому, что ОБА писали в лог сотню
+    // находок. Поймал это старый тест (`offline-loot.test.ts`), а не этот:
+    // инвариант «часть == целое» слеп к тому, что сломано в обоих путях
+    // сразу. Отпечаток обязан называть всё, что догон меняет.
+    combatLog: state.combatLog.map((e) => e.type),
     report: report && {
       elapsedMs: report.elapsedMs,
       kills: report.kills.toString(),

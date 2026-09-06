@@ -1652,13 +1652,6 @@ const emptyLoot = (): OfflineLoot => ({
 // из zoneRate, а тот зовёт estimateCombatRate — ту же функцию, что и онлайн,
 // чтобы формула боя не жила в двух местах.
 /**
- * «Весь остаток разом» одним числом: столько шагов оффлайн не бывает никогда
- * (потолок восемь часов — меньше пятисот), и писать `Infinity` в счётчик
- * цикла значило бы полагаться на то, что он никогда не станет бесконечным.
- */
-const OFFLINE_CATCHUP_ALL = 1_000_000
-
-/**
  * ДОГОН ОФФЛАЙНА, КОТОРЫЙ КРУТИТСЯ ПО ЧАСТЯМ.
  *
  * Арифметика та же, что была, и это главное требование правки: разрезание —
@@ -1826,7 +1819,10 @@ export function startOfflineProgress(
     }
   }
   const finish = (): { state: GameState; report: OfflineReport | null } => {
-
+    // Лог обрезается ЗДЕСЬ, а не по ходу шагов: `stashLoot` пишет событие,
+    // и по нему же читается, что сделала политика сумки (см. выше). Снимать
+    // события сразу значило бы завести вторую копию этих правил.
+    s = { ...s, combatLog: logBefore }
     // Травы набегают ВРЕМЕНЕМ, поэтому оффлайн срезает их одним вызовом, тем
     // же куском игрового времени и с тем же урезанием. Отдельной модели у сбора
     // нет — иначе оффлайн и онлайн разошлись бы молча.
@@ -1856,6 +1852,12 @@ export function startOfflineProgress(
  * Догон одним куском — прежняя дверь для тестов, симуляции и всего, что не
  * рисует экран. Крутит тот же степпер до конца, поэтому расходиться с
  * покадровым путём ей не с чего.
+ *
+ * Шагов за раз ровно ОДИН, и «весь остаток разом» одним большим числом здесь
+ * не пишется: такое число — константа в логике, а число в логике живёт в
+ * `src/lib/data` (правило проекта, держится `rules.test.ts`). Заводить ради
+ * счётчика цикла строку баланса было бы враньём о том, что это за число,
+ * а разница в цене — четыре сотни лишних вызовов на восьмичасовой догон.
  */
 export function applyOfflineProgress(
   state: GameState,
@@ -1863,7 +1865,7 @@ export function applyOfflineProgress(
   rng: Rng = createRng(state.rngSeed ^ OFFLINE_LOOT_SALT),
 ): { state: GameState; report: OfflineReport | null } {
   const run = startOfflineProgress(state, elapsedMs, rng)
-  while (!run.done()) run.step(OFFLINE_CATCHUP_ALL)
+  while (!run.done()) run.step(1)
   return run.finish()
 }
 
@@ -2179,7 +2181,7 @@ function accrueAway(
   interrupted: InterruptedRun | null,
 ): { state: GameState; offline: OfflineReport | null } {
   const run = deferredAccrual(state, elapsedMs, interrupted)
-  while (!run.done()) run.step(OFFLINE_CATCHUP_ALL)
+  while (!run.done()) run.step(1)
   return run.finish()
 }
 
