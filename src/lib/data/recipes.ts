@@ -833,6 +833,160 @@ const CRAFT_RECIPES: RecipeDef[] = [
       ],
     },
   },
+
+  // --- Травничество: полоса за полосой, а не три склянки на сотню уровней ---
+  //
+  // Было три зелья без единого уровня на всю игру: механика открывалась на
+  // сороковом и с тех пор не менялась вовсе. Стало по склянке на каждую
+  // полосу травничества (41-100), и РОЛИ У НИХ РАЗНЫЕ — не «то же самое, но
+  // числа больше». Разные роли и есть смысл набора: игрок выбирает, чего ему
+  // не хватает, а не варит самое дорогое.
+  //
+  // Уровень у каждой проставлен ЯВНО (`unlockLevel`). Раньше он считался по
+  // мельчайшей зоне входов и совпадал у всех трёх: три склянки открывались
+  // разом и больше не появлялось ничего.
+  {
+    id: 'stoneheart-draught',
+    name: 'Каменное сердце',
+    icon: 'potion-stone',
+    profession: 'herbalism',
+    unlockLevel: 60,
+    // ТРАВЫ БЕРУТСЯ ТЕ, ЧТО РАСТУТ НА ЭТОЙ ПОЛОСЕ. Стылоцвет пропускает
+    // серную полосу намеренно (у каждой травы своя пропущенная зона), и
+    // рецепт на нём был бы недостижим ровно там, где открывается.
+    inputs: [
+      { materialId: 'emberroot', count: 2 },
+      { materialId: 'bitterleaf', count: 2 },
+    ],
+    output: {
+      kind: 'potion',
+      id: 'potion:stoneheart-draught',
+      name: 'Каменное сердце',
+      icon: 'potion-stone',
+      durationSec: POTION_DURATION_SEC,
+      // РОЛЬ: возврат ресурса. Ни урона, ни живучести — только мана, и
+      // поэтому склянка осмысленна ровно там, где ротация упирается в неё.
+      mods: [{ stat: 'manaRegen', kind: 'flat', value: new Decimal(1.6) }],
+    },
+  },
+  {
+    id: 'sureguard-draught',
+    name: 'Твёрдый заслон',
+    icon: 'potion-wind',
+    profession: 'herbalism',
+    unlockLevel: 70,
+    inputs: [
+      { materialId: 'bitterleaf', count: 2 },
+      { materialId: 'hoarbloom', count: 2 },
+    ],
+    output: {
+      kind: 'potion',
+      id: 'potion:sureguard-draught',
+      name: 'Твёрдый заслон',
+      icon: 'potion-wind',
+      durationSec: POTION_DURATION_SEC,
+      // РОЛЬ СИТУАТИВНАЯ: снижение входящего. В зоне оно почти не нужно —
+      // герой и так не гибнет; перед подземельем оно решает схватку, где
+      // босс снимает четыре пятых запаса.
+      mods: [{ stat: 'damageReduction', kind: 'flat', value: new Decimal(0.08) }],
+    },
+  },
+  {
+    id: 'keeneye-draught',
+    name: 'Острый глаз',
+    icon: 'potion-fury',
+    profession: 'herbalism',
+    unlockLevel: 80,
+    inputs: [
+      { materialId: 'emberroot', count: 2 },
+      { materialId: 'bitterleaf', count: 2 },
+    ],
+    output: {
+      kind: 'potion',
+      id: 'potion:keeneye-draught',
+      name: 'Острый глаз',
+      icon: 'potion-fury',
+      durationSec: POTION_DURATION_SEC,
+      // РОЛЬ: критический удар. Отличается от «урона» тем, что множит
+      // всплески, а не ровный поток, — и потому по-разному ложится на
+      // сборки с большим и малым замахом.
+      mods: [{ stat: 'critChance', kind: 'flat', value: new Decimal(0.07) }],
+    },
+  },
+
+  // --- Двухпередельные настои: верхние полосы ---
+  //
+  // Тот же приём, что у кузнечного: травы сперва сводятся в вытяжку, и уже
+  // она идёт в настой. Появляется только на двух верхних полосах — там, где
+  // у игрока уже есть и травы, и повод возиться.
+  {
+    id: 'distil-rime-extract',
+    name: 'Стылая вытяжка',
+    icon: 'reagent-rime-extract',
+    profession: 'herbalism',
+    unlockLevel: 90,
+    inputs: [
+      { materialId: 'hoarbloom', count: 4 },
+      { materialId: 'bitterleaf', count: 3 },
+    ],
+    output: { kind: 'reagent', id: 'rime-extract' },
+  },
+  {
+    id: 'rimeguard-draught',
+    name: 'Стылая броня',
+    icon: 'potion-stone',
+    profession: 'herbalism',
+    unlockLevel: 90,
+    inputs: [
+      { materialId: 'rime-extract', count: 1 },
+      { materialId: 'emberroot', count: 2 },
+    ],
+    output: {
+      kind: 'potion',
+      id: 'potion:rimeguard-draught',
+      name: 'Стылая броня',
+      icon: 'potion-stone',
+      durationSec: POTION_DURATION_SEC,
+      // РОЛЬ: живучесть запасом, а не снижением. Второй ответ на тот же
+      // вопрос, и оба нужны: снижение работает против крупных ударов, запас
+      // против длинной череды мелких.
+      mods: [{ stat: 'maxHp', kind: 'percent', value: new Decimal(0.12) }],
+    },
+  },
+  {
+    id: 'distil-dell-extract',
+    name: 'Падевая вытяжка',
+    icon: 'reagent-dell-extract',
+    profession: 'herbalism',
+    unlockLevel: 100,
+    inputs: [
+      { materialId: 'bitterleaf', count: 4 },
+      { materialId: 'emberroot', count: 3 },
+    ],
+    output: { kind: 'reagent', id: 'dell-extract' },
+  },
+  {
+    id: 'lastbreath-draught',
+    name: 'Последний вдох',
+    icon: 'potion-fury',
+    profession: 'herbalism',
+    unlockLevel: 100,
+    inputs: [
+      { materialId: 'dell-extract', count: 1 },
+      { materialId: 'hoarbloom', count: 2 },
+    ],
+    output: {
+      kind: 'potion',
+      id: 'potion:lastbreath-draught',
+      name: 'Последний вдох',
+      icon: 'potion-fury',
+      durationSec: POTION_DURATION_SEC,
+      // РОЛЬ СИТУАТИВНАЯ, вторая: восстановление после смерти. Реген
+      // здоровья не двигает ни темп, ни цену боя, но сокращает возвращение
+      // в строй — то есть работает ровно тогда, когда всё остальное уже нет.
+      mods: [{ stat: 'hpRegen', kind: 'flat', value: new Decimal(4) }],
+    },
+  },
   // --- Легендарные уникумы на реагентах ГЕРОИКИ ---
   //
   // Открываются на сотом: это последняя вещь, которую можно сделать руками, и

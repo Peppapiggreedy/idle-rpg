@@ -309,6 +309,8 @@ export const ICONS = {
   'reagent-salt-billet': { file: 'lorc/stone-tablet.svg', author: 'Lorc' },
   'reagent-rime-billet': { file: 'lorc/cubes.svg', author: 'Lorc' },
   'reagent-dell-billet': { file: 'lorc/heavy-thorny-triskelion.svg', author: 'Lorc' },
+  'reagent-rime-extract': { file: 'lorc/bubbling-flask.svg', author: 'Lorc' },
+  'reagent-dell-extract': { file: 'lorc/potion-ball.svg', author: 'Lorc' },
 
   // --- Интерфейс ---
   log: { file: 'lorc/scroll-unfurled.svg', author: 'Lorc' },

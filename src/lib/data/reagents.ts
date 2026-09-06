@@ -205,6 +205,9 @@ const CRAFTED: ReagentDef[] = [
   { id: 'salt-billet', name: 'Соляная крица', icon: 'reagent-salt-billet', role: 'crafted', band: 'salt' },
   { id: 'rime-billet', name: 'Стылый слиток', icon: 'reagent-rime-billet', role: 'crafted', band: 'rime' },
   { id: 'dell-billet', name: 'Падевая крица', icon: 'reagent-dell-billet', role: 'crafted', band: 'dell' },
+  // Травничество: тот же второй передел, только вытяжка вместо слитка.
+  { id: 'rime-extract', name: 'Стылая вытяжка', icon: 'reagent-rime-extract', role: 'crafted', band: 'rime' },
+  { id: 'dell-extract', name: 'Падевая вытяжка', icon: 'reagent-dell-extract', role: 'crafted', band: 'dell' },
 ]
 
 export const REAGENTS: ReagentDef[] = [...COMMON, ...BOSS, ...CRAFTED]
