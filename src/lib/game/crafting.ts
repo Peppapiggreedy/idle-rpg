@@ -26,7 +26,9 @@ import {
 } from '../data/mastery'
 import { recipeLevel } from '../data/recipes'
 import type { DungeonDef } from '../data/dungeons'
-import { armorMods, shieldMods, weaponMods } from './loot'
+import { armorMods, discounted, shieldMods, weaponMods } from './loot'
+import { BOON_BY_ID } from '../data/boons'
+import type { StatModifier } from './stats'
 import { pushEvent, type GameState } from './state'
 import type { Rng } from './rng'
 import { advanceQuests } from './quests'
@@ -143,6 +145,12 @@ export function craftedItem(output: ItemOutput, seq: number): Item | null {
   const id = `craft-${seq}`
   // Прок — ссылка, а не копия чисел: см. комментарий у Item.procId.
   const proc = output.procId ? { procId: output.procId } : {}
+  // СВОЙСТВО СБОРКИ ОПЛАЧЕНО СТАТАМИ ЭТОЙ ЖЕ ВЕЩИ, и списывается доля ЗДЕСЬ —
+  // на генерации, в одной точке с округлением. Показывать полные числа и
+  // считать урезанные значило бы врать карточкой.
+  const boon = output.boonId ? BOON_BY_ID[output.boonId] : undefined
+  const boonRef = boon ? { boonId: boon.id } : {}
+  const pay = (mods: StatModifier[]) => (boon ? discounted(mods, boon.statShare) : mods)
   // У уникальной вещи имя СОБСТВЕННОЕ, а не «Кованый X»: её планируют заранее
   // и знают по имени.
   const named = (fallbackNoun: string) =>
@@ -157,8 +165,9 @@ export function craftedItem(output: ItemOutput, seq: number): Item | null {
         slot: output.slot,
         level: output.level,
         grip: template.grip,
-        mods: shieldMods(template, rarity, output.level),
+        mods: pay(shieldMods(template, rarity, output.level)),
         ...proc,
+        ...boonRef,
       }
     }
     const template = output.templateId ? WEAPON_BY_ID[output.templateId] : undefined
@@ -170,8 +179,9 @@ export function craftedItem(output: ItemOutput, seq: number): Item | null {
       slot: output.slot,
       level: output.level,
       grip: template.grip,
-      mods: weaponMods(template, rarity, output.slot, output.level),
+      mods: pay(weaponMods(template, rarity, output.slot, output.level)),
       ...proc,
+      ...boonRef,
     }
   }
   // Атрибут кованой брони обязан быть назван в рецепте — это держит
@@ -184,8 +194,9 @@ export function craftedItem(output: ItemOutput, seq: number): Item | null {
     rarity: rarity.id,
     slot: output.slot,
     level: output.level,
-    mods: armorMods(output.slot, rarity, output.level, output.attribute),
+    mods: pay(armorMods(output.slot, rarity, output.level, output.attribute)),
     ...proc,
+    ...boonRef,
   }
 }
 

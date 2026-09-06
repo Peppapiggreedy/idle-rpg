@@ -28,6 +28,7 @@ import {
   type AbilityTuneField,
 } from '../data/abilities'
 import { TALENTS, rankOf } from '../data/talents'
+import { boonTunes } from '../data/boons'
 import { talentAbilityEffect, type TalentRanks } from './talents'
 
 /** Накопитель по одному полю: сдвиг, доля и произведение множителей. */
@@ -47,7 +48,16 @@ const EMPTY: Accum = { points: 0, percent: 0, multiplier: 1, set: null }
  * класса могут править одно и то же умение разными талантами, и логике всё
  * равно, каким именно.
  */
-export function tunesFor(ranks: TalentRanks, abilityId: string): Map<string, Accum> {
+export function tunesFor(
+  ranks: TalentRanks,
+  abilityId: string,
+  /**
+   * Свойства НАДЕТЫХ вещей (data/boons.ts). Второй источник тех же правок:
+   * вид эффекта у сборки и у таланта ОДИН, поэтому и конвейер один. Пустой
+   * список — обычный случай, и тогда всё ниже работает как раньше.
+   */
+  boons: readonly string[] = [],
+): Map<string, Accum> {
   const acc = new Map<string, Accum>()
   const take = (field: string): Accum => {
     const found = acc.get(field)
@@ -69,6 +79,16 @@ export function tunesFor(ranks: TalentRanks, abilityId: string): Map<string, Acc
       else if (tune.kind === 'set') slot.set = tune.value
     }
   }
+  // Свойство вещи — тот же ранг «единица»: надето или нет, промежуточного
+  // состояния у него не бывает. Копить их порознь незачем — они складываются
+  // с талантами в одном накопителе, как и положено правкам одного поля.
+  for (const tune of boonTunes(boons, abilityId)) {
+    const slot = take(tune.field)
+    if (tune.kind === 'points') slot.points += tune.value
+    else if (tune.kind === 'percent') slot.percent += tune.value
+    else if (tune.kind === 'multiplier') slot.multiplier *= tune.value
+    else if (tune.kind === 'set') slot.set = tune.value
+  }
   return acc
 }
 
@@ -88,8 +108,12 @@ const applyD = (base: Decimal, slot: Accum | undefined): Decimal =>
  * памяти, а признак честности: пока дерево пустое, эффективное умение обязано
  * быть базовым БИТ В БИТ, иначе golden поедет от одной только правки формы.
  */
-export function tuneAbility(def: AbilityDef, ranks: TalentRanks): AbilityDef {
-  const acc = tunesFor(ranks, def.id)
+export function tuneAbility(
+  def: AbilityDef,
+  ranks: TalentRanks,
+  boons: readonly string[] = [],
+): AbilityDef {
+  const acc = tunesFor(ranks, def.id, boons)
   // ВЫУЧЕННЫЙ ЭФФЕКТ — ЧАСТЬ ЭФФЕКТИВНОГО УМЕНИЯ. Флаг `ability-learns-effect`
   // («Рваный выпад» учит Скорый выпад кровить) подшивается ЗДЕСЬ, а не только
   // в тике: пока его читал один `effectFrom`, модель боя, перебор четвёрок,
@@ -176,9 +200,13 @@ export function tuneAbility(def: AbilityDef, ranks: TalentRanks): AbilityDef {
 }
 
 /** Эффективное умение по id. `undefined` — такого умения нет вовсе. */
-export function tunedById(abilityId: string, ranks: TalentRanks): AbilityDef | undefined {
+export function tunedById(
+  abilityId: string,
+  ranks: TalentRanks,
+  boons: readonly string[] = [],
+): AbilityDef | undefined {
   const def = ABILITY_BY_ID[abilityId]
-  return def ? tuneAbility(def, ranks) : undefined
+  return def ? tuneAbility(def, ranks, boons) : undefined
 }
 
 /** Все объявленные настраиваемыми поля — для проверок контента. */

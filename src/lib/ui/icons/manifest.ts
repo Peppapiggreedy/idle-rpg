@@ -165,9 +165,7 @@ export const ICONS = {
   'reagent-rime-core': { file: 'lorc/frozen-orb.svg', author: 'Lorc' },
   'reagent-mute-stone': { file: 'lorc/tombstone.svg', author: 'Lorc' },
 
-  'recipe-relic-blade': { file: 'lorc/relic-blade.svg', author: 'Lorc' },
   'recipe-relic-plate': { file: 'lorc/breastplate.svg', author: 'Lorc' },
-  'recipe-relic-charm': { file: 'lorc/gem-chain.svg', author: 'Lorc' },
 
   // --- Храм испытаний ---
   temple: { file: 'delapouite/greek-temple.svg', author: 'Delapouite' },

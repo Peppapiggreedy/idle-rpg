@@ -328,13 +328,35 @@ export interface Rotation {
    * в руках. Одно поле здесь дешевле пяти правок в потребителях.
    */
   talents: Record<string, number>
+  /**
+   * СВОЙСТВА НАДЕТЫХ ВЕЩЕЙ — по тому же доводу, что и ранги талантов рядом.
+   * Сборка правит умение (`data/boons.ts`), а ротацию читают все: модель боя,
+   * автокаст, оффлайн, контракты, книга умений. Пронеси свойства мимо — и
+   * каждый из них считал бы по умению, которого у героя в руках нет.
+   */
+  boons: readonly string[]
 }
 
 export const rotationOf = (state: GameState): Rotation => ({
   slots: state.abilitySlots,
   settings: state.abilitySettings,
   talents: state.talents,
+  boons: equippedBoons(state.equipment),
 })
+
+/**
+ * Свойства всех надетых вещей. Порядок — порядок слотов: два свойства на
+ * одно поле складывались бы одинаково в любом порядке, но список обязан быть
+ * воспроизводимым — по нему сравниваются состояния.
+ */
+export function equippedBoons(equipment: GameState['equipment']): string[] {
+  const out: string[] = []
+  for (const slot of SLOT_IDS) {
+    const boon = equipment[slot]?.boonId
+    if (boon) out.push(boon)
+  }
+  return out
+}
 
 /** Настройки по умолчанию: автокаст включён, резерв нулевой. Порядок здесь
  *  не задаётся — он живёт в `abilitySlots`. */

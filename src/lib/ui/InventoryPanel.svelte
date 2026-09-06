@@ -28,6 +28,7 @@
   } from '../stores/game'
   import ItemMods from './ItemMods.svelte'
   import EnchantLine from './EnchantLine.svelte'
+  import BoonLine from './BoonLine.svelte'
   import ItemCompare from './ItemCompare.svelte'
   import { RARITY_BY_ID } from '../data/rarity'
   import { SLOT_ICONS } from '../data/slots'
@@ -495,6 +496,7 @@
       {#if carried.grip}<span class="grip">{GRIP_TEXT[carried.grip]}</span>{/if}
       <ItemMods mods={carried.mods} />
       <EnchantLine item={carried} />
+      <BoonLine item={carried} />
       <!-- ОТКАЗ — СЛОВАМИ И ЗАРАНЕЕ, ровно как у слота куклы: игрок читает
            причину до попытки, а не после неё. -->
       {#if eq.reason}

@@ -11,7 +11,20 @@ import type { StatModifier } from '../game/stats'
 import { HERB_BY_ID } from './herbs'
 import { bandForLevel, type BandId } from './bands'
 import { masteryCeilingForBand } from './mastery'
-import { reagentBandLevels } from './reagents'
+import { REAGENTS, reagentBandLevels } from './reagents'
+
+/**
+ * ВОСЕМЬ ИМЕННЫХ РЕАГЕНТОВ ГЕРОИКИ — по одному с последнего босса каждой из
+ * восьми героик. Список СЧИТАЕТСЯ из реестра, а не переписан руками: девятая
+ * героика добавит девятый реагент, и сборка потребует его сама.
+ */
+export const HEROIC_REAGENT_IDS: string[] = REAGENTS.filter(
+  (r) => r.source?.kind === 'dungeon' && r.source.difficulty === 'heroic',
+)
+  .sort((a, b) => (a.source?.kind === 'dungeon' && b.source?.kind === 'dungeon'
+    ? a.source.tier - b.source.tier
+    : 0))
+  .map((r) => r.id)
 import { ZONE_BY_ID, representativeMonster, zoneForMonsterLevel } from './zones'
 import type { IconName } from '../ui/icons/manifest'
 import type { SlotId } from './slots'
@@ -225,6 +238,9 @@ export interface ItemOutput {
    *  предмет только называет id: так один прок нельзя описать дважды
    *  по-разному, а внутренний кулдаун у него один на всю игру. */
   procId?: string
+  /** Свойство сборки (data/boons.ts). Вещь с ним отдаёт долю своих статов —
+   *  считает это `craftedItem`, там же, где числа округляются. */
+  boonId?: string
 }
 
 /** Модификатор зелья БЕЗ source: source проставляется как 'potion:<id>'. */
@@ -1060,43 +1076,34 @@ const CRAFT_RECIPES: RecipeDef[] = [
       mods: [{ stat: 'hpRegen', kind: 'flat', value: new Decimal(4) }],
     },
   },
-  // --- Легендарные уникумы на реагентах ГЕРОИКИ ---
+  // --- ЛЕГЕНДАРНАЯ СБОРКА: одна вещь вместо трёх, и она не «сильнее» ---
   //
-  // Открываются на сотом: это последняя вещь, которую можно сделать руками, и
-  // добывается она только вторым проходом по лестнице. Реагенты просятся из
-  // РАЗНЫХ героик — одной любимой не обойтись, надо пройти всю лестницу.
+  // ЧТО БЫЛО. Три «реликтовых» уникума на героических реагентах: змеезуб,
+  // панцирь и оберег, по два-четыре реагента каждый. Отличались они от редкой
+  // вещи своего уровня ровно величиной чисел — тем же самым, только больше, —
+  // и планировать их заранее было незачем: любая из трёх собиралась из своей
+  // пары данжей, а восьмая ступень лестницы для них не требовалась вовсе.
+  //
+  // ЧТО СТАЛО. Одна сборка, и она требует ВОСЕМЬ ИМЕННЫХ РЕАГЕНТОВ — по
+  // одному с последнего босса каждой из восьми героик — плюс верхний передел
+  // кузнечного. Пропустить нельзя ни одну: любимой парой данжей её не собрать.
+  //
+  // И ГЛАВНОЕ: СИЛЫ ОНА НЕ ДОБАВЛЯЕТ. Свойство (`data/boons.ts`) оплачено
+  // долей её собственных статов, сумма нулевая, и держит это отдельная строка
+  // в бюджете силы. Вещь не сильнее легендарки своего уровня — она ДРУГАЯ:
+  // переводит статы в аптайм через лечение.
   {
-    id: 'relic-fang',
-    name: 'Реликтовый змеезуб',
-    icon: 'recipe-relic-blade',
-    profession: 'smithing',
-    source: { kind: 'world' },
-    unlockLevel: LEVEL_CAP,
-    inputs: [
-      { materialId: 'reagent-mute-stone', count: 2 },
-      { materialId: 'reagent-seething-coal', count: 3 },
-      { materialId: 'ember-shard', count: 8 },
-    ],
-    output: {
-      kind: 'item',
-      slot: 'mainHand',
-      rarity: 'legendary',
-      level: 100,
-      templateId: 'fang',
-      adjective: 'Реликтовый',
-    },
-  },
-  {
-    id: 'relic-cuirass',
-    name: 'Реликтовый панцирь',
+    id: 'assembly-eight-locks',
+    name: 'Панцирь восьми затворов',
     icon: 'recipe-relic-plate',
     profession: 'smithing',
-    source: { kind: 'world' },
+    // Рецепт — редкая мировая находка: последняя вещь, которую делают руками,
+    // и знать о ней заранее незачем.
+    source: { kind: 'world' as const },
     unlockLevel: LEVEL_CAP,
     inputs: [
-      { materialId: 'reagent-rime-core', count: 2 },
-      { materialId: 'reagent-brine-druse', count: 3 },
-      { materialId: 'quarry-ore', count: 10 },
+      ...HEROIC_REAGENT_IDS.map((materialId) => ({ materialId, count: 1 })),
+      { materialId: 'dell-billet', count: 2 },
     ],
     output: {
       kind: 'item',
@@ -1104,29 +1111,8 @@ const CRAFT_RECIPES: RecipeDef[] = [
       rarity: 'legendary',
       level: 100,
       attribute: 'vitality',
-      adjective: 'Реликтовый',
-    },
-  },
-  {
-    id: 'relic-charm',
-    name: 'Реликтовый оберег',
-    icon: 'recipe-relic-charm',
-    profession: 'smithing',
-    source: { kind: 'world' },
-    unlockLevel: LEVEL_CAP,
-    inputs: [
-      { materialId: 'reagent-drowned-whorl', count: 2 },
-      { materialId: 'reagent-booming-whirl', count: 2 },
-      { materialId: 'reagent-bottom-tear', count: 2 },
-      { materialId: 'reagent-drift-charge', count: 2 },
-    ],
-    output: {
-      kind: 'item',
-      slot: 'trinket',
-      rarity: 'legendary',
-      level: 100,
-      attribute: 'agility',
-      adjective: 'Реликтовый',
+      name: 'Панцирь восьми затворов',
+      boonId: 'eight-locks',
     },
   },
   // --- Награды Храма испытаний: открываются рубежами волн, а не материалами ---

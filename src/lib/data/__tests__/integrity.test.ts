@@ -82,6 +82,7 @@ describe('целостность контента', () => {
       'data/herbs.ts',
       'data/enchants.ts',
       'data/procs.ts',
+      'data/boons.ts',
       'data/heroic.ts',
       'data/temple.ts',
       'data/quests.ts',

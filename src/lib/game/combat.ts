@@ -38,7 +38,7 @@ import {
 } from './rotation'
 import type { Monster } from '../types'
 import { SAFE_ZONE, ZONE_BY_ID, zoneSpawnVariants, type Zone } from '../data/zones'
-import { monsterFromTemplate, type AbilitySettings, type Rotation } from './state'
+import { equippedBoons, monsterFromTemplate, type AbilitySettings, type Rotation } from './state'
 import { ABILITY_BY_ID, type AbilityDef } from '../data/abilities'
 import { classById } from '../data/classes'
 import {
@@ -1164,7 +1164,14 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
   // Ротация читает РЯД: состав и порядок слотов плюс галки по умениям.
   // Ранги талантов едут вместе: модель обязана считать по ЭФФЕКТИВНЫМ
   // умениям, иначе она обещает игроку не то умение, что у него в руках.
-  const heroRotation: Rotation = { slots: s.abilitySlots, settings, talents: s.talents }
+  // Свойства надетых вещей — тем же поездом и по тому же доводу: сборка
+  // правит умение, и модель обязана считать по правленому.
+  const heroRotation: Rotation = {
+    slots: s.abilitySlots,
+    settings,
+    talents: s.talents,
+    boons: equippedBoons(s.equipment),
+  }
   // Ресурс из боя — уравнение с самим собой: удары умений тоже дают ярость,
   // а число умений зависит от ярости. Решаем ДВУМЯ проходами: сперва доход
   // от одних автоатак, потом — с учётом посчитанных мгновенных ударов.

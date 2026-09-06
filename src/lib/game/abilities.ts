@@ -9,7 +9,14 @@ import { tuneAbility, tunedById } from './abilityTune'
 import { abilitiesByPriority } from './rotation'
 import { talentExtraCharges } from './talents'
 import { punishResourceSpend } from './bossAbilities'
-import { abilitiesOf, pushEvent, rotationOf, type ActiveEffect, type GameState } from './state'
+import {
+  abilitiesOf,
+  equippedBoons,
+  pushEvent,
+  rotationOf,
+  type ActiveEffect,
+  type GameState,
+} from './state'
 import type { Rng } from './rng'
 import type { AttackEvent, CombatEvent } from '../types'
 
@@ -21,12 +28,13 @@ export { ABILITIES, ABILITY_BY_ID } from '../data/abilities'
  * обязан сдвинуть и гейт автокаста, иначе кнопка и автоматика разойдутся.
  */
 export function abilityOf(state: GameState, abilityId: string): AbilityDef | undefined {
-  return tunedById(abilityId, state.talents)
+  return tunedById(abilityId, state.talents, equippedBoons(state.equipment))
 }
 
 /** Умения класса, подкрученные талантами героя. Их и показывает книга. */
 export function heroAbilities(state: GameState): AbilityDef[] {
-  return abilitiesOf(state.classId).map((a) => tuneAbility(a, state.talents))
+  const boons = equippedBoons(state.equipment)
+  return abilitiesOf(state.classId).map((a) => tuneAbility(a, state.talents, boons))
 }
 // Запас щита считает combat.ts — он нижний слой и знает про статы; здесь
 // имя переэкспортировано, чтобы вызывающим не приходилось знать, где оно.

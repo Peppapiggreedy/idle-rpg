@@ -200,6 +200,66 @@ describe('бюджет силы Стража на потолке', () => {
     }, 600_000)
   }
 
+  it('легендарная сборка: сумма НУЛЕВАЯ — свойство оплачено статами', () => {
+    // ЕДИНСТВЕННАЯ СТРОКА БЮДЖЕТА, КОТОРАЯ НЕ ДОБАВЛЯЕТ СИЛЫ, и мерится она
+    // одной заменой: сборка против той же вещи без свойства и с полными
+    // статами. Обе половины обмена должны быть видны в одном числе — иначе
+    // «оплачено статами» осталось бы обещанием в комментарии.
+    const assemblyOutput = RECIPES.map((r) => r.output).find(
+      (o): o is Extract<typeof o, { kind: 'item' }> => o.kind === 'item' && !!o.boonId,
+    )
+    expect(assemblyOutput, 'в игре нет ни одной сборки со свойством').toBeTruthy()
+    if (!assemblyOutput) return
+    const assembled = craftedItem(assemblyOutput, 9101)!
+    // Та же вещь БЕЗ свойства: свойство снято, статы полные. Именно так
+    // выглядела бы легендарка этого слота по обычной лестнице.
+    const plain = craftedItem({ ...assemblyOutput, boonId: undefined }, 9102)!
+    const wear = (item: typeof assembled) =>
+      ensureStats({
+        ...withRelic,
+        equipment: { ...withRelic.equipment, [item.slot]: item },
+        statsDirty: true,
+      })
+    // ТРЕТЬЯ ТОЧКА, БЕЗ КОТОРОЙ ДВЕ ПЕРВЫЕ НИЧЕГО НЕ ЗНАЧАТ: та же вещь со
+    // свойством, но БЕЗ скидки. Если свойство не видно модели, «нулевая
+    // сумма» окажется простым совпадением — вещь потеряла бы долю статов и
+    // не получила ничего, а число всё равно легло бы около единицы, потому
+    // что доля одной вещи в комплекте из семи мала. Свойство обязано давать
+    // измеримую прибавку САМО ПО СЕБЕ.
+    const free = { ...plain, boonId: assemblyOutput.boonId }
+    const boonOnly = dump(
+      `power/${DEFAULT_CLASS.id}/level-${String(LEVEL_CAP).padStart(3, '0')}/multiplier/assembly-boon/value`,
+      rate(wear(free)).killsPerSecond.div(rate(wear(plain)).killsPerSecond).toNumber(),
+    )
+    const corridor = POWER_BUDGET.assembly
+    const mult = dump(
+      `power/${DEFAULT_CLASS.id}/level-${String(LEVEL_CAP).padStart(3, '0')}/multiplier/assembly/value`,
+      rate(wear(assembled)).killsPerSecond.div(rate(wear(plain)).killsPerSecond).toNumber(),
+    )
+    // eslint-disable-next-line no-console
+    console.log(
+      `сборка «${assemblyOutput.name}» против легендарки без свойства: ×${mult.toFixed(3)} ` +
+        `(коридор ${corridor.min}–${corridor.max}); одно свойство без скидки: ` +
+        `×${boonOnly.toFixed(3)}`,
+    )
+    expect(boonOnly, 'свойство не видно модели — платить не за что').toBeGreaterThan(1)
+    // ОБЕ ГРАНИЦЫ, и это не формальность: односторонняя проверка пропустила бы
+    // и свойство даром (сильнее), и свойство, за которое переплатили (слабее).
+    expect(mult, 'сборка сильнее легендарки — свойство не оплачено').toBeLessThanOrEqual(
+      corridor.max,
+    )
+    expect(mult, 'сборка слабее легендарки — за свойство переплачено').toBeGreaterThanOrEqual(
+      corridor.min,
+    )
+    // И СТАТЫ ДЕЙСТВИТЕЛЬНО СРЕЗАНЫ. Без этой половины «нулевая сумма» могла
+    // бы означать «свойство ничего не делает и платить не пришлось».
+    const sum = (item: typeof assembled) =>
+      item.mods
+        .filter((m) => m.kind !== 'base')
+        .reduce((acc, m) => acc + m.value.toNumber(), 0)
+    expect(sum(assembled), 'статы сборки не урезаны — платы не было').toBeLessThan(sum(plain))
+  }, 600_000)
+
   it('доли урона: умения и проки жёстко, автоатака — предупреждением', () => {
     const full = rate(withRelic, 'manual')
     const sum = full.autoDamagePerSecond

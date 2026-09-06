@@ -28,6 +28,7 @@ import { QUEST_CHAIN, type QuestDef } from '../quests'
 import { MECHANIC_IDS, type ProgressionStep } from '../progression'
 import type { ReagentDef } from '../reagents'
 import { MASTERY_MAX, MASTERY_RANK_STEP, type MasteryRankDef } from '../mastery'
+import type { BoonDef } from '../boons'
 import { BAND_IDS, bandById, bandDepth, bandForLevel, type BandId } from '../bands'
 import type { GoldUpgradeDef } from '../upgrades'
 import { craftToll, masteryToKnow, recipeLevel } from '../recipes'
@@ -97,6 +98,7 @@ export interface Content {
   upgrades: readonly GoldUpgradeDef[]
   reagents: readonly ReagentDef[]
   masteryRanks: readonly MasteryRankDef[]
+  boons: readonly BoonDef[]
   recipes: readonly RecipeDef[]
   professions: readonly ProfessionDef[]
   /** Пути звуковых файлов, реально лежащих в public/. */
@@ -2737,6 +2739,67 @@ export const MASTERY_SCHEMA: EntitySchema<MasteryRankDef> = {
   },
 }
 
+
+/**
+ * СВОЙСТВО СБОРКИ: вещь правит умение, и обе половины обязаны сойтись — и
+ * правка, и ПЛАТА за неё. Свойство без платы — это прибавка к бюджету силы
+ * мимо всех его коридоров, то есть ровно то, что бюджет и заведён ловить.
+ */
+export const BOON_SCHEMA: EntitySchema<BoonDef> = {
+  kind: 'свойство сборки',
+  file: 'data/boons.ts',
+  entities: (c) => c.boons,
+  id: (b) => b.id,
+  name: (b) => b.name,
+  numbers: [
+    {
+      field: 'statShare',
+      get: (b) => b.statShare,
+      // Ноль исключён снизу: свойство даром — прибавка к силе, а не обмен.
+      // Половина сверху: вещь, отдавшая больше половины статов, перестаёт
+      // быть вещью своего тира и читается как поломка генератора.
+      min: 0.01,
+      max: 0.5,
+      why: 'свойство оплачено долей статов вещи: даром нельзя, дороже половины — тоже',
+    },
+  ],
+  extra: (boon, content, report) => {
+    const where = `свойство сборки ${boon.id}`
+    report.need(
+      content.abilities.some((a) => a.id === boon.abilityId),
+      where,
+      `правит умение «${boon.abilityId}», которого нет в data/abilities.ts`,
+    )
+    report.need(
+      Array.isArray(boon.tune) && boon.tune.length > 0,
+      where,
+      'не правит ни одного поля: вещь платит статами и не получает ничего ' +
+        '(data/boons.ts)',
+    )
+    for (const tune of boon.tune ?? []) {
+      report.need(
+        content.abilityTunable.includes(tune.field),
+        where,
+        `правит поле «${tune.field}», не объявленное настраиваемым ` +
+          '(ABILITY_TUNABLE в data/abilities.ts)',
+      )
+      report.need(
+        content.tuneAllowed(tune),
+        where,
+        `операция «${tune.kind}» не годится для поля «${tune.field}»: пороги ` +
+          'сдвигаются в пунктах, величины масштабируются (data/abilities.ts)',
+      )
+    }
+    // ВЕЩЬ СО СВОЙСТВОМ ОБЯЗАНА СУЩЕСТВОВАТЬ. Свойство, которое никто не
+    // носит, — мёртвая запись: код есть, проверить его нечем.
+    report.need(
+      content.recipes.some((r) => r.output.kind === 'item' && r.output.boonId === boon.id),
+      where,
+      'его не несёт ни один рецепт — свойство недостижимо (data/recipes.ts)',
+    )
+  },
+}
+
 export const SCHEMAS = [
   ABILITY_SCHEMA,
   BRANCH_SCHEMA,
@@ -2755,6 +2818,7 @@ export const SCHEMAS = [
   QUEST_SCHEMA,
   REAGENT_SCHEMA,
   MASTERY_SCHEMA,
+  BOON_SCHEMA,
   PROGRESSION_SCHEMA,
   UPGRADE_SCHEMA,
   RECIPE_SCHEMA,

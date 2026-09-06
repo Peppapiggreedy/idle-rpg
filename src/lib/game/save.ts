@@ -22,6 +22,7 @@ import { createRng, randomSeed } from './rng'
 import { TEMPLE, TEMPLE_BY_ID } from '../data/temple'
 import { advancePotions, gatherHerbs } from './potions'
 import { ENCHANT_BY_ID } from '../data/enchants'
+import { BOON_BY_ID } from '../data/boons'
 import { PROC_BY_ID } from '../data/procs'
 import { ensureStats, STAT_IDS, type ModifierKind, type StatId, type StatModifier } from './stats'
 import { SLOT_IDS, type SlotId } from '../data/slots'
@@ -163,6 +164,8 @@ export interface SavedItem {
   enchantId?: string
   /** Прок вещи. Нет поля — прока нет. */
   procId?: string
+  /** Свойство сборки. Нет поля — свойства нет. */
+  boonId?: string
   mods: SavedModifier[]
 }
 
@@ -351,6 +354,7 @@ function savedFromItem(item: Item): SavedItem {
     ...(item.grip ? { grip: item.grip } : {}),
     ...(item.enchantId ? { enchantId: item.enchantId } : {}),
     ...(item.procId ? { procId: item.procId } : {}),
+    ...(item.boonId ? { boonId: item.boonId } : {}),
     mods: item.mods.map((m) => ({
       stat: m.stat,
       kind: m.kind,
@@ -559,6 +563,11 @@ function itemFromSaved(raw: SavedItem, index: number): Item {
   // Прок принимаем только СВОЙ: неизвестный молча отбрасывается, а предмет
   // остаётся носимым — терять из-за переименования вещь целиком нельзя.
   const procId = typeof raw.procId === 'string' && raw.procId in PROC_BY_ID ? raw.procId : undefined
+  // Свойство сборки — по тому же правилу, что и прок: чужое отбрасывается, а
+  // вещь остаётся носимой. Статы у неё при этом УЖЕ урезаны (скидка списана
+  // на генерации), и вернуть их некому — но вещь без свойства всё ещё вещь,
+  // а потерянная вещь это потерянный прогресс.
+  const boonId = typeof raw.boonId === 'string' && raw.boonId in BOON_BY_ID ? raw.boonId : undefined
   return {
     id: typeof raw.id === 'string' ? raw.id : `item-restored-${index}`,
     name: typeof raw.name === 'string' ? raw.name : FALLBACK_ITEM_NAME,
@@ -568,6 +577,7 @@ function itemFromSaved(raw: SavedItem, index: number): Item {
     ...(grip ? { grip } : {}),
     ...(enchantId ? { enchantId } : {}),
     ...(procId ? { procId } : {}),
+    ...(boonId ? { boonId } : {}),
     mods,
   }
 }

@@ -18,10 +18,25 @@ import { RARITY_BY_ID, RARITIES } from '../data/rarity'
 import { SHIELD_BY_ID, WEAPON_BY_ID } from '../data/items'
 import { bandForLevel, LEVEL_BANDS } from '../data/bands'
 
-/** Смитинговые рецепты, дающие ВЕЩЬ: переделы и еда сюда не входят. */
+/**
+ * Смитинговые рецепты, дающие ВЕЩЬ: переделы и еда сюда не входят.
+ *
+ * СБОРКА СО СВОЙСТВОМ ИСКЛЮЧЕНА, И ЭТО НЕ ПОБЛАЖКА. Правило «крафт равен
+ * дропу своей полосы» про СИЛУ, а сборка силы не даёт вовсе: её свойство
+ * оплачено долей собственных статов, и по статам она обязана быть СЛАБЕЕ
+ * находки — ровно на эту долю. Мерить её здесь значило бы требовать
+ * равенства от вещи, которая по построению неравна; её нулевую сумму меряет
+ * своя строка бюджета (`POWER_BUDGET.assembly`), а плату — тест ниже.
+ */
 const ITEM_RECIPES = RECIPES.filter(
   (r): r is RecipeDef & { output: Extract<RecipeDef['output'], { kind: 'item' }> } =>
-    r.profession === 'smithing' && r.output.kind === 'item',
+    r.profession === 'smithing' && r.output.kind === 'item' && !r.output.boonId,
+)
+
+/** Сборки со свойством — их правило другое, и оно проверяется отдельно. */
+const BOON_RECIPES = RECIPES.filter(
+  (r): r is RecipeDef & { output: Extract<RecipeDef['output'], { kind: 'item' }> } =>
+    r.output.kind === 'item' && !!r.output.boonId,
 )
 
 /** Суммарная величина плоских прибавок вещи — грубая, но честная мера. */
@@ -117,6 +132,21 @@ describe('сила крафта равна дропу своей полосы', 
     const common = RARITIES.find((r) => r.id === 'common')!
     expect(rare.weight).toBeLessThan(common.weight)
     expect(rare.weight).toBeGreaterThan(0)
+  })
+
+  it('сборка со свойством СЛАБЕЕ находки по статам — ровно на свою плату', () => {
+    // Обратная сторона того же правила. Крафт не обгоняет дроп; сборка, чтобы
+    // не обгонять его и со свойством, платит статами вперёд. Проверка стоит
+    // здесь, рядом с равенством, потому что это одно правило, а не два.
+    for (const recipe of BOON_RECIPES) {
+      const item = craftedItem(recipe.output, 0)
+      expect(item, recipe.id).not.toBeNull()
+      if (!item) continue
+      const flat = (mods: typeof item.mods) => power(mods.filter((m) => m.kind !== 'base'))
+      const plain = craftedItem({ ...recipe.output, boonId: undefined }, 0)!
+      expect(flat(item.mods), recipe.id).toBeLessThan(flat(plain.mods))
+      expect(flat(item.mods), recipe.id).toBeGreaterThan(0)
+    }
   })
 
   it('на каждой полосе есть что сковать, и слоты не повторяются подряд', () => {

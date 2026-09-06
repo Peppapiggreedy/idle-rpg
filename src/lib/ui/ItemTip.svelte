@@ -13,6 +13,7 @@
   import { SLOT_NAMES, type SlotId } from '../data/slots'
   import { GRIP_TEXT } from './itemText'
   import EnchantLine from './EnchantLine.svelte'
+  import BoonLine from './BoonLine.svelte'
   import ItemMods from './ItemMods.svelte'
   import { rarityStyle } from './kit'
   import { placeTip } from './tipPlace'
@@ -60,6 +61,7 @@
   </div>
   <ItemMods mods={item.mods} />
   <EnchantLine {item} separated />
+  <BoonLine {item} separated />
 </div>
 
 <style>

@@ -1667,5 +1667,37 @@ export function brokenCases(): BrokenCase[] {
       },
       expect: ['учить не на чем'],
     },
+    // --- ТРИ ПОЛОМКИ ПРО СВОЙСТВО СБОРКИ ---
+    //
+    // Правило одно: свойство правит умение и ОПЛАЧЕНО статами вещи. Ломается
+    // оно с трёх сторон — некому платить, нечем платить, некого править.
+    {
+      title: 'свойство сборки правит несуществующее умение',
+      content: {
+        ...real,
+        boons: patch(real.boons, first(real.boons).id, { abilityId: 'нет-такого-умения' }),
+      },
+      expect: [first(real.boons).id, 'нет-такого-умения'],
+    },
+    {
+      title: 'свойство сборки достаётся даром',
+      content: {
+        ...real,
+        boons: patch(real.boons, first(real.boons).id, { statShare: 0 }),
+      },
+      expect: [first(real.boons).id, 'statShare'],
+    },
+    {
+      title: 'свойство сборки не носит ни один рецепт',
+      content: {
+        ...real,
+        recipes: real.recipes.map((r) =>
+          r.output.kind === 'item' && r.output.boonId
+            ? { ...r, output: { ...r.output, boonId: undefined } }
+            : r,
+        ),
+      },
+      expect: ['не несёт ни один рецепт'],
+    },
   ]
 }
