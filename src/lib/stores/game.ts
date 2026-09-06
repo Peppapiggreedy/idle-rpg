@@ -9,7 +9,7 @@ import { ensureStats } from '../game/stats'
 import { createRng, type Rng } from '../game/rng'
 import { xpToNextLevel } from '../game/formulas'
 import { Decimal } from '../game/numbers'
-import { applyOfflineProgress } from '../game/save'
+import { applyOfflineProgress, type OfflineAccrual } from '../game/save'
 import { sellItem } from '../game/loot'
 import type { UpgradePriority } from '../data/upgrade'
 import type { LootPolicy } from '../data/upgrades'
@@ -50,6 +50,7 @@ import {
   saveGame,
   stateFromPayload,
   type LoadErrorReason,
+  type SaveFieldCode,
   type OfflineReport,
   type SaveWriteError,
 } from '../game/save'
@@ -81,6 +82,10 @@ export type NoticeCode =
   | 'save-quota-exceeded'
   | 'import-invalid'
   | 'import-success'
+  // Сейв прочитан, но часть полей пришлось взять умолчанием. Отдельный код, а
+  // не 'save-corrupted': игра ЗАПУСТИЛАСЬ и герой на месте — потеряно
+  // конкретное, и назвать надо именно его.
+  | 'save-fields-unreadable'
 
 /** Код отказа загрузки -> уведомление. Своего текста у стора нет. */
 const LOAD_NOTICE: Record<LoadErrorReason, NoticeCode> = {
@@ -98,6 +103,33 @@ const WRITE_NOTICE: Record<SaveWriteError, NoticeCode> = {
 }
 const notice = writable<NoticeCode | null>(null)
 export const saveNotice = readonly(notice)
+
+/**
+ * Какие поля сейва не прочитались. Коды из `game/save.ts`, слова — в
+ * NoticeBar: «что-то пошло не так» игрок читает как «игра сломалась», а
+ * «не прочитались: уровень, открытые зоны» — как «вот что проверить».
+ */
+const unreadable = writable<SaveFieldCode[]>([])
+export const unreadableSaveFields = readonly(unreadable)
+
+/**
+ * Доля посчитанного догона оффлайна, 0..1, либо `null` — когда считать нечего
+ * или уже посчитано. Пока не `null`, игрок видит на экране, что идёт счёт, а
+ * не подвисание.
+ */
+const catchup = writable<number | null>(null)
+export const offlineCatchupProgress = readonly(catchup)
+
+/**
+ * Сколько шагов догона крутить за кадр.
+ *
+ * Не «сколько миллисекунд»: шаг догона считается ШАГАМИ, и мерить их часами
+ * значило бы сделать результат зависимым от загруженности машины. Восемь
+ * часов простоя — меньше пятисот шагов, то есть при двадцати за кадр догон
+ * укладывается в пару десятков кадров: экран появляется сразу, полоска
+ * добегает за треть секунды.
+ */
+const CATCHUP_CHUNKS_PER_FRAME = 20
 export function dismissNotice(): void {
   notice.set(null)
 }
@@ -216,16 +248,67 @@ export function startNewGame(classId: string): void {
   sessionStart.set(0)
 }
 
+/**
+ * Домолоть догон оффлайна ПО КАДРАМ.
+ *
+ * Замер аудита: двенадцать часов простоя считались 664 мс одним синхронным
+ * блоком ровно в момент открытия вкладки — там, где игрок ждёт экрана и любая
+ * задержка читается как «игра не грузится». Считается ровно то же и ровно
+ * столько же (совпадение до последнего числа держит
+ * `game/offline-chunked.test.ts`), но между порциями управление возвращается
+ * браузеру: он успевает и нарисовать кадр, и ответить на нажатие.
+ *
+ * ЗАПАСНОЙ ПУТЬ ОБЯЗАТЕЛЕН. Без `requestAnimationFrame` (старый движок,
+ * фоновая вкладка, отключённая анимация) догон обязан всё равно досчитаться —
+ * иначе прогресс за отсутствие просто пропал бы. Тогда крутим одним куском:
+ * это ровно прежнее поведение, и хуже, чем было, не станет.
+ */
+function runCatchup(run: OfflineAccrual): void {
+  const raf = typeof requestAnimationFrame === 'function' ? requestAnimationFrame : null
+  const settle = () => {
+    const { state: next, offline: report } = run.finish()
+    state.set(next)
+    catchup.set(null)
+    if (report && report.elapsedMs >= OFFLINE_MODAL_MIN_MS) offline.set(report)
+    // Свежий lastTimestamp пишем ПОСЛЕ начисления: сохранись он раньше, и
+    // перезагрузка посреди догона начислила бы то же время второй раз.
+    persistNow()
+    sessionStart.set(get(state).playtimeMs.toNumber())
+  }
+  if (run.done()) return settle()
+  if (!raf) {
+    while (!run.done()) run.step(CATCHUP_CHUNKS_PER_FRAME)
+    return settle()
+  }
+  catchup.set(0)
+  const frame = () => {
+    run.step(CATCHUP_CHUNKS_PER_FRAME)
+    if (run.done()) return settle()
+    catchup.set(run.progress())
+    raf(frame)
+  }
+  raf(frame)
+}
+
 /** Загружает сейв до старта цикла; битый сейв не роняет игру. */
 export function initGame(): void {
   try {
-    const result = loadGame()
+    // `defer: true` — догон отдаётся непрокрученным: экран показываем сразу,
+    // а числа домалываем по кадрам (см. `runCatchup`).
+    const result = loadGame({ defer: true })
     if (result.kind === 'loaded') {
       state.set(result.state)
       started.set(true)
+      // Копия уже сделана загрузкой; здесь остаётся сказать игроку, ЧТО
+      // именно не прочиталось, пока автосохранение не затёрло оригинал.
+      if (result.unreadable.length > 0) {
+        unreadable.set(result.unreadable)
+        notice.set('save-fields-unreadable')
+      }
       if (result.offline && result.offline.elapsedMs >= OFFLINE_MODAL_MIN_MS) {
         offline.set(result.offline)
       }
+      if (result.catchup) runCatchup(result.catchup)
     } else if (result.kind === 'error') {
       // КАЖДАЯ ПРИЧИНА СВОИМ ТЕКСТОМ. Раньше всё, кроме нечитаемой строки,
       // объявлялось сейвом «из более новой версии», и игрок с испорченным
@@ -237,7 +320,12 @@ export function initGame(): void {
   }
   // Пока класс не выбран, сейва не создаём: иначе первый же заход записал бы
   // Стража, и выбор превратился бы в формальность.
-  if (get(started)) {
+  //
+  // ПОКА ИДЁТ ДОГОН, СОХРАНЯТЬ НЕЛЬЗЯ. Свежий `lastTimestamp` при ещё не
+  // начисленном оффлайне означал бы, что перезагрузка посреди догона стирает
+  // всё отсутствие: время уже «зачтено», а числа ещё не пришли. Поэтому
+  // отложенный путь сохраняет сам, в `settle()`, — после начисления.
+  if (get(started) && get(catchup) === null) {
     // Фиксируем свежий lastTimestamp (в т.ч. после перевода часов назад).
     persistNow()
     sessionStart.set(get(state).playtimeMs.toNumber())
