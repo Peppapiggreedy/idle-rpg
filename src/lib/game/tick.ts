@@ -50,7 +50,7 @@ import {
   queuedAbilityDropReason,
 } from './abilities'
 import { finishRest, needsRest, startRest } from './rest'
-import { addMaterial, rollMaterial } from './crafting'
+import { addMaterial, rollZoneReagent } from './crafting'
 import { classById } from '../data/classes'
 import { advancePotions, gatherHerbs } from './potions'
 import {
@@ -488,7 +488,7 @@ const applyMaterialDrop: TickStep = (s, ctx) => {
   // и шансы редкости предметов не сдвигают. Бросок идёт ДО дропа предмета —
   // порядок фиксирован, иначе прогоны с сидом перестанут воспроизводиться.
   let next = s
-  const material = rollMaterial(s.currentZoneId, ctx.rng)
+  const material = rollZoneReagent(s.currentZoneId, ctx.rng)
   if (material) {
     next = {
       ...addMaterial(next, material.id),

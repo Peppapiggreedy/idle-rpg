@@ -37,6 +37,9 @@ describe('целостность контента', () => {
     // Почему файл не нуждается в схеме — по одной строке на каждый.
     const NO_ENTITIES: Record<string, string> = {
       'data/balance.ts': 'числа баланса, а не сущности с id; их диапазоны проверяет BALANCE_SCHEMA',
+      'data/bands.ts':
+        'разметка уровней: десять полос с границами, сущностей с id не заводит. ' +
+        'Сплошность полос и то, что каждая обитаема, проверяют схемы фонов и реагентов',
       'data/loot.ts': 'правила рулетки: веса и цены, сущностей с id не заводит',
       'data/monsters.ts': 'архетипы и формула масштаба; мобы приезжают внутрь зон и проверяются с ними',
       'data/render.ts': 'длительности и размеры сцены — не контент',
@@ -75,7 +78,7 @@ describe('целостность контента', () => {
     for (const file of [
       'data/abilities.ts',
       'data/classes.ts',
-      'data/materials.ts',
+      'data/reagents.ts',
       'data/herbs.ts',
       'data/enchants.ts',
       'data/procs.ts',
@@ -83,7 +86,6 @@ describe('целостность контента', () => {
       'data/temple.ts',
       'data/quests.ts',
       'data/progression.ts',
-      'data/reagents.ts',
       'data/recipes.ts',
       'data/dungeons.ts',
       'data/items.ts',
@@ -109,7 +111,6 @@ describe('целостность контента', () => {
       'щит',
       'звук',
       'класс',
-      'материал',
       'трава',
       'зачарование',
       'прок',

@@ -183,10 +183,14 @@ describe('лестница данжей', () => {
     expect(DUNGEONS.map((d) => d.unlockRequirement)).toEqual([20, 30, 40, 50, 60, 70, 80, 90])
     // Реагент на каждый тир КАЖДОЙ сложности, и ровно один: у героики свой,
     // иначе ходить в неё было бы незачем.
-    const normalReagents = REAGENTS.filter((r) => r.difficulty === 'normal')
-    const heroicReagents = REAGENTS.filter((r) => r.difficulty === 'heroic')
-    expect(normalReagents.map((r) => r.tier)).toEqual(DUNGEONS.map((d) => d.tier))
-    expect(heroicReagents.map((r) => r.tier)).toEqual(HEROIC_DUNGEONS.map((d) => d.tier))
+    // Тир и сложность переехали в `source`: у реагента теперь три роли, и
+    // «откуда падает» описывает источник, а не два поля вперемешку с полосой.
+    const fromDungeon = (difficulty: string) =>
+      REAGENTS.filter(
+        (r) => r.source?.kind === 'dungeon' && r.source.difficulty === difficulty,
+      ).map((r) => (r.source?.kind === 'dungeon' ? r.source.tier : 0))
+    expect(fromDungeon('normal')).toEqual(DUNGEONS.map((d) => d.tier))
+    expect(fromDungeon('heroic')).toEqual(HEROIC_DUNGEONS.map((d) => d.tier))
     expect(new Set(ALL_DUNGEONS.map((d) => d.reagentId)).size).toBe(ALL_DUNGEONS.length)
   })
 

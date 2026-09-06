@@ -7,7 +7,7 @@
   import { ABILITY_BY_ID } from '../data/abilities'
   import { BRANCH_BY_ID, TALENT_BY_ID, groupMates } from '../data/talents'
   import { DUNGEON_CLEAR_XP_BONUS, HEROIC_CLEAR_XP_BONUS } from '../data/dungeons'
-  import { MATERIAL_BY_ID } from '../data/materials'
+  import { REAGENT_BY_ID } from '../data/reagents'
   import { RECIPE_BY_ID } from '../data/recipes'
   import { ENCHANT_BY_ID } from '../data/enchants'
   import { PROC_BY_ID } from '../data/procs'
@@ -67,7 +67,7 @@
           : `${name} сорвалось: заряды кончились, ударила автоатака`
       }
       case 'material':
-        return `Собрано: ${MATERIAL_BY_ID[e.materialId]?.name ?? e.materialId}`
+        return `Собрано: ${REAGENT_BY_ID[e.materialId]?.name ?? e.materialId}`
       case 'craft':
         return `Готово: ${RECIPE_BY_ID[e.recipeId]?.name ?? e.recipeId}`
       case 'quest-complete':

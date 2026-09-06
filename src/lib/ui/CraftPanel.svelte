@@ -13,7 +13,7 @@
   import type { PotionRecipe } from '../data/recipes'
   import { materialCount, recipeStatus, type CraftBlockReason } from '../game/crafting'
   import { craftRecipe, gameState } from '../stores/game'
-  import { MATERIALS, MATERIAL_BY_ID } from '../data/materials'
+  
   import { HERBS, HERB_BY_ID } from '../data/herbs'
   import { REAGENTS, REAGENT_BY_ID } from '../data/reagents'
   import { PROFESSIONS, professionUnlocked, recipesOf, type RecipeDef } from '../data/recipes'
@@ -30,12 +30,12 @@
     'inventory-full': 'Сумка полна — освободи место',
   }
 
-  // Мешок держит четыре вида: материалы зон, травы, реагенты боссов и готовую
-  // еду со склянками. Забытый вид просто не показался бы игроку.
+  // Мешок держит три вида: реагенты (все три роли — обычные, боссовые и
+  // промежуточные), травы и готовую еду со склянками. Забытый вид просто не
+  // показался бы игроку.
   const BAG_ENTRIES = [
-    ...MATERIALS.map((m) => ({ id: m.id, name: m.name, icon: m.icon })),
-    ...HERBS.map((h) => ({ id: h.id, name: h.name, icon: h.icon })),
     ...REAGENTS.map((r) => ({ id: r.id, name: r.name, icon: r.icon })),
+    ...HERBS.map((h) => ({ id: h.id, name: h.name, icon: h.icon })),
   ]
   const owned = $derived(
     BAG_ENTRIES.map((m) => ({ material: m, count: materialCount($gameState, m.id) })).filter(
@@ -85,7 +85,7 @@
   }
 
   const MATERIAL_LABEL = (id: string) =>
-    MATERIAL_BY_ID[id]?.name ?? HERB_BY_ID[id]?.name ?? REAGENT_BY_ID[id]?.name ?? id
+    REAGENT_BY_ID[id]?.name ?? HERB_BY_ID[id]?.name ?? id
 
   // Строка модификатора теми же словами, что в подсказке зелья: два разных
   // способа назвать «+8 силы» игрок прочитал бы как две разные механики.
@@ -167,9 +167,8 @@
               {#each recipe.inputs as input (input.materialId)}
                 {@const have = materialCount($gameState, input.materialId)}
                 <li class:short={have.lt(input.count)}>
-                  {MATERIAL_BY_ID[input.materialId]?.name ??
+                  {REAGENT_BY_ID[input.materialId]?.name ??
                     HERB_BY_ID[input.materialId]?.name ??
-                    REAGENT_BY_ID[input.materialId]?.name ??
                     input.materialId}
                   {formatNumber(have)}/{input.count}
                 </li>

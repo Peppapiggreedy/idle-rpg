@@ -15,7 +15,8 @@
     "abilityCasts": "79",
     "totalTicks": "3000",
     "inventoryCount": 7,
-    "inventorySellTotal": "607"
+    "inventorySellTotal": "607",
+    "reagents": "lean-meat:2,meadow-herb:2,quarry-ore:1"
   },
   "step-12000": {
     "gold": "1413.9060000000002",
@@ -33,7 +34,8 @@
     "abilityCasts": "338",
     "totalTicks": "12000",
     "inventoryCount": 19,
-    "inventorySellTotal": "2189"
+    "inventorySellTotal": "2189",
+    "reagents": "lean-meat:10,meadow-herb:10,quarry-ore:9"
   },
   "step-36000": {
     "gold": "9607.653600000001",
@@ -51,6 +53,7 @@
     "abilityCasts": "1102",
     "totalTicks": "36000",
     "inventoryCount": 24,
-    "inventorySellTotal": "3034"
+    "inventorySellTotal": "3034",
+    "reagents": "lean-meat:28,meadow-herb:38,quarry-ore:32"
   }
 }

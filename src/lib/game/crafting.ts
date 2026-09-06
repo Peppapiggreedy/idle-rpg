@@ -3,7 +3,6 @@
 // Уровней у профессий нет: рецепт либо собирается из того, что есть, либо
 // нет. Отказ — отдельный КОД, текст причины рендерит UI (правило проекта).
 import { Decimal } from './numbers'
-import { MATERIAL_BY_ID, materialsInZone, type MaterialDef } from '../data/materials'
 import { craftToll, recipeUnlockLevel } from '../data/recipes'
 import { recipeUnlocked } from '../data/temple'
 import {
@@ -15,8 +14,10 @@ import {
 import { RARITY_BY_ID } from '../data/rarity'
 import { ARMOR_NOUNS, SHIELD_BY_ID, WEAPON_BY_ID } from '../data/items'
 import { MATERIAL_DROP_CHANCE, REAGENT_DROP_CHANCE } from '../data/balance'
+import { ZONE_BY_ID } from '../data/zones'
+import { bandForLevel } from '../data/bands'
 import { inventorySize } from './upgrades'
-import { REAGENT_BY_ID, type ReagentDef } from '../data/reagents'
+import { REAGENT_BY_ID, commonReagentsInBand, type ReagentDef } from '../data/reagents'
 import type { DungeonDef } from '../data/dungeons'
 import { armorMods, shieldMods, weaponMods } from './loot'
 import { pushEvent, type GameState } from './state'
@@ -30,20 +31,30 @@ export function materialCount(state: GameState, id: string): Decimal {
 }
 
 /**
- * Бросок материала с убитого моба. Пул СВОЙ, отдельный от лута: материалы не
+ * Бросок реагента с убитого моба. Пул СВОЙ, отдельный от лута: реагенты не
  * занимают слот в сумке и не сдвигают шансы редкости предметов.
  *
- * Порядок бросков фиксирован: шанс -> материал из пула зоны.
+ * ПУЛ БЕРЁТСЯ ПО ПОЛОСЕ, А НЕ ПО СПИСКУ ЗОН. Раньше у каждого материала был
+ * свой рукописный список зон, и списки расползались через всю карту: руда
+ * падала с шестого уровня по восьмидесятый, соль — в четырёх зонах врозь.
+ * Теперь у реагента ровно одна полоса (`data/reagents.ts`), а зона знает свою
+ * полосу по уровню мобов — списков не осталось вовсе.
+ *
+ * Порядок бросков фиксирован: шанс -> реагент из пула полосы. Веса
+ * сравниваются ТОЛЬКО внутри полосы, поэтому «частый» и «редкий» значат одно
+ * и то же на любой глубине.
  */
-export function rollMaterial(zoneId: string, rng: Rng): MaterialDef | null {
+export function rollZoneReagent(zoneId: string, rng: Rng): ReagentDef | null {
   if (rng() >= MATERIAL_DROP_CHANCE) return null
-  const pool = materialsInZone(zoneId)
+  const zone = ZONE_BY_ID[zoneId]
+  if (!zone) return null
+  const pool = commonReagentsInBand(bandForLevel(zone.monsterLevelRange.max).id)
   if (pool.length === 0) return null
-  const total = pool.reduce((sum, m) => sum + m.weight, 0)
+  const total = pool.reduce((sum, m) => sum + (m.weight ?? 0), 0)
   let roll = rng() * total
-  for (const material of pool) {
-    roll -= material.weight
-    if (roll < 0) return material
+  for (const reagent of pool) {
+    roll -= reagent.weight ?? 0
+    if (roll < 0) return reagent
   }
   return pool[pool.length - 1]
 }
@@ -246,4 +257,4 @@ export function takeFood(state: GameState): { state: GameState; foodId: string |
   return { state, foodId: null }
 }
 
-export { MATERIAL_BY_ID }
+export { REAGENT_BY_ID }

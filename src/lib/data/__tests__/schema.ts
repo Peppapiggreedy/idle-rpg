@@ -18,7 +18,6 @@ import type { BackgroundBand, SpriteAsset } from '../sprites'
 import type { DungeonDef } from '../dungeons'
 import { ARMOR_ATTRIBUTES, type AttributeId, type ShieldTemplate, type WeaponTemplate } from '../items'
 import type { ClassDef } from '../classes'
-import type { MaterialDef } from '../materials'
 import type { HerbDef } from '../herbs'
 import type { EnchantDef } from '../enchants'
 import { clearKey } from '../dungeons'
@@ -28,6 +27,7 @@ import type { TempleDef } from '../temple'
 import { QUEST_CHAIN, type QuestDef } from '../quests'
 import { MECHANIC_IDS, type ProgressionStep } from '../progression'
 import type { ReagentDef } from '../reagents'
+import { BAND_IDS, bandById, bandDepth, bandForLevel, type BandId } from '../bands'
 import type { GoldUpgradeDef } from '../upgrades'
 import { craftToll, recipeLevel } from '../recipes'
 import type { ProfessionDef, RecipeDef } from '../recipes'
@@ -84,7 +84,6 @@ export interface Content {
   shields: readonly ShieldTemplate[]
   sounds: readonly SoundCue[]
   classes: readonly ClassDef[]
-  materials: readonly MaterialDef[]
   progression: readonly ProgressionStep[]
   /** Покупки за золото (GOLD_UPGRADES). */
   upgrades: readonly GoldUpgradeDef[]
@@ -1200,10 +1199,11 @@ export const DUNGEON_SCHEMA: EntitySchema<DungeonDef> = {
     // Реагент обязан быть СВОЕГО тира: перепутанные реагенты сделали бы
     // два данжа взаимозаменяемыми, и никто бы этого не заметил.
     const reagent = content.reagents.find((r) => r.id === dungeon.reagentId)
-    if (reagent && reagent.tier !== dungeon.tier) {
+    const reagentTier = reagent?.source?.kind === 'dungeon' ? reagent.source.tier : null
+    if (reagent && reagentTier !== dungeon.tier) {
       report.add(
         where,
-        `тир ${dungeon.tier}, а реагент «${reagent.id}» помечен тиром ${reagent.tier}: ` +
+        `тир ${dungeon.tier}, а реагент «${reagent.id}» помечен тиром ${reagentTier}: ` +
           'реагент обязан быть своего тира (data/reagents.ts)',
       )
     }
@@ -1305,21 +1305,102 @@ export const REAGENT_SCHEMA: EntitySchema<ReagentDef> = {
   id: (r) => r.id,
   name: (r) => r.name,
   icon: (r) => r.icon,
-  numbers: [
-    {
-      field: 'tier',
-      get: (r) => r.tier,
-      min: 1,
-      integer: true,
-      why: 'реагент принадлежит тиру данжа, а тиры нумеруются с первого',
-    },
-  ],
   extra: (reagent, content, report) => {
-    // Реагент без данжа — недостижимый контент: уронить его будет некому.
+    const where = `реагент ${reagent.id}`
+
+    // --- ПОЛОСА: ровно одна, и она существует ---
+    //
+    // Полоса — это ответ на «где в мире искать». Ссылка на несуществующую
+    // полосу означает реагент, которого нет нигде, и заметить это без
+    // проверки нельзя: на полке он просто не появится.
     report.need(
-      content.dungeons.some((d) => d.reagentId === reagent.id),
-      `реагент ${reagent.id}`,
-      'его не роняет ни один данж — рецепты с ним недостижимы (data/dungeons.ts)',
+      BAND_IDS.includes(reagent.band as BandId),
+      where,
+      `стоит на полосе «${reagent.band}», которой нет в data/bands.ts`,
+    )
+
+    const droppedByDungeon = content.dungeons.some((d) => d.reagentId === reagent.id)
+
+    if (reagent.role === 'common') {
+      // --- ОБЫЧНЫЙ: вес есть, боссы его не роняют ---
+      report.need(
+        typeof reagent.weight === 'number' && reagent.weight > 0,
+        where,
+        'обычный реагент без веса рулетки не выпадет никогда (data/reagents.ts)',
+      )
+      report.need(
+        reagent.source === undefined,
+        where,
+        'обычный реагент падает с мобов полосы, и источника у него быть не может ' +
+          '(data/reagents.ts)',
+      )
+      // ГЛАВНОЕ РАЗДЕЛЕНИЕ РОЛЕЙ, и проверять его надо в обе стороны: обычный
+      // не роняется боссом, боссовый не роняется мобом. Иначе «редкий
+      // реагент подземелья» тихо превращается в то, что фармится в зоне, и
+      // ворота лучшей вещи полосы перестают быть воротами.
+      report.need(
+        !droppedByDungeon,
+        where,
+        'помечен обычным, но его роняет босс подземелья — роль и источник ' +
+          'разошлись (data/dungeons.ts)',
+      )
+      return
+    }
+
+    if (reagent.role === 'boss') {
+      // --- БОССОВЫЙ: источник назван и подтверждён с другой стороны ---
+      report.need(
+        reagent.weight === undefined,
+        where,
+        'у боссового реагента нет рулетки полосы — вес ему не положен (data/reagents.ts)',
+      )
+      const source = reagent.source
+      report.need(source !== undefined, where, 'боссовый реагент без источника: ' +
+        'непонятно, кто его роняет (data/reagents.ts)')
+      if (!source) return
+      if (source.kind === 'dungeon') {
+        report.need(
+          droppedByDungeon,
+          where,
+          'его не роняет ни один данж — рецепты с ним недостижимы (data/dungeons.ts)',
+        )
+        // ПОЛОСА БОССОВОГО ВЫВЕДЕНА ИЗ ЛЕСТНИЦЫ, и расходиться с ней нельзя:
+        // подземелье тира T стоит в полосе своего входа, и реагент оттуда же.
+        const dungeon = content.dungeons.find((d) => d.reagentId === reagent.id)
+        const zone = dungeon ? content.zones.find((z) => z.id === dungeon.zoneId) : undefined
+        if (zone) {
+          report.need(
+            bandForLevel(zone.monsterLevelRange.max).id === reagent.band,
+            where,
+            `стоит на полосе «${reagent.band}», а роняющий его данж — на ` +
+              `«${bandForLevel(zone.monsterLevelRange.max).id}» (data/reagents.ts)`,
+          )
+        }
+        return
+      }
+      report.need(
+        content.temples.some((t) => t.clearReward.materialId === reagent.id),
+        where,
+        'помечен наградой за зачистку храма, но ни один храм его не выдаёт (data/temple.ts)',
+      )
+      return
+    }
+
+    // --- ПРОМЕЖУТОЧНЫЙ: источника выпадения нет ВООБЩЕ ---
+    //
+    // В этом весь его смысл: два передела вместо одного. Стоит ему получить
+    // хоть один источник — и второй передел становится необязательным, то
+    // есть исчезает.
+    report.need(
+      reagent.weight === undefined && reagent.source === undefined,
+      where,
+      'промежуточный реагент не выпадает — он крафтится, и источника у него ' +
+        'быть не может (data/reagents.ts)',
+    )
+    report.need(
+      !droppedByDungeon,
+      where,
+      'помечен промежуточным, но его роняет босс подземелья (data/dungeons.ts)',
     )
   },
 }
@@ -1530,52 +1611,6 @@ export const SHIELD_SCHEMA: EntitySchema<ShieldTemplate> = {
   },
 }
 
-export const MATERIAL_SCHEMA: EntitySchema<MaterialDef> = {
-  kind: 'материал',
-  file: 'data/materials.ts',
-  entities: (c) => c.materials,
-  id: (m) => m.id,
-  name: (m) => m.name,
-  icon: (m) => m.icon,
-  numbers: [
-    {
-      field: 'weight',
-      get: (m) => (m.award === undefined ? m.weight : 1),
-      min: 0,
-      exclusiveMin: true,
-      why: 'нулевой вес рулетки означал бы, что материал не падает никогда',
-    },
-  ],
-  extra: (material, content, report) => {
-    const where = `материал ${material.id}`
-    // Материал без зоны — недостижимый контент: рецепт с ним не собрать
-    // никогда. Исключение ровно одно и названо в самих данных: материал,
-    // который ВЫДАЁТСЯ за достижение, а не падает. Проверка при этом не
-    // отключается — она спрашивает про второй источник.
-    const awarded = material.award !== undefined
-    report.need(
-      awarded || (Array.isArray(material.zoneIds) && material.zoneIds.length > 0),
-      where,
-      'не падает ни в одной зоне и не выдаётся за достижение — рецепты с ним ' +
-        'недостижимы (data/materials.ts)',
-    )
-    if (awarded && material.award === 'temple-clear') {
-      report.need(
-        content.temples.some((t) => t.clearReward.materialId === material.id),
-        where,
-        'помечен наградой за зачистку храма, но ни один храм его не выдаёт (data/temple.ts)',
-      )
-    }
-    for (const id of material.zoneIds ?? []) {
-      report.need(
-        content.zones.some((z) => z.id === id),
-        where,
-        `падает в зоне «${id}», которой нет в data/zones.ts`,
-      )
-    }
-  },
-}
-
 export const RECIPE_SCHEMA: EntitySchema<RecipeDef> = {
   kind: 'рецепт',
   file: 'data/recipes.ts',
@@ -1600,14 +1635,13 @@ export const RECIPE_SCHEMA: EntitySchema<RecipeDef> = {
       // босса. Входы у них разные (бросок, время, цепочка боссов), но в
       // рецепте они лежат одинаково.
       const knownInput =
-        content.materials.some((m) => m.id === input.materialId) ||
-        content.herbs.some((h) => h.id === input.materialId) ||
-        content.reagents.some((r) => r.id === input.materialId)
+        content.reagents.some((r) => r.id === input.materialId) ||
+        content.herbs.some((h) => h.id === input.materialId)
       report.need(
         knownInput,
         where,
-        `требует материал «${input.materialId}», которого нет ни в data/materials.ts, ` +
-          'ни в data/herbs.ts, ни в data/reagents.ts',
+        `требует материал «${input.materialId}», которого нет ни в data/reagents.ts, ` +
+          'ни в data/herbs.ts',
       )
       report.need(
         Number.isInteger(input.count) && input.count > 0,
@@ -1619,16 +1653,6 @@ export const RECIPE_SCHEMA: EntitySchema<RecipeDef> = {
     // ДОСТИЖИМОСТЬ: все материалы рецепта должны падать хоть где-то вместе с
     // прогрессом. Достаточно, чтобы каждый падал хотя бы в одной зоне.
     for (const input of recipe.inputs ?? []) {
-      const material = content.materials.find((m) => m.id === input.materialId)
-      // Материал-НАГРАДА добывается не в зоне, а достижением, и его
-      // достижимость проверена своей схемой: там же сказано, кто его выдаёт.
-      if (material && material.award === undefined && material.zoneIds.length === 0) {
-        report.add(
-          where,
-          `материал «${input.materialId}» не падает ни в одной зоне — рецепт ` +
-            'недостижим (data/materials.ts)',
-        )
-      }
       const herb = content.herbs.find((h) => h.id === input.materialId)
       if (herb && herb.zoneIds.length === 0) {
         report.add(
@@ -1647,6 +1671,35 @@ export const RECIPE_SCHEMA: EntitySchema<RecipeDef> = {
     // Уровень за потолком лестницы даёт цену, которой не соответствует ни один
     // час игры, — и «доля часа» перестаёт что-либо значить.
     const level = recipeLevel(recipe as RecipeDef)
+
+    // РЕЦЕПТ НЕ ТРЕБУЕТ РЕАГЕНТОВ ПОЛОС ГЛУБЖЕ СВОЕЙ — И ИМЕННО ЭТО ДЕЛАЛО
+    // ЛЕСТНИЦУ ДЫРЯВОЙ.
+    //
+    // Рецепт двадцать третьего уровня, просящий материал из зоны
+    // восьмидесятой, недостижим — но выглядит он как обычная строка в
+    // списке. Снаружи это читается не как «рецепт сломан», а как «между
+    // двадцать третьим и пятьдесят восьмым рецептов нет»: игрок доходит до
+    // него, видит нехватку и уходит ждать. Проверка называет вещи своими
+    // именами.
+    //
+    // Сравниваются ПОЛОСЫ, а не уровни: полоса — это то, куда игрок пришёл
+    // целиком, и вход с её верхней зоны законен на всём её протяжении.
+    const recipeBand = bandDepth(bandForLevel(level).id)
+    for (const input of recipe.inputs ?? []) {
+      const reagent = content.reagents.find((r) => r.id === input.materialId)
+      if (!reagent) continue
+      const depth = bandDepth(reagent.band as BandId)
+      if (depth <= recipeBand) continue
+      report.add(
+        where,
+        `уровень ${level} (полоса «${bandForLevel(level).id}»), а вход ` +
+          `«${input.materialId}» лежит глубже — на полосе «${reagent.band}» ` +
+          `(${bandById(reagent.band as BandId).minLevel}-` +
+          `${bandById(reagent.band as BandId).maxLevel}). Собрать его на своём ` +
+          'уровне нельзя (data/recipes.ts)',
+      )
+    }
+
     report.need(
       level >= 1 && level <= content.balance.levelCap,
       where,
@@ -2072,10 +2125,10 @@ export const TEMPLE_SCHEMA: EntitySchema<TempleDef> = {
     // Награда за полную зачистку — две ссылки, и обе обязаны существовать:
     // токен ниоткуда и рецепт-призрак заперли бы конец храма навсегда.
     report.need(
-      content.materials.some((m) => m.id === temple.clearReward.materialId),
+      content.reagents.some((r) => r.id === temple.clearReward.materialId),
       where,
       `за полную зачистку выдаёт «${temple.clearReward.materialId}», которого нет ` +
-        'в data/materials.ts',
+        'в data/reagents.ts',
     )
     report.need(
       content.recipes.some((r) => r.id === temple.clearReward.recipeId),
@@ -2577,7 +2630,6 @@ export const SCHEMAS = [
   SHIELD_SCHEMA,
   SOUND_SCHEMA,
   CLASS_SCHEMA,
-  MATERIAL_SCHEMA,
   HERB_SCHEMA,
   ENCHANT_SCHEMA,
   PROC_SCHEMA,
@@ -2893,13 +2945,19 @@ function checkReachable(content: Content, report: Report): void {
     )
   }
 
-  // --- Зоны: в каждой что-то падает из материалов ---
-  for (const zone of content.zones) {
-    const drops = content.materials.filter((m) => m.zoneIds?.includes(zone.id))
+  // --- Полосы: на каждой есть чем крафтить ---
+  //
+  // Проверка переехала с зоны на полосу вместе с самими реагентами, и стала
+  // строже: раньше зоне хватало ЛЮБОГО материала из чужого списка, теперь
+  // спрашивается полоса целиком. Полоса без обычного реагента молчит: моб
+  // в ней роняет пустоту, а рецепты её уровня собирать не из чего.
+  for (const band of BAND_IDS) {
+    const commons = content.reagents.filter((r) => r.role === 'common' && r.band === band)
     report.need(
-      drops.length > 0,
-      `зона ${zone.id}`,
-      'ни один материал в ней не падает — ремёсла в этой зоне мертвы (data/materials.ts)',
+      commons.length > 0,
+      `полоса ${band}`,
+      'на ней не падает ни один обычный реагент — ремёсла на этой глубине мертвы ' +
+        '(data/reagents.ts)',
     )
   }
 

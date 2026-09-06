@@ -6,9 +6,10 @@ import { STEP_MS } from './loop'
 import { createInitialState, manualOnlySettings, type GameState } from './state'
 import { ensureStats } from './stats'
 import { tick } from './tick'
-import { craft, materialCount, recipeStatus, rollMaterial, takeFood } from './crafting'
+import { craft, materialCount, recipeStatus, rollZoneReagent, takeFood } from './crafting'
 import { restDurationMs, startRest } from './rest'
-import { MATERIALS, materialsInZone } from '../data/materials'
+import { REAGENTS, commonReagentsInBand } from '../data/reagents'
+import { bandForLevel } from '../data/bands'
 import {
   CRAFT_TOLL_HOURS,
   FOOD_BY_ID,
@@ -112,31 +113,59 @@ describe('данные профессий', () => {
     expect(/требует|requirement|experience|опыт/i.test(json)).toBe(false)
   })
 
-  it('каждый материал падает хотя бы в одной существующей зоне', () => {
-    const ids = ZONES.map((z) => z.id)
-    for (const material of MATERIALS) {
-      // Исключение ровно одно и названо в самих данных: материал-НАГРАДА
-      // не падает нигде и падать не должен — его выдают за достижение.
-      if (material.award !== undefined) {
-        expect(material.zoneIds, material.id).toEqual([])
+  it('у каждого обычного реагента есть зоны его полосы, у остальных зон нет', () => {
+    // Списка зон у реагента больше нет: полоса называет их сама. Проверяется
+    // то же самое, что и раньше, — «добываемое добывается, недобываемое не
+    // притворяется добываемым», только спрашивается это у полосы.
+    const zonesOf = (band: string) =>
+      ZONES.filter((z) => bandForLevel(z.monsterLevelRange.max).id === band)
+    for (const reagent of REAGENTS) {
+      if (reagent.role === 'common') {
+        expect(zonesOf(reagent.band).length, reagent.id).toBeGreaterThan(0)
+        expect(reagent.weight, reagent.id).toBeGreaterThan(0)
         continue
       }
-      expect(material.zoneIds.length, material.id).toBeGreaterThan(0)
-      for (const id of material.zoneIds) expect(ids, material.id).toContain(id)
+      // Боссовый и промежуточный в зонах не падают вовсе — у них другой путь.
+      expect(commonReagentsInBand(reagent.band).map((r) => r.id), reagent.id).not.toContain(
+        reagent.id,
+      )
     }
   })
 })
 
 describe('материалы падают своим броском', () => {
   it('бросок выше шанса не даёт ничего и пул зоны не трогает', () => {
-    expect(rollMaterial(ZONES[0].id, () => MATERIAL_DROP_CHANCE)).toBeNull()
+    expect(rollZoneReagent(ZONES[0].id, () => MATERIAL_DROP_CHANCE)).toBeNull()
+  })
+
+  it('доля выпадения не изменилась: на каждой полосе есть чем платить', () => {
+    // ОБЩАЯ ДОЛЯ МАТЕРИАЛОВ В ЛУТЕ ОБЯЗАНА ОСТАТЬСЯ ПРЕЖНЕЙ, и держится она
+    // ровно одним свойством: пул полосы НИКОГДА не пуст. Шанс броска не
+    // трогали (MATERIAL_DROP_CHANCE), а второй бросок только выбирает, что
+    // именно выпало, — значит на каждый убийственный тик приходится та же
+    // доля добычи, что и до переезда на полосы.
+    //
+    // Пустой пул был бы тихой потерей: бросок прошёл, а в мешок не легло
+    // ничего. Проверяется поэтому не «доля равна 0.35» (это сам конструктор
+    // броска), а то, из чего доля складывается.
+    for (const zone of ZONES) {
+      const pool = commonReagentsInBand(bandForLevel(zone.monsterLevelRange.max).id)
+      expect(pool.length, `${zone.id}: полоса без обычных реагентов`).toBeGreaterThan(0)
+      const total = pool.reduce((sum, r) => sum + (r.weight ?? 0), 0)
+      expect(total, `${zone.id}: суммарный вес рулетки нулевой`).toBeGreaterThan(0)
+      // Бросок ровно на границе шанса не даёт ничего, чуть ниже — даёт всегда.
+      expect(rollZoneReagent(zone.id, () => MATERIAL_DROP_CHANCE), zone.id).toBeNull()
+      expect(rollZoneReagent(zone.id, seqRng([0, 0])), zone.id).not.toBeNull()
+    }
   })
 
   it('материал берётся из пула СВОЕЙ зоны', () => {
     for (const zone of ZONES) {
-      const pool = materialsInZone(zone.id).map((m) => m.id)
+      const pool = commonReagentsInBand(bandForLevel(zone.monsterLevelRange.max).id).map(
+        (m) => m.id,
+      )
       if (pool.length === 0) continue
-      const rolled = rollMaterial(zone.id, seqRng([0, 0.999999]))
+      const rolled = rollZoneReagent(zone.id, seqRng([0, 0.999999]))
       expect(pool, zone.id).toContain(rolled!.id)
     }
   })

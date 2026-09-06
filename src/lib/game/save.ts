@@ -44,7 +44,7 @@ import {
 } from '../data/balance'
 import { ABILITIES, ABILITY_BY_ID } from '../data/abilities'
 import { CLASS_BY_ID, DEFAULT_CLASS, classById } from '../data/classes'
-import { MATERIAL_BY_ID } from '../data/materials'
+import { REAGENT_BY_ID } from '../data/reagents'
 import { FOOD_BY_ID, POTION_RECIPE_BY_ID, isBagId } from '../data/recipes'
 import { BRANCHES, TALENT_BY_ID, talentsInBranch, talentsOfClass } from '../data/talents'
 import {
@@ -458,7 +458,7 @@ function materialsFromSaved(raw: unknown): Record<string, Decimal> {
   for (const [id, count] of Object.entries(raw as Record<string, unknown>)) {
     // Своими считаются материалы, травы, еда и склянки — всё, что вообще
     // может лежать в мешке. Забытый вид молча пропал бы при загрузке.
-    if (!(id in MATERIAL_BY_ID) && !isBagId(id)) continue
+    if (!(id in REAGENT_BY_ID) && !isBagId(id)) continue
     const value = parseDec(count, '0')
     if (value.gt(0)) result[id] = value.floor()
   }

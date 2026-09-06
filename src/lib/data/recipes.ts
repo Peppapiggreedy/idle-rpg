@@ -9,7 +9,7 @@
 import { Decimal } from '../game/numbers'
 import type { StatModifier } from '../game/stats'
 import { HERB_BY_ID } from './herbs'
-import { MATERIAL_BY_ID } from './materials'
+import { reagentBandLevels } from './reagents'
 import { ZONE_BY_ID, representativeMonster, zoneForMonsterLevel } from './zones'
 import type { IconName } from '../ui/icons/manifest'
 import type { SlotId } from './slots'
@@ -112,19 +112,30 @@ export function recipeLevel(recipe: RecipeDef): number {
   // сколько стоит самый труднодоступный из его входов.
   let level = recipe.unlockLevel ?? 1
   for (const input of recipe.inputs) {
-    let shallowest = Number.POSITIVE_INFINITY
-    for (const zoneId of materialZoneIds(input.materialId)) {
-      const zone = ZONE_BY_ID[zoneId]
-      if (zone) shallowest = Math.min(shallowest, zone.monsterLevelRange.max)
-    }
-    if (Number.isFinite(shallowest)) level = Math.max(level, shallowest)
+    const shallowest = inputShallowestLevel(input.materialId)
+    if (shallowest !== null) level = Math.max(level, shallowest)
   }
   return level
 }
 
-/** Где падает материал, трава или реагент. Пусто — добывается не в зоне. */
-function materialZoneIds(materialId: string): readonly string[] {
-  return MATERIAL_BY_ID[materialId]?.zoneIds ?? HERB_BY_ID[materialId]?.zoneIds ?? []
+/**
+ * Насколько глубоко надо зайти за одним входом. У реагента это ВЕРХ ЕГО
+ * ПОЛОСЫ — обе зоны полосы роняют его одинаково, и мельчайшая из них ровно
+ * одна. У травы по-прежнему список зон: трава срезается временем и растёт в
+ * нескольких полосах сразу (полосы ей раздаёт стадия травничества).
+ *
+ * Боссовые и промежуточные реагенты зон не имеют вовсе — по ним цена не
+ * считается, её задаёт `unlockLevel` рецепта.
+ */
+function inputShallowestLevel(materialId: string): number | null {
+  const band = reagentBandLevels(materialId)
+  if (band) return band.max
+  let shallowest = Number.POSITIVE_INFINITY
+  for (const zoneId of HERB_BY_ID[materialId]?.zoneIds ?? []) {
+    const zone = ZONE_BY_ID[zoneId]
+    if (zone) shallowest = Math.min(shallowest, zone.monsterLevelRange.max)
+  }
+  return Number.isFinite(shallowest) ? shallowest : null
 }
 
 /**
@@ -343,7 +354,13 @@ const CRAFT_RECIPES: RecipeDef[] = [
     profession: 'smithing',
     inputs: [
       { materialId: 'quarry-ore', count: 5 },
-      { materialId: 'rime-salt', count: 2 },
+      // ТЕРРАСНЫЙ ШЛАК, А НЕ СТЫЛАЯ СОЛЬ, и это починка настоящей дыры.
+      // Заслон стоит на 58 уровне, а соль лежит на полосе 71-80: собрать его
+      // на своём уровне было нельзя, и снаружи это выглядело не поломкой, а
+      // пустотой в лестнице кузнечного. Шлак — обычный реагент полосы 51-60,
+      // то есть ровно той, где заслон и осмыслен. Правило теперь держит
+      // content:check, а не внимательность.
+      { materialId: 'terrace-slag', count: 2 },
     ],
     output: {
       kind: 'item',
