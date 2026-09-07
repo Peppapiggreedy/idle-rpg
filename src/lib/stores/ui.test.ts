@@ -25,6 +25,7 @@ describe('настройки интерфейса: разбор сохранён
       expect(sanitizeUiSettings(raw)).toEqual({
         textMode: 'auto',
         volumes: SOUND_DEFAULT_VOLUMES,
+        craftFolds: {},
       })
     }
   })
@@ -33,10 +34,12 @@ describe('настройки интерфейса: разбор сохранён
     expect(sanitizeUiSettings({ textMode: 'on' })).toEqual({
       textMode: 'on',
       volumes: SOUND_DEFAULT_VOLUMES,
+      craftFolds: {},
     })
     expect(sanitizeUiSettings({ textMode: 'off' })).toEqual({
       textMode: 'off',
       volumes: SOUND_DEFAULT_VOLUMES,
+      craftFolds: {},
     })
   })
 
@@ -61,12 +64,30 @@ describe('настройки интерфейса: разбор сохранён
     expect(loud.volumes.ui).toBe(SOUND_DEFAULT_VOLUMES.ui)
     expect(sanitizeUiSettings({}).volumes).toEqual(SOUND_DEFAULT_VOLUMES)
   })
+
+  it('свёрнутые разделы крафта: только известные ключи и только «да/нет»', () => {
+    // Ключ раздела — пара «профессия/категория» (stores/ui.ts). Всё, что на
+    // неё не похоже, отбрасывается: иначе запись из чужой сборки прятала бы
+    // половину меню, и починить это игрок не смог бы ничем, кроме очистки
+    // localStorage.
+    const folds = sanitizeUiSettings({
+      craftFolds: {
+        'smithing/weapon-two': false,
+        'smithing/пироги': false,
+        'cooking/food': 'свёрнуто',
+        'weapon-two': true,
+      },
+    }).craftFolds
+    expect(folds).toEqual({ 'smithing/weapon-two': false })
+    expect(sanitizeUiSettings({}).craftFolds).toEqual({})
+  })
 })
 
 describe('текстовый режим', () => {
   const settings = (textMode: UiSettings['textMode']): UiSettings => ({
     textMode,
     volumes: { ...SOUND_DEFAULT_VOLUMES },
+    craftFolds: {},
   })
 
   it('явный выбор игрока решает: «всегда текст» — текст, «всегда сцена» — сцена', () => {
