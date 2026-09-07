@@ -16,7 +16,10 @@ export function abilityReasonText(
   resource: ResourceWords,
   unlockLevel = 1,
 ): string {
-  const fixed: Record<Exclude<AbilityBlockReason, 'no-mana' | 'locked'>, string> = {
+  const fixed: Record<
+    Exclude<AbilityBlockReason, 'no-mana' | 'locked' | 'resource-low' | 'resource-high'>,
+    string
+  > = {
     dead: 'Ты мёртв — умения недоступны',
     cooldown: 'Ещё не восстановилось',
     gcd: 'Общая задержка после прошлого умения',
@@ -28,6 +31,11 @@ export function abilityReasonText(
     'target-healthy': 'Цель ещё слишком цела — добивание ждёт',
   }
   if (reason === 'locked') return `Откроется на ${unlockLevel} уровне`
+  // ВОРОТА ПО ПОЛОСКЕ. Оба отказа НАЗЫВАЮТ РЕСУРС ПО ИМЕНИ КЛАССА и говорят,
+  // в какую сторону идти: «мало» лечится боем, «много» — тратой. Слово «мало»
+  // и слово «много» — единственная разница, и она обязана быть видна сразу.
+  if (reason === 'resource-low') return `Слишком мало: нужно больше ${resource.genitive}`
+  if (reason === 'resource-high') return `Слишком много ${resource.genitive} — сперва потрать`
   return reason === 'no-mana' ? `Не хватает ${resource.genitive}` : fixed[reason]
 }
 
@@ -220,7 +228,47 @@ export function abilityLines(ability: AbilityDef, ctx: AbilityTextContext): stri
   if (ability.execute) {
     // ТОТ САМЫЙ ПОРОГ. Он лежал в данных с первого дня и не показывался
     // нигде: игрок видел кнопку, которая «иногда нельзя», и не знал, когда.
-    lines.push(`Только по цели ниже ${pct(ability.execute.belowHpShare)} здоровья`)
+    const grows = ability.execute.belowHpShareFromResource ?? 0
+    lines.push(
+      `Только по цели ниже ${pct(ability.execute.belowHpShare)} здоровья` +
+        (grows > 0
+          ? ` и до ${pct(ability.execute.belowHpShare + grows)} на полной полоске`
+          : ''),
+    )
+  }
+  // ВОРОТА ПО ПОЛОСКЕ — отдельной строкой и ДО эффектов: это условие, при
+  // котором кнопка вообще работает, а не то, что она делает.
+  if (ability.requires) {
+    if (ability.requires.resourceAbove !== undefined) {
+      lines.push(
+        `Нужно ${pct(ability.requires.resourceAbove)} ${ctx.resource.genitive} — ниже не применить`,
+      )
+    }
+    if (ability.requires.resourceBelow !== undefined) {
+      lines.push(
+        `Только пока ${ctx.resource.genitive} меньше ${pct(ability.requires.resourceBelow)}`,
+      )
+    }
+  }
+  if (ability.spendAll) {
+    lines.push(`Тратит ВСЮ ${ctx.resource.accusative} — и тем сильнее, чем её больше`)
+  }
+  if (ability.weaponDamageFromResource) {
+    lines.push(
+      `На полной полоске бьёт ${pct(ability.weaponDamagePercent.plus(ability.weaponDamageFromResource))} удара оружия`,
+    )
+  }
+  if (ability.ramp) {
+    lines.push(
+      `Разгон ${sec(ability.ramp.durationSec)}: каждый свой удар добавляет ` +
+        `${pct(ability.ramp.perSwing)} урона, до ${pct(ability.ramp.maxShare)}`,
+    )
+  }
+  if (ability.edge) {
+    lines.push(
+      `Грань ${sec(ability.edge.durationSec)}: урон выше на ${pct(ability.edge.damagePerShare)} ` +
+        `при полной полоске, ниже ${pct(ability.edge.resourceAbove)} прибавки нет`,
+    )
   }
   if (ability.brand) {
     lines.push(
@@ -256,7 +304,11 @@ export function abilityLines(ability: AbilityDef, ctx: AbilityTextContext): stri
     )
   }
   if (ability.leech) {
-    lines.push(`Возвращает здоровьем ${pct(ability.leech.healShare)} нанесённого урона`)
+    const grows = ability.leech.healShareFromResource ?? 0
+    lines.push(
+      `Возвращает здоровьем ${pct(ability.leech.healShare)} нанесённого урона` +
+        (grows > 0 ? ` и до ${pct(ability.leech.healShare + grows)} на полной полоске` : ''),
+    )
   }
   if (ability.resolve) {
     lines.push(
