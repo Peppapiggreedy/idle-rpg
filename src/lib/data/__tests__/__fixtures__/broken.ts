@@ -96,6 +96,12 @@ function highBandZone(real: Content) {
   )[0]
 }
 
+/** Первый рецепт оружия в главную руку: на нём ломается вывод категории. */
+function handRecipeId(real: Content): string {
+  const found = real.recipes.find((r) => r.output.kind === 'item' && r.output.slot === 'mainHand')
+  return (found ?? first(real.recipes)).id
+}
+
 export interface BrokenCase {
   /** Что именно сломано — попадает в название теста. */
   title: string
@@ -1530,6 +1536,30 @@ export function brokenCases(): BrokenCase[] {
         ),
       },
       expect: ['щит', 'вторую руку', 'data/recipes.ts'],
+    },
+    // КАТЕГОРИИ КРАФТА. Категория ВЫВОДИТСЯ из выхода, поэтому ломается она
+    // не подменой поля (поля нет), а выходом, который вывести нельзя.
+    {
+      title: 'рецепт кует оружие без шаблона — категорию вывести не из чего',
+      content: {
+        ...real,
+        recipes: real.recipes.map((recipe) =>
+          recipe.output.kind === 'item' && recipe.output.slot === 'mainHand'
+            ? { ...recipe, output: { ...recipe.output, templateId: undefined } }
+            : recipe,
+        ),
+      },
+      expect: [handRecipeId(real), 'категори', 'data/items.ts'],
+    },
+    {
+      title: 'категория крафта осталась без единого рецепта',
+      content: {
+        ...real,
+        // Уносим ВЕСЬ передел: категория «промежуточные материалы» остаётся
+        // строкой списка, за которой ничего нет.
+        recipes: real.recipes.filter((r) => r.output.kind !== 'reagent'),
+      },
+      expect: ['material', 'мёртвая строка', 'data/recipes.ts'],
     },
     // БРОНЯ. Ломается не шаблон, а РЕЗУЛЬТАТ генератора: в шаблоне брони нет
     // вовсе, её кладёт game/loot.ts общей константой — значит и пропасть она

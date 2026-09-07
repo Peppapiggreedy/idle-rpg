@@ -31,7 +31,13 @@ import { MASTERY_MAX, MASTERY_RANK_STEP, type MasteryRankDef } from '../mastery'
 import type { BoonDef } from '../boons'
 import { BAND_IDS, bandById, bandDepth, bandForLevel, type BandId } from '../bands'
 import type { GoldUpgradeDef } from '../upgrades'
-import { craftToll, masteryToKnow, recipeLevel } from '../recipes'
+import {
+  CRAFT_CATEGORIES,
+  craftCategoryOf,
+  craftToll,
+  masteryToKnow,
+  recipeLevel,
+} from '../recipes'
 import type { ProfessionDef, RecipeDef, RecipeSource } from '../recipes'
 
 /**
@@ -3940,6 +3946,46 @@ function checkProgressionLevels(content: Content, report: Report): void {
   }
 }
 
+/**
+ * КАЖДЫЙ РЕЦЕПТ ЛОЖИТСЯ В КАТЕГОРИЮ, И КАЖДАЯ КАТЕГОРИЯ НЕПУСТА.
+ *
+ * Обе половины нужны, и вторая не менее первой. Категория ВЫВОДИТСЯ из выхода
+ * (`craftCategoryOf`, data/recipes.ts), поэтому «рецепт без категории» — это
+ * не забытое поле, а выход, который проверка вывести не смогла: вещь в руку
+ * без шаблона или со ссылкой на шаблон, которого нет. Такой рецепт нельзя
+ * показать на экране никуда — раздела «прочее» в меню крафта нет намеренно, —
+ * и поэтому он назван ПОИМЁННО, а не сложен в общую кучу.
+ *
+ * Обратная половина стережёт список категорий: категория, из которой ушёл
+ * последний рецепт, — это мёртвая строка, и через полгода никто не вспомнит,
+ * ждали в ней содержимого или забыли убрать. Сторож, разрешающий больше, чем
+ * есть в данных, упасть на лишнем не может.
+ */
+function checkCraftCategories(content: Content, report: Report): void {
+  const used = new Set<string>()
+  for (const recipe of content.recipes) {
+    const category = craftCategoryOf(recipe)
+    if (category === null) {
+      report.add(
+        `рецепт ${recipe.id}`,
+        'не ложится ни в одну категорию крафта: категория ВЫВОДИТСЯ из выхода, ' +
+          'и у вещи в руку выводится она из хвата шаблона — значит шаблон не назван ' +
+          'или его нет в data/items.ts (craftCategoryOf в data/recipes.ts)',
+      )
+      continue
+    }
+    used.add(category)
+  }
+  for (const category of CRAFT_CATEGORIES) {
+    report.need(
+      used.has(category.id),
+      `категория крафта ${category.id}`,
+      'ни одного рецепта: категория без содержимого — мёртвая строка списка, ' +
+        'убери её из CRAFT_CATEGORIES или заведи рецепт (data/recipes.ts)',
+    )
+  }
+}
+
 export function checkContent(content: Content): ContentIssue[] {
   const report = new Report()
   for (const schema of SCHEMAS) runSchema(schema, content, report)
@@ -3947,6 +3993,7 @@ export function checkContent(content: Content): ContentIssue[] {
   checkInstanceEntrances(content, report)
   checkBalance(content, report)
   checkArmorPoints(content, report)
+  checkCraftCategories(content, report)
   checkProgressionLevels(content, report)
   checkUnlockLevels(content, report)
   checkScene(content, report)
