@@ -221,6 +221,51 @@ export function brokenCases(): BrokenCase[] {
       expect: ['mend-wounds', 'мгновенным'],
     },
     {
+      // СТОЙКА НАОБОРОТ — законна, а стойка «в обе стороны хорошо» — нет.
+      title: 'стойка усиливает и урон, и защиту разом',
+      content: {
+        ...real,
+        abilities: patch(real.abilities, 'berserk', {
+          stance: { damageShare: -0.25, mitigationShare: 0.15, durationSec: 30 },
+        }),
+      },
+      expect: ['berserk', 'ОБМЕН'],
+    },
+    {
+      title: 'генератор ресурса сам платит ресурсом',
+      content: {
+        ...real,
+        abilities: patch(real.abilities, 'blood-letting', { manaCost: new Decimal(9) }),
+      },
+      expect: ['blood-letting', 'ДАЁТ'],
+    },
+    {
+      title: 'возврат ресурса не на добивании',
+      content: {
+        ...real,
+        abilities: patch(real.abilities, 'reckoning', { execute: undefined }),
+      },
+      expect: ['reckoning', 'добивание'],
+    },
+    {
+      title: 'плата здоровьем без порога автокаста',
+      content: {
+        ...real,
+        abilities: patch(real.abilities, 'blood-price', { autocast: undefined }),
+      },
+      expect: ['blood-price', 'autocast.heroHpAbove'],
+    },
+    {
+      title: 'упор берёт потолок с первого удара',
+      content: {
+        ...real,
+        abilities: patch(real.abilities, 'dug-in', {
+          resolve: { perHitTaken: 0.24, maxShare: 0.24, durationSec: 14 },
+        }),
+      },
+      expect: ['dug-in', 'нарастает'],
+    },
+    {
       title: 'боевое умение с нулевым уроном',
       content: {
         ...real,

@@ -495,6 +495,22 @@ export const ABILITY_SCHEMA: EntitySchema<AbilityDef> = {
     // ДЕТОНАТОР: множитель и НАЗВАННАЯ СВЯЗКА. Умение, которое съедает
     // чужой эффект, обязано сказать игроку, чей именно, — иначе связку
     // выясняют опытом.
+    if (ability.detonate?.resourceMultiplier !== undefined) {
+      checkNumber(
+        ability.detonate,
+        {
+          field: 'detonate.resourceMultiplier',
+          get: (d) => d.resourceMultiplier ?? 0,
+          min: 0,
+          exclusiveMin: true,
+          max: 5,
+          why: 'надбавка множителя за полную полоску ресурса',
+        },
+        where,
+        'data/abilities.ts',
+        report,
+      )
+    }
     if (ability.detonate) {
       checkNumber(
         ability.detonate,
@@ -604,8 +620,11 @@ export const ABILITY_SCHEMA: EntitySchema<AbilityDef> = {
         'умение, дающее бесплатные применения, само обязано быть бесплатным: иначе оно платит за собственную скидку (data/abilities.ts)',
       )
     }
-    // СТОЙКА: обе доли и длительность. Обмен обязан быть ОБМЕНОМ — обе доли
-    // положительны, иначе это просто усиление или просто штраф.
+    // СТОЙКА: обе доли и длительность. Обмен обязан быть ОБМЕНОМ, и читается
+    // он В ОБЕ СТОРОНЫ: положительные доли — защитная стойка (урон ниже,
+    // смягчение выше), отрицательные — обратная (урон выше, смягчение ниже).
+    // Держит это правило ЗНАК: доли обязаны смотреть в одну сторону, иначе из
+    // одного поля вышло бы чистое усиление, а из другого — чистый штраф.
     if (ability.stance) {
       for (const spec of [
         { field: 'stance.damageShare', get: (v: typeof ability.stance) => v!.damageShare },
@@ -613,12 +632,17 @@ export const ABILITY_SCHEMA: EntitySchema<AbilityDef> = {
       ]) {
         checkNumber(
           ability.stance,
-          { field: spec.field, get: spec.get, min: 0, exclusiveMin: true, max: 1 },
+          { field: spec.field, get: (v: typeof ability.stance) => Math.abs(spec.get(v)), min: 0, exclusiveMin: true, max: 1 },
           where,
           'data/abilities.ts',
           report,
         )
       }
+      report.need(
+        Math.sign(ability.stance.damageShare) === Math.sign(ability.stance.mitigationShare),
+        where,
+        'стойка — ОБМЕН: обе доли смотрят в одну сторону (обе положительны — защитная, обе отрицательны — обратная), иначе это чистое усиление (data/abilities.ts)',
+      )
       checkNumber(
         ability.stance,
         { field: 'stance.durationSec', get: (v) => v.durationSec, min: 0, exclusiveMin: true },
@@ -626,6 +650,138 @@ export const ABILITY_SCHEMA: EntitySchema<AbilityDef> = {
         'data/abilities.ts',
         report,
       )
+    }
+    // ГЕНЕРАТОР САМ РЕСУРС НЕ ТРАТИТ. Иначе умение платило бы за собственную
+    // прибавку — тот же довод, что и у бесплатных применений.
+    if (ability.generate) {
+      checkNumber(
+        ability.generate,
+        { field: 'generate.resourceShare', get: (g) => g.resourceShare, min: 0, exclusiveMin: true, max: 1 },
+        where,
+        'data/abilities.ts',
+        report,
+      )
+      report.need(
+        toNumber(ability.manaCost) === 0,
+        where,
+        'умение, которое ресурс ДАЁТ, само его не тратит: иначе оно платит за собственную прибавку (data/abilities.ts)',
+      )
+    }
+    if (ability.leech) {
+      checkNumber(
+        ability.leech,
+        { field: 'leech.healShare', get: (l) => l.healShare, min: 0, exclusiveMin: true, max: 2 },
+        where,
+        'data/abilities.ts',
+        report,
+      )
+      report.need(
+        toNumber(ability.weaponDamagePercent) > 0,
+        where,
+        'вампиризм возвращает долю НАНЕСЁННОГО урона: умение, которое не бьёт, не лечит ничего (data/abilities.ts)',
+      )
+    }
+    // УПОР: прирост за удар обязан быть МЕНЬШЕ потолка, иначе смягчение
+    // берётся первым же ударом и «за непрерывность» превращается в стойку.
+    if (ability.resolve) {
+      for (const spec of [
+        { field: 'resolve.perHitTaken', get: (v: typeof ability.resolve) => v!.perHitTaken },
+        { field: 'resolve.maxShare', get: (v: typeof ability.resolve) => v!.maxShare },
+      ]) {
+        checkNumber(
+          ability.resolve,
+          { field: spec.field, get: spec.get, min: 0, exclusiveMin: true, max: 1 },
+          where,
+          'data/abilities.ts',
+          report,
+        )
+      }
+      checkNumber(
+        ability.resolve,
+        { field: 'resolve.durationSec', get: (v) => v.durationSec, min: 0, exclusiveMin: true },
+        where,
+        'data/abilities.ts',
+        report,
+      )
+      report.need(
+        ability.resolve.perHitTaken < ability.resolve.maxShare,
+        where,
+        'упор нарастает: прирост за удар обязан быть меньше потолка, иначе это обычная стойка (data/abilities.ts)',
+      )
+    }
+    // ВОЗВРАТ РЕСУРСА ЖИВЁТ ТОЛЬКО НА ДОБИВАНИИ. Без условия он разгонял бы
+    // ротацию сам себя: умение, которое возвращает больше, чем стоит, жмётся
+    // бесконечно.
+    if (ability.refund) {
+      checkNumber(
+        ability.refund,
+        { field: 'refund.resourceShare', get: (r) => r.resourceShare, min: 0, exclusiveMin: true, max: 1 },
+        where,
+        'data/abilities.ts',
+        report,
+      )
+      report.need(
+        ability.execute !== undefined,
+        where,
+        'возврат ресурса ставится только на добивание (execute): иначе умение разгоняет ротацию само себя (data/abilities.ts)',
+      )
+    }
+    // ПЛАТА ЗДОРОВЬЕМ обязана знать, когда её НЕ жать: без порога автокаста
+    // герой платил бы здоровьем ровно перед привалом.
+    if (ability.bloodPrice) {
+      checkNumber(
+        ability.bloodPrice,
+        { field: 'bloodPrice.hpShare', get: (b) => b.hpShare, min: 0, exclusiveMin: true, max: 0.5 },
+        where,
+        'data/abilities.ts',
+        report,
+      )
+      checkNumber(
+        ability.bloodPrice,
+        { field: 'bloodPrice.resourceShare', get: (b) => b.resourceShare, min: 0, exclusiveMin: true, max: 1 },
+        where,
+        'data/abilities.ts',
+        report,
+      )
+      report.need(
+        ability.autocast?.heroHpAbove !== undefined,
+        where,
+        'умение, платящее здоровьем, обязано иметь порог автокаста autocast.heroHpAbove — иначе автокаст платит здоровьем перед самым привалом (data/abilities.ts)',
+      )
+    }
+    // ОКНО САМО ПЛАТИТ. Бесплатное окно было бы скидкой ни за что: у счётных
+    // бесплатных применений правило обратное ровно потому, что там платой
+    // служит сам счёт.
+    if (ability.window) {
+      checkNumber(
+        ability.window,
+        { field: 'window.durationSec', get: (w) => w.durationSec, min: 0, exclusiveMin: true },
+        where,
+        'data/abilities.ts',
+        report,
+      )
+      report.need(
+        toNumber(ability.manaCost) > 0,
+        where,
+        'окно бесплатных умений само обязано стоить ресурса: бесплатная скидка ничего не стоит и потому всегда лучшая (data/abilities.ts)',
+      )
+    }
+    // ПОРОГИ АВТОКАСТА — доли запаса, и все три в одних границах.
+    if (ability.autocast) {
+      for (const spec of [
+        { field: 'autocast.heroHpAbove', get: (a: typeof ability.autocast) => a!.heroHpAbove },
+        { field: 'autocast.targetHpAbove', get: (a: typeof ability.autocast) => a!.targetHpAbove },
+        { field: 'autocast.resourceBelow', get: (a: typeof ability.autocast) => a!.resourceBelow },
+      ]) {
+        if (spec.get(ability.autocast) === undefined) continue
+        checkNumber(
+          ability.autocast,
+          { field: spec.field, get: (a: typeof ability.autocast) => spec.get(a) ?? 0, min: 0, exclusiveMin: true, max: 1 },
+          where,
+          'data/abilities.ts',
+          report,
+        )
+      }
     }
     // СВЯЗКА ССЫЛАЕТСЯ НА СУЩЕСТВУЮЩЕЕ УМЕНИЕ ТОГО ЖЕ КЛАССА.
     if (ability.combo) {

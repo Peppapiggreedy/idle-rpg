@@ -182,7 +182,12 @@ describe('estimateCombatRate', () => {
     for (let t = 0; t < HOUR_MS; t += STEP_MS) sim = tick(sim, STEP_MS, rng, () => {})
     const { report } = applyOfflineProgress(createInitialState(777), HOUR_MS)
     expect(report!.gold.lt(sim.gold)).toBe(true)
-  })
+    // ЧАС ИГРОВОГО ВРЕМЕНИ ТИКОМ — тест по построению длинный: 36 000 шагов
+    // настоящего конвейера. Пять секунд по умолчанию он перерастает на
+    // загруженной машине, и падает тогда не правило, а таймер. Замер на двух
+    // соседних коммитах: 6.30 с и 5.87 с — то есть дело не в правках, а в
+    // самом объёме работы.
+  }, 30_000)
 
   it('запертые уровнем умения в модель темпа не входят', () => {
     const monster = monsterFromTemplate(

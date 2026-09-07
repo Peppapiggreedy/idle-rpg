@@ -157,12 +157,16 @@ function payFor(state: GameState, ability: AbilityDef): GameState {
   // БЕСПЛАТНОЕ ПРИМЕНЕНИЕ. Тратится только на то, что вообще стоит ресурса:
   // на нулевой цене заряд сгорал бы впустую. Пауза регенерации при этом не
   // взводится — трата не состоялась.
-  if (state.freeCastsLeft > 0 && ability.manaCost.gt(0)) {
+  // ОКНО делает то же самое, но по ВРЕМЕНИ, и потому счётчик не трогает:
+  // «восемь секунд бесплатно» и «три применения бесплатно» — разные обещания,
+  // и одно не должно тратить другое.
+  if ((state.freeCastsLeft > 0 || state.freeCastsMsLeft > 0) && ability.manaCost.gt(0)) {
     const running = cooldownLeft(state, ability) > 0
     return punishResourceSpend(
       {
         ...state,
-        freeCastsLeft: state.freeCastsLeft - 1,
+        freeCastsLeft:
+          state.freeCastsMsLeft > 0 ? state.freeCastsLeft : state.freeCastsLeft - 1,
         abilityCharges: {
           ...state.abilityCharges,
           [ability.id]: Math.max(0, chargesLeft(state, ability) - 1),
@@ -321,8 +325,18 @@ export function strikeWithAbility(
     timestamp: state.playtimeMs.toNumber(),
   })
   const effect = effectFrom(ability, amount)
+  // ВАМПИРИЗМ: доля НАНЕСЁННОГО урона возвращается здоровьем. Считается от
+  // `amount`, то есть уже с критом и метками: лечение тем больше, чем лучше
+  // прошёл удар, и это ровно то, чем оно отличается от лечения по запасу.
+  const leeched = ability.leech
+    ? Decimal.min(
+        state.currentHp.plus(amount.times(ability.leech.healShare)),
+        state.stats.maxHp,
+      )
+    : state.currentHp
   let after: GameState = {
     ...state,
+    currentHp: leeched,
     monster,
     abilityCasts: state.abilityCasts.plus(1),
     activeEffects: effect
@@ -358,6 +372,18 @@ export function strikeWithAbility(
       },
     }
   }
+  // Событие несёт РЕАЛЬНУЮ прибавку, а не номинал: у героя на полном
+  // здоровье вампиризм не лечит ничего, и сцена не должна рисовать кольцо.
+  if (ability.leech && leeched.gt(state.currentHp)) {
+    after = {
+      ...after,
+      combatLog: pushEvent(after.combatLog, {
+        type: 'ability-heal',
+        abilityId: ability.id,
+        amount: leeched.minus(state.currentHp),
+      }),
+    }
+  }
   return applySelfFlags(after, ability)
 }
 
@@ -381,6 +407,45 @@ function applySelfFlags(state: GameState, ability: AbilityDef): GameState {
   // БЕСПЛАТНЫЕ ПРИМЕНЕНИЯ ставятся ПОСЛЕ оплаты самого умения: иначе
   // «Сосредоточение» съело бы одно из трёх на себя.
   if (ability.freeCasts) next = { ...next, freeCastsLeft: ability.freeCasts.casts }
+  // ОКНО — то же самое во времени. Повторное применение продлевает окно с
+  // нуля, а не складывается: иначе два каста подряд давали бы шестнадцать
+  // секунд, и «восемь» перестало бы значить восемь.
+  if (ability.window) next = { ...next, freeCastsMsLeft: ability.window.durationSec * 1000 }
+  // УПОР начинается С НУЛЯ: смягчение не выдаётся авансом, оно нарастает
+  // пропущенными ударами. Иначе это была бы просто стойка с задержкой.
+  if (ability.resolve) {
+    next = {
+      ...next,
+      resolve: {
+        share: 0,
+        perHitTaken: ability.resolve.perHitTaken,
+        maxShare: ability.resolve.maxShare,
+        msLeft: ability.resolve.durationSec * 1000,
+      },
+    }
+  }
+  // ГЕНЕРАТОР И ВОЗВРАТ — одно и то же действие с разных сторон: доля запаса
+  // приходит ПОСЛЕ оплаты. Перелив режется, как и у лечения.
+  const gained =
+    (ability.generate?.resourceShare ?? 0) +
+    (ability.refund?.resourceShare ?? 0) +
+    (ability.bloodPrice?.resourceShare ?? 0)
+  if (gained > 0) {
+    next = {
+      ...next,
+      currentMana: Decimal.min(
+        next.currentMana.plus(next.stats.maxMana.times(gained)),
+        next.stats.maxMana,
+      ),
+    }
+  }
+  // ПЛАТА ЗДОРОВЬЕМ. Последнее очко не снимается НИКОГДА: игрок имеет право
+  // ошибиться, но кнопка, которой можно себя убить, — это не ошибка игрока,
+  // а ловушка игры.
+  if (ability.bloodPrice) {
+    const price = next.stats.maxHp.times(ability.bloodPrice.hpShare)
+    next = { ...next, currentHp: Decimal.max(next.currentHp.minus(price), new Decimal(1)) }
+  }
   return next
 }
 
@@ -414,7 +479,15 @@ function detonate(
 ): GameState {
   const pending = pendingEffectDamage(state)
   if (pending.lte(0)) return state
-  const burst = pending.times(ability.detonate!.multiplier).times(outgoingMultiplier(state))
+  // МНОЖИТЕЛЬ РАСТЁТ ОТ ПОЛНОТЫ ПОЛОСКИ, если так сказано в данных умения.
+  // Читается ДОЛЯ, а не абсолютный запас: у класса, поднявшего ёмкость
+  // талантами, полная полоска обязана значить то же самое, что и раньше.
+  const fill = state.stats.maxMana.gt(0)
+    ? Decimal.min(new Decimal(1), state.currentMana.div(state.stats.maxMana)).toNumber()
+    : 0
+  const multiplier =
+    ability.detonate!.multiplier + (ability.detonate!.resourceMultiplier ?? 0) * fill
+  const burst = pending.times(multiplier).times(outgoingMultiplier(state))
   const monster = {
     ...state.monster,
     currentHp: Decimal.max(state.monster.currentHp.minus(burst), new Decimal(0)),
@@ -523,6 +596,30 @@ export function consumeQueuedAbility(
  * вышел кулдаун и ХВАТАЕТ МАНЫ прямо сейчас. Мана проверяется и для
  * onNextSwing: ставить в очередь то, что всё равно сорвётся, автокаст не станет.
  */
+/**
+ * ПОРОГИ АВТОКАСТА ИЗ ДАННЫХ УМЕНИЯ. Одна функция на все три порога, потому
+ * что правило одно: автокаст не жмёт умение там, где оно не окупается, а
+ * руками игрок волен жать что угодно.
+ *
+ * Ветвлений по id здесь нет и быть не может: читается payload `autocast`,
+ * и новое умение с теми же порогами заработает без единой правки логики.
+ */
+export function autocastAllows(state: GameState, ability: AbilityDef): boolean {
+  const guard = ability.autocast
+  if (!guard) return true
+  if (guard.heroHpAbove !== undefined) {
+    if (state.currentHp.lt(state.stats.maxHp.times(guard.heroHpAbove))) return false
+  }
+  if (guard.targetHpAbove !== undefined) {
+    if (state.monster.maxHp.lte(0)) return false
+    if (state.monster.currentHp.div(state.monster.maxHp).lt(guard.targetHpAbove)) return false
+  }
+  if (guard.resourceBelow !== undefined) {
+    if (state.currentMana.gte(state.stats.maxMana.times(guard.resourceBelow))) return false
+  }
+  return true
+}
+
 export function autocastCandidates(state: GameState): AbilityDef[] {
   return abilitiesByPriority(rotationOf(state), true).filter((ability) => {
     if (state.currentMana.lt(ability.manaCost)) return false
@@ -534,6 +631,10 @@ export function autocastCandidates(state: GameState): AbilityDef[] {
     // бы это систематически. Порог из данных умения; РУКАМИ игрок волен
     // ставить клеймо когда угодно, это правило только для автокаста.
     if (ability.brand && !brandWorthIt(state, ability)) return false
+    // ОСТАЛЬНЫЕ ПОРОГИ — общей функцией: плата здоровьем не жмётся на низком
+    // здоровье, детонатор — на умирающем мобе, генератор и окно — на полной
+    // полоске. Все три лежат в данных умения.
+    if (!autocastAllows(state, ability)) return false
     // Очередь одна: пока в ней кто-то стоит, второе умение туда не ставим,
     // а повторное нажатие на стоящее в очереди её бы просто сняло.
     if (ability.type === 'onNextSwing' && state.queuedAbilityId !== null) return false
@@ -633,12 +734,18 @@ export function advanceCooldowns(state: GameState, dtMs: number): GameState {
   const absorb = countdown(state.absorb, dtMs)
   const monsterBrand = countdown(state.monsterBrand, dtMs)
   const stance = countdown(state.stance, dtMs)
+  const resolve = countdown(state.resolve, dtMs)
+  // ОКНО тикает здесь же и тем же игровым временем, что откаты: своего
+  // таймера у него нет и заводить второй незачем.
+  const freeCastsMsLeft = Math.max(0, state.freeCastsMsLeft - dtMs)
   if (
     !changed &&
     gcdMsLeft === state.gcdMsLeft &&
     absorb === state.absorb &&
     monsterBrand === state.monsterBrand &&
-    stance === state.stance
+    stance === state.stance &&
+    resolve === state.resolve &&
+    freeCastsMsLeft === state.freeCastsMsLeft
   ) {
     return state
   }
@@ -650,6 +757,8 @@ export function advanceCooldowns(state: GameState, dtMs: number): GameState {
     absorb,
     monsterBrand,
     stance,
+    resolve,
+    freeCastsMsLeft,
   }
 }
 

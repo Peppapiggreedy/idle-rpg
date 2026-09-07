@@ -34,6 +34,16 @@ export const TUNE_FIELD_NAME: Record<AbilityTuneField | 'type', string> = {
   executeBelowHpShare: 'порог добивания',
   brandAutocastAboveHpShare: 'порог клейма',
   healAutocastBelowHpShare: 'порог лечения',
+  generateResourceShare: 'прибавка ресурса',
+  leechHealShare: 'вампиризм',
+  resolveMaxShare: 'потолок упора',
+  resolvePerHitTaken: 'прирост упора',
+  resolveDurationSec: 'длительность упора',
+  refundResourceShare: 'возврат ресурса',
+  bloodPriceResourceShare: 'ярость за здоровье',
+  windowDurationSec: 'длительность окна',
+  detonateResourceMultiplier: 'детонация от ресурса',
+  autocastHeroHpAbove: 'порог автокаста',
 }
 
 /** Одна правка человеческим текстом: «лечение +40 %». */

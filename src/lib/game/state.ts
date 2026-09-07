@@ -125,6 +125,21 @@ export interface GameState {
    */
   freeCastsLeft: number
   /**
+   * ОКНО БЕСПЛАТНЫХ УМЕНИЙ: сколько миллисекунд умения не стоят ничего.
+   *
+   * Поле ОТДЕЛЬНОЕ от `freeCastsLeft`, хотя следствие у них одно. Считать
+   * окно в применениях нельзя: за восемь секунд их может быть и одно, и
+   * пять, — а обещано время. Одним полем эти два рода не описываются: у
+   * счётчика окно кончается КАСТОМ, у времени — тиком.
+   */
+  freeCastsMsLeft: number
+  /**
+   * УПОР: смягчение, наросшее за непрерывность боя. Живёт на ГЕРОЕ (как
+   * стойка), растёт с каждым пропущенным ударом до потолка и сгорает по
+   * времени. В сейв не пишется — как и всё, что висит секунду боя.
+   */
+  resolve: HeroResolve | null
+  /**
    * ЩИТ ГЕРОЯ: сколько урона он ещё поглотит и сколько миллисекунд держится.
    * Величина посчитана в момент применения от брони и силы блока — потом
    * снаряжение может смениться, а щит уже висит.
@@ -275,6 +290,17 @@ export interface MonsterBrand {
 export interface HeroStance {
   damageShare: number
   mitigationShare: number
+  msLeft: number
+}
+
+/** Упор героя: см. поле `resolve`. */
+export interface HeroResolve {
+  /** Сколько смягчения уже набежало, доля 0..1. */
+  share: number
+  /** Сколько прибавляет каждый следующий пропущенный удар. */
+  perHitTaken: number
+  /** Потолок: выше него смягчение не растёт. */
+  maxShare: number
   msLeft: number
 }
 
@@ -582,6 +608,8 @@ export function createInitialState(
     monsterBrand: null,
     stance: null,
     freeCastsLeft: 0,
+    freeCastsMsLeft: 0,
+    resolve: null,
     absorb: null,
     abilitySlots: defaultAbilitySlots(hero.id),
     abilitySettings: defaultAbilitySettings(hero.id),

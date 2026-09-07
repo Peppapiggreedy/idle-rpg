@@ -12,6 +12,7 @@
 --c-gold: #d4a017
 --c-heal: #3fa34d
 --c-mana: #5a94e8
+--c-rage: #d9612c
 --c-surface: #1c1f26
 --c-surface-raised: #232833
 --c-surface-sunken: #101216

@@ -116,7 +116,16 @@ const OFFLINE_LOOT_SALT = 0x9e37_79b9
 /** Все хваты одним списком: сейв принимает только их. */
 const GRIPS: Grip[] = ['one', 'two', 'shield']
 
-export const SAVE_VERSION = 32
+export const SAVE_VERSION = 33
+
+/**
+ * ПОКОЛЕНИЕ ДЕРЕВА, КОТОРЫМ ПОМЕЧЕНЫ ВСЕ СЕЙВЫ ДО 33-й ВЕРСИИ. До неё номера
+ * в сейве не было вовсе, а деревья с тех пор пересобирались ровно один раз —
+ * значит всё записанное раньше и есть первое поколение. Число формата, а не
+ * баланса: в игру оно не входит и ни на что, кроме бесплатного сброса, не
+ * влияет.
+ */
+const FIRST_TREE_GENERATION = 1
 
 /**
  * ТАЛАНТЫ, УДАЛЁННЫЕ ИЗ ДЕРЕВА, — списком и с причиной.
@@ -263,6 +272,13 @@ export interface SavePayloadV21 {
   reviveMsLeft: number
   // Таланты: id -> ранг (обычные числа, не Decimal — рангов единицы).
   talents: Record<string, number>
+  /**
+   * ИЗ КАКОГО ДЕРЕВА ЭТИ РАНГИ. Номер поколения класса на момент записи: при
+   * загрузке он сверяется с сегодняшним (`treeRevision` в данных класса), и
+   * ранги, выбранные из ДРУГОГО дерева, обнуляются — это и есть бесплатный
+   * сброс, обещанный правилом «пересобрал дерево — дай сброс».
+   */
+  treeRevision: number
   talentResets: number
   inventory: SavedItem[]
   equipment: Record<string, SavedItem | null>
@@ -469,6 +485,9 @@ export function payloadFromState(state: GameState, lastTimestamp: number): SaveP
     heroState: state.heroState,
     reviveMsLeft: state.reviveMsLeft,
     talents,
+    // Ранги в состоянии уже приведены к сегодняшнему дереву (сверка идёт на
+    // загрузке), поэтому пишется текущее поколение класса.
+    treeRevision: classById(state.classId).treeRevision,
     talentResets: Math.max(0, Math.floor(state.talentResets)),
     totalTicks: state.totalTicks.toString(),
     playtimeMs: state.playtimeMs.toString(),
@@ -688,6 +707,23 @@ function talentsFromSaved(raw: unknown, classId: string): Record<string, number>
 }
 
 /**
+ * Ранги из сейва — но ТОЛЬКО если они выбирались из того же дерева.
+ *
+ * Поколение сверяется с данными класса: разошлось — ранги пусты, и это
+ * бесплатный сброс. Очки возвращаются сами (доступные — «заработано минус
+ * вложено»), а `talentResets` не трогается: бесплатный сброс не должен
+ * дорожать следующий платный.
+ *
+ * Ветки по классу здесь нет и быть не может: номер лежит в данных, и новая
+ * перестройка любого дерева — правка ОДНОГО числа в `data/classes.ts`.
+ */
+function talentsOfCurrentTree(p: SavePayloadV21, classId: string): Record<string, number> {
+  const saved = Number(p.treeRevision)
+  if (Number.isFinite(saved) && saved !== classById(classId).treeRevision) return {}
+  return talentsFromSaved(p.talents, classId)
+}
+
+/**
  * КАРТА СООТВЕТСТВИЯ старого дерева новому.
  *
  * Старое дерево было общим на оба класса, новое — своё у каждого. Поэтому
@@ -884,7 +920,7 @@ export function stateFromPayload(p: SavePayloadV21): GameState {
     level,
     currentXp: parseDec(p.currentXp, '0'),
     xpToNext: xpToNextLevel(level),
-    talents: talentsFromSaved(p.talents, hero.id),
+    talents: talentsOfCurrentTree(p, hero.id),
     activePotions: potionsFromSaved(p.activePotions),
     // Мусор и отсутствие поля означают ноль, а не потерю сейва: v19 в этой
     // же ветке писался ещё без пыли, и такие сейвы обязаны читаться.
@@ -1164,6 +1200,24 @@ export const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
   // Цена следующего сброса растёт от `talentResets`; подними мы его здесь —
   // и подарок обернулся бы подорожанием, то есть был бы не подарком, а
   // отложенным счётом. Игра пересобрала дерево, игрок за это не платит.
+  // 32 -> 33: У ДЕРЕВА ПОЯВИЛОСЬ ПОКОЛЕНИЕ.
+  //
+  // Ночь ярости пересобирает дерево Изувера целиком, и правило проекта
+  // требует за это бесплатный сброс. Раньше такой сброс писался руками —
+  // веткой по классу прямо в миграции; теперь номер поколения лежит в данных
+  // класса, а сверка идёт на загрузке (`talentsOfCurrentTree`). Миграции
+  // остаётся ОДНО: сказать, каким поколением помечены старые сейвы.
+  //
+  // Все они — первое поколение по определению: номера в них нет, а деревья с
+  // тех пор менялись ровно раз. У Стража сегодняшний номер тот же первый,
+  // поэтому его ранги переживают переход НЕТРОНУТЫМИ — это не вежливость, а
+  // правило ночи: половина отпечатка, принадлежащая Стражу, не двигается.
+  //
+  // ЗАПАСА ЯРОСТИ МИГРАЦИЯ НЕ КАСАЕТСЯ, и это не забывчивость: сто двенадцать
+  // ярости при новом потолке в сто прижимает сама загрузка — `stateFromPayload`
+  // режет `currentMana` по `stats.maxMana` для ЛЮБОГО класса. Второй такой
+  // зажим был бы вторым ответом на тот же вопрос.
+  32: (raw) => ({ ...raw, version: 33, treeRevision: FIRST_TREE_GENERATION }),
   // 31 -> 32: РЕЦЕПТ СТАЛ ДОБЫЧЕЙ, и ветеран не должен обнаружить, что у него
   // отобрали половину кузни.
   //

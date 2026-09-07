@@ -39,7 +39,7 @@ import {
 import type { Monster } from '../types'
 import { SAFE_ZONE, ZONE_BY_ID, zoneSpawnVariants, type Zone } from '../data/zones'
 import { equippedBoons, monsterFromTemplate, type AbilitySettings, type Rotation } from './state'
-import { ABILITY_BY_ID, type AbilityDef } from '../data/abilities'
+import { ABILITY_BY_ID, MODEL_RESOURCE_FILL, type AbilityDef } from '../data/abilities'
 import { classById } from '../data/classes'
 import {
   blockReflectShare,
@@ -1227,6 +1227,7 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
     let incoming = 1
     let absorbPerSecond = new Decimal(0)
     let extraDps = new Decimal(0)
+    let healPerSecond = new Decimal(0)
     // Полный урон эффекта по времени, который может съесть детонатор, и как
     // часто такой эффект вообще накладывают.
     let dotRate = 0
@@ -1268,16 +1269,41 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
       // множителем. Съесть можно не чаще, чем накладывают.
       if (a.detonate && dotRate > 0) {
         const eaten = Math.min(rate, dotRate)
-        extraDps = extraDps.plus(dotDamage.times(a.detonate.multiplier - 1).times(eaten))
+        // Множитель, растущий от полноты полоски, модель берёт по среднему
+        // заполнению из данных: текущего запаса у неё нет и быть не может.
+        const multiplier =
+          a.detonate.multiplier + (a.detonate.resourceMultiplier ?? 0) * MODEL_RESOURCE_FILL
+        extraDps = extraDps.plus(dotDamage.times(multiplier - 1).times(eaten))
+      }
+      // ВАМПИРИЗМ — ЛЕЧЕНИЕ, ПРИВЯЗАННОЕ К УДАРУ, а не к порогу здоровья:
+      // считается как реген, а не как лечащее умение. Отсюда и его свойство:
+      // оно работает всегда понемногу и не спасает проигранный бой.
+      if (a.leech) {
+        healPerSecond = healPerSecond.plus(
+          cast.hitDamage.times(critFactor(stats)).times(a.leech.healShare).times(rate),
+        )
+      }
+      // УПОР нарастает пропущенными ударами, поэтому среднее по окну — около
+      // ПОЛОВИНЫ потолка: к концу окна смягчение полное, в начале нулевое.
+      if (a.resolve) {
+        const uptime = Math.min(1, rate * a.resolve.durationSec)
+        incoming *= 1 - (a.resolve.maxShare / 2) * uptime
       }
     }
-    return { outgoing, incoming, absorbPerSecond, extraDps: extraDps.times(critFactor(stats)) }
+    return {
+      outgoing,
+      incoming,
+      absorbPerSecond,
+      healPerSecond,
+      extraDps: extraDps.times(critFactor(stats)),
+    }
   }
   type AbilityMods = ReturnType<typeof abilityMods>
   const NEUTRAL_MODS: AbilityMods = {
     outgoing: new Decimal(1),
     incoming: 1,
     absorbPerSecond: new Decimal(0),
+    healPerSecond: new Decimal(0),
     extraDps: new Decimal(0),
   }
 
@@ -1344,7 +1370,22 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
       .plus(stream.procHeal.times(fightSec))
     // Валовая потеря за бой — до лечения умением.
     const grossLossPerFight = incomingPerCycle.minus(regenPerCycle)
-    return { rot, procDps, damagePerSecond, killCycleSec, fightSec, idealKillsPerSecond, grossLossPerFight }
+    // ВАМПИРИЗМ — ЛЕЧЕНИЕ УМЕНИЕМ, И МЕСТО ЕМУ В ЧИСТОЙ ПОТЕРЕ, А НЕ В
+    // ВАЛОВОЙ. Валовая — это счёт, который выставил моб; чем герой его
+    // покрыл (маной, яростью, ударом), к самому счёту отношения не имеет.
+    // Положи вампиризм в валовую — и контракт цены боя мерил бы не мобов, а
+    // состав четвёрки: замер до правки давал 4.0 % вместо 17.0 %.
+    const leechPerFight = mods.healPerSecond.times(fightSec)
+    return {
+      rot,
+      procDps,
+      damagePerSecond,
+      killCycleSec,
+      fightSec,
+      idealKillsPerSecond,
+      grossLossPerFight,
+      leechPerFight,
+    }
   }
   type Pass = ReturnType<typeof evaluate>
 
@@ -1391,7 +1432,17 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
   // из конвейера статов — настройка игрока плюс таланты. Чистая потеря за
   // бой — уже с лечением умением.
   const cycleFor = (pass: Pass, healing: HealCycle | null) => {
-    const netLossPerFight = healing ? new Decimal(healing.netLossPerFight) : pass.grossLossPerFight
+    // ВЫЧИТАЕМ, НО НЕ ЗАЖИМАЕМ НУЛЁМ. Отрицательная чистая потеря — законное
+    // состояние: в отставшей зоне регенерация покрывает входящее с запасом, и
+    // цикл фарма ниже сам решает, что привалов не будет вовсе. Зажим стоил
+    // ОДНОГО контракта Стража: в зонах, где потеря и так отрицательна, «минус»
+    // превращался в ноль, аптайм чуть менялся, и две соседние зоны лестницы
+    // дохода менялись местами. Правило ночи («половина отпечатка,
+    // принадлежащая Стражу, не двигается») поймало это ровно за тем, зачем
+    // оно и написано.
+    const netLossPerFight = (
+      healing ? new Decimal(healing.netLossPerFight) : pass.grossLossPerFight
+    ).minus(pass.leechPerFight)
     const netLossPerSec = netLossPerFight.div(pass.killCycleSec)
     const cycle = netLossPerSec.gt(0)
       ? farmCycle({
@@ -1420,8 +1471,13 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
   const sustainedDamagePerSecond = pass.damagePerSecond
   let healing = healFor(pass)
   let { netLossPerSec, cycle } = cycleFor(pass, healing)
+  // ПРИВАЛ НАЛИВАЕТ ЗАПАС — ТОЛЬКО ТАМ, ГДЕ ОН ЕГО НАЛИВАЕТ. Модель ротации
+  // опирается на это допущение (см. RestRefill), и для ярости оно ложно:
+  // отдых её не восстанавливает (`resource.restRefill` в данных класса).
+  // Оставь допущение общим — и модель обещала бы изуверу касты, которых у
+  // него нет, тем щедрее, чем чаще он отдыхает.
   const refill: RestRefill | null =
-    cycle && Number.isFinite(cycle.kills)
+    classById(s.classId).resource.restRefill && cycle && Number.isFinite(cycle.kills)
       ? // Боёв в цикле, включая тот, что кончился привалом или смертью.
         { fightSec: (cycle.kills + cycle.deathChance) * pass.killCycleSec.toNumber() }
       : null

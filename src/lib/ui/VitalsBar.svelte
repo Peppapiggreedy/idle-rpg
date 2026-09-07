@@ -64,7 +64,7 @@
       <StatBar
         value={$gameState.currentMana.toNumber()}
         max={$gameState.stats.maxMana.toNumber()}
-        tone="mana"
+        tone={resource.tone}
         size="sm"
         label={resource.name}
         valueLabel={pair(

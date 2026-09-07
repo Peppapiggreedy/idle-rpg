@@ -1355,6 +1355,21 @@ const WARDEN_VIGIL = branch('warden-vigil', [
 
 // Резня: тот же стиль, что и Гнев, но растёт в две руки — вместо ускорения
 // на четвёртом этаже стоит сила левой руки, и оба заряда-капстоуна другие.
+// ---------------------------------------------------------------------------
+// ИЗУВЕР
+// ---------------------------------------------------------------------------
+
+// РЕЗНЯ: ВСЁ ПРО УДАР И ПРО ТО, ЧЕМ ЕГО ОПЛАЧИВАЮТ.
+//
+// Ветка была лестницей из тринадцати одиночных узлов — очки лились в
+// единственный доступный талант, и выбора не было ни на одном этаже. Теперь
+// на этаже двое-трое, ёмкость больше, чем очков у героя, и это и есть цена
+// выбора.
+//
+// БОЛЬШЕ ПОЛОВИНЫ ТАЛАНТОВ ПРАВЯТ УМЕНИЯ, и это не украшение: у класса их
+// теперь одиннадцать, и ветка, состоящая из процентов, меняла бы ЧИСЛА, а не
+// ротацию. Ключевые этажи (5, 9, 13) — пары взаимоисключающих, и обе стороны
+// пары различаются РОДОМ, а не величиной.
 const REAVER_CARNAGE = branch('reaver-carnage', [
   [
     {
@@ -1362,7 +1377,16 @@ const REAVER_CARNAGE = branch('reaver-carnage', [
       name: 'Жажда крови',
       icon: 'talent-honed-edge',
       maxRank: 6,
+      col: 2,
       effect: mods(m('attackPower', 'percent', 0.02)),
+    },
+    {
+      id: 'carnage-quick-cleaver',
+      name: 'Скорый тесак',
+      icon: 'talent-firm-hand',
+      maxRank: 5,
+      col: 3,
+      effect: tunes('gut-rip', { field: 'cooldownSec', kind: 'percent', value: -0.06 }),
     },
   ],
   [
@@ -1371,7 +1395,20 @@ const REAVER_CARNAGE = branch('reaver-carnage', [
       name: 'Хищный взгляд',
       icon: 'talent-keen-eye',
       maxRank: 6,
+      col: 2,
       effect: mods(m('critChance', 'flat', 0.012)),
+    },
+    {
+      id: 'carnage-deep-frenzy',
+      name: 'Глубокое исступление',
+      icon: 'talent-bleed-deep',
+      maxRank: 5,
+      col: 3,
+      effect: tunes('blood-frenzy', {
+        field: 'effectWeaponDamagePercent',
+        kind: 'percent',
+        value: 0.08,
+      }),
     },
   ],
   [
@@ -1380,7 +1417,32 @@ const REAVER_CARNAGE = branch('reaver-carnage', [
       name: 'Свирепость',
       icon: 'talent-savage-blows',
       maxRank: 6,
+      col: 1,
       effect: mods(m('critMultiplier', 'flat', 0.08)),
+    },
+    {
+      id: 'carnage-heavy-splitter',
+      name: 'Тяжёлый череполом',
+      icon: 'talent-heavy-shatter',
+      maxRank: 5,
+      col: 2,
+      effect: tunes('skull-splitter', {
+        field: 'weaponDamagePercent',
+        kind: 'percent',
+        value: 0.06,
+      }),
+    },
+    {
+      id: 'carnage-thirsty-blade',
+      name: 'Жадный клинок',
+      icon: 'talent-deep-cut',
+      maxRank: 5,
+      col: 3,
+      effect: tunes('blood-thirst', {
+        field: 'weaponDamagePercent',
+        kind: 'percent',
+        value: 0.07,
+      }),
     },
   ],
   [
@@ -1391,22 +1453,48 @@ const REAVER_CARNAGE = branch('reaver-carnage', [
       // Штраф левой руки — СТАТ, поэтому талант правит его модификатором.
       // Со щитом или двуручным он не даёт ничего, и это честно.
       maxRank: 6,
+      col: 1,
       effect: mods(m('offhandPenalty', 'flat', 0.03)),
+    },
+    {
+      id: 'carnage-swift-cleaver',
+      name: 'Широкий тесак',
+      icon: 'talent-spare-edge',
+      maxRank: 5,
+      col: 3,
+      effect: tunes('gut-rip', { field: 'weaponDamagePercent', kind: 'percent', value: 0.05 }),
+      // Стрелка по смыслу: оба таланта про «Потрошащий взмах», и второй
+      // буквально дорабатывает первый — сперва чаще, потом сильнее.
+      requires: { talentId: 'carnage-quick-cleaver' },
     },
   ],
   [
+    // 21-е очко, КЛЮЧЕВОЙ ЭТАЖ. Оба меняют ПОВЕДЕНИЕ, и различаются они
+    // родом: слева дешёвый удар НАЧИНАЕТ КРОВИТЬ (урон растекается по
+    // времени), справа кровотечение перестаёт ЖДАТЬ ЗАМАХА (урон приходит
+    // раньше). Числа тут ни при чём — при них ротация разная.
     {
-      // 21-е очко.
       id: 'carnage-bleeding-wound',
       name: 'Кровавая рана',
       icon: 'talent-bleed-deep',
       maxRank: 1,
+      col: 2,
+      exclusiveGroup: 'carnage-key-5',
       effect: {
         kind: 'flag',
         flag: 'ability-learns-effect',
         abilityId: 'gut-rip',
         effect: BLEED,
       },
+    },
+    {
+      id: 'carnage-open-veins',
+      name: 'Вскрытые жилы',
+      icon: 'talent-open-vein',
+      maxRank: 1,
+      col: 3,
+      exclusiveGroup: 'carnage-key-5',
+      effect: tunes('blood-frenzy', { field: 'type', kind: 'set', value: 'instant' }),
     },
   ],
   [
@@ -1415,48 +1503,90 @@ const REAVER_CARNAGE = branch('reaver-carnage', [
       name: 'Дикая сила',
       icon: 'talent-strength',
       maxRank: 6,
-      // Было `strength flat 3`: восемнадцать силы — 6.8 % силы атаки на
-      // 55-м уровне и 4.2 % на сотом. Процент по замеру на 55-м:
-      // 6.8 % / 6 = 1.1 % за ранг.
+      col: 1,
+      // Процент, а не плоская сила: плоская прибавка к характеристике
+      // обесценивается к сотому уровню (см. TALENT_STAT_RULE).
       effect: mods(m('attackPower', 'percent', 0.011)),
+    },
+    {
+      id: 'carnage-hungry-tear',
+      name: 'Голодный разрыв',
+      icon: 'talent-full-rupture',
+      maxRank: 5,
+      col: 2,
+      effect: tunes('sinew-tear', { field: 'detonateMultiplier', kind: 'percent', value: 0.06 }),
+    },
+    {
+      id: 'carnage-brutal-reckoning',
+      name: 'Жестокая расправа',
+      icon: 'talent-wide-mercy',
+      maxRank: 5,
+      col: 3,
+      effect: tunes('reckoning', { field: 'weaponDamagePercent', kind: 'percent', value: 0.07 }),
     },
   ],
   [
     {
       id: 'carnage-beast-aim',
-      name: 'Звериная точность',
-      icon: 'talent-keen-eye',
+      name: 'Звериный глазомер',
+      icon: 'talent-cold-blood',
       maxRank: 6,
-      effect: mods(m('critChance', 'flat', 0.008)),
+      col: 1,
+      effect: mods(m('critChance', 'flat', 0.01)),
+    },
+    {
+      // ПОРОГ ДОБИВАНИЯ — В ПУНКТАХ: 20 % + 5 рангов по 2 = 30 %.
+      id: 'carnage-wide-reckoning',
+      name: 'Ранняя расправа',
+      icon: 'talent-quick-mercy',
+      maxRank: 5,
+      col: 3,
+      effect: tunes('reckoning', {
+        field: 'executeBelowHpShare',
+        kind: 'points',
+        value: 0.02,
+      }),
     },
   ],
   [
     {
       id: 'carnage-drive',
-      name: 'Разгон резни',
+      name: 'Напор',
       icon: 'talent-frenzy',
-      maxRank: 7,
-      effect: mods(m('haste', 'flat', 0.008)),
+      maxRank: 6,
+      col: 2,
+      effect: mods(m('haste', 'flat', 0.01)),
+    },
+    {
+      id: 'carnage-long-roar',
+      name: 'Долгий рёв',
+      icon: 'talent-long-focus',
+      maxRank: 5,
+      col: 3,
+      effect: tunes('blood-roar', { field: 'windowDurationSec', kind: 'percent', value: 0.08 }),
     },
   ],
   [
+    // 41-е очко, КЛЮЧЕВОЙ ЭТАЖ. Слева ПРОК (иногда бьёшь дважды), справа —
+    // снятие ожидания замаха у детонатора. Первое добавляет ударов, второе
+    // переставляет их во времени: разные роды, а не разные числа.
     {
-      // 41-е очко. Шанс ниже, чем у стража: изувер бьёт вдвое чаще, и на
-      // равном шансе двойной удар весил бы у него вдвое больше.
       id: 'carnage-blade-storm',
-      name: 'Вихрь клинков',
-      icon: 'talent-relentless',
+      name: 'Буря клинков',
+      icon: 'talent-double-strike',
       maxRank: 1,
+      col: 2,
+      exclusiveGroup: 'carnage-key-9',
       effect: { kind: 'flag', flag: 'double-strike', chance: 0.12 },
     },
-  ],
-  [
     {
-      id: 'carnage-discord',
-      name: 'Раздор',
-      icon: 'talent-savage-blows',
-      maxRank: 5,
-      effect: mods(m('critMultiplier', 'flat', 0.06)),
+      id: 'carnage-frenzied-tear',
+      name: 'Рваный разрыв',
+      icon: 'talent-rupture',
+      maxRank: 1,
+      col: 3,
+      exclusiveGroup: 'carnage-key-9',
+      effect: tunes('sinew-tear', { field: 'type', kind: 'set', value: 'instant' }),
     },
   ],
   [
@@ -1465,194 +1595,416 @@ const REAVER_CARNAGE = branch('reaver-carnage', [
       name: 'Вторая рука',
       icon: 'talent-offhand-mastery',
       maxRank: 5,
+      col: 1,
       effect: mods(m('offhandPenalty', 'flat', 0.02)),
+    },
+    {
+      id: 'carnage-cheap-splitter',
+      name: 'Скупой череполом',
+      icon: 'talent-thrift-shatter',
+      maxRank: 5,
+      col: 2,
+      effect: tunes('skull-splitter', { field: 'manaCost', kind: 'percent', value: -0.07 }),
+      requires: { talentId: 'carnage-heavy-splitter' },
+    },
+    {
+      id: 'carnage-deeper-frenzy',
+      name: 'Долгое исступление',
+      icon: 'talent-open-wound',
+      maxRank: 3,
+      col: 3,
+      effect: tunes('blood-frenzy', { field: 'effectTicks', kind: 'percent', value: 0.2 }),
+      requires: { talentId: 'carnage-deep-frenzy' },
     },
   ],
   [
     {
       id: 'carnage-onslaught',
-      name: 'Напор',
-      icon: 'talent-honed-edge',
+      name: 'Натиск',
+      icon: 'talent-relentless',
+      maxRank: 6,
+      col: 2,
+      effect: mods(m('attackPower', 'percent', 0.012)),
+    },
+    {
+      id: 'carnage-swift-splitter',
+      name: 'Скорый череполом',
+      icon: 'talent-swift-shatter',
       maxRank: 5,
-      effect: mods(m('attackPower', 'percent', 0.02)),
+      col: 3,
+      effect: tunes('skull-splitter', { field: 'cooldownSec', kind: 'percent', value: -0.06 }),
     },
   ],
   [
     {
-      // 61-е очко, капстоун.
       id: 'carnage-blood-charge',
-      name: 'Кровавый запал',
+      name: 'Кровавый разгон',
       icon: 'talent-blood-charge',
+      maxRank: 5,
+      col: 1,
+      effect: mods(m('haste', 'flat', 0.012)),
+    },
+    {
+      id: 'carnage-fierce-berserk',
+      name: 'Лютое бешенство',
+      icon: 'talent-hard-stance',
+      maxRank: 5,
+      col: 2,
+      // Доля стойки отрицательная (урон ВЫШЕ), и процент её усиливает —
+      // знак при этом не меняется, обмен остаётся обменом.
+      effect: tunes('berserk', { field: 'stanceDamageShare', kind: 'percent', value: 0.08 }),
+    },
+  ],
+  [
+    // 61-е очко, ВЕНЕЦ. Слева расправа становится двигателем ротации: вдвое
+    // чаще и вдвое щедрее на ярость. Справа бешенство становится почти
+    // постоянным. Первое про ХВОСТ боя, второе про весь бой целиком.
+    {
+      id: 'carnage-carnage',
+      name: 'Резня',
+      icon: 'talent-second-charge',
       maxRank: 1,
+      col: 2,
+      exclusiveGroup: 'carnage-key-13',
+      // ВТОРОЙ ЗАРЯД ДОБИВАНИЯ. Хвост боя срезается дважды подряд, и ярость
+      // возвращается дважды — на следующий бой герой входит не пустым.
       effect: {
         kind: 'flag',
         flag: 'ability-extra-charge',
-        abilityId: 'skull-splitter',
+        abilityId: 'reckoning',
         extraCharges: 1,
       },
+    },
+    {
+      id: 'carnage-red-haze',
+      name: 'Багровая пелена',
+      icon: 'talent-long-stance',
+      maxRank: 1,
+      col: 3,
+      exclusiveGroup: 'carnage-key-13',
+      effect: tunes(
+        'berserk',
+        { field: 'stanceDurationSec', kind: 'multiplier', value: 2 },
+        { field: 'cooldownSec', kind: 'multiplier', value: 0.6 },
+      ),
     },
   ],
 ])
 
-// Жилы: выносливость изувера. Числа те же, что у Оплота, а капстоун злее —
-// отражается ПОЛТОРА поглощённого: изувер защищается нападая.
+// ЖИЛЫ: ЧЕМ ДОЛЬШЕ СТОИШЬ, ТЕМ ДЕШЕВЛЕ СТОЯТЬ.
+//
+// Ветка живучести класса, у которого нет ни лечащего умения, ни налива
+// ресурса привалом: держится он тем, что БЬЁТ (вампиризм) и тем, что
+// НЕ УХОДИТ (упор). Отсюда и наполнение — половина талантов правит именно
+// эти два умения.
 const REAVER_SINEW = branch('reaver-sinew', [
   [
     {
       id: 'sinew-beast-hide',
-      name: 'Шкура зверя',
+      name: 'Звериная шкура',
       icon: 'talent-thick-hide',
       maxRank: 6,
-      effect: mods(m('maxHp', 'percent', 0.05)),
+      col: 2,
+      effect: mods(m('armor', 'percent', 0.03)),
+    },
+    {
+      id: 'sinew-braced-guard',
+      name: 'Упрямая стойка',
+      icon: 'talent-braced',
+      maxRank: 5,
+      col: 3,
+      effect: tunes('dug-in', { field: 'resolveMaxShare', kind: 'percent', value: 0.06 }),
     },
   ],
   [
     {
       id: 'sinew-forearm-guard',
-      name: 'Заслон предплечьем',
-      icon: 'talent-shield-wall',
+      name: 'Наручи',
+      icon: 'talent-iron-skin',
       maxRank: 6,
-      effect: mods(m('blockChance', 'flat', 0.02)),
+      col: 2,
+      effect: mods(m('maxHp', 'percent', 0.02)),
     },
-  ],
-  [
     {
-      id: 'sinew-heavy-riposte',
-      name: 'Тяжёлый отпор',
-      icon: 'talent-bulwark-training',
-      maxRank: 6,
-      effect: mods(m('blockValue', 'percent', 0.2)),
+      id: 'sinew-thirsty-bite',
+      name: 'Жадный укус',
+      icon: 'talent-deep-mend',
+      maxRank: 5,
+      col: 3,
+      effect: tunes('blood-thirst', { field: 'leechHealShare', kind: 'percent', value: 0.07 }),
     },
   ],
   [
     {
       id: 'sinew-tanned-hide',
       name: 'Дублёная кожа',
-      icon: 'talent-iron-skin',
+      icon: 'talent-hard-to-kill',
       maxRank: 6,
-      effect: mods(m('damageReduction', 'flat', 0.01)),
+      col: 1,
+      effect: mods(m('damageReduction', 'flat', 0.008)),
     },
-  ],
-  [
     {
-      // 21-е очко. Ярость приходит из боя — и теперь ещё и из чужих ударов
-      // по щиту.
-      id: 'sinew-blood-for-blood',
-      name: 'Кровь за кровь',
-      icon: 'talent-guard-echo',
-      maxRank: 1,
-      effect: { kind: 'flag', flag: 'block-restores-resource', resourceShare: 0.07 },
+      id: 'sinew-long-dig',
+      name: 'Долгий упор',
+      icon: 'talent-long-wall',
+      maxRank: 5,
+      col: 2,
+      effect: tunes('dug-in', { field: 'resolveDurationSec', kind: 'percent', value: 0.08 }),
+    },
+    {
+      id: 'sinew-cheap-thirst',
+      name: 'Скупая жажда',
+      icon: 'talent-thrift-wound',
+      maxRank: 5,
+      col: 3,
+      effect: tunes('blood-thirst', { field: 'manaCost', kind: 'percent', value: -0.07 }),
+      requires: { talentId: 'sinew-thirsty-bite' },
     },
   ],
   [
     {
       id: 'sinew-hardened',
-      name: 'Матёрость',
-      icon: 'talent-vitality',
+      name: 'Задубелость',
+      icon: 'talent-bulwark-training',
       maxRank: 6,
-      // Было `vitality flat 3`. Плоская характеристика отстаёт от уровня
-      // (см. TALENT_STAT_RULE): восемнадцать выносливости — 4.5 % запаса у
-      // эталонного Стража на 55-м уровне и 2.7 % на сотом. Переведено в
-      // процент по замеру НА 55-М: 4.5 % / 6 рангов = 0.75 % за ранг.
-      // Настоящая переделка ветки — своей стадией; здесь только правило.
-      effect: mods(m('maxHp', 'percent', 0.0075)),
+      col: 1,
+      effect: mods(m('armor', 'percent', 0.025)),
+    },
+    {
+      id: 'sinew-firm-dig',
+      name: 'Твёрдый упор',
+      icon: 'talent-firm-press',
+      maxRank: 5,
+      col: 3,
+      effect: tunes('dug-in', { field: 'resolvePerHitTaken', kind: 'percent', value: 0.08 }),
+      requires: { talentId: 'sinew-braced-guard' },
+    },
+  ],
+  [
+    // 21-е очко, КЛЮЧЕВОЙ ЭТАЖ. Слева блок начинает платить ЯРОСТЬЮ — щит
+    // становится источником ресурса. Справа упор перестаёт быть окном и
+    // держится почти всегда — ресурса не прибавляет, зато счёт меньше. Пара
+    // про одно и то же (как пережить бой), но ответы разного рода.
+    {
+      id: 'sinew-blood-for-blood',
+      name: 'Отдача щита',
+      icon: 'talent-block-resource',
+      maxRank: 1,
+      col: 2,
+      exclusiveGroup: 'sinew-key-5',
+      // ЯРОСТЬ ИЗ БЛОКА. Работает только со щитом в руке, и это осознанно:
+      // сборка «щит и упор» получает ресурс оттуда, откуда обычно приходит
+      // только урон.
+      effect: { kind: 'flag', flag: 'block-restores-resource', resourceShare: 0.08 },
+    },
+    {
+      id: 'sinew-iron-dig',
+      name: 'Железный упор',
+      icon: 'talent-often-wall',
+      maxRank: 1,
+      col: 3,
+      exclusiveGroup: 'sinew-key-5',
+      effect: tunes('dug-in', { field: 'cooldownSec', kind: 'multiplier', value: 0.6 }),
     },
   ],
   [
     {
       id: 'sinew-knitting',
-      name: 'Затягивание ран',
+      name: 'Сращение',
       icon: 'talent-second-wind',
       maxRank: 6,
-      // Плоское восстановление ОТСТАЁТ ОТ УРОВНЯ (см. TALENT_STAT_RULE):
-      // у эталонного Стража реген 19.2/с на 25-м уровне и 67.5/с на сотом,
-      // то есть один и тот же «+2» стоит втрое меньше к концу игры.
-      // Переведено в процент по замеру НА 55-М (39.5/с): 2 → 5.1 %.
-      effect: mods(m('hpRegen', 'percent', 0.051)),
+      col: 1,
+      effect: mods(m('hpRegen', 'percent', 0.06)),
+    },
+    {
+      id: 'sinew-deep-price',
+      name: 'Дорогая плата',
+      icon: 'talent-blood-charge',
+      maxRank: 5,
+      col: 2,
+      effect: tunes('blood-price', {
+        field: 'bloodPriceResourceShare',
+        kind: 'percent',
+        value: 0.08,
+      }),
     },
   ],
   [
     {
       id: 'sinew-frame',
       name: 'Костяк',
-      icon: 'talent-thick-hide',
-      maxRank: 7,
-      effect: mods(m('maxHp', 'percent', 0.03)),
+      icon: 'talent-vitality',
+      maxRank: 6,
+      col: 1,
+      effect: mods(m('maxHp', 'percent', 0.02)),
     },
-  ],
-  [
     {
-      // 41-е очко.
-      id: 'sinew-not-finished',
-      name: 'Не добит',
-      icon: 'talent-hard-to-kill',
-      maxRank: 1,
-      effect: { kind: 'flag', flag: 'faster-revive', reviveMultiplier: 0.4 },
+      id: 'sinew-swift-dig',
+      name: 'Скорый упор',
+      icon: 'talent-quick-focus',
+      maxRank: 5,
+      col: 2,
+      effect: tunes('dug-in', { field: 'cooldownSec', kind: 'percent', value: -0.06 }),
     },
   ],
   [
     {
       id: 'sinew-carapace',
       name: 'Панцирь',
-      icon: 'talent-iron-skin',
+      icon: 'talent-shield-wall',
+      maxRank: 6,
+      col: 1,
+      effect: mods(m('armor', 'percent', 0.025)),
+    },
+    {
+      id: 'sinew-guarded-roar',
+      name: 'Осторожный рёв',
+      icon: 'talent-thrift-stance',
       maxRank: 5,
-      effect: mods(m('damageReduction', 'flat', 0.008)),
+      col: 3,
+      effect: tunes('blood-roar', { field: 'manaCost', kind: 'percent', value: -0.08 }),
+    },
+  ],
+  [
+    // 41-е очко, КЛЮЧЕВОЙ ЭТАЖ. Слева смерть перестаёт быть дорогой, справа
+    // бешенство перестаёт быть опасным. Первое про ПОСЛЕ боя, второе про
+    // сам бой.
+    {
+      id: 'sinew-not-finished',
+      name: 'Не добит',
+      icon: 'talent-swift-return',
+      maxRank: 1,
+      col: 2,
+      exclusiveGroup: 'sinew-key-9',
+      effect: { kind: 'flag', flag: 'faster-revive', reviveMultiplier: 0.5 },
+    },
+    {
+      id: 'sinew-stone-skin',
+      name: 'Каменная кожа',
+      icon: 'talent-guard-echo',
+      maxRank: 1,
+      col: 3,
+      exclusiveGroup: 'sinew-key-9',
+      // Смягчение стойки у «Бешенства» отрицательное (входящее ЖЁСТЧЕ);
+      // множитель 0.4 делает штраф втрое меньше, знак не трогая.
+      effect: tunes('berserk', { field: 'stanceMitigationShare', kind: 'multiplier', value: 0.4 }),
     },
   ],
   [
     {
       id: 'sinew-counterblow',
-      name: 'Встречный удар',
-      icon: 'talent-bulwark-training',
+      name: 'Ответный удар',
+      icon: 'talent-block-reflect',
       maxRank: 5,
-      effect: mods(m('blockValue', 'percent', 0.15)),
+      col: 1,
+      effect: mods(m('blockValue', 'percent', 0.05)),
+    },
+    {
+      // ПОРОГ АВТОКАСТА ПЛАТЫ — В ПУНКТАХ: 65 % − 5 рангов по 3 = 50 %.
+      // Герой начинает платить здоровьем и на просевшей полоске.
+      id: 'sinew-tough-price',
+      name: 'Дешёвая кровь',
+      icon: 'talent-early-brand',
+      maxRank: 5,
+      col: 2,
+      effect: tunes('blood-price', {
+        field: 'autocastHeroHpAbove',
+        kind: 'points',
+        value: -0.03,
+      }),
     },
   ],
   [
     {
       id: 'sinew-brace',
-      name: 'Упор',
-      icon: 'talent-shield-wall',
+      name: 'Упрямство',
+      icon: 'talent-press',
+      maxRank: 6,
+      col: 1,
+      effect: mods(m('damageReduction', 'flat', 0.006)),
+    },
+    {
+      id: 'sinew-lasting-dig',
+      name: 'Стойкий упор',
+      icon: 'talent-lasting-brand',
       maxRank: 5,
-      effect: mods(m('blockChance', 'flat', 0.015)),
+      col: 2,
+      effect: tunes('dug-in', { field: 'resolveMaxShare', kind: 'percent', value: 0.05 }),
+      requires: { talentId: 'sinew-long-dig' },
     },
   ],
   [
     {
-      // 61-е очко, капстоун.
       id: 'sinew-spiked-guard',
-      name: 'Шипастый заслон',
+      name: 'Шипастая защита',
       icon: 'talent-spiked-guard',
+      maxRank: 5,
+      col: 1,
+      effect: mods(m('armor', 'percent', 0.02)),
+    },
+    {
+      id: 'sinew-red-thirst',
+      name: 'Красная жажда',
+      icon: 'talent-quiet-mend',
+      maxRank: 5,
+      col: 2,
+      effect: tunes('blood-thirst', { field: 'cooldownSec', kind: 'percent', value: -0.06 }),
+    },
+  ],
+  [
+    // 61-е очко, ВЕНЕЦ. Слева упор держится почти постоянно — герой ПЛАТИТ
+    // за бой меньше. Справа блок отвечает шипами — герой платит столько же,
+    // но и берёт с нападающего. Разные ответы на один вопрос.
+    {
+      id: 'sinew-unbroken',
+      name: 'Несгибаемый',
+      icon: 'talent-immovable',
       maxRank: 1,
-      effect: { kind: 'flag', flag: 'block-reflects', damageShare: 1 },
+      col: 2,
+      exclusiveGroup: 'sinew-key-13',
+      effect: tunes(
+        'dug-in',
+        { field: 'resolveDurationSec', kind: 'multiplier', value: 2 },
+        { field: 'cooldownSec', kind: 'multiplier', value: 0.5 },
+      ),
+    },
+    {
+      id: 'sinew-thorned-answer',
+      name: 'Шипастый ответ',
+      icon: 'talent-block-reflect',
+      maxRank: 1,
+      col: 3,
+      exclusiveGroup: 'sinew-key-13',
+      // Половина поглощённого блоком возвращается бьющему. Как и «Отдача
+      // щита», работает только со щитом — ветка честно предлагает СБОРКУ,
+      // а не прибавку всем.
+      effect: { kind: 'flag', flag: 'block-reflects', damageShare: 0.5 },
     },
   ],
 ])
 
-// Чутьё: автономность изувера. Мана и пауза восстановления ему чужды
-// (класс гасит их множителем-нулём), поэтому ветка растит не реген, а
-// ЁМКОСТЬ ярости, порог привала и заживление в бою.
+// ЧУТЬЁ: ПРО РЕСУРС И ПРО ВРЕМЯ ВНЕ БОЯ.
+//
+// Автономность у класса на ярости — это не «реже отдыхать», а «меньше стоять
+// пустым»: ветка про ёмкость полоски, про разгон и про окно, в котором
+// умения ничего не стоят.
 const REAVER_INSTINCT = branch('reaver-instinct', [
   [
     {
       id: 'instinct-beast-breath',
-      name: 'Дыхание зверя',
-      icon: 'talent-second-wind',
+      name: 'Звериное дыхание',
+      icon: 'talent-steady-breath',
       maxRank: 6,
-      // Плоское восстановление ОТСТАЁТ ОТ УРОВНЯ (см. TALENT_STAT_RULE):
-      // у эталонного Стража реген 19.2/с на 25-м уровне и 67.5/с на сотом,
-      // то есть один и тот же «+1.5» стоит втрое меньше к концу игры.
-      // Переведено в процент по замеру НА 55-М (39.5/с): 1.5 → 3.8 %.
-      effect: mods(m('hpRegen', 'percent', 0.038)),
+      col: 2,
+      effect: mods(m('hpRegenOutOfCombat', 'percent', 0.06)),
     },
-  ],
-  [
     {
-      id: 'instinct-short-rest',
-      name: 'Короткий роздых',
-      icon: 'talent-quick-camp',
-      maxRank: 6,
-      effect: mods(m('restDuration', 'flat', -0.5)),
+      id: 'instinct-quick-letting',
+      name: 'Скорое кровопускание',
+      icon: 'talent-quick-focus',
+      maxRank: 5,
+      col: 3,
+      effect: tunes('blood-letting', { field: 'cooldownSec', kind: 'percent', value: -0.06 }),
     },
   ],
   [
@@ -1660,58 +2012,107 @@ const REAVER_INSTINCT = branch('reaver-instinct', [
       id: 'instinct-rage-capacity',
       name: 'Ёмкость ярости',
       icon: 'talent-deep-well',
-      // СТАВКА НАМЕРЕННО НИЖЕ, чем у «Глубокого колодца» стража, и вот почему.
-      // Доход ярости — ДОЛЯ запаса (resourceIncome), а цены умений — числа:
-      // у изувера ёмкость это ещё и урон, а у стража только глубина. С равной
-      // ставкой ветка автономности изувера обгоняла бы по урону его же ветку
-      // урона — то есть выбор стиля переставал бы существовать.
       maxRank: 6,
-      effect: mods(m('maxMana', 'percent', 0.04)),
+      col: 2,
+      // ЕДИНСТВЕННЫЙ СПОСОБ поднять запас ярости выше ста: ни уровень, ни
+      // характеристики, ни находки его не двигают.
+      effect: mods(m('maxMana', 'percent', 0.05)),
+    },
+    {
+      id: 'instinct-rich-letting',
+      name: 'Щедрое кровопускание',
+      icon: 'talent-open-vein',
+      maxRank: 5,
+      col: 3,
+      effect: tunes('blood-letting', {
+        field: 'generateResourceShare',
+        kind: 'percent',
+        value: 0.06,
+      }),
+      requires: { talentId: 'instinct-quick-letting' },
     },
   ],
   [
     {
-      // Как и «Походная перевязка» у стража: талант двигал ПОРОГ привала, то
-      // есть настройку игрока. Заменён на длину привала процентом.
-      id: 'instinct-light-camp',
-      name: 'Лёгкий лагерь',
+      id: 'instinct-short-rest',
+      name: 'Короткий привал',
       icon: 'talent-quick-camp',
       maxRank: 6,
-      effect: mods(m('restDuration', 'percent', -0.04)),
+      col: 1,
+      effect: mods(m('restDuration', 'flat', -0.25)),
     },
-  ],
-  [
     {
-      // 21-е очко.
-      id: 'instinct-taste-of-victory',
-      name: 'Вкус победы',
-      icon: 'talent-kill-refund',
-      maxRank: 1,
-      effect: { kind: 'flag', flag: 'kill-refunds-cooldowns', cooldownShare: 0.7 },
+      // ПРОЦЕНТОМ, А НЕ СЕКУНДАМИ: секунды уже заняты соседом по этажу
+      // («Короткий привал»), и два одинаковых по роду таланта в одном ряду
+      // выбором не были бы. Это же место — то, куда переехал удалённый
+      // талант на ПОРОГ привала: настройка игрока таланту не принадлежит.
+      id: 'instinct-light-camp',
+      name: 'Лёгкий привал',
+      icon: 'talent-shorter-rest',
+      maxRank: 5,
+      col: 2,
+      effect: mods(m('restDuration', 'percent', -0.0234)),
     },
   ],
   [
     {
       id: 'instinct-hardy-stock',
-      name: 'Выносливая порода',
-      icon: 'talent-vitality',
+      name: 'Гулкий рёв',
+      icon: 'talent-early-call',
       maxRank: 6,
-      // Было `vitality flat 3`. Плоская характеристика отстаёт от уровня
-      // (см. TALENT_STAT_RULE): восемнадцать выносливости — 4.5 % запаса у
-      // эталонного Стража на 55-м уровне и 2.7 % на сотом. Переведено в
-      // процент по замеру НА 55-М: 4.5 % / 6 рангов = 0.75 % за ранг.
-      // Настоящая переделка ветки — своей стадией; здесь только правило.
-      effect: mods(m('maxHp', 'percent', 0.0075)),
+      col: 1,
+      effect: tunes('blood-roar', { field: 'weaponDamagePercent', kind: 'percent', value: 0.06 }),
+    },
+    {
+      id: 'instinct-swift-roar',
+      name: 'Скорый рёв',
+      icon: 'talent-early-call',
+      maxRank: 5,
+      col: 3,
+      effect: tunes('blood-roar', { field: 'cooldownSec', kind: 'percent', value: -0.06 }),
+    },
+  ],
+  [
+    // 21-е очко, КЛЮЧЕВОЙ ЭТАЖ. Слева убийство сбрасывает откаты — ротация
+    // разгоняется УБИЙСТВАМИ, то есть рывками. Справа разгон жмётся вдвое
+    // чаще — ярость идёт РОВНО. Оба про «меньше стоять без дела», и ответы
+    // у них разного рода.
+    {
+      id: 'instinct-taste-of-victory',
+      name: 'Вкус победы',
+      icon: 'talent-kill-refund',
+      maxRank: 1,
+      col: 2,
+      exclusiveGroup: 'instinct-key-5',
+      effect: { kind: 'flag', flag: 'kill-refunds-cooldowns', cooldownShare: 0.75 },
+    },
+    {
+      id: 'instinct-endless-letting',
+      name: 'Открытая жила',
+      icon: 'talent-open-vein',
+      maxRank: 1,
+      col: 3,
+      exclusiveGroup: 'instinct-key-5',
+      // Разгон вдвое чаще: ярость идёт РОВНО, а не приходит с убийствами.
+      effect: tunes('blood-letting', { field: 'cooldownSec', kind: 'multiplier', value: 0.5 }),
     },
   ],
   [
     {
       id: 'instinct-hunger',
       name: 'Голод',
-      icon: 'talent-deep-well',
-      // Та же поправка, что и у «Ёмкости ярости» этажом выше.
+      icon: 'talent-intellect',
       maxRank: 6,
+      col: 2,
       effect: mods(m('maxMana', 'percent', 0.03)),
+    },
+    {
+      id: 'instinct-cheap-tear',
+      name: 'Скупой разрыв',
+      icon: 'talent-thrift-rupture',
+      maxRank: 5,
+      col: 3,
+      effect: tunes('sinew-tear', { field: 'manaCost', kind: 'percent', value: -0.07 }),
     },
   ],
   [
@@ -1719,64 +2120,148 @@ const REAVER_INSTINCT = branch('reaver-instinct', [
       id: 'instinct-second-breath',
       name: 'Второе дыхание',
       icon: 'talent-second-wind',
-      maxRank: 7,
-      // Плоское восстановление ОТСТАЁТ ОТ УРОВНЯ (см. TALENT_STAT_RULE):
-      // у эталонного Стража реген 19.2/с на 25-м уровне и 67.5/с на сотом,
-      // то есть один и тот же «+1.5» стоит втрое меньше к концу игры.
-      // Переведено в процент по замеру НА 55-М (39.5/с): 1.5 → 3.8 %.
-      effect: mods(m('hpRegen', 'percent', 0.038)),
+      maxRank: 6,
+      col: 1,
+      effect: mods(m('hpRegen', 'percent', 0.05)),
+    },
+    {
+      id: 'instinct-full-roar',
+      name: 'Полный рёв',
+      icon: 'talent-long-focus',
+      maxRank: 5,
+      col: 3,
+      effect: tunes('blood-roar', { field: 'windowDurationSec', kind: 'percent', value: 0.07 }),
+      // Оба про «Кровавый рёв»: сперва чаще, потом дольше.
+      requires: { talentId: 'instinct-swift-roar' },
     },
   ],
   [
     {
-      // 41-е очко.
       id: 'instinct-never-cooling',
-      name: 'Не остывая',
-      icon: 'talent-unbroken-focus',
-      maxRank: 1,
-      effect: { kind: 'flag', flag: 'rest-clears-cooldowns', cooldownShare: 0 },
+      name: 'Неостывающий',
+      icon: 'talent-relentless',
+      maxRank: 6,
+      col: 2,
+      effect: mods(m('haste', 'flat', 0.008)),
+    },
+    {
+      id: 'instinct-rich-price',
+      name: 'Щедрая плата',
+      icon: 'talent-blood-charge',
+      maxRank: 5,
+      col: 3,
+      effect: tunes('blood-price', {
+        field: 'bloodPriceResourceShare',
+        kind: 'percent',
+        value: 0.07,
+      }),
     },
   ],
   [
+    // 41-е очко, КЛЮЧЕВОЙ ЭТАЖ. Слева герой встаёт с привала с готовыми
+    // умениями — привал перестаёт стоить откатов. Справа окно бесплатных
+    // умений вдвое длиннее — привал реже нужен вовсе. Первое про ПОСЛЕ
+    // привала, второе про то, чтобы до него не доводить.
     {
       id: 'instinct-deep-sleep',
       name: 'Крепкий сон',
-      icon: 'talent-quick-camp',
-      maxRank: 5,
-      effect: mods(m('restDuration', 'flat', -0.3)),
+      icon: 'talent-clear-mind',
+      maxRank: 1,
+      col: 2,
+      exclusiveGroup: 'instinct-key-9',
+      effect: { kind: 'flag', flag: 'rest-clears-cooldowns', cooldownShare: 0 },
     },
-  ],
-  [
     {
-      // Третий талант на ПОРОГ привала — по тому же доводу заменён на длину.
       id: 'instinct-restless',
-      name: 'Неугомонность',
-      icon: 'talent-quick-camp',
-      maxRank: 5,
-      effect: mods(m('restDuration', 'percent', -0.03)),
+      name: 'Неугомонный',
+      icon: 'talent-long-focus',
+      maxRank: 1,
+      col: 3,
+      exclusiveGroup: 'instinct-key-9',
+      // Окно вдвое длиннее: шестнадцать секунд, в которые умения не стоят
+      // ничего. Не «отдыхать быстрее», а «дольше не нуждаться в отдыхе».
+      effect: tunes('blood-roar', { field: 'windowDurationSec', kind: 'multiplier', value: 2 }),
     },
   ],
   [
     {
-      id: 'instinct-patience',
-      name: 'Терпение',
-      icon: 'talent-second-wind',
+      id: 'instinct-wide-throat',
+      name: 'Широкая глотка',
+      icon: 'talent-deep-well',
+      maxRank: 6,
+      col: 1,
+      effect: mods(m('maxMana', 'percent', 0.025)),
+    },
+    {
+      id: 'instinct-thrifty-splitter',
+      name: 'Скупой замах',
+      icon: 'talent-thrift-shatter',
       maxRank: 5,
-      // Плоское восстановление ОТСТАЁТ ОТ УРОВНЯ (см. TALENT_STAT_RULE):
-      // у эталонного Стража реген 19.2/с на 25-м уровне и 67.5/с на сотом,
-      // то есть один и тот же «+1» стоит втрое меньше к концу игры.
-      // Переведено в процент по замеру НА 55-М (39.5/с): 1 → 2.5 %.
-      effect: mods(m('hpRegen', 'percent', 0.025)),
+      col: 2,
+      effect: tunes('skull-splitter', { field: 'manaCost', kind: 'percent', value: -0.06 }),
     },
   ],
   [
     {
-      // 61-е очко, капстоун.
+      // Второе место удалённого таланта на порог привала — тоже процентом.
       id: 'instinct-wolf-camp',
       name: 'Волчий привал',
+      icon: 'talent-quick-camp',
+      maxRank: 5,
+      col: 1,
+      effect: mods(m('restDuration', 'percent', -0.0234)),
+    },
+    {
+      id: 'instinct-long-berserk',
+      name: 'Долгое бешенство',
+      icon: 'talent-long-stance',
+      maxRank: 5,
+      col: 2,
+      effect: tunes('berserk', { field: 'stanceDurationSec', kind: 'percent', value: 0.08 }),
+    },
+  ],
+  [
+    {
+      id: 'instinct-steady-hand',
+      name: 'Скорая плата',
+      icon: 'talent-firm-hand',
+      maxRank: 5,
+      col: 2,
+      effect: tunes('blood-price', { field: 'cooldownSec', kind: 'percent', value: -0.06 }),
+    },
+    {
+      id: 'instinct-cheap-roar',
+      name: 'Дешёвый рёв',
+      icon: 'talent-thrift-wall',
+      maxRank: 5,
+      col: 3,
+      effect: tunes('blood-roar', { field: 'manaCost', kind: 'percent', value: -0.08 }),
+      requires: { talentId: 'instinct-full-roar' },
+    },
+  ],
+  [
+    // 61-е очко, ВЕНЕЦ. Слева привал вдвое короче — герой быстрее
+    // возвращается в бой. Справа окно открывается вдвое чаще — герой реже
+    // упирается в пустую полоску. Время против ресурса.
+    {
+      id: 'instinct-wolf-sleep',
+      name: 'Волчий сон',
       icon: 'talent-shorter-rest',
       maxRank: 1,
-      effect: { kind: 'flag', flag: 'shorter-rest', durationMultiplier: 1 / 3 },
+      col: 2,
+      exclusiveGroup: 'instinct-key-13',
+      // Привал вдвое короче. Ярость он не наливает — и не должен; венец
+      // ветки автономности торгует ВРЕМЕНЕМ, а не ресурсом.
+      effect: { kind: 'flag', flag: 'shorter-rest', durationMultiplier: 0.5 },
+    },
+    {
+      id: 'instinct-endless-roar',
+      name: 'Бесконечный рёв',
+      icon: 'talent-endless-mind',
+      maxRank: 1,
+      col: 3,
+      exclusiveGroup: 'instinct-key-13',
+      effect: tunes('blood-roar', { field: 'cooldownSec', kind: 'multiplier', value: 0.5 }),
     },
   ],
 ])
@@ -2211,6 +2696,216 @@ const BRANCH_PATHS: Partial<Record<BranchId, TalentPath[]>> = {
         'vigil-trophy-spirit',
         'vigil-unbroken-focus',
         'vigil-campfire-on-the-move',
+      ],
+    },
+  ],
+  // ИЗУВЕР. По два пути на ветку, как у Стража: первый — ПРИБОР (по нему
+  // считается «чистая ветка»), второй — вторая сторона ключевых этажей.
+  // Без явных путей ветку заливала бы жадность сверху вниз, а ёмкость здесь
+  // больше, чем очков у героя: до венца заливка не доходит вовсе.
+  'reaver-carnage': [
+    {
+      // КРОВЬ. Дешёвый удар учится кровить, автоатака иногда бьёт дважды,
+      // добивание получает второй заряд. Урон идёт РОВНО.
+      id: 'carnage-blood',
+      name: 'Кровь',
+      abilities: ['gut-rip', 'blood-letting', 'blood-frenzy', 'blood-thirst'],
+      order: [
+        'carnage-bleeding-wound',
+        'carnage-blade-storm',
+        'carnage-carnage',
+        'carnage-bloodlust',
+        'carnage-quick-cleaver',
+        'carnage-predator-eye',
+        'carnage-deep-frenzy',
+        'carnage-ferocity',
+        'carnage-heavy-splitter',
+        'carnage-thirsty-blade',
+        'carnage-offhand',
+        'carnage-swift-cleaver',
+        'carnage-wild-strength',
+        'carnage-hungry-tear',
+        'carnage-brutal-reckoning',
+        'carnage-beast-aim',
+        'carnage-wide-reckoning',
+        'carnage-drive',
+        'carnage-long-roar',
+        'carnage-second-hand',
+        'carnage-cheap-splitter',
+        'carnage-deeper-frenzy',
+        'carnage-onslaught',
+        'carnage-swift-splitter',
+        'carnage-blood-charge',
+        'carnage-fierce-berserk',
+      ],
+    },
+    {
+      // ЯРОСТЬ. Кровотечение и разрыв перестают ждать замаха, бешенство
+      // держится почти постоянно. Урон идёт ВСПЛЕСКАМИ, и четвёрка другая.
+      id: 'carnage-fury',
+      name: 'Ярость',
+      abilities: ['gut-rip', 'blood-letting', 'reckoning', 'berserk'],
+      order: [
+        'carnage-open-veins',
+        'carnage-frenzied-tear',
+        'carnage-red-haze',
+        'carnage-bloodlust',
+        'carnage-quick-cleaver',
+        'carnage-predator-eye',
+        'carnage-deep-frenzy',
+        'carnage-ferocity',
+        'carnage-heavy-splitter',
+        'carnage-thirsty-blade',
+        'carnage-offhand',
+        'carnage-swift-cleaver',
+        'carnage-wild-strength',
+        'carnage-hungry-tear',
+        'carnage-brutal-reckoning',
+        'carnage-beast-aim',
+        'carnage-wide-reckoning',
+        'carnage-drive',
+        'carnage-long-roar',
+        'carnage-second-hand',
+        'carnage-cheap-splitter',
+        'carnage-deeper-frenzy',
+        'carnage-onslaught',
+        'carnage-swift-splitter',
+        'carnage-blood-charge',
+        'carnage-fierce-berserk',
+      ],
+    },
+  ],
+  'reaver-sinew': [
+    {
+      // УПОР. Смягчение за непрерывность держится почти весь бой, смерть
+      // дешевеет. Сборка без щита: герой просто не уходит.
+      id: 'sinew-dug',
+      name: 'Упор',
+      abilities: ['gut-rip', 'blood-letting', 'blood-thirst', 'dug-in'],
+      order: [
+        'sinew-iron-dig',
+        'sinew-not-finished',
+        'sinew-unbroken',
+        'sinew-beast-hide',
+        'sinew-braced-guard',
+        'sinew-forearm-guard',
+        'sinew-thirsty-bite',
+        'sinew-tanned-hide',
+        'sinew-long-dig',
+        'sinew-cheap-thirst',
+        'sinew-hardened',
+        'sinew-firm-dig',
+        'sinew-knitting',
+        'sinew-deep-price',
+        'sinew-frame',
+        'sinew-swift-dig',
+        'sinew-carapace',
+        'sinew-guarded-roar',
+        'sinew-counterblow',
+        'sinew-tough-price',
+        'sinew-brace',
+        'sinew-lasting-dig',
+        'sinew-spiked-guard',
+        'sinew-red-thirst',
+      ],
+    },
+    {
+      // ЩИТ. Блок платит ЯРОСТЬЮ и отвечает шипами, бешенство перестаёт быть
+      // опасным. Единственная сборка Изувера, которой нужен щит в руке.
+      id: 'sinew-shield',
+      name: 'Щит',
+      abilities: ['gut-rip', 'blood-thirst', 'dug-in', 'berserk'],
+      order: [
+        'sinew-blood-for-blood',
+        'sinew-stone-skin',
+        'sinew-thorned-answer',
+        'sinew-beast-hide',
+        'sinew-braced-guard',
+        'sinew-forearm-guard',
+        'sinew-thirsty-bite',
+        'sinew-tanned-hide',
+        'sinew-long-dig',
+        'sinew-cheap-thirst',
+        'sinew-hardened',
+        'sinew-firm-dig',
+        'sinew-knitting',
+        'sinew-deep-price',
+        'sinew-frame',
+        'sinew-swift-dig',
+        'sinew-carapace',
+        'sinew-guarded-roar',
+        'sinew-counterblow',
+        'sinew-tough-price',
+        'sinew-brace',
+        'sinew-lasting-dig',
+        'sinew-spiked-guard',
+        'sinew-red-thirst',
+      ],
+    },
+  ],
+  'reaver-instinct': [
+    {
+      // РЁВ. Убийство сбрасывает откаты, привал возвращает готовые умения и
+      // сам вдвое короче. Ветка про то, чтобы меньше стоять без дела.
+      id: 'instinct-roar',
+      name: 'Рёв',
+      abilities: ['gut-rip', 'blood-letting', 'blood-frenzy', 'blood-thirst'],
+      order: [
+        'instinct-taste-of-victory',
+        'instinct-deep-sleep',
+        'instinct-wolf-sleep',
+        'instinct-beast-breath',
+        'instinct-quick-letting',
+        'instinct-rage-capacity',
+        'instinct-rich-letting',
+        'instinct-short-rest',
+        'instinct-light-camp',
+        'instinct-hardy-stock',
+        'instinct-swift-roar',
+        'instinct-hunger',
+        'instinct-cheap-tear',
+        'instinct-second-breath',
+        'instinct-full-roar',
+        'instinct-never-cooling',
+        'instinct-rich-price',
+        'instinct-wide-throat',
+        'instinct-thrifty-splitter',
+        'instinct-wolf-camp',
+        'instinct-long-berserk',
+        'instinct-steady-hand',
+        'instinct-cheap-roar',
+      ],
+    },
+    {
+      // ОКНО. Разгон вдвое чаще, окно вдвое длиннее и вдвое чаще: ярость
+      // перестаёт быть узким местом, и четвёрка собрана вокруг рёва.
+      id: 'instinct-window',
+      name: 'Окно',
+      abilities: ['gut-rip', 'blood-letting', 'blood-roar', 'blood-frenzy'],
+      order: [
+        'instinct-endless-letting',
+        'instinct-restless',
+        'instinct-endless-roar',
+        'instinct-beast-breath',
+        'instinct-quick-letting',
+        'instinct-rage-capacity',
+        'instinct-rich-letting',
+        'instinct-short-rest',
+        'instinct-light-camp',
+        'instinct-hardy-stock',
+        'instinct-swift-roar',
+        'instinct-hunger',
+        'instinct-cheap-tear',
+        'instinct-second-breath',
+        'instinct-full-roar',
+        'instinct-never-cooling',
+        'instinct-rich-price',
+        'instinct-wide-throat',
+        'instinct-thrifty-splitter',
+        'instinct-wolf-camp',
+        'instinct-long-berserk',
+        'instinct-steady-hand',
+        'instinct-cheap-roar',
       ],
     },
   ],

@@ -94,6 +94,29 @@ describe('описание умения собирается из данных',
       must: 'ниже на 30%',
     },
     {
+      field: 'generate',
+      over: { generate: { resourceShare: 0.25 } },
+      must: 'Даёт 25% запаса',
+    },
+    { field: 'leech', over: { leech: { healShare: 0.7 } }, must: 'Возвращает здоровьем 70%' },
+    {
+      field: 'resolve',
+      over: { resolve: { perHitTaken: 0.05, maxShare: 0.24, durationSec: 14 } },
+      must: 'до 24%',
+    },
+    { field: 'refund', over: { refund: { resourceShare: 0.2 } }, must: 'Возвращает 20% запаса' },
+    {
+      field: 'bloodPrice',
+      over: { bloodPrice: { hpShare: 0.12, resourceShare: 0.45 } },
+      must: 'Платит 12% здоровья',
+    },
+    { field: 'window', over: { window: { durationSec: 8 } }, must: '8с: умения ничего не стоят' },
+    {
+      field: 'autocast',
+      over: { autocast: { heroHpAbove: 0.65 } },
+      must: 'при здоровье выше 65%',
+    },
+    {
       field: 'heal',
       over: {
         weaponDamagePercent: new Decimal(0),

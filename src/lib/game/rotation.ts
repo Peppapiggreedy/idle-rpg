@@ -12,6 +12,40 @@ import { Decimal } from './numbers'
 import { critFactor, expectedAbilityDamage } from './combat'
 import { tuneAbility } from './abilityTune'
 import { ABILITY_BY_ID, type AbilityDef } from '../data/abilities'
+
+/**
+ * ЧИСТАЯ ЦЕНА УМЕНИЯ: сколько ресурса оно РЕАЛЬНО стоит за применение.
+ *
+ * У Стража это просто `manaCost`. У класса, чьи умения ресурс ДАЮТ
+ * (генератор, возврат с добивания, плата здоровьем), цена бывает
+ * ОТРИЦАТЕЛЬНОЙ, и модель обязана это видеть: иначе «Кровопускание»
+ * выглядело бы бесплатным нулём, а не разгоном ротации.
+ *
+ * Доля берётся от ПОЛНОГО запаса — как и в тике: одна формула на оба места.
+ */
+export function resourceCost(ability: AbilityDef, stats: StatBlock): Decimal {
+  const gain =
+    (ability.generate?.resourceShare ?? 0) +
+    (ability.refund?.resourceShare ?? 0) +
+    (ability.bloodPrice?.resourceShare ?? 0)
+  if (gain <= 0) return ability.manaCost
+  return ability.manaCost.minus(stats.maxMana.times(gain))
+}
+
+/**
+ * ДОЛЯ ВРЕМЕНИ ПОД ОКНОМ, в которое умения не стоят ничего. Первого порядка,
+ * как и все метки в модели: сколько раз в секунду окно открывают, столько
+ * его длительностей и приходится на секунду боя.
+ */
+function freeWindowShare(rate: RotationRate): number {
+  let share = 0
+  for (const cast of rate.casts) {
+    if (!cast.ability.window) continue
+    share += Math.min(1, cast.castsPerSecond * cast.ability.window.durationSec)
+  }
+  return Math.min(1, share)
+}
+
 import { AUTOCAST_DELAY_MS, REGEN_TICK_S } from '../data/balance'
 import type { StatBlock } from './stats'
 import type { AbilitySettings, Rotation } from './state'
@@ -158,9 +192,10 @@ export function rotationRate(
 }
 
 /** Сколько трат в секунду в этой ротации: таймер задержки взводят только они. */
-function spendEvents(rate: RotationRate): Decimal {
+function spendEvents(rate: RotationRate, stats: StatBlock): Decimal {
   return rate.casts.reduce(
-    (sum, cast) => (cast.ability.manaCost.gt(0) ? sum.plus(cast.castsPerSecond) : sum),
+    (sum, cast) =>
+      resourceCost(cast.ability, stats).gt(0) ? sum.plus(cast.castsPerSecond) : sum,
     new Decimal(0),
   )
 }
@@ -193,7 +228,7 @@ function dutyCycle(
 ): Decimal {
   const spend = desired.manaPerSecond
   if (spend.lte(0)) return new Decimal(1)
-  const events = spendEvents(desired)
+  const events = spendEvents(desired, stats)
   const regen = income
   if (regen.lte(0)) return new Decimal(0)
   // Пауза до первой порции — не только DELAY: мана приходит ЛОМТЯМИ раз в
@@ -207,15 +242,15 @@ function dutyCycle(
   // Всплеск: запас срабатывает до самого низкого резерва среди тех умений,
   // которые вообще жмутся, — дальше молчат все.
   const reserves = desired.casts
-    .filter((c) => c.ability.manaCost.gt(0))
+    .filter((c) => resourceCost(c.ability, stats).gt(0))
     .map((c) => settings[c.ability.id]?.reserve ?? 0)
   const floor = reserves.length > 0 ? Math.min(...reserves) : 0
   // Запас срабатывает не до нуля, а до самого дешёвого умения: ниже него
   // жать уже нечего. На первых уровнях, где весь запас — несколько применений,
   // эта поправка заметная.
   const cheapest = desired.casts
-    .filter((c) => c.ability.manaCost.gt(0))
-    .reduce((min, c) => Decimal.min(min, c.ability.manaCost), stats.maxMana)
+    .filter((c) => resourceCost(c.ability, stats).gt(0))
+    .reduce((min, c) => Decimal.min(min, resourceCost(c.ability, stats)), stats.maxMana)
   // Резерв под лечение тоже отрезает глубину всплеска: до него боевые умения
   // запас не выжигают.
   const depth = Decimal.max(
@@ -257,7 +292,15 @@ function castPlan(
   // кулдауны, GCD и очередь замаха. Потом — сколько из этого выдерживает
   // ресурс с правилом задержки и запасом с привала.
   const desired = fundPlan(stats, rotation, plan, UNLIMITED_MANA, fixed)
-  const duty = dutyCycle(stats, rotation.settings, desired, income, pauseSec, refill, reserveMana)
+  // ОКНО СНИМАЕТ ЧАСТЬ РАСХОДА, а не добавляет урона: в модели оно и есть
+  // скидка на долю времени. Считается ДО доли ресурса — иначе умения сперва
+  // урезались бы по цене, которую в окне никто не платит.
+  const freeShare = freeWindowShare(desired)
+  const discounted: RotationRate =
+    freeShare > 0
+      ? { ...desired, manaPerSecond: desired.manaPerSecond.times(1 - freeShare) }
+      : desired
+  const duty = dutyCycle(stats, rotation.settings, discounted, income, pauseSec, refill, reserveMana)
   if (duty.gte(1)) return desired
   // Долю применяем ко ВСЕЙ ротации разом, а не отдаём бюджет по приоритету.
   // Так герой и играет: жмёт всё, что доступно, а когда запас кончился —
@@ -304,7 +347,7 @@ function fundPlan(
   // трата взводит паузу регенерации, как и у боевых.
   for (const { ability, castsPerSecond } of fixed) {
     if (castsPerSecond <= 0) continue
-    const manaWanted = ability.manaCost.times(castsPerSecond)
+    const manaWanted = resourceCost(ability, stats).times(castsPerSecond)
     const share = manaWanted.lte(manaBudget)
       ? new Decimal(1)
       : Decimal.max(manaBudget, new Decimal(0)).div(manaWanted)
@@ -333,7 +376,7 @@ function fundPlan(
     const wantPerSecond =
       ability.type === 'onNextSwing' ? Decimal.min(wanted, swingBudget) : wanted
     if (wantPerSecond.lte(0)) continue
-    const manaWanted = ability.manaCost.times(wantPerSecond)
+    const manaWanted = resourceCost(ability, stats).times(wantPerSecond)
     // Маны на всё не хватает — умение получает столько тактов, сколько оплачено.
     const share = manaWanted.lte(manaBudget)
       ? new Decimal(1)

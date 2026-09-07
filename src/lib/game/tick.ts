@@ -699,6 +699,10 @@ const applyMonsterAttack: TickStep = (s, ctx) => {
   // дважды, и ослабление обязано сойти после первого же удара.
   let weaken = s.monsterWeaken
   let absorb = s.absorb
+  // Упор живёт локально в цикле ударов по той же причине, что и ослабление:
+  // за один жирный тик моб бьёт дважды, и второй удар обязан встретить уже
+  // подросшее смягчение.
+  let resolve = s.resolve
   while (monsterSwing >= 1 - SWING_EPS && !died) {
     monsterSwing = Math.max(0, monsterSwing - 1)
     // Формула входящего урона (бросок из диапазона + damageReduction) — в combat.ts.
@@ -729,6 +733,17 @@ const applyMonsterAttack: TickStep = (s, ctx) => {
     // фиксированную величину с самого удара, стойка режет долю оставшегося,
     // а щит съедает то, что дошло бы до полоски.
     let amount = s.stance ? hit.times(1 - s.stance.mitigationShare) : hit
+    // УПОР — СМЯГЧЕНИЕ ЗА НЕПРЕРЫВНОСТЬ. Стоит РЯДОМ со стойкой и работает с
+    // ОСТАТКОМ, как и всё в этом порядке: каждый следующий источник режет то,
+    // что дошло. Растёт он ПОСЛЕ удара, а не до: первый пропущенный удар
+    // проходит целиком, и это и есть «за непрерывность».
+    if (resolve) {
+      amount = amount.times(1 - resolve.share)
+      resolve = {
+        ...resolve,
+        share: Math.min(resolve.maxShare, resolve.share + resolve.perHitTaken),
+      }
+    }
     if (absorb && absorb.left.gt(0)) {
       const eaten = Decimal.min(absorb.left, amount)
       amount = amount.minus(eaten)
@@ -791,6 +806,7 @@ const applyMonsterAttack: TickStep = (s, ctx) => {
     combatLog,
     monsterWeaken: weaken,
     absorb,
+    resolve,
   }
   if (!died) return next
   // Смерть героя: 30 игровых секунд простоя, награды не капают.
@@ -804,6 +820,10 @@ const applyMonsterAttack: TickStep = (s, ctx) => {
     activeEffects: [],
     monsterWeaken: null,
     monsterBrand: null,
+    // Свои метки уходят вместе с чужими: и упор, и окно — это секунда боя,
+    // которого больше нет.
+    resolve: null,
+    freeCastsMsLeft: 0,
     combatLog: pushEvent(next.combatLog, { type: 'death', reviveMs }),
   }
   // Смерть в данже выкидывает наружу: лут за убитых боссов уже в сумке,

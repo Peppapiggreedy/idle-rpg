@@ -1,5 +1,5 @@
 {
-  "version": 32,
+  "version": 33,
   "classId": "warden",
   "materials": {},
   "mastery": {},
@@ -134,6 +134,7 @@
   "heroState": "alive",
   "reviveMsLeft": 0,
   "talents": {},
+  "treeRevision": 1,
   "talentResets": 0,
   "totalTicks": "0",
   "playtimeMs": "0",

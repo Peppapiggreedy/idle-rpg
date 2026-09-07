@@ -66,6 +66,13 @@ export interface AbilityWeaken {
 export interface AbilityDetonate {
   /** Множитель к оставшемуся урону эффекта. */
   multiplier: number
+  /**
+   * НАДБАВКА К МНОЖИТЕЛЮ ЗА ПОЛНУЮ ПОЛОСКУ РЕСУРСА. Ноль или поля нет —
+   * детонатор от ресурса не зависит вовсе (так у Стража). У ярости это
+   * второй смысл копить: полоска перестаёт быть только счётом кастов и
+   * становится числом, которое сама по себе усиливает удар.
+   */
+  resourceMultiplier?: number
 }
 
 /**
@@ -133,6 +140,108 @@ export interface AbilityStance {
   durationSec: number
 }
 
+/**
+ * ГЕНЕРАТОР: умение, которое ресурс НЕ ТРАТИТ, А ДАЁТ.
+ *
+ * Классу на ярости он нужен по построению, а не для разнообразия: ярость
+ * приходит только из боя, значит первые секунды схватки герой почти пуст
+ * (замер стадии 2 — 17 % запаса на входе). Дешёвая кнопка, которая эту паузу
+ * окупает, — не роскошь, а условие того, что ротация вообще заводится.
+ *
+ * Доля ЗАПАСА, а не число: запас поднимают таланты, и плоская прибавка
+ * обесценивалась бы ровно там, где в неё вложились.
+ */
+export interface AbilityGenerate {
+  /** Сколько запаса приходит за применение, доля 0..1. */
+  resourceShare: number
+}
+
+/**
+ * ВАМПИРИЗМ: доля нанесённого ЭТИМ УДАРОМ урона возвращается здоровьем.
+ *
+ * Не второе лечение, а другое лечение: у манного класса оно стоит запаса и
+ * работает всегда, здесь — стоит УДАРА и работает тем лучше, чем лучше идёт
+ * бой. Проигранный бой оно не спасает, и это главное его свойство.
+ */
+export interface AbilityLeech {
+  /** Какая доля урона возвращается здоровьем, 0..1 и выше. */
+  healShare: number
+}
+
+/**
+ * УПОР: смягчение растёт ЗА НЕПРЕРЫВНОСТЬ — с каждым пропущенным ударом,
+ * пока держится.
+ *
+ * Обратная сторона класса, который обязан стоять в бою: чем дольше он стоит,
+ * тем дешевле ему это обходится. Первый удар проходит целиком, пятый —
+ * заметно мягче, и рост упирается в потолок из данных.
+ */
+export interface AbilityResolve {
+  /** На сколько мягче становится входящее с каждым пропущенным ударом. */
+  perHitTaken: number
+  /** Потолок смягчения, 0..1: без него герой стал бы неуязвимым к концу боя. */
+  maxShare: number
+  durationSec: number
+}
+
+/**
+ * ВОЗВРАТ: успешное применение возвращает долю запаса.
+ *
+ * Стоит на добивании и потому не разгоняет ротацию бесконечно: цель обязана
+ * быть при смерти, то есть возврат приходит РАЗ ЗА БОЙ и достаётся
+ * следующему бою — ровно там, где у ярости яма.
+ */
+export interface AbilityRefund {
+  /** Доля полного запаса, возвращаемая применением, 0..1. */
+  resourceShare: number
+}
+
+/**
+ * ПЛАТА ЗДОРОВЬЕМ: доля максимума HP превращается в долю запаса.
+ *
+ * Единственный источник ресурса, не зависящий от боя вовсе, и потому самый
+ * опасный: он же и единственная кнопка, которой герой может себя убить.
+ * Убить не даёт логика (последнее очко здоровья не снимается), а глупость
+ * автокаста — порог `autocast.heroHpAbove` в данных.
+ */
+export interface AbilityBloodPrice {
+  /** Сколько максимального здоровья уходит, доля 0..1. */
+  hpShare: number
+  /** Сколько запаса приходит взамен, доля 0..1. */
+  resourceShare: number
+}
+
+/**
+ * ОКНО: несколько секунд умения не стоят ничего.
+ *
+ * Отличие от «Сосредоточения» Стража — не в числах, а в роде: там СЧЁТ
+ * применений, здесь ВРЕМЯ. Со счётом окно тем ценнее, чем дороже четвёрка;
+ * со временем — чем БЫСТРЕЕ она откатывается. Для ярости это и есть верный
+ * род: узкое место у неё не откат, а то, успел ли герой накопить.
+ */
+export interface AbilityWindow {
+  durationSec: number
+}
+
+/**
+ * КОГДА АВТОКАСТ БЕРЁТСЯ ЗА УМЕНИЕ. Пороги В ДАННЫХ, ни одной ветки в логике.
+ *
+ * Умение, которое автокаст не умеет применять разумно, — плохое умение в
+ * идл-игре, даже если в руках оно сильное. Поэтому у ситуативных умений
+ * условие лежит здесь: плата здоровьем не жмётся на последних процентах
+ * полоски, детонатор — на умирающем мобе, генератор и окно — на полном
+ * запасе. РУКАМИ игрок волен жать что угодно: это пороги автокаста, а не
+ * запреты игры.
+ */
+export interface AbilityAutocast {
+  /** Только пока здоровье героя выше этой доли запаса. */
+  heroHpAbove?: number
+  /** Только пока цель здоровее этой доли своего запаса. */
+  targetHpAbove?: number
+  /** Только пока своего ресурса МЕНЬШЕ этой доли запаса. */
+  resourceBelow?: number
+}
+
 export interface AbilityDef {
   id: string
   name: string
@@ -166,6 +275,20 @@ export interface AbilityDef {
   freeCasts?: AbilityFreeCasts
   /** Стойка: см. AbilityStance. */
   stance?: AbilityStance
+  /** Даёт ресурс вместо траты: см. AbilityGenerate. */
+  generate?: AbilityGenerate
+  /** Возвращает здоровье за нанесённый урон: см. AbilityLeech. */
+  leech?: AbilityLeech
+  /** Смягчение за непрерывность боя: см. AbilityResolve. */
+  resolve?: AbilityResolve
+  /** Возврат ресурса за успешное применение: см. AbilityRefund. */
+  refund?: AbilityRefund
+  /** Здоровье в ресурс: см. AbilityBloodPrice. */
+  bloodPrice?: AbilityBloodPrice
+  /** Окно бесплатных умений: см. AbilityWindow. */
+  window?: AbilityWindow
+  /** Пороги автокаста: см. AbilityAutocast. */
+  autocast?: AbilityAutocast
 }
 
 /**
@@ -208,9 +331,19 @@ export const ABILITY_TUNABLE = {
   stanceDamageShare: 'scale',
   stanceMitigationShare: 'scale',
   stanceDurationSec: 'scale',
+  generateResourceShare: 'scale',
+  leechHealShare: 'scale',
+  resolveMaxShare: 'scale',
+  resolvePerHitTaken: 'scale',
+  resolveDurationSec: 'scale',
+  refundResourceShare: 'scale',
+  bloodPriceResourceShare: 'scale',
+  windowDurationSec: 'scale',
+  detonateResourceMultiplier: 'scale',
   executeBelowHpShare: 'shift',
   brandAutocastAboveHpShare: 'shift',
   healAutocastBelowHpShare: 'shift',
+  autocastHeroHpAbove: 'shift',
 } as const
 
 export type AbilityTuneField = keyof typeof ABILITY_TUNABLE
@@ -234,6 +367,18 @@ export type AbilityTune =
   | { field: ScaleField; kind: 'percent' | 'multiplier'; value: number }
   | { field: ShiftField; kind: 'points'; value: number }
   | { field: 'type'; kind: 'set'; value: AbilityType }
+
+/**
+ * КАКОЙ ПОЛНОТОЙ ПОЛОСКИ МОДЕЛЬ СЧИТАЕТ ДЕТОНАТОР, растущий от ресурса.
+ *
+ * Тик читает настоящую полоску, а модель боя — долгосрочное среднее, и
+ * текущего запаса в ней нет вовсе (её вход — статы и моб, а не секунда боя).
+ * Половина — это середина шкалы, и она же близка к замеру: у эталонного
+ * Изувера полоска ходит от 17 % на входе в бой до полной перед крупным
+ * умением. Число лежит В ДАННЫХ рядом с самим полем, а не в модели: правка
+ * умения и правка допущения о нём обязаны быть видны в одном месте.
+ */
+export const MODEL_RESOURCE_FILL = 0.5
 
 export const ABILITIES: AbilityDef[] = [
   {
@@ -430,7 +575,7 @@ export const ABILITIES: AbilityDef[] = [
     name: 'Потрошащий взмах',
     type: 'instant',
     unlockLevel: 1,
-    manaCost: new Decimal(18),
+    manaCost: new Decimal(10),
     cooldownSec: 2,
     weaponDamagePercent: new Decimal(1.6),
     triggersGcd: true,
@@ -441,7 +586,7 @@ export const ABILITIES: AbilityDef[] = [
     name: 'Кровавое исступление',
     type: 'onNextSwing',
     unlockLevel: 4,
-    manaCost: new Decimal(30),
+    manaCost: new Decimal(17),
     cooldownSec: 5,
     weaponDamagePercent: new Decimal(1.8),
     triggersGcd: false,
@@ -458,10 +603,166 @@ export const ABILITIES: AbilityDef[] = [
     name: 'Череполом',
     type: 'onNextSwing',
     unlockLevel: 8,
-    manaCost: new Decimal(60),
+    manaCost: new Decimal(33),
     cooldownSec: 12,
     weaponDamagePercent: new Decimal(5.0),
     triggersGcd: false,
+  },
+  {
+    // КРОВОПУСКАНИЕ — РАЗГОН. Второй уровень, потому что раньше он не нужен,
+    // а позже уже поздно: с первой же схватки герой упирается в полторы
+    // секунды немоты, и это единственная кнопка, которая её укорачивает.
+    // Сама ничего не стоит и бьёт слабо: она про РЕСУРС, а не про урон.
+    // Четверть запаса за применение — два «Потрошащих взмаха».
+    id: 'blood-letting',
+    icon: 'ability-blood-letting',
+    name: 'Кровопускание',
+    type: 'instant',
+    unlockLevel: 2,
+    manaCost: new Decimal(0),
+    cooldownSec: 6,
+    weaponDamagePercent: new Decimal(0.5),
+    triggersGcd: true,
+    generate: { resourceShare: 0.25 },
+    // На полной полоске автокаст его не жмёт: лишняя ярость сгорает, а ГКД
+    // тратится настоящий.
+    autocast: { resourceBelow: 0.7 },
+  },
+  {
+    // ЖАЖДА — ЛЕЧЕНИЕ, КОТОРОЕ ПЛАТИТ УРОНОМ. У Изувера нет ни лечащего
+    // умения, ни налива ресурса привалом; цена схватки при этом ВЫШЕ, чем у
+    // Стража (17.95 % против 16.52 валово). Возвращать здоровье он обязан
+    // тем, что умеет, — ударом. Шестой уровень — тот же, на котором лечение
+    // приходит к Стражу: правило одно, механика разная.
+    id: 'blood-thirst',
+    icon: 'ability-blood-thirst',
+    name: 'Жажда',
+    type: 'instant',
+    unlockLevel: 6,
+    manaCost: new Decimal(14),
+    cooldownSec: 9,
+    weaponDamagePercent: new Decimal(1.4),
+    triggersGcd: true,
+    // ДОЛЯ ПОДОБРАНА ЗАМЕРОМ, А НЕ НА ГЛАЗ. При 0.7 «Жажда» одна снимала
+    // цену боя с 17.0 % до 4.0 % — то есть класс переставал ходить на привал
+    // вовсе, а вместе с привалом исчезал и весь риск. При 0.35 она снимает
+    // около трети счёта — примерно столько же, сколько лечение снимает
+    // Стражу (16.5 % валово против 10.0 % нетто).
+    leech: { healShare: 0.35 },
+  },
+  {
+    // РАЗРЫВ ЖИЛ — ДЕТОНАТОР, КОТОРЫЙ ЧИТАЕТ ПОЛОСКУ. Съедает кровотечение
+    // «Кровавого исступления», как «Разрыв» у Стража, но множитель растёт от
+    // полноты ярости: 1.2 на пустой полоске и 2.5 на полной. Отсюда у ярости
+    // появляется второй смысл, кроме счёта кастов, — накопить перед ударом.
+    id: 'sinew-tear',
+    icon: 'ability-sinew-tear',
+    name: 'Разрыв жил',
+    type: 'onNextSwing',
+    unlockLevel: 10,
+    manaCost: new Decimal(15),
+    cooldownSec: 8,
+    weaponDamagePercent: new Decimal(1.2),
+    triggersGcd: false,
+    detonate: { multiplier: 1.2, resourceMultiplier: 1.3 },
+    combo: { needsAbilityId: 'blood-frenzy' },
+    // Не рвать умирающего: остаток кровотечения на нём и так почти дотикает,
+    // а откат уйдёт.
+    autocast: { targetHpAbove: 0.35 },
+  },
+  {
+    // УПОР — СМЯГЧЕНИЕ ЗА НЕПРЕРЫВНОСТЬ. Класс, который обязан стоять в бою,
+    // получает награду именно за это: каждый пропущенный удар делает
+    // следующий мягче, до потолка в 24 %. Стойка Стража даёт своё смягчение
+    // сразу и целиком; здесь оно НАРАСТАЕТ, то есть окупается в долгом бою и
+    // не окупается в коротком.
+    id: 'dug-in',
+    icon: 'ability-dug-in',
+    name: 'Упор',
+    type: 'instant',
+    unlockLevel: 12,
+    manaCost: new Decimal(16),
+    cooldownSec: 24,
+    weaponDamagePercent: new Decimal(0.4),
+    triggersGcd: true,
+    resolve: { perHitTaken: 0.05, maxShare: 0.24, durationSec: 14 },
+  },
+  {
+    // РАСПРАВА — ДОБИВАНИЕ, ВОЗВРАЩАЮЩЕЕ ЯРОСТЬ. Порог тот же, что у
+    // «Милости» Стража (0.2), и урон сопоставим; разница в том, что здесь
+    // добивание платит НЕ ТОЛЬКО уроном: пятая часть запаса переезжает в
+    // следующий бой — то есть ровно в ту яму, с которой у ярости начинается
+    // каждая схватка.
+    id: 'reckoning',
+    icon: 'ability-reckoning',
+    name: 'Расправа',
+    type: 'instant',
+    unlockLevel: 14,
+    manaCost: new Decimal(12),
+    cooldownSec: 10,
+    weaponDamagePercent: new Decimal(1.3),
+    triggersGcd: true,
+    execute: { belowHpShare: 0.2 },
+    refund: { resourceShare: 0.2 },
+  },
+  {
+    // КРОВАВАЯ ПЛАТА — ЗДОРОВЬЕ В ЯРОСТЬ. Единственный источник ресурса,
+    // который не зависит от боя, и потому самый опасный: 12 % запаса
+    // здоровья за 45 % ярости. Здоровье у Изувера — расходник (см. «Жажда»),
+    // и это осознанный обмен одной оси на другую.
+    //
+    // АВТОКАСТ НЕ ЖМЁТ ЕЁ НА НИЗКОМ ЗДОРОВЬЕ (порог 0.65 — выше порога
+    // привала 0.6): иначе герой платил бы здоровьем ровно тогда, когда
+    // собрался отдыхать, и оплачивал бы привал сам себе.
+    id: 'blood-price',
+    icon: 'ability-blood-price',
+    name: 'Кровавая плата',
+    type: 'instant',
+    unlockLevel: 16,
+    manaCost: new Decimal(0),
+    cooldownSec: 18,
+    weaponDamagePercent: new Decimal(0.3),
+    triggersGcd: true,
+    bloodPrice: { hpShare: 0.12, resourceShare: 0.45 },
+    autocast: { heroHpAbove: 0.65, resourceBelow: 0.4 },
+  },
+  {
+    // КРОВАВЫЙ РЁВ — ОКНО. Восемь секунд, в которые умения не стоят ничего.
+    // От «Сосредоточения» Стража отличается РОДОМ, а не числом: там счёт
+    // применений, здесь время. Ярости это подходит: её узкое место не откат,
+    // а накопление, и окно снимает именно его — на восемь секунд герой жмёт
+    // всё, что откатилось.
+    //
+    // Само окно стоит ярости: платить за скидку нельзя было бы, будь она
+    // счётной («Сосредоточение» бесплатно и обязано быть таким), но окно во
+    // времени тратится и впустую — если жать нечего.
+    id: 'blood-roar',
+    icon: 'ability-blood-roar',
+    name: 'Кровавый рёв',
+    type: 'instant',
+    unlockLevel: 18,
+    manaCost: new Decimal(20),
+    cooldownSec: 60,
+    weaponDamagePercent: new Decimal(0.5),
+    triggersGcd: true,
+    window: { durationSec: 8 },
+  },
+  {
+    // БЕШЕНСТВО — СТОЙКА НАОБОРОТ, и это ТОТ ЖЕ флаг с обратным знаком, а не
+    // второй механизм. Стойка Стража: урон ниже, смягчение выше. Здесь:
+    // урон ВЫШЕ на четверть, смягчение НИЖЕ на пятнадцать пунктов. Схема
+    // держит правило «обмен обязан быть обменом» — знаки обеих долей
+    // совпадают, и чистого усиления из этого поля не сделать.
+    id: 'berserk',
+    icon: 'ability-berserk',
+    name: 'Бешенство',
+    type: 'instant',
+    unlockLevel: 20,
+    manaCost: new Decimal(15),
+    cooldownSec: 30,
+    weaponDamagePercent: new Decimal(0.6),
+    triggersGcd: true,
+    stance: { damageShare: -0.25, mitigationShare: -0.15, durationSec: 30 },
   },
 ]
 
