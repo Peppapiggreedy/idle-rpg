@@ -400,6 +400,15 @@ const TUNE_LABEL: Record<string, string> = {
   windowDurationSec: 'длительность окна',
   detonateResourceMultiplier: 'детонация от ресурса',
   autocastHeroHpAbove: 'порог автокаста по здоровью',
+  rampPerSwing: 'прирост разгона',
+  rampMaxShare: 'потолок разгона',
+  rampDurationSec: 'длительность разгона',
+  edgeDamagePerShare: 'сила грани',
+  edgeDurationSec: 'длительность грани',
+  edgeResourceAbove: 'порог грани',
+  weaponDamageFromResource: 'урон от полоски',
+  leechHealShareFromResource: 'вампиризм от полоски',
+  autocastResourceAbove: 'порог автокаста по ресурсу',
   type: 'тип',
 }
 

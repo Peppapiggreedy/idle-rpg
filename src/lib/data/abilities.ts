@@ -429,6 +429,18 @@ export const ABILITY_TUNABLE = {
   bloodPriceResourceShare: 'scale',
   windowDurationSec: 'scale',
   detonateResourceMultiplier: 'scale',
+  // Поля механизмов Изувера. Величины масштабируются, ПОРОГИ сдвигаются в
+  // пунктах: порог живёт в долях, и «на 20 % выше» от 0.5 дало бы 0.6, а
+  // игрок читает пороги как «50 % → 70 %».
+  rampPerSwing: 'scale',
+  rampMaxShare: 'scale',
+  rampDurationSec: 'scale',
+  edgeDamagePerShare: 'scale',
+  edgeDurationSec: 'scale',
+  weaponDamageFromResource: 'scale',
+  leechHealShareFromResource: 'scale',
+  edgeResourceAbove: 'shift',
+  autocastResourceAbove: 'shift',
   executeBelowHpShare: 'shift',
   brandAutocastAboveHpShare: 'shift',
   healAutocastBelowHpShare: 'shift',

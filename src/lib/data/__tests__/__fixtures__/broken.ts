@@ -1552,6 +1552,37 @@ export function brokenCases(): BrokenCase[] {
       expect: [handRecipeId(real), 'категори', 'data/items.ts'],
     },
     {
+      // МЁРТВАЯ ПРАВКА УМЕНИЯ. Самая тихая из поломок дерева: имя поля
+      // настоящее, операция подходит полю, умение существует — и талант не
+      // делает ничего. Ровно так шесть талантов Изувера пережили переделку
+      // его умений, и заметить это чтением было нельзя.
+      title: 'талант правит поле, которого у умения нет',
+      content: {
+        ...real,
+        talents: real.talents.map((t) =>
+          t.effect.kind === 'ability'
+            ? {
+                ...t,
+                // «Урон эффекта» у умения, у которого эффекта нет: подсовываем
+                // ПЕРВОЕ умение — оно точно без урона по времени.
+                effect: {
+                  kind: 'ability' as const,
+                  abilityId: first(real.abilities).id,
+                  tune: [
+                    {
+                      field: 'effectWeaponDamagePercent' as const,
+                      kind: 'percent' as const,
+                      value: 0.1,
+                    },
+                  ],
+                },
+              }
+            : t,
+        ),
+      },
+      expect: ['effectWeaponDamagePercent', 'НИЧЕГО', 'data/talents.ts'],
+    },
+    {
       title: 'категория крафта осталась без единого рецепта',
       content: {
         ...real,

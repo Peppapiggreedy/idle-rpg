@@ -1399,13 +1399,18 @@ const REAVER_CARNAGE = branch('reaver-carnage', [
       effect: mods(m('critChance', 'flat', 0.012)),
     },
     {
+      // ПЕРЕЦЕЛЕН, А НЕ УДАЛЁН. Талант правил урон КРОВОТЕЧЕНИЯ «Кровавого
+      // исступления»; кровотечение уехало Стражу вместе со всем механизмом
+      // меток, и правка стала правкой пустоты — тихой, потому что схема
+      // проверяла только имя поля. Теперь он правит РАЗГОН, то есть то, чем
+      // это умение стало: прирост за каждый свой удар.
       id: 'carnage-deep-frenzy',
       name: 'Глубокое исступление',
       icon: 'talent-bleed-deep',
       maxRank: 5,
       col: 3,
       effect: tunes('blood-frenzy', {
-        field: 'effectWeaponDamagePercent',
+        field: 'rampPerSwing',
         kind: 'percent',
         value: 0.08,
       }),
@@ -1469,32 +1474,41 @@ const REAVER_CARNAGE = branch('reaver-carnage', [
     },
   ],
   [
-    // 21-е очко, КЛЮЧЕВОЙ ЭТАЖ. Оба меняют ПОВЕДЕНИЕ, и различаются они
-    // родом: слева дешёвый удар НАЧИНАЕТ КРОВИТЬ (урон растекается по
-    // времени), справа кровотечение перестаёт ЖДАТЬ ЗАМАХА (урон приходит
-    // раньше). Числа тут ни при чём — при них ротация разная.
+    // 21-е очко, КЛЮЧЕВОЙ ЭТАЖ, И ОН ПЕРЕСОБРАН ЦЕЛИКОМ.
+    //
+    // Пара была такая: слева дешёвый удар НАЧИНАЛ КРОВИТЬ, справа
+    // кровотечение переставало ЖДАТЬ ЗАМАХА. Оба таланта — про метку на
+    // цели, то есть про механизм СТРАЖА, выданный Изуверу под другими
+    // именами; а после того как кровотечение уехало Стражу целиком, правый
+    // и вовсе стал ставить «мгновенное» умению, которое уже мгновенное.
+    // Ключевой этаж, где ОБА варианта ничего не делают, — худшее, что
+    // бывает с деревом: игрок платит 21 очко за выбор между двумя нулями.
+    //
+    // Новая пара — про СБРОС, главную кнопку класса, и различается она
+    // родом: слева меняется МОМЕНТ (автокаст ждёт почти полной полоски),
+    // справа — СПОСОБ (удар перестаёт ждать замаха). Числа тут ни при чём:
+    // при них ротация разная — редкие огромные удары против частых сразу.
     {
       id: 'carnage-bleeding-wound',
-      name: 'Кровавая рана',
+      name: 'Полный размах',
       icon: 'talent-bleed-deep',
       maxRank: 1,
       col: 2,
       exclusiveGroup: 'carnage-key-5',
-      effect: {
-        kind: 'flag',
-        flag: 'ability-learns-effect',
-        abilityId: 'gut-rip',
-        effect: BLEED,
-      },
+      effect: tunes('skull-splitter', {
+        field: 'autocastResourceAbove',
+        kind: 'points',
+        value: 0.3,
+      }),
     },
     {
       id: 'carnage-open-veins',
-      name: 'Вскрытые жилы',
+      name: 'Рваный размах',
       icon: 'talent-open-vein',
       maxRank: 1,
       col: 3,
       exclusiveGroup: 'carnage-key-5',
-      effect: tunes('blood-frenzy', { field: 'type', kind: 'set', value: 'instant' }),
+      effect: tunes('skull-splitter', { field: 'type', kind: 'set', value: 'instant' }),
     },
   ],
   [
@@ -1509,12 +1523,14 @@ const REAVER_CARNAGE = branch('reaver-carnage', [
       effect: mods(m('attackPower', 'percent', 0.011)),
     },
     {
+      // Правил множитель детонации — детонация уехала Стражу. На месте того
+      // же умения теперь ГРАНЬ, и талант правит её силу.
       id: 'carnage-hungry-tear',
-      name: 'Голодный разрыв',
+      name: 'Голодная грань',
       icon: 'talent-full-rupture',
       maxRank: 5,
       col: 2,
-      effect: tunes('sinew-tear', { field: 'detonateMultiplier', kind: 'percent', value: 0.06 }),
+      effect: tunes('sinew-tear', { field: 'edgeDamagePerShare', kind: 'percent', value: 0.06 }),
     },
     {
       id: 'carnage-brutal-reckoning',
@@ -1580,13 +1596,23 @@ const REAVER_CARNAGE = branch('reaver-carnage', [
       effect: { kind: 'flag', flag: 'double-strike', chance: 0.12 },
     },
     {
+      // Ставил «мгновенное» умению, которое стало мгновенным само: после
+      // переделки правая половина ключевого этажа не делала НИЧЕГО. Теперь
+      // она опускает порог ГРАНИ на двадцать пять пунктов — состояние
+      // начинает платить почти сразу и держится всё время, но каждая
+      // единица ярости в нём стоит меньше. Против «Бури клинков» это выбор
+      // рода: лишние замахи рулеткой против ровной прибавки от полоски.
       id: 'carnage-frenzied-tear',
-      name: 'Рваный разрыв',
+      name: 'Через край',
       icon: 'talent-rupture',
       maxRank: 1,
       col: 3,
       exclusiveGroup: 'carnage-key-9',
-      effect: tunes('sinew-tear', { field: 'type', kind: 'set', value: 'instant' }),
+      effect: tunes('sinew-tear', {
+        field: 'edgeResourceAbove',
+        kind: 'points',
+        value: -0.25,
+      }),
     },
   ],
   [
@@ -1599,21 +1625,26 @@ const REAVER_CARNAGE = branch('reaver-carnage', [
       effect: mods(m('offhandPenalty', 'flat', 0.02)),
     },
     {
+      // Правил ЦЕНУ Череполома. Своей цены у него больше нет вовсе — он
+      // тратит всю полоску, — и скидка в −7 % от нуля была нулём. Талант
+      // переехал к грани, к соседу по столбцу, и стрелка вслед за ним.
       id: 'carnage-cheap-splitter',
-      name: 'Скупой череполом',
+      name: 'Затяжная грань',
       icon: 'talent-thrift-shatter',
       maxRank: 5,
       col: 2,
-      effect: tunes('skull-splitter', { field: 'manaCost', kind: 'percent', value: -0.07 }),
-      requires: { talentId: 'carnage-heavy-splitter' },
+      effect: tunes('sinew-tear', { field: 'edgeDurationSec', kind: 'percent', value: 0.09 }),
+      requires: { talentId: 'carnage-hungry-tear' },
     },
     {
+      // Правил число тиков кровотечения — теперь правит то, что от «долгого»
+      // и осталось: сколько секунд держится разгон.
       id: 'carnage-deeper-frenzy',
       name: 'Долгое исступление',
       icon: 'talent-open-wound',
       maxRank: 3,
       col: 3,
-      effect: tunes('blood-frenzy', { field: 'effectTicks', kind: 'percent', value: 0.2 }),
+      effect: tunes('blood-frenzy', { field: 'rampDurationSec', kind: 'percent', value: 0.2 }),
       requires: { talentId: 'carnage-deep-frenzy' },
     },
   ],
@@ -2193,12 +2224,20 @@ const REAVER_INSTINCT = branch('reaver-instinct', [
       effect: mods(m('maxMana', 'percent', 0.025)),
     },
     {
+      // ТАЛАНТ, КОТОРЫЙ ДЕЛАЕТ РОТАЦИЮ ДРУГОЙ, А НЕ СИЛЬНЕЕ. Правил цену
+      // Череполома, которой больше нет; теперь опускает ПОРОГ, с которого
+      // автокаст решается его бить: полоска сбрасывается раньше и мельче —
+      // чаще, но слабее. Ветка про саму ярость, и это вопрос ровно о ней.
       id: 'instinct-thrifty-splitter',
       name: 'Скупой замах',
       icon: 'talent-thrift-shatter',
       maxRank: 5,
       col: 2,
-      effect: tunes('skull-splitter', { field: 'manaCost', kind: 'percent', value: -0.06 }),
+      effect: tunes('skull-splitter', {
+        field: 'autocastResourceAbove',
+        kind: 'points',
+        value: -0.04,
+      }),
     },
   ],
   [
