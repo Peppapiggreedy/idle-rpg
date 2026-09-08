@@ -197,8 +197,14 @@ describe('полный путь 1..100', () => {
         // Потолок обязан браться на КАЖДОМ сиде: «дойти до конца» — не то
         // свойство, которое можно усреднять.
         for (const r of runsOf(classId)) {
+          // ДАМП ИДЁТ ПЕРВЫМ, А АССЕРТ ВТОРЫМ, и порядок тут не косметика:
+          // при обратном порядке застрявший сид МОЛЧА исчезал из отпечатка —
+          // ключ просто не писался, — вместо того чтобы показать в нём «16
+          // вместо 100». Пропажу ключа `balance:diff` называет потерей, а не
+          // регрессией, и она читается как «тест переименовали».
+          const finalLevel = dump(`${seedKey(classId, r)}/final-level`, r.finalLevel)
           expect(r.reachedCap, `${classId} застрял на ${r.finalLevel} уровне`).toBe(true)
-          expect(dump(`${seedKey(classId, r)}/final-level`, r.finalLevel)).toBe(LEVEL_CAP)
+          expect(finalLevel).toBe(LEVEL_CAP)
         }
       },
       1_800_000,

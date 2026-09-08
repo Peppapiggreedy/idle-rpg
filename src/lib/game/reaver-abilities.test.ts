@@ -8,7 +8,7 @@ import { Decimal } from './numbers'
 import { createInitialState, manualOnlySettings, tick, type GameState } from './tick'
 import { ensureStats } from './stats'
 import { createRng } from './rng'
-import { useAbility, autocastCandidates, autocastAllows } from './abilities'
+import { useAbility, autocastCandidates, autocastAllows, abilityStatus } from './abilities'
 import { CLASSES } from '../data/classes'
 import { ABILITY_BY_ID, ABILITIES } from '../data/abilities'
 import { ABILITY_UNLOCK_GRID } from '../data/balance'
@@ -51,58 +51,76 @@ describe('лестница умений', () => {
     const shapes = RAGE.abilityIds.map((id) => {
       const a = ABILITY_BY_ID[id]
       const flags = ['generate', 'leech', 'resolve', 'refund', 'bloodPrice', 'window', 'stance',
-        'execute', 'detonate', 'effect']
+        'execute', 'detonate', 'effect', 'ramp', 'edge', 'requires', 'spendAll']
         .filter((f) => (a as unknown as Record<string, unknown>)[f] !== undefined)
         .join(',')
       return `${flags}|${a.type}`
     })
     // Одинаковых «пустых» умений допускается не больше одного: заполнитель.
     const plain = shapes.filter((s) => s.startsWith('|'))
-    expect(plain.length).toBeLessThanOrEqual(2)
+    // Ни одного «пустого» умения не осталось вовсе: у каждого свой флаг.
+    expect(plain.length).toBeLessThanOrEqual(1)
+    // И сами наборы флагов не повторяются: два умения с одинаковой ролью —
+    // это одно умение, выданное дважды.
+    expect(new Set(shapes).size).toBe(shapes.length)
   })
 })
 
-describe('генератор даёт ресурс, а не тратит', () => {
-  const gen = ABILITIES.find((a) => a.generate && RAGE.abilityIds.includes(a.id))!
+describe('два генератора, и профили у них разные', () => {
+  const gens = ABILITIES.filter((a) => a.generate && RAGE.abilityIds.includes(a.id))
+
+  it('их ДВА: ярость начинается с нуля, и одной кнопки на разгон мало', () => {
+    expect(gens.length).toBe(2)
+  })
 
   it('после применения ярости БОЛЬШЕ, чем было', () => {
-    const s = hero({ currentMana: new Decimal(0) })
-    const after = useAbility(s, gen.id, createRng(1), noop)
-    expect(after.currentMana.gt(0)).toBe(true)
-    expect(after.currentMana.toNumber()).toBeCloseTo(
-      s.stats.maxMana.times(gen.generate!.resourceShare).toNumber(),
-      6,
-    )
+    for (const gen of gens) {
+      const s = hero({ currentMana: new Decimal(0) })
+      const after = useAbility(s, gen.id, createRng(1), noop)
+      expect(after.currentMana.toNumber(), gen.id).toBeCloseTo(
+        s.stats.maxMana.times(gen.generate!.resourceShare).toNumber(),
+        6,
+      )
+    }
   })
 
-  it('сам ничего не стоит — иначе платил бы за собственную прибавку', () => {
-    expect(gen.manaCost.toNumber()).toBe(0)
+  it('сами ничего не стоят — иначе платили бы за собственную прибавку', () => {
+    for (const gen of gens) expect(gen.manaCost.toNumber(), gen.id).toBe(0)
   })
 
-  it('автокаст не жмёт его на полной полоске', () => {
-    const full = ready()
-    expect(autocastAllows(full, gen)).toBe(false)
-    const empty = hero({ currentMana: new Decimal(0) })
-    expect(autocastAllows(empty, gen)).toBe(true)
+  it('ПРОФИЛИ РАЗНЫЕ: один струйкой и часто, другой куском и редко', () => {
+    const [fast, slow] = [...gens].sort((a, b) => a.cooldownSec - b.cooldownSec)
+    expect(fast.cooldownSec).toBeLessThan(slow.cooldownSec)
+    expect(fast.generate!.resourceShare).toBeLessThan(slow.generate!.resourceShare)
+    // Быстрый ещё и БЬЁТ заметно: это заполнитель ротации, а не только ресурс.
+    expect(fast.weaponDamagePercent.gt(slow.weaponDamagePercent)).toBe(true)
   })
 })
 
-describe('вампиризм лечит нанесённым уроном', () => {
+describe('вампиризм ЧИТАЕТ ПОЛОСКУ', () => {
   const leech = ABILITIES.find((a) => a.leech && RAGE.abilityIds.includes(a.id))!
 
-  it('здоровье растёт, и ровно на долю удара', () => {
-    // Здоровье просажено НАРОЧНО: на полной полоске лечить нечего, и тест
-    // мерил бы обрезку перелива вместо самого вампиризма.
+  /** Сколько вернулось здоровья при заданной полноте полоски. */
+  function healed(fill: number): number {
+    const full = ready()
+    const s = { ...full, currentHp: new Decimal(100), currentMana: full.stats.maxMana.times(fill) }
+    const after = useAbility(s, leech.id, createRng(5), noop)
+    return after.currentHp.minus(100).toNumber()
+  }
+
+  it('здоровье растёт ровно на долю удара, и доля берётся из полоски', () => {
     const full = ready()
     const s = { ...full, currentHp: new Decimal(100) }
     const after = useAbility(s, leech.id, createRng(5), noop)
-    expect(after.currentHp.gt(100)).toBe(true)
-    // Вернулось не больше, чем нанесено: доля меньше единицы.
     const dealt = s.monster.currentHp.minus(after.monster.currentHp)
-    expect(after.currentHp.minus(100).toNumber()).toBeCloseTo(
-      dealt.times(leech.leech!.healShare).toNumber(),
-      6,
-    )
+    const share = leech.leech!.healShare + (leech.leech!.healShareFromResource ?? 0)
+    expect(after.currentHp.minus(100).toNumber()).toBeCloseTo(dealt.times(share).toNumber(), 6)
+  })
+
+  it('НА ПОЛНОЙ ПОЛОСКЕ ЛЕЧИТ БОЛЬШЕ, ЧЕМ НА ПУСТОЙ', () => {
+    // Главное свойство: бой, который идёт хорошо, лечит лучше. Без него это
+    // было бы обычное лечение, только привязанное к удару.
+    expect(healed(1)).toBeGreaterThan(healed(0.05) * 1.5)
   })
 
   it('на полном здоровье не переливает', () => {
@@ -112,45 +130,128 @@ describe('вампиризм лечит нанесённым уроном', () =
   })
 })
 
-describe('детонатор читает полоску', () => {
-  const det = ABILITIES.find(
-    (a) => a.detonate?.resourceMultiplier && RAGE.abilityIds.includes(a.id),
-  )!
-  const dot = ABILITY_BY_ID[det.combo!.needsAbilityId]
+describe('Череполом тратит ВСЮ полоску и растёт от неё', () => {
+  const split = ABILITIES.find((a) => a.spendAll && RAGE.abilityIds.includes(a.id))!
 
-  /** Повесить кровотечение, а затем рвануть его при заданной полоске. */
-  function burst(fill: number): Decimal {
-    let s = ready({ currentHp: new Decimal(1e6) })
-    // Кровотечение вешается своим умением: связка описана данными.
-    s = useAbility(s, dot.id, createRng(3), noop)
-    // onNextSwing ждёт замаха — прокручиваем тик, пока эффект не ляжет.
-    for (let i = 0; i < 100 && s.activeEffects.length === 0; i += 1) {
-      s = tick(s, 100, createRng(3))
-    }
-    expect(s.activeEffects.length).toBeGreaterThan(0)
+  /** Урон удара при заданной полноте полоски. */
+  function hit(fill: number): { damage: Decimal; left: Decimal } {
+    const full = ready({ currentHp: new Decimal(1e6) })
+    let s = { ...full, currentMana: full.stats.maxMana.times(fill) }
     const before = s.monster.currentHp
-    const filled = { ...s, currentMana: s.stats.maxMana.times(fill) }
-    let after = useAbility(filled, det.id, createRng(3), noop)
-    for (let i = 0; i < 100 && after.queuedAbilityId !== null; i += 1) {
-      after = tick(after, 100, createRng(3))
-    }
-    return before.minus(after.monster.currentHp)
+    s = useAbility(s, split.id, createRng(7), noop)
+    for (let i = 0; i < 100 && s.queuedAbilityId !== null; i += 1) s = tick(s, 100, createRng(7))
+    return { damage: before.minus(s.monster.currentHp), left: s.currentMana }
   }
 
-  it('на полной полоске бьёт сильнее, чем на пустой', () => {
-    const low = burst(0.05)
-    const high = burst(1)
-    expect(high.gt(low)).toBe(true)
+  it('на полной полоске бьёт заметно сильнее, чем на пустой', () => {
+    expect(hit(1).damage.gt(hit(0.02).damage.times(2))).toBe(true)
   })
 
-  it('автокаст не рвёт умирающего моба', () => {
-    const s = ready()
-    const dying = {
-      ...s,
-      monster: { ...s.monster, currentHp: s.monster.maxHp.times(0.05) },
-    }
-    expect(autocastAllows(dying, det)).toBe(false)
-    expect(autocastAllows(s, det)).toBe(true)
+  it('полоска после удара ПУСТА: платит всем, что накоплено', () => {
+    // «Пуста» — с точностью до того, что сам этот замах ярость и приносит:
+    // ресурс копится боем, и удар, которым Череполом бьёт, тоже считается.
+    const { left } = hit(1)
+    const full = ready().stats.maxMana
+    expect(left.div(full).toNumber()).toBeLessThan(0.1)
+  })
+
+  it('своей цены у него нет — она и была бы второй ценой', () => {
+    expect(split.manaCost.toNumber()).toBe(0)
+  })
+
+  it('автокаст ждёт накопления, а не бьёт пустой полоской', () => {
+    const full = ready()
+    expect(autocastAllows(full, split)).toBe(true)
+    expect(autocastAllows({ ...full, currentMana: new Decimal(0) }, split)).toBe(false)
+  })
+})
+
+describe('грань читает полоску НЕПРЕРЫВНО', () => {
+  const edge = ABILITIES.find((a) => a.edge && RAGE.abilityIds.includes(a.id))!
+
+  /** Урон автоатаки под гранью при заданной полноте полоски. */
+  function autoHit(fill: number): Decimal {
+    const full = ready({ currentHp: new Decimal(1e6) })
+    let s = useAbility(full, edge.id, createRng(11), noop)
+    s = { ...s, currentMana: s.stats.maxMana.times(fill), swingProgress: 0.999 }
+    const before = s.monster.currentHp
+    s = tick(s, 60, createRng(11))
+    return before.minus(s.monster.currentHp)
+  }
+
+  it('прибавка ЖИВЁТ В ПОЛОСКЕ, а не в моменте применения', () => {
+    // Обе величины сняты ПОСЛЕ применения одной и той же грани: разница
+    // только в том, сколько ярости у героя в момент удара.
+    expect(autoHit(1).gt(autoHit(edge.edge!.resourceAbove))).toBe(true)
+  })
+
+  it('ниже порога прибавки нет вовсе', () => {
+    const low = autoHit(edge.edge!.resourceAbove * 0.5)
+    const at = autoHit(edge.edge!.resourceAbove)
+    expect(low.toNumber()).toBeCloseTo(at.toNumber(), 6)
+  })
+
+  it('урона сама не наносит: вся её работа — включить состояние', () => {
+    expect(edge.weaponDamagePercent.toNumber()).toBe(0)
+  })
+})
+
+describe('ворота по полоске — правило умения, а не совет автокасту', () => {
+  const gated = ABILITIES.filter((a) => a.requires && RAGE.abilityIds.includes(a.id))
+
+  it('они есть, и обе стороны заняты: и «мало», и «много»', () => {
+    expect(gated.length).toBeGreaterThanOrEqual(3)
+    expect(gated.some((a) => a.requires!.resourceAbove !== undefined)).toBe(true)
+    expect(gated.some((a) => a.requires!.resourceBelow !== undefined)).toBe(true)
+  })
+
+  it('ниже порога умение ОТКАЗЫВАЕТ кодом, а не молча не жмётся', () => {
+    const need = gated.find((a) => a.requires!.resourceAbove !== undefined)!
+    const s = ready({ currentHp: new Decimal(1e6) })
+    expect(abilityStatus({ ...s, currentMana: new Decimal(0) }, need).reason).toBe('resource-low')
+    expect(abilityStatus(s, need).usable).toBe(true)
+  })
+
+  it('выше порога — второй код, и он ДРУГОЙ: «мало» и «много» лечатся по-разному', () => {
+    const cap = gated.find((a) => a.requires!.resourceBelow !== undefined)!
+    const s = ready({ currentHp: new Decimal(1e6) })
+    expect(abilityStatus(s, cap).reason).toBe('resource-high')
+    expect(abilityStatus({ ...s, currentMana: new Decimal(0) }, cap).usable).toBe(true)
+  })
+
+  it('запертое воротами умение автокаст не берёт', () => {
+    const need = gated.find((a) => a.requires!.resourceAbove !== undefined)!
+    const empty = ready({ currentHp: new Decimal(1e6) })
+    const dry = { ...empty, currentMana: new Decimal(0) }
+    expect(autocastCandidates(dry).some((a) => a.id === need.id)).toBe(false)
+  })
+})
+
+describe('разгон нарастает СВОИМИ ударами', () => {
+  const ramp = ABILITIES.find((a) => a.ramp && RAGE.abilityIds.includes(a.id))!
+
+  it('первый удар проходит без прибавки, следующие сильнее', () => {
+    let s = ready({ currentHp: new Decimal(1e6) })
+    s = useAbility(s, ramp.id, createRng(13), noop)
+    expect(s.ramp?.share).toBe(0)
+    // Один замах — и прибавка появилась.
+    s = tick({ ...s, swingProgress: 0.999 }, 60, createRng(13))
+    expect(s.ramp!.share).toBeCloseTo(ramp.ramp!.perSwing, 6)
+  })
+
+  it('упирается в потолок из данных', () => {
+    let s = ready({ currentHp: new Decimal(1e6) })
+    s = useAbility(s, ramp.id, createRng(13), noop)
+    for (let i = 0; i < 40; i += 1) s = tick({ ...s, swingProgress: 0.999 }, 60, createRng(13))
+    expect(s.ramp === null || s.ramp.share <= ramp.ramp!.maxShare + 1e-9).toBe(true)
+  })
+
+  it('на цели не остаётся НИЧЕГО: это состояние героя, а не метка на мобе', () => {
+    let s = ready({ currentHp: new Decimal(1e6) })
+    s = useAbility(s, ramp.id, createRng(13), noop)
+    expect(s.activeEffects).toEqual([])
+    expect(s.monsterWeaken).toBeNull()
+    expect(s.monsterBrand).toBeNull()
   })
 })
 
@@ -326,6 +427,13 @@ describe('Стража это не касается', () => {
       expect(a.bloodPrice, id).toBeUndefined()
       expect(a.window, id).toBeUndefined()
       expect(a.detonate?.resourceMultiplier, id).toBeUndefined()
+      expect(a.requires, id).toBeUndefined()
+      expect(a.ramp, id).toBeUndefined()
+      expect(a.edge, id).toBeUndefined()
+      expect(a.spendAll, id).toBeUndefined()
+      expect(a.weaponDamageFromResource, id).toBeUndefined()
+      expect(a.leech?.healShareFromResource, id).toBeUndefined()
+      expect(a.execute?.belowHpShareFromResource, id).toBeUndefined()
     }
   })
 })

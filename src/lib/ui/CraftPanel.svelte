@@ -29,12 +29,15 @@
   import type { ProfessionId } from '../data/recipes'
   import { REAGENTS, REAGENT_BY_ID } from '../data/reagents'
   import {
+    CRAFT_CATEGORIES,
     PROFESSIONS,
+    craftCategoryOf,
     professionUnlocked,
     recipeLevel,
     recipesOf,
     type RecipeDef,
   } from '../data/recipes'
+  import { craftFoldKey, setCraftFold, uiSettings } from '../stores/ui'
   import { SLOT_NAMES } from '../data/slots'
   import { recipeSourceText, unknownRecipeText } from './recipeText'
   import { rarityName } from './kit'
@@ -105,6 +108,44 @@
         Number(recipeStatus($gameState, a).canCraft)
       return ready !== 0 ? ready : recipeLevel(a) - recipeLevel(b)
     })
+  }
+
+  /**
+   * РАЗДЕЛЫ ПО КАТЕГОРИЯМ — потому что список перестал быть списком.
+   *
+   * У кузнечного двадцать девять рецептов одним столбцом, и двуручное оружие
+   * в нём ровно одно: найти его можно было только чтением подряд. Это третий
+   * раз, когда содержимое выросло, а список остался списком (до него так же
+   * разошлись книга умений и ветка талантов), и лечится он тем же — сеткой
+   * или разделами, а не ещё одним экраном.
+   *
+   * Категория ВЫВОДИТСЯ из выхода рецепта (`craftCategoryOf` в data/recipes.ts),
+   * поэтому здесь нет ни одного списка, который надо вести руками.
+   *
+   * ПОРЯДОК ВНУТРЬ РАЗДЕЛА НЕ ТРОГАЕТСЯ: рецепты уже отсортированы по всей
+   * профессии («что можно прямо сейчас» — первым), а фильтр порядок сохраняет.
+   *
+   * ПУСТОЙ РАЗДЕЛ НЕ ПОКАЗЫВАЕТСЯ ВОВСЕ — то же правило, что у лестницы
+   * открытий: заголовок без содержимого обещает то, чего за ним нет.
+   */
+  function groups(profession: ProfessionId) {
+    const all = sorted(profession)
+    return CRAFT_CATEGORIES.map((category) => {
+      const recipes = all.filter((r) => craftCategoryOf(r) === category.id)
+      const ready = recipes.filter((r) => recipeStatus($gameState, r).canCraft).length
+      const key = craftFoldKey(profession, category.id)
+      return {
+        key,
+        name: category.name,
+        recipes,
+        ready,
+        // РАЗВЁРНУТО ТАМ, ГДЕ ЕСТЬ ЧТО СОБРАТЬ ПРЯМО СЕЙЧАС. Это ответ на
+        // единственный вопрос, с которым в меню крафта и приходят; остальное
+        // ждёт своего часа свёрнутым. Явный выбор игрока сильнее умолчания
+        // и переживает перезагрузку (stores/ui.ts).
+        open: $uiSettings.craftFolds[key] ?? ready > 0,
+      }
+    }).filter((g) => g.recipes.length > 0)
   }
 
   /** Ступень мастерства профессии — числами, которые считает сама игра. */
@@ -252,8 +293,27 @@
             : `${row.value} / ${MASTERY_MAX} · до следующей ступени ${row.next}`}
         />
       {/if}
-      <ul class="recipes">
-        {#each sorted(profession.id) as recipe (recipe.id)}
+      {#each groups(profession.id) as group (group.key)}
+      <!-- Заголовок раздела — КНОПКА, а не строка с картинкой: сворачивание
+           обязано работать с клавиатуры и читаться экранным диктором, а
+           aria-expanded для этого и существует. -->
+      <button
+        type="button"
+        class="fold"
+        data-fold={group.key}
+        aria-expanded={group.open}
+        onclick={() => setCraftFold(group.key, !group.open)}
+      >
+        <span class="chevron" class:open={group.open} aria-hidden="true"></span>
+        <span class="fold-name">{group.name}</span>
+        <!-- СЧЁТЧИК ОТВЕЧАЕТ НА ВОПРОС СВЁРНУТОГО РАЗДЕЛА: стоит ли его
+             разворачивать. Без него сворачивание прячет содержимое вместе с
+             ответом, и раздел приходится открывать, чтобы узнать, что он пуст. -->
+        <span class="fold-count">{group.ready} из {group.recipes.length} доступно</span>
+      </button>
+      {#if group.open}
+      <ul class="recipes" data-fold-body={group.key}>
+        {#each group.recipes as recipe (recipe.id)}
           {@const status = recipeStatus($gameState, recipe)}
           <li class="recipe" class:blocked={!status.canCraft}>
             <!-- Подсказка говорит, ЧТО ПОЛУЧИТСЯ, — теми же числами, из
@@ -324,6 +384,8 @@
           </li>
         {/each}
       </ul>
+      {/if}
+      {/each}
     </section>
   {/each}
 </Panel>
@@ -400,6 +462,52 @@
     display: grid;
     grid-template-columns: 1fr;
     gap: var(--space-2);
+  }
+  /* Заголовок раздела: во всю ширину, с областью нажатия не меньше пальца.
+     Счётчик прижат вправо — он читается как итог строки, а не как часть
+     названия. */
+  .fold {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    width: 100%;
+    min-height: var(--tap-min);
+    padding: var(--space-1) var(--space-2);
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius-sm);
+    background: var(--c-surface-sunken);
+    color: inherit;
+    font: inherit;
+    font-size: var(--text-sm);
+    text-align: left;
+    cursor: pointer;
+  }
+  .fold:hover,
+  .fold:focus-visible {
+    border-color: var(--c-accent);
+  }
+  .fold-name {
+    font-weight: var(--weight-bold);
+  }
+  .fold-count {
+    margin-left: auto;
+    font-size: var(--text-xs);
+    color: var(--c-text-faint);
+  }
+  /* Треугольник рисуется рамкой, а не символом: символ зависит от шрифта, а
+     эталоны снимков сравниваются попиксельно. */
+  .chevron {
+    flex: 0 0 auto;
+    width: 0;
+    height: 0;
+    border-top: var(--space-1) solid transparent;
+    border-bottom: var(--space-1) solid transparent;
+    border-left: var(--space-1) solid var(--c-text-muted);
+    transform: rotate(0deg);
+    transition: transform var(--dur-fast) ease;
+  }
+  .chevron.open {
+    transform: rotate(90deg);
   }
   .recipe {
     display: flex;

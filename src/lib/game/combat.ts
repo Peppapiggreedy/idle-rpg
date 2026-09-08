@@ -1279,8 +1279,12 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
       // считается как реген, а не как лечащее умение. Отсюда и его свойство:
       // оно работает всегда понемногу и не спасает проигранный бой.
       if (a.leech) {
+        // Доля, растущая от полноты полоски, берётся по среднему заполнению
+        // из данных — текущего запаса у модели нет и быть не может.
+        const share =
+          a.leech.healShare + (a.leech.healShareFromResource ?? 0) * MODEL_RESOURCE_FILL
         healPerSecond = healPerSecond.plus(
-          cast.hitDamage.times(critFactor(stats)).times(a.leech.healShare).times(rate),
+          cast.hitDamage.times(critFactor(stats)).times(share).times(rate),
         )
       }
       // УПОР нарастает пропущенными ударами, поэтому среднее по окну — около
@@ -1288,6 +1292,23 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
       if (a.resolve) {
         const uptime = Math.min(1, rate * a.resolve.durationSec)
         incoming *= 1 - (a.resolve.maxShare / 2) * uptime
+      }
+      // РАЗГОН — зеркало «Упора» и считается зеркально: он тоже нарастает,
+      // поэтому среднее по окну — около ПОЛОВИНЫ потолка. Дольше боя он не
+      // живёт: моб умирает, разгон уходит вместе с ним.
+      if (a.ramp) {
+        const uptime = Math.min(1, rate * Math.min(a.ramp.durationSec, fightSec))
+        outgoing = outgoing.times(1 + (a.ramp.maxShare / 2) * uptime)
+      }
+      // ГРАНЬ читает полоску непрерывно, и модель берёт то же среднее
+      // заполнение, что и детонатор. Ниже порога прибавки нет вовсе — при
+      // среднем заполнении в половину и пороге в половину она равна нулю, и
+      // это ЧЕСТНО: чтобы грань окупалась, полоску надо ДЕРЖАТЬ выше среднего.
+      if (a.edge) {
+        const room = 1 - a.edge.resourceAbove
+        const over = room > 0 ? Math.max(0, MODEL_RESOURCE_FILL - a.edge.resourceAbove) / room : 0
+        const uptime = Math.min(1, rate * a.edge.durationSec)
+        outgoing = outgoing.times(1 + a.edge.damagePerShare * over * uptime)
       }
     }
     return {

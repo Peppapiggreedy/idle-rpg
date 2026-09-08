@@ -41,7 +41,7 @@ import {
   REVIVE_DELAY_MS,
   xpGapShare,
 } from '../data/balance'
-import { abilityOf } from './abilities'
+import { abilityOf, grownRamp } from './abilities'
 import { currentZone, reviveInZone } from './zones'
 import {
   advanceCooldowns,
@@ -342,6 +342,13 @@ const applyCombat: TickStep = (s, ctx) => {
       timestamp: swung.playtimeMs.toNumber(),
     })
     if (hpLeft.lte(0)) ctx.killedMonster = monster
+    // РАЗГОН НАБЕГАЕТ СВОИМИ УДАРАМИ, и считается он ПОСЛЕ удара: первый
+    // проходит без прибавки, как «Упор» не смягчает первый пропущенный.
+    //
+    // СЧИТАЮТСЯ ЗАМАХИ ПРАВОЙ РУКИ, а не любые удары. Взять и левую значило
+    // бы разгонять вдвое быстрее у того, кто носит два клинка, — то есть
+    // сделать состояние класса свойством связки оружия.
+    swung = { ...swung, ramp: grownRamp(swung) }
     for (
       let i = extraSwings(doubleStrikeChance(swung.talents), ctx.rng);
       i > 0 && ctx.killedMonster === null;
@@ -365,6 +372,7 @@ const applyCombat: TickStep = (s, ctx) => {
         timestamp: swung.playtimeMs.toNumber(),
       })
       if (afterExtra.lte(0)) ctx.killedMonster = monster
+      swung = { ...swung, ramp: grownRamp(swung) }
     }
   }
   return { ...swung, swingProgress, monster, combatLog }
@@ -820,9 +828,11 @@ const applyMonsterAttack: TickStep = (s, ctx) => {
     activeEffects: [],
     monsterWeaken: null,
     monsterBrand: null,
-    // Свои метки уходят вместе с чужими: и упор, и окно — это секунда боя,
-    // которого больше нет.
+    // Свои метки уходят вместе с чужими: упор, разгон, грань и окно — это
+    // секунда боя, которого больше нет.
     resolve: null,
+    ramp: null,
+    edge: null,
     freeCastsMsLeft: 0,
     combatLog: pushEvent(next.combatLog, { type: 'death', reviveMs }),
   }

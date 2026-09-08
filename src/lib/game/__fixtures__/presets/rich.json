@@ -1,7 +1,17 @@
 {
   "version": 33,
   "classId": "warden",
-  "materials": {},
+  "materials": {
+    "meadow-herb": "18",
+    "lean-meat": "18",
+    "quarry-ore": "18",
+    "bog-hide": "14",
+    "furrow-rust": "14",
+    "ember-shard": "10",
+    "glass-sliver": "10",
+    "shaft-iron": "6",
+    "root-fibre": "6"
+  },
   "mastery": {},
   "knownRecipeIds": [],
   "activePotions": [],

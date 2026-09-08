@@ -182,6 +182,13 @@ export function tuneAbility(
   if (def.execute) {
     out.execute = {
       belowHpShare: apply(def.execute.belowHpShare, get('executeBelowHpShare')),
+      // НАДБАВКА ОТ ПОЛОСКИ ПЕРЕНОСИТСЯ, А НЕ ТЕРЯЕТСЯ. Её тут не было, и
+      // «Расправа» лишалась своей главной черты — растущего порога — от
+      // ЛЮБОГО таланта, который её трогал: конвейер собирает умение заново,
+      // и поле, забытое в сборке, исчезает молча.
+      ...(def.execute.belowHpShareFromResource === undefined
+        ? {}
+        : { belowHpShareFromResource: def.execute.belowHpShareFromResource }),
     }
   }
   if (def.brand) {
@@ -212,7 +219,17 @@ export function tuneAbility(
     }
   }
   if (def.leech) {
-    out.leech = { healShare: apply(def.leech.healShare, get('leechHealShare')) }
+    out.leech = {
+      healShare: apply(def.leech.healShare, get('leechHealShare')),
+      ...(def.leech.healShareFromResource === undefined
+        ? {}
+        : {
+            healShareFromResource: apply(
+              def.leech.healShareFromResource,
+              get('leechHealShareFromResource'),
+            ),
+          }),
+    }
   }
   if (def.resolve) {
     out.resolve = {
@@ -241,7 +258,40 @@ export function tuneAbility(
       ...(def.autocast.heroHpAbove === undefined
         ? {}
         : { heroHpAbove: apply(def.autocast.heroHpAbove, get('autocastHeroHpAbove')) }),
+      ...(def.autocast.resourceAbove === undefined
+        ? {}
+        : {
+            // Порог прижимается к шкале: талант, увёзший его за единицу,
+            // выключил бы умение вовсе, а ниже нуля — снял бы порог молча.
+            resourceAbove: Math.min(
+              1,
+              Math.max(0, apply(def.autocast.resourceAbove, get('autocastResourceAbove'))),
+            ),
+          }),
     }
+  }
+  if (def.ramp) {
+    out.ramp = {
+      perSwing: apply(def.ramp.perSwing, get('rampPerSwing')),
+      maxShare: apply(def.ramp.maxShare, get('rampMaxShare')),
+      durationSec: apply(def.ramp.durationSec, get('rampDurationSec')),
+    }
+  }
+  if (def.edge) {
+    out.edge = {
+      resourceAbove: Math.min(
+        1,
+        Math.max(0, apply(def.edge.resourceAbove, get('edgeResourceAbove'))),
+      ),
+      damagePerShare: apply(def.edge.damagePerShare, get('edgeDamagePerShare')),
+      durationSec: apply(def.edge.durationSec, get('edgeDurationSec')),
+    }
+  }
+  if (def.weaponDamageFromResource) {
+    out.weaponDamageFromResource = applyD(
+      def.weaponDamageFromResource,
+      get('weaponDamageFromResource'),
+    )
   }
   return out
 }

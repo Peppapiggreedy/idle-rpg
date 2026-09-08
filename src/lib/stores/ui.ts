@@ -8,6 +8,7 @@
 import { get, readonly, writable } from 'svelte/store'
 import { CRAFT_UNLOCK_LEVEL, SOUND_DEFAULT_VOLUMES, TALENT_FIRST_LEVEL } from '../data/balance'
 import type { SlotId } from '../data/slots'
+import { CRAFT_CATEGORIES, PROFESSIONS } from '../data/recipes'
 
 export const UI_SETTINGS_KEY = 'idle-rpg:ui'
 
@@ -96,17 +97,45 @@ export type VolumeId = 'master' | 'combat' | 'loot' | 'ui'
 
 export const VOLUME_IDS: VolumeId[] = ['master', 'combat', 'loot', 'ui']
 
+/**
+ * РАЗДЕЛ МЕНЮ КРАФТА — ЭТО ПАРА «профессия + категория», а не одна категория.
+ * Талисманы куют и кузнец, и реликварий, и это два разных списка на экране:
+ * свернуть один и оставить развёрнутым другой — законное желание.
+ */
+export const craftFoldKey = (profession: string, category: string): string =>
+  `${profession}/${category}`
+
+/** Ключи, которые вообще бывают. Мусор из localStorage сюда не пролезет. */
+const CRAFT_FOLD_KEYS = new Set(
+  PROFESSIONS.flatMap((p) => CRAFT_CATEGORIES.map((c) => craftFoldKey(p.id, c.id))),
+)
+
 export interface UiSettings {
   textMode: TextModeSetting
   // Громкость — свойство машины и наушников, а не прогресс: место ей здесь,
   // а не в сейве. Экспорт сейва не должен увозить на чужой компьютер
   // выключенный звук.
   volumes: Record<VolumeId, number>
+  /**
+   * СВЁРНУТЫЕ РАЗДЕЛЫ КРАФТА — только ЯВНЫЙ выбор игрока: `true` развёрнут,
+   * `false` свёрнут, ключа нет — как решит панель сама (развёрнуто там, где
+   * есть что собрать прямо сейчас).
+   *
+   * Записывать сюда вычисленное значение по умолчанию нельзя: оно меняется с
+   * ростом героя, и сохранённая копия превратила бы «пока нечего собирать» в
+   * «свёрнуто навсегда». Хранится только то, что игрок нажал руками.
+   *
+   * Место — настройки машины, а не сейв: это про экран, а не про прогресс.
+   * Но и не «где я сейчас»: свёрнутый раздел обязан пережить перезагрузку,
+   * иначе сворачивание не экономит ничего.
+   */
+  craftFolds: Record<string, boolean>
 }
 
 const DEFAULTS: UiSettings = {
   textMode: 'auto',
   volumes: { ...SOUND_DEFAULT_VOLUMES },
+  craftFolds: {},
 }
 
 // --- Хранилище ---------------------------------------------------------
@@ -134,10 +163,19 @@ export function sanitizeUiSettings(raw: unknown): UiSettings {
       }
     }
   }
+  // Свёрнутые разделы крафта: только известные ключи и только булевы
+  // значения. Категорию, которой в игре больше нет, запись не воскресит.
+  const craftFolds: Record<string, boolean> = {}
+  const rawFolds = (data as { craftFolds?: unknown }).craftFolds
+  if (typeof rawFolds === 'object' && rawFolds !== null) {
+    for (const [key, value] of Object.entries(rawFolds as Record<string, unknown>)) {
+      if (typeof value === 'boolean' && CRAFT_FOLD_KEYS.has(key)) craftFolds[key] = value
+    }
+  }
   // Ключа `drawers` здесь больше нет, и старая запись с ним отбрасывается
   // сама: собирается новый объект, а не чинится прежний. Открытое меню —
   // это «где я сейчас», а не настройка машины, и в localStorage ему не место.
-  return { textMode, volumes }
+  return { textMode, volumes, craftFolds }
 }
 
 function load(): UiSettings {
@@ -173,6 +211,19 @@ export function isTextMode(value: UiSettings = get(settings)): boolean {
 export function setTextMode(mode: TextModeSetting): void {
   settings.update((s) => {
     const next = { ...s, textMode: mode }
+    persist(next)
+    return next
+  })
+}
+
+/**
+ * Свернуть или развернуть раздел крафта. Пишется ЯВНЫЙ выбор игрока — и он
+ * же переживает перезагрузку; «как по умолчанию» обратно не возвращается,
+ * потому что нажатие и есть решение.
+ */
+export function setCraftFold(key: string, open: boolean): void {
+  settings.update((s) => {
+    const next = { ...s, craftFolds: { ...s.craftFolds, [key]: open } }
     persist(next)
     return next
   })

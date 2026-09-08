@@ -112,6 +112,27 @@ describe('описание умения собирается из данных',
     },
     { field: 'window', over: { window: { durationSec: 8 } }, must: '8с: умения ничего не стоят' },
     {
+      field: 'requires',
+      over: { requires: { resourceAbove: 0.5 } },
+      must: 'ниже не применить',
+    },
+    { field: 'spendAll', over: { spendAll: true }, must: 'Тратит ВСЮ' },
+    {
+      field: 'weaponDamageFromResource',
+      over: { weaponDamageFromResource: new Decimal(5) },
+      must: 'На полной полоске бьёт',
+    },
+    {
+      field: 'ramp',
+      over: { ramp: { perSwing: 0.05, maxShare: 0.3, durationSec: 12 } },
+      must: 'Разгон 12с',
+    },
+    {
+      field: 'edge',
+      over: { edge: { resourceAbove: 0.5, damagePerShare: 0.45, durationSec: 14 } },
+      must: 'Грань 14с',
+    },
+    {
       field: 'autocast',
       over: { autocast: { heroHpAbove: 0.65 } },
       must: 'при здоровье выше 65%',

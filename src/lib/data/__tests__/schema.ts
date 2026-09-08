@@ -13,7 +13,7 @@
 //
 // Модуль лежит в __tests__, а не в data/: в data/ живут ДАННЫЕ, а это код.
 import { Decimal } from '../../game/numbers'
-import type { AbilityDef } from '../abilities'
+import type { AbilityDef, AbilityTuneField } from '../abilities'
 import type { BackgroundBand, SpriteAsset } from '../sprites'
 import type { DungeonDef } from '../dungeons'
 import { ARMOR_ATTRIBUTES, type AttributeId, type ShieldTemplate, type WeaponTemplate } from '../items'
@@ -31,7 +31,13 @@ import { MASTERY_MAX, MASTERY_RANK_STEP, type MasteryRankDef } from '../mastery'
 import type { BoonDef } from '../boons'
 import { BAND_IDS, bandById, bandDepth, bandForLevel, type BandId } from '../bands'
 import type { GoldUpgradeDef } from '../upgrades'
-import { craftToll, masteryToKnow, recipeLevel } from '../recipes'
+import {
+  CRAFT_CATEGORIES,
+  craftCategoryOf,
+  craftToll,
+  masteryToKnow,
+  recipeLevel,
+} from '../recipes'
 import type { ProfessionDef, RecipeDef, RecipeSource } from '../recipes'
 
 /**
@@ -457,15 +463,16 @@ export const ABILITY_SCHEMA: EntitySchema<AbilityDef> = {
         'data/abilities.ts',
         report,
       )
-    } else if (!ability.absorb) {
-      // ПОДДЕРЖКА МОЖЕТ НЕ БИТЬ, БОЕВОЕ УМЕНИЕ — ОБЯЗАНО. Поддержка это две
-      // вещи и ровно две: лечение и поглощение. Список назван здесь ПОИМЁННО
-      // намеренно: новый флаг, который тоже не бьёт, обязан появиться в этой
-      // строке — иначе умение с нулевым уроном проедет молча.
+    } else if (!ability.absorb && !ability.edge) {
+      // ПОДДЕРЖКА МОЖЕТ НЕ БИТЬ, БОЕВОЕ УМЕНИЕ — ОБЯЗАНО. Поддержка это три
+      // вещи и ровно три: лечение, поглощение и ПОРОГ (`edge` — умение, вся
+      // работа которого в том, чтобы включить состояние). Список назван здесь
+      // ПОИМЁННО намеренно: новый флаг, который тоже не бьёт, обязан
+      // появиться в этой строке — иначе умение с нулевым уроном проедет молча.
       report.need(
         toNumber(ability.weaponDamagePercent) > 0,
         where,
-        'урон умения — доля удара оружия (weaponDamagePercent), и она обязана быть положительной; ноль — только у поддержки (heal или absorb) (data/abilities.ts)',
+        'урон умения — доля удара оружия (weaponDamagePercent), и она обязана быть положительной; ноль — только у поддержки (heal, absorb или edge) (data/abilities.ts)',
       )
     }
     // ОСЛАБЛЕНИЕ: доля и число ударов.
@@ -3940,6 +3947,126 @@ function checkProgressionLevels(content: Content, report: Report): void {
   }
 }
 
+/**
+ * КАЖДЫЙ РЕЦЕПТ ЛОЖИТСЯ В КАТЕГОРИЮ, И КАЖДАЯ КАТЕГОРИЯ НЕПУСТА.
+ *
+ * Обе половины нужны, и вторая не менее первой. Категория ВЫВОДИТСЯ из выхода
+ * (`craftCategoryOf`, data/recipes.ts), поэтому «рецепт без категории» — это
+ * не забытое поле, а выход, который проверка вывести не смогла: вещь в руку
+ * без шаблона или со ссылкой на шаблон, которого нет. Такой рецепт нельзя
+ * показать на экране никуда — раздела «прочее» в меню крафта нет намеренно, —
+ * и поэтому он назван ПОИМЁННО, а не сложен в общую кучу.
+ *
+ * Обратная половина стережёт список категорий: категория, из которой ушёл
+ * последний рецепт, — это мёртвая строка, и через полгода никто не вспомнит,
+ * ждали в ней содержимого или забыли убрать. Сторож, разрешающий больше, чем
+ * есть в данных, упасть на лишнем не может.
+ */
+function checkCraftCategories(content: Content, report: Report): void {
+  const used = new Set<string>()
+  for (const recipe of content.recipes) {
+    const category = craftCategoryOf(recipe)
+    if (category === null) {
+      report.add(
+        `рецепт ${recipe.id}`,
+        'не ложится ни в одну категорию крафта: категория ВЫВОДИТСЯ из выхода, ' +
+          'и у вещи в руку выводится она из хвата шаблона — значит шаблон не назван ' +
+          'или его нет в data/items.ts (craftCategoryOf в data/recipes.ts)',
+      )
+      continue
+    }
+    used.add(category)
+  }
+  for (const category of CRAFT_CATEGORIES) {
+    report.need(
+      used.has(category.id),
+      `категория крафта ${category.id}`,
+      'ни одного рецепта: категория без содержимого — мёртвая строка списка, ' +
+        'убери её из CRAFT_CATEGORIES или заведи рецепт (data/recipes.ts)',
+    )
+  }
+}
+
+/**
+ * ТАЛАНТ ПРАВИТ ТО, ЧТО У УМЕНИЯ ЕСТЬ.
+ *
+ * Проверка появилась после ночи, в которую Изуверу переделали умения: шесть
+ * талантов остались править поля, которых у их умений больше нет — урон
+ * кровотечения у умения без кровотечения, множитель детонации у умения без
+ * детонации, цену у умения, тратящего всю полоску (то есть −7 % от нуля).
+ * Ни один тест этого не заметил: имя поля было из списка `ABILITY_TUNABLE`,
+ * операция подходила полю, ссылка на умение резолвилась. Талант просто
+ * НИЧЕГО НЕ ДЕЛАЛ — молча, в дереве, за очки игрока.
+ *
+ * Запись ЗАКРЫТА по `AbilityTuneField`: новое настраиваемое поле не пройдёт
+ * проверку типов, пока про него не решат, чем оно должно быть подкреплено.
+ */
+const TUNE_NEEDS: Record<AbilityTuneField | 'type', (a: AbilityDef) => boolean> = {
+  // Есть у любого умения — подкреплять нечем.
+  type: () => true,
+  cooldownSec: (a) => toNumber(a.cooldownSec) > 0,
+  // Скидка от нуля — ноль. У умения, тратящего ВСЮ полоску, своей цены нет.
+  manaCost: (a) => toNumber(a.manaCost) > 0,
+  // Умножать нулевой урон бессмысленно ровно так же.
+  weaponDamagePercent: (a) => toNumber(a.weaponDamagePercent) > 0,
+  weaponDamageFromResource: (a) => a.weaponDamageFromResource !== undefined,
+  effectWeaponDamagePercent: (a) => a.effect !== undefined,
+  effectTicks: (a) => a.effect !== undefined,
+  healMaxHpShare: (a) => a.heal !== undefined,
+  healAutocastBelowHpShare: (a) => a.heal !== undefined,
+  weakenDamageShare: (a) => a.weaken !== undefined,
+  weakenHits: (a) => a.weaken !== undefined,
+  detonateMultiplier: (a) => a.detonate !== undefined,
+  detonateResourceMultiplier: (a) => a.detonate?.resourceMultiplier !== undefined,
+  absorbArmorShare: (a) => a.absorb !== undefined,
+  absorbBlockShare: (a) => a.absorb !== undefined,
+  absorbDurationSec: (a) => a.absorb !== undefined,
+  brandDamageShare: (a) => a.brand !== undefined,
+  brandDurationSec: (a) => a.brand !== undefined,
+  brandAutocastAboveHpShare: (a) => a.brand !== undefined,
+  freeCastsCasts: (a) => a.freeCasts !== undefined,
+  stanceDamageShare: (a) => a.stance !== undefined,
+  stanceMitigationShare: (a) => a.stance !== undefined,
+  stanceDurationSec: (a) => a.stance !== undefined,
+  generateResourceShare: (a) => a.generate !== undefined,
+  leechHealShare: (a) => a.leech !== undefined,
+  leechHealShareFromResource: (a) => a.leech?.healShareFromResource !== undefined,
+  resolveMaxShare: (a) => a.resolve !== undefined,
+  resolvePerHitTaken: (a) => a.resolve !== undefined,
+  resolveDurationSec: (a) => a.resolve !== undefined,
+  refundResourceShare: (a) => a.refund !== undefined,
+  bloodPriceResourceShare: (a) => a.bloodPrice !== undefined,
+  windowDurationSec: (a) => a.window !== undefined,
+  executeBelowHpShare: (a) => a.execute !== undefined,
+  autocastHeroHpAbove: (a) => a.autocast?.heroHpAbove !== undefined,
+  autocastResourceAbove: (a) => a.autocast?.resourceAbove !== undefined,
+  rampPerSwing: (a) => a.ramp !== undefined,
+  rampMaxShare: (a) => a.ramp !== undefined,
+  rampDurationSec: (a) => a.ramp !== undefined,
+  edgeDamagePerShare: (a) => a.edge !== undefined,
+  edgeDurationSec: (a) => a.edge !== undefined,
+  edgeResourceAbove: (a) => a.edge !== undefined,
+}
+
+function checkTalentTunes(content: Content, report: Report): void {
+  for (const talent of content.talents) {
+    const effect = talent.effect
+    if (effect.kind !== 'ability') continue
+    const ability = content.abilities.find((a) => a.id === effect.abilityId)
+    if (!ability) continue
+    for (const tune of effect.tune) {
+      const needs = TUNE_NEEDS[tune.field]
+      if (!needs || needs(ability)) continue
+      report.add(
+        `талант ${talent.id}`,
+        `правит «${tune.field}» у умения «${ability.id}», у которого этого нет: ` +
+          'правка не делает НИЧЕГО, и заметить это чтением нельзя — имя поля ' +
+          'настоящее (data/talents.ts против data/abilities.ts)',
+      )
+    }
+  }
+}
+
 export function checkContent(content: Content): ContentIssue[] {
   const report = new Report()
   for (const schema of SCHEMAS) runSchema(schema, content, report)
@@ -3947,6 +4074,8 @@ export function checkContent(content: Content): ContentIssue[] {
   checkInstanceEntrances(content, report)
   checkBalance(content, report)
   checkArmorPoints(content, report)
+  checkCraftCategories(content, report)
+  checkTalentTunes(content, report)
   checkProgressionLevels(content, report)
   checkUnlockLevels(content, report)
   checkScene(content, report)

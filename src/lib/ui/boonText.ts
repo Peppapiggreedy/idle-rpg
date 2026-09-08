@@ -43,6 +43,15 @@ export const TUNE_FIELD_NAME: Record<AbilityTuneField | 'type', string> = {
   bloodPriceResourceShare: 'ярость за здоровье',
   windowDurationSec: 'длительность окна',
   detonateResourceMultiplier: 'детонация от ресурса',
+  rampPerSwing: 'прирост разгона',
+  rampMaxShare: 'потолок разгона',
+  rampDurationSec: 'длительность разгона',
+  edgeDamagePerShare: 'сила грани',
+  edgeDurationSec: 'длительность грани',
+  edgeResourceAbove: 'порог грани',
+  weaponDamageFromResource: 'урон от полоски',
+  leechHealShareFromResource: 'вампиризм от полоски',
+  autocastResourceAbove: 'порог автокаста по ресурсу',
   autocastHeroHpAbove: 'порог автокаста',
 }
 

@@ -139,6 +139,10 @@ export interface GameState {
    * времени. В сейв не пишется — как и всё, что висит секунду боя.
    */
   resolve: HeroResolve | null
+  /** Разгон: урон растёт от своих ударов. См. HeroRamp. */
+  ramp: HeroRamp | null
+  /** Грань: урон от избытка ресурса. См. HeroEdge. */
+  edge: HeroEdge | null
   /**
    * ЩИТ ГЕРОЯ: сколько урона он ещё поглотит и сколько миллисекунд держится.
    * Величина посчитана в момент применения от брони и силы блока — потом
@@ -290,6 +294,32 @@ export interface MonsterBrand {
 export interface HeroStance {
   damageShare: number
   mitigationShare: number
+  msLeft: number
+}
+
+/**
+ * Разгон героя: см. поле `ramp`. Зеркало `resolve` — там смягчение росло от
+ * ЧУЖИХ ударов, здесь урон растёт от своих.
+ */
+export interface HeroRamp {
+  /** Сколько прибавки уже набежало, доля. */
+  share: number
+  /** Сколько прибавляет каждый следующий СВОЙ удар. */
+  perSwing: number
+  maxShare: number
+  msLeft: number
+}
+
+/**
+ * Грань героя: см. поле `edge`. Единственное состояние, читающее полоску
+ * НЕПРЕРЫВНО: своей накопленной величины у него нет вовсе — прибавка
+ * считается из текущего ресурса в момент удара.
+ */
+export interface HeroEdge {
+  /** Ниже этой доли запаса прибавки нет. */
+  resourceAbove: number
+  /** Прибавка при полной полоске. */
+  damagePerShare: number
   msLeft: number
 }
 
@@ -610,6 +640,8 @@ export function createInitialState(
     freeCastsLeft: 0,
     freeCastsMsLeft: 0,
     resolve: null,
+    ramp: null,
+    edge: null,
     absorb: null,
     abilitySlots: defaultAbilitySlots(hero.id),
     abilitySettings: defaultAbilitySettings(hero.id),

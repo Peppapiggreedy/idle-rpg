@@ -28,7 +28,13 @@ export const HEROIC_REAGENT_IDS: string[] = REAGENTS.filter(
 import { ZONE_BY_ID, representativeMonster, zoneForMonsterLevel } from './zones'
 import type { IconName } from '../ui/icons/manifest'
 import type { SlotId } from './slots'
-import { ARMOR_ATTRIBUTES, type AttributeId } from './items'
+import {
+  ARMOR_ATTRIBUTES,
+  SHIELD_BY_ID,
+  WEAPON_BY_ID,
+  type AttributeId,
+  type Grip,
+} from './items'
 import { DUNGEONS } from './dungeons'
 import { DROP_CHANCE, averageItemSellPrice } from './loot'
 import { procIdOf, relicTier } from './procs'
@@ -306,6 +312,117 @@ export interface RecipeDef {
   unlockLevel?: number
   inputs: RecipeInput[]
   output: FoodOutput | ItemOutput | PotionOutput | ReagentOutput
+}
+
+/**
+ * КАТЕГОРИЯ РЕЦЕПТА — ЧТО ИМЕННО ИЗ НЕГО ВЫЙДЕТ, глазами игрока: «двуручное
+ * оружие», «щиты», «склянки». Она НЕ ПОЛЕ РЕЦЕПТА и никогда им не станет.
+ *
+ * ПОЧЕМУ ВЫВОДОМ, А НЕ РУКОЙ. Список, который ведут руками, разъезжается —
+ * это в проекте случалось уже четыре раза (покрытие content:check, kit.test.ts,
+ * NUMERIC_PRESETS, таблица стоимости тестов). Поле `category` у рецепта было бы
+ * пятым таким списком, причём худшим: разъехаться оно может МОЛЧА — щит,
+ * подписанный «одноручным оружием», ничего не ломает, просто стоит не в том
+ * разделе. Выведенная категория такой ошибки не допускает по построению: она
+ * ЕСТЬ отражение выхода, а не второе мнение о нём.
+ *
+ * ХВАТ УЖЕ ЛЕЖИТ В ДАННЫХ (`grip` у шаблона оружия и щита, data/items.ts),
+ * поэтому «двуручное» отличается от «одноручного» без единого нового поля.
+ * Слот на это не годится: в левой руке лежит и щит, и второе одноручное.
+ */
+export type CraftCategoryId =
+  | 'weapon-two'
+  | 'weapon-one'
+  | 'shield'
+  | 'armor-head'
+  | 'armor-chest'
+  | 'armor-hands'
+  | 'armor-legs'
+  | 'trinket'
+  | 'potion'
+  | 'food'
+  | 'material'
+
+export interface CraftCategoryDef {
+  id: CraftCategoryId
+  /** Подпись раздела. Имена сущностей живут в data/ — как SLOT_NAMES. */
+  name: string
+}
+
+/**
+ * ПОРЯДОК РАЗДЕЛОВ — ПОРЯДОК ЭТОГО СПИСКА. Сперва то, что надевается в руки
+ * (там выбор стиля боя), потом броня сверху вниз по фигуре, потом расходники,
+ * и последним — передел: он сам не надевается вовсе.
+ */
+export const CRAFT_CATEGORIES: CraftCategoryDef[] = [
+  { id: 'weapon-two', name: 'Двуручное оружие' },
+  { id: 'weapon-one', name: 'Одноручное оружие' },
+  { id: 'shield', name: 'Щиты' },
+  { id: 'armor-head', name: 'Шлемы' },
+  { id: 'armor-chest', name: 'Нагрудники' },
+  { id: 'armor-hands', name: 'Наручи' },
+  { id: 'armor-legs', name: 'Поножи' },
+  { id: 'trinket', name: 'Талисманы' },
+  { id: 'potion', name: 'Склянки' },
+  { id: 'food', name: 'Еда' },
+  { id: 'material', name: 'Промежуточные материалы' },
+]
+
+/**
+ * Слот → категория. ЗАПИСЬ ЗАКРЫТА по `SlotId`: восьмой слот не пройдёт
+ * проверку типов, пока про него не решат, — тот же приём, что у
+ * `ITEM_STAT_GRAIN` и `SLOT_CELL`.
+ *
+ * Руки решаются не слотом, а ХВАТОМ, и поэтому стоят особым значением: в
+ * левой руке лежит и щит, и второе одноручное, а в правой — и одноручное,
+ * и двуручное.
+ */
+const CATEGORY_BY_SLOT: Record<SlotId, CraftCategoryId | 'by-grip'> = {
+  mainHand: 'by-grip',
+  offHand: 'by-grip',
+  head: 'armor-head',
+  chest: 'armor-chest',
+  hands: 'armor-hands',
+  legs: 'armor-legs',
+  trinket: 'trinket',
+}
+
+/** Хват → категория. Тоже закрытая запись: четвёртого хвата нет. */
+const CATEGORY_BY_GRIP: Record<Grip, CraftCategoryId> = {
+  one: 'weapon-one',
+  two: 'weapon-two',
+  shield: 'shield',
+}
+
+/** Род выхода → категория. Вещь решается слотом и хватом, остальные — сразу. */
+const CATEGORY_BY_OUTPUT: Record<'food' | 'potion' | 'reagent', CraftCategoryId> = {
+  food: 'food',
+  potion: 'potion',
+  reagent: 'material',
+}
+
+/**
+ * КАТЕГОРИЯ РЕЦЕПТА ИЛИ `null`, если выход не ложится ни в одну.
+ *
+ * `null` — не «прочее», а НАХОДКА: единственный способ его получить — вещь в
+ * руку без шаблона или с шаблоном, которого нет в data/items.ts. Раздела
+ * «прочее» здесь намеренно нет: он превратил бы поломку данных в тихую
+ * строку на экране, а её ловит `content:check` — поимённо.
+ */
+export function craftCategoryOf(recipe: RecipeDef): CraftCategoryId | null {
+  const out = recipe.output
+  if (out.kind !== 'item') return CATEGORY_BY_OUTPUT[out.kind]
+  const bySlot = CATEGORY_BY_SLOT[out.slot]
+  if (bySlot !== 'by-grip') return bySlot
+  const grip = out.templateId
+    ? (WEAPON_BY_ID[out.templateId]?.grip ?? SHIELD_BY_ID[out.templateId]?.grip)
+    : undefined
+  return grip ? CATEGORY_BY_GRIP[grip] : null
+}
+
+/** Рецепты категории — в порядке файла данных, как и везде. */
+export function recipesInCategory(category: CraftCategoryId): RecipeDef[] {
+  return RECIPES.filter((r) => craftCategoryOf(r) === category)
 }
 
 const CRAFT_RECIPES: RecipeDef[] = [

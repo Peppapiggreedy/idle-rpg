@@ -22,6 +22,8 @@ import { payloadFromState, type SavePayloadV21 } from '../../save'
 import { DUNGEONS } from '../../../data/dungeons'
 import { TALENTS } from '../../../data/talents'
 import { SLOT_IDS } from '../../../data/slots'
+import { LEVEL_BANDS, bandDepth } from '../../../data/bands'
+import { commonReagentsInBand } from '../../../data/reagents'
 import type { Item } from '../../../types'
 
 export type PresetName = 'fresh' | 'mid' | 'rich' | 'tree'
@@ -152,11 +154,35 @@ function rich(): GameState {
   return {
     ...state,
     gold: new Decimal('1.34e7'),
+    materials: passedBandMaterials(state.level.toNumber()),
     dungeonsCleared: { [DUNGEONS[0].id]: true },
     talentResets: 2,
     currentHp: state.stats.maxHp.times(0.88).floor(),
     currentMana: state.stats.maxMana,
   }
+}
+
+/**
+ * МАТЕРИАЛЫ ПРОЙДЕННЫХ ПОЛОС — то, с чем герой этого уровня и приходит в
+ * ремёсла. Пресет их не имел вовсе, и это ловилось только глазами: полка
+ * реагентов стояла пустой, а меню крафта показывало «0 из N доступно» в
+ * КАЖДОМ разделе, то есть снимок ремёсел был снимком того, чего в игре не
+ * бывает — кузнеца без единого слитка на тридцать втором уровне.
+ *
+ * Чем свежее полоса, тем меньше запас: у последней пройденной герой был
+ * недолго. Числа тут ровные и никакой баланс не задают — это декорация
+ * снимка, а не игровая величина.
+ */
+function passedBandMaterials(level: number): Record<string, Decimal> {
+  const materials: Record<string, Decimal> = {}
+  for (const band of LEVEL_BANDS) {
+    if (band.minLevel > level) continue
+    const stock = Math.max(3, 18 - bandDepth(band.id) * 4)
+    for (const reagent of commonReagentsInBand(band.id)) {
+      materials[reagent.id] = new Decimal(stock)
+    }
+  }
+  return materials
 }
 
 /**

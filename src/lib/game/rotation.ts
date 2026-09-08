@@ -11,7 +11,7 @@
 import { Decimal } from './numbers'
 import { critFactor, expectedAbilityDamage } from './combat'
 import { tuneAbility } from './abilityTune'
-import { ABILITY_BY_ID, type AbilityDef } from '../data/abilities'
+import { ABILITY_BY_ID, MODEL_RESOURCE_FILL, type AbilityDef } from '../data/abilities'
 
 /**
  * ЧИСТАЯ ЦЕНА УМЕНИЯ: сколько ресурса оно РЕАЛЬНО стоит за применение.
@@ -28,8 +28,14 @@ export function resourceCost(ability: AbilityDef, stats: StatBlock): Decimal {
     (ability.generate?.resourceShare ?? 0) +
     (ability.refund?.resourceShare ?? 0) +
     (ability.bloodPrice?.resourceShare ?? 0)
-  if (gain <= 0) return ability.manaCost
-  return ability.manaCost.minus(stats.maxMana.times(gain))
+  // УМЕНИЕ, ТРАТЯЩЕЕ ВСЮ ПОЛОСКУ, стоит модели среднего заполнения: своей
+  // цены у него нет вовсе, а «ноль» сделал бы его бесплатным — то есть
+  // лучшей кнопкой в игре по определению.
+  const own = ability.spendAll
+    ? stats.maxMana.times(MODEL_RESOURCE_FILL)
+    : ability.manaCost
+  if (gain <= 0) return own
+  return own.minus(stats.maxMana.times(gain))
 }
 
 /**
@@ -384,7 +390,16 @@ function fundPlan(
     if (share.lte(0)) continue
     const castsPerSecond = wantPerSecond.times(share)
     if (ability.type === 'onNextSwing') swingBudget = swingBudget.minus(castsPerSecond)
-    const hitDamage = expectedAbilityDamage(stats, ability.weaponDamagePercent)
+    // Урон умения, растущего от полоски, модель берёт по тому же среднему
+    // заполнению, по которому считает его цену: половина шкалы.
+    const hitDamage = expectedAbilityDamage(
+      stats,
+      ability.weaponDamageFromResource
+        ? ability.weaponDamagePercent.plus(
+            ability.weaponDamageFromResource.times(MODEL_RESOURCE_FILL),
+          )
+        : ability.weaponDamagePercent,
+    )
     // Интервал между кастами — по фактическому темпу, а не по откату: маны
     // может не хватать, и тогда касты реже, а тиков эффекта между ними ложится
     // больше.
