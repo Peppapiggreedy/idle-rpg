@@ -182,6 +182,13 @@ export function tuneAbility(
   if (def.execute) {
     out.execute = {
       belowHpShare: apply(def.execute.belowHpShare, get('executeBelowHpShare')),
+      // НАДБАВКА ОТ ПОЛОСКИ ПЕРЕНОСИТСЯ, А НЕ ТЕРЯЕТСЯ. Её тут не было, и
+      // «Расправа» лишалась своей главной черты — растущего порога — от
+      // ЛЮБОГО таланта, который её трогал: конвейер собирает умение заново,
+      // и поле, забытое в сборке, исчезает молча.
+      ...(def.execute.belowHpShareFromResource === undefined
+        ? {}
+        : { belowHpShareFromResource: def.execute.belowHpShareFromResource }),
     }
   }
   if (def.brand) {
