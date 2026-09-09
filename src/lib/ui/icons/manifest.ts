@@ -189,6 +189,16 @@ export const ICONS = {
 
   // --- Умения Псаря ---
   'ability-undercut': { file: 'lorc/knife-thrust.svg', author: 'Lorc' },
+  'ability-sic': { file: 'delapouite/sniffing-dog.svg', author: 'Delapouite' },
+  'ability-hamstring': { file: 'lorc/blade-bite.svg', author: 'Lorc' },
+  'ability-recall': { file: 'delapouite/whistle.svg', author: 'Delapouite' },
+  'ability-grip': { file: 'delapouite/neck-bite.svg', author: 'Delapouite' },
+  'ability-flurry': { file: 'lorc/crossed-claws.svg', author: 'Lorc' },
+  'ability-bandage': { file: 'lorc/bandage-roll.svg', author: 'Lorc' },
+  'ability-unleash': { file: 'lorc/direwolf.svg', author: 'Lorc' },
+  'ability-skulk': { file: 'lorc/hood.svg', author: 'Lorc' },
+  'ability-rally': { file: 'lorc/hunting-horn.svg', author: 'Lorc' },
+  'ability-pack': { file: 'lorc/paw-print.svg', author: 'Lorc' },
 
   // --- Таланты Псаря ---
   'talent-quick-hands': { file: 'lorc/sprint.svg', author: 'Lorc' },

@@ -41,7 +41,7 @@ import {
   REVIVE_DELAY_MS,
   xpGapShare,
 } from '../data/balance'
-import { abilityOf, grownRamp } from './abilities'
+import { abilityOf, grownRamp, houndCapacity } from './abilities'
 import { currentZone, reviveInZone } from './zones'
 import {
   advanceCooldowns,
@@ -57,6 +57,7 @@ import { classById } from '../data/classes'
 import { advancePotions, gatherHerbs } from './potions'
 import {
   HOUND_ID,
+  activeCompanion,
   advanceHounds,
   companionOf,
   freshHounds,
@@ -709,11 +710,23 @@ const applyOffhandCombat: TickStep = (s, ctx) => {
 const applyHoundTimers: TickStep = (s, ctx) => {
   if (s.hounds.length === 0) return s
   const inCombat = s.heroState === 'alive' && s.respawnMsLeft <= 0
-  const { hounds, returned } = advanceHounds(s, ctx.dtMs, inCombat)
-  if (hounds === s.hounds) return s
+  // ХВАТКА КОНЧАЕТСЯ ВМЕСТЕ С МОБОМ: держать некого — пёс отпускает. Одна
+  // проверка здесь вместо правки каждого места, где моб умирает или выходит.
+  const grip =
+    s.houndMarks.grip && (s.respawnMsLeft > 0 || s.monster.currentHp.lte(0)) ? null : s.houndMarks.grip
+  // СВОРА НЕ БОЛЬШЕ ЁМКОСТИ РЯДА: снял кнопку зова — лишний пёс уходит.
+  const capacity = houndCapacity(s)
+  const advanced = advanceHounds(s, ctx.dtMs, inCombat)
+  const hounds = advanced.hounds.length > capacity ? advanced.hounds.slice(0, capacity) : advanced.hounds
+  if (hounds === s.hounds && grip === s.houndMarks.grip) return s
   let combatLog = s.combatLog
-  for (let i = 0; i < returned; i += 1) combatLog = pushEvent(combatLog, { type: 'hound-return' })
-  return { ...s, hounds, combatLog }
+  for (let i = 0; i < advanced.returned; i += 1) combatLog = pushEvent(combatLog, { type: 'hound-return' })
+  return {
+    ...s,
+    hounds,
+    combatLog,
+    houndMarks: grip === s.houndMarks.grip ? s.houndMarks : { ...s.houndMarks, grip },
+  }
 }
 
 /**
@@ -730,8 +743,13 @@ const applyHoundTimers: TickStep = (s, ctx) => {
 const applyHoundCombat: TickStep = (s, ctx) => {
   if (s.hounds.length === 0) return s
   if (s.heroState !== 'alive' || s.respawnMsLeft > 0) return s
-  const def = companionOf(s)
-  if (!def || def.swingTime <= 0) return s
+  // ОТОЗВАННЫЙ ПЁС НЕ КУСАЕТ: он отошёл. Замах при этом не идёт — вернётся
+  // с той же долей, с какой ушёл.
+  if (s.houndMarks.recall) return s
+  const base = companionOf(s)
+  if (!base || base.swingTime <= 0) return s
+  // Травля укорачивает замах: числа спутника читаются через команды своры.
+  const def = activeCompanion(base, s.houndMarks)
   let monster = s.monster
   let combatLog = s.combatLog
   let changed = false
@@ -773,7 +791,11 @@ const applyMonsterAttack: TickStep = (s, ctx) => {
   const resourceShare = blockResourceShare(s.talents)
   // Время замаха берём через bossSwingTime: героический босс ускоряется на
   // низком здоровье, обычный отдаёт своё число как было.
-  let monsterSwing = s.monster.swingProgress + ctx.dtMs / (bossSwingTime(s) * 1000)
+  // ХВАТКА: пёс держит моба, и тот замахивается медленнее на долю — делим,
+  // а не вычитаем, чтобы замах не ушёл в ноль (тот же довод, что у ярости).
+  const gripSlow = s.houndMarks.grip?.share ?? 0
+  let monsterSwing =
+    s.monster.swingProgress + ctx.dtMs / (bossSwingTime(s) * (1 + gripSlow) * 1000)
   let monster = s.monster
   let currentHp = s.currentHp
   let currentMana = s.currentMana
@@ -782,7 +804,10 @@ const applyMonsterAttack: TickStep = (s, ctx) => {
   // Псы — локально, как и метки: за жирный тик моб бьёт дважды, и второй
   // удар обязан встретить пса уже раненым или уже павшим.
   let hounds = s.hounds
-  const companion = hounds.length > 0 ? companionOf(s) : null
+  // Доля перенаправления — с командами своры: скрадывание её поднимает,
+  // отзыв обнуляет (отошедший пёс не принимает ничего).
+  const baseCompanion = hounds.length > 0 ? companionOf(s) : null
+  const companion = baseCompanion ? activeCompanion(baseCompanion, s.houndMarks) : null
   // Метки живут ЛОКАЛЬНО в цикле ударов: за один жирный тик моб может ударить
   // дважды, и ослабление обязано сойти после первого же удара.
   let weaken = s.monsterWeaken

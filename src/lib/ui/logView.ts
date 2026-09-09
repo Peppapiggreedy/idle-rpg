@@ -92,7 +92,7 @@ export const LOG_FILTERS = {
   all: { label: 'Всё', types: null },
   damage: {
     label: 'Урон',
-    types: ['hit', 'ability', 'ability-dropped', 'ability-heal', 'effect', 'hurt', 'block', 'hound-hit', 'hound-hurt'],
+    types: ['hit', 'ability', 'ability-dropped', 'ability-heal', 'effect', 'hurt', 'block', 'hound-hit', 'hound-hurt', 'hound-command'],
   },
   loot: { label: 'Добыча', types: ['kill', 'loot', 'autosell', 'autodust', 'loot-swap', 'levelup'] },
   events: {

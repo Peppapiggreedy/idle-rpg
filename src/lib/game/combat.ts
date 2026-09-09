@@ -50,7 +50,7 @@ import {
 import { statsWithPotionPlan, statsWithoutPotions } from './potions'
 import { PROC_BY_ID, type ProcDef } from '../data/procs'
 import { SLOT_IDS } from '../data/slots'
-import { houndModel, upHounds, type HoundModel } from './hound'
+import { NO_HOUND_TUNE, houndModel, upHounds, type HoundModel, type HoundTune } from './hound'
 
 // Какой рукой бьём. Правило нормализации скорости одно на обе, отличаются
 // только база боя и штраф левой руки.
@@ -831,12 +831,15 @@ function hitStream(
   )
   let paced = killing
   for (const cast of rotation.casts) {
-    // Лечение — не удар: моба не квантует и не добивает.
-    if (cast.ability.heal) continue
-    const castRate = new Decimal(cast.castsPerSecond)
+    // Лечение — не удар: моба не квантует и не добивает. Команда псу без
+    // удара героя — тоже: её укусы идут в поток псом (см. evaluate).
+    if (cast.ability.heal || cast.hitDamage.lte(0)) continue
+    // Серия — несколько ударов за каст, каждый квантует бой и может добить.
+    const hits = cast.ability.flurry ? Math.max(1, Math.round(cast.ability.flurry.hits)) : 1
+    const castRate = new Decimal(cast.castsPerSecond).times(hits)
     if (cast.ability.type === 'instant') rate = rate.plus(castRate)
     killing = killing.plus(cast.hitDamage.times(castRate))
-    paced = paced.plus(cast.totalDamage.times(castRate))
+    paced = paced.plus(cast.totalDamage.times(cast.castsPerSecond))
   }
   // Проки считаются ПОСЛЕДНИМИ и от УЖЕ сложившегося потока: они срабатывают
   // от ударов, но сами новых бросков не порождают — прок от прока не идёт.
@@ -1234,12 +1237,6 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
   const procs = equippedProcs(s)
   const autoDps = autoDamagePerSecond(stats, doubleChance)
   const avgIncoming = expectedMonsterDamage(s.monster, stats, s.level.toNumber())
-  // СПУТНИК — ВТОРОЕ ТЕЛО, и модель обязана видеть его в ОБЕ стороны: он
-  // добавляет укусы в поток ударов и забирает долю входящего. Иначе прогноз
-  // зоны, оффлайн и обе оси считали бы героя без половины его силы, а правило
-  // «оффлайн ≤ автокаст» ломалось бы молча — тик-то пса видит. У класса без
-  // спутника — null, и ни одна формула ниже не меняется.
-  const hound = houndModel(s, s.monster)
 
   /**
    * ЧТО МЕТКИ УМЕНИЙ ДЕЛАЮТ С МОДЕЛЬЮ БОЯ.
@@ -1262,6 +1259,9 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
     let absorbPerSecond = new Decimal(0)
     let extraDps = new Decimal(0)
     let healPerSecond = new Decimal(0)
+    // КОМАНДЫ ПСУ — тем же первым порядком: доля × аптайм команды. Нули у
+    // класса без пса, и модель пса тогда не меняется ни на одно число.
+    const hound: HoundTune = { ...NO_HOUND_TUNE }
     // Полный урон эффекта по времени, который может съесть детонатор, и как
     // часто такой эффект вообще накладывают.
     let dotRate = 0
@@ -1344,6 +1344,33 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
         const uptime = Math.min(1, rate * a.edge.durationSec)
         outgoing = outgoing.times(1 + a.edge.damagePerShare * over * uptime)
       }
+      // ТРАВЛЯ живёт на своре и боем не ограничена: аптайм — длительность к
+      // фактическому темпу команды.
+      if (a.houndHaste) {
+        hound.hasteShare += a.houndHaste.share * Math.min(1, rate * a.houndHaste.durationSec)
+      }
+      // ОТЗЫВ: долю времени пёс молчит и не принимает урона, а лечение за
+      // всё время отзыва размазывается по секундам — как реген.
+      if (a.recall) {
+        hound.silentShare += Math.min(1, rate * a.recall.durationSec)
+        hound.healPerSecShare += a.recall.healShare * rate
+      }
+      // ХВАТКА держит МОБА и дольше боя не живёт: замах моба длиннее на долю
+      // своего аптайма — то есть ударов за бой меньше, и это входящее и по
+      // герою, и по псу.
+      if (a.grip) {
+        const uptime = Math.min(1, rate * Math.min(a.grip.durationSec, fightSec))
+        hound.slowShare += a.grip.slowShare * uptime
+        incoming *= 1 - uptime + uptime / (1 + a.grip.slowShare)
+      }
+      // ПЕРЕВЯЗКА — лечение пса, привязанное к касту: как реген его запаса.
+      if (a.houndHeal) hound.healPerSecShare += a.houndHeal.maxHpShare * rate
+      // СКРАДЫВАНИЕ: доля перенаправления выше на долю своего аптайма.
+      if (a.skulk) hound.redirectBonus += a.skulk.redirectBonus * Math.min(1, rate * a.skulk.durationSec)
+      // ОКЛИК жмётся, когда пёс лёг: ждать его в среднем полцикла отката.
+      if (a.rally && rate > 0) hound.rallyWaitSec = Math.min(hound.rallyWaitSec, 0.5 / rate)
+      // СВОРА зовёт псов, которых на поле ещё нет.
+      if (a.pack) hound.extraHounds += Math.max(0, Math.round(a.pack.extraHounds))
     }
     return {
       outgoing,
@@ -1351,6 +1378,7 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
       absorbPerSecond,
       healPerSecond,
       extraDps: extraDps.times(critFactor(stats)),
+      hound,
     }
   }
   type AbilityMods = ReturnType<typeof abilityMods>
@@ -1360,10 +1388,43 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
     absorbPerSecond: new Decimal(0),
     healPerSecond: new Decimal(0),
     extraDps: new Decimal(0),
+    hound: NO_HOUND_TUNE,
+  }
+
+  /**
+   * УРОН КОМАНД ПСУ, которого нет в ротации: подрез (удар героя сильнее при
+   * стоящем псе), спуск (укус по команде во много раз сильнее) и серия (пёс
+   * кусает на каждый удар). Все три растут от того, сколько псов стоит В
+   * СРЕДНЕМ — а это знает только модель пса, поэтому считается здесь, а не в
+   * `abilityMods`. Без крита: `evaluate` навешивает его на весь поток.
+   */
+  const commandDamage = (rot: RotationRate, hound: HoundModel | null): Decimal => {
+    if (!hound || hound.standing <= 0) return new Decimal(0)
+    let dps = new Decimal(0)
+    const anyStanding = Math.min(1, hound.standing)
+    for (const cast of rot.casts) {
+      const a = cast.ability
+      const rate = cast.castsPerSecond
+      if (rate <= 0) continue
+      if (a.packStrike) dps = dps.plus(cast.hitDamage.times(a.packStrike.bonusShare * anyStanding * rate))
+      if (a.unleash) dps = dps.plus(hound.hit.times(a.unleash.biteMult * hound.standing * rate))
+      if (a.flurry) {
+        const hits = Math.max(1, Math.round(a.flurry.hits))
+        dps = dps.plus(hound.hit.times(hits * hound.standing * rate))
+      }
+    }
+    return dps
   }
 
   // ОДИН ПРОХОД МОДЕЛИ БОЯ: от ротации до валовой потери за бой.
   const evaluate = (rot: RotationRate, mods: AbilityMods = NEUTRAL_MODS) => {
+    // СПУТНИК — ВТОРОЕ ТЕЛО, и модель обязана видеть его в ОБЕ стороны: он
+    // добавляет укусы в поток ударов и забирает долю входящего. Иначе прогноз
+    // зоны, оффлайн и обе оси считали бы героя без половины его силы, а
+    // правило «оффлайн ≤ автокаст» ломалось бы молча — тик-то пса видит.
+    // Команды псу из ротации меняют его числа тем же первым порядком. У класса
+    // без спутника — null, и ни одна формула ниже не меняется.
+    const hound = houndModel(s, s.monster, mods.hound)
     // Поток ударов считается ОДИН раз и уходит и в перебой, и в длину боя, и в
     // урон проков: две копии этого расчёта разошлись бы на первой же правке.
     const stream = hitStream(stats, rot, doubleChance, procs, hound)
@@ -1387,7 +1448,10 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
     // Укусы пса — поверх, без меток героя: стойка и разгон про его руку, а
     // клеймо на цели модель первого порядка псу не приписывает (в тике оно
     // его укус множит — расхождение в сторону занижения, и оно записано).
-    const raw = hound && hound.dps.gt(0) ? heroRaw.plus(hound.dps) : heroRaw
+    const raw =
+      hound && hound.dps.gt(0)
+        ? heroRaw.plus(hound.dps).plus(commandDamage(rot, hound).times(critFactor(stats)))
+        : heroRaw
     const perKill = damagePerKill(s, plan, stream)
     const damagePerSecond = raw.times(s.monster.maxHp.div(perKill))
     // Длина боя — СРЕДНЕЕ число ударов потока на убийство, дробное. Перебой

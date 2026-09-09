@@ -154,6 +154,26 @@
         return `Пёс пал! Вернётся через ${Math.round(e.returnMs / 1000)} с`
       case 'hound-return':
         return 'Пёс снова в строю'
+      case 'hound-command': {
+        // Что сделал пёс — по флагам умения, а не по его id: новая команда
+        // с тем же флагом получит ту же строку без правки здесь.
+        const ability = ABILITY_BY_ID[e.abilityId]
+        const name = ability?.name ?? 'Команда'
+        const did = ability?.recall
+          ? 'пёс отходит зализать раны'
+          : ability?.houndHeal
+            ? 'пёс перевязан'
+            : ability?.unleash
+              ? 'пёс спущен на цель'
+              : ability?.skulk
+                ? 'пёс принимает удары на себя'
+                : ability?.rally
+                  ? 'пёс поднят на ноги'
+                  : ability?.pack
+                    ? 'к своре примкнул ещё пёс'
+                    : 'команда псу'
+        return `${name}: ${did}`
+      }
       case 'hurt':
         return `${e.monsterName} бьёт: −${formatNumber(e.damage)} здоровья`
       case 'block':
@@ -231,6 +251,7 @@
     'hound-hurt': 'class-houndmaster',
     'hound-down': 'class-houndmaster',
     'hound-return': 'class-houndmaster',
+    'hound-command': 'class-houndmaster',
   }
 
   /** Свёрнутая строка: «12 ударов, 1.2K урона» вместо двенадцати строк. */

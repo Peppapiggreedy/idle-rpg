@@ -13,7 +13,7 @@ import { Decimal } from './numbers'
 import { classById, type CompanionDef } from '../data/classes'
 import { critFactor, expectedMonsterDamage, expectedSwingDamage, rollSwing } from './combat'
 import type { Rng } from './rng'
-import type { GameState } from './state'
+import type { GameState, HoundMarks } from './state'
 import type { StatBlock } from './stats'
 import type { Monster } from '../types'
 
@@ -32,6 +32,23 @@ export interface HoundState {
 
 export function companionOf(state: Pick<GameState, 'classId'>): CompanionDef | null {
   return classById(state.classId).companion ?? null
+}
+
+/**
+ * КОМАНДЫ, ДЕРЖАЩИЕСЯ ВРЕМЯ, МЕНЯЮТ ЧИСЛА СПУТНИКА НА ЛЕТУ: травля укорачивает
+ * замах, скрадывание поднимает долю перенаправления, отзыв её обнуляет — пёс
+ * отошёл и не принимает ничего. Одна функция на тик и на модель: две копии
+ * этой арифметики разъехались бы на первой правке.
+ */
+export function activeCompanion(def: CompanionDef, marks: HoundMarks): CompanionDef {
+  const recalled = marks.recall !== null
+  const haste = marks.haste?.share ?? 0
+  const bonus = marks.skulk?.share ?? 0
+  return {
+    ...def,
+    swingTime: haste > 0 ? def.swingTime / (1 + haste) : def.swingTime,
+    redirectShare: recalled ? 0 : Math.min(1, def.redirectShare + bonus),
+  }
 }
 
 /** Запас пса — доля запаса героя: растёт с ним, своей лестницы у пса нет. */
@@ -82,7 +99,9 @@ export function advanceHounds(
   const def = companionOf(state)
   if (!def || state.hounds.length === 0) return { hounds: state.hounds, returned: 0 }
   const max = houndMaxHp(state)
-  const share = inCombat ? def.regenShare.inCombat : def.regenShare.outOfCombat
+  // ОТЗЫВ ЛЕЧИТ ПОВЕРХ обычного восстановления: пёс отошёл и зализывает раны.
+  const recallShare = state.houndMarks.recall?.share ?? 0
+  const share = (inCombat ? def.regenShare.inCombat : def.regenShare.outOfCombat) + recallShare
   let returned = 0
   const hounds = state.hounds.map((h) => {
     if (h.downMsLeft > 0) {
@@ -144,6 +163,40 @@ export interface HoundModel {
   dps: Decimal
   /** Доля входящего по герою, которую забирает пёс, с учётом «на ногах». */
   redirect: number
+  /** Псов на ногах в среднем: стоящие сейчас (плюс зов своры) × доля «на ногах». */
+  standing: number
+}
+
+/**
+ * ЧТО КОМАНДЫ ПСУ ДЕЛАЮТ С МОДЕЛЬЮ. Все доли уже УМНОЖЕНЫ НА АПТАЙМ команды
+ * (сколько времени она держится на длинном ряду боёв) — первого порядка, как
+ * метки героя в `abilityMods`. Нули — команд нет, и модель та же, что была.
+ */
+export interface HoundTune {
+  /** Травля: доля ускорения укусов. */
+  hasteShare: number
+  /** Отзыв: доля времени, когда пёс не кусает и не принимает урона. */
+  silentShare: number
+  /** Отзыв и перевязка: лечение пса, доля его запаса в секунду. */
+  healPerSecShare: number
+  /** Скрадывание: прибавка к доле перенаправления. */
+  redirectBonus: number
+  /** Хватка: доля замедления замаха моба. */
+  slowShare: number
+  /** Оклик: ожидаемое время лежания с окликом, секунд; бесконечность — оклика нет. */
+  rallyWaitSec: number
+  /** Свора: сколько псов зовёт умение в ряду сверх стоящих сейчас. */
+  extraHounds: number
+}
+
+export const NO_HOUND_TUNE: HoundTune = {
+  hasteShare: 0,
+  silentShare: 0,
+  healPerSecShare: 0,
+  redirectBonus: 0,
+  slowShare: 0,
+  rallyWaitSec: Number.POSITIVE_INFINITY,
+  extraHounds: 0,
 }
 
 /**
@@ -159,36 +212,53 @@ export interface HoundModel {
 export function houndModel(
   state: Pick<GameState, 'classId' | 'stats' | 'hounds' | 'level'>,
   monster: Monster,
+  tune: HoundTune = NO_HOUND_TUNE,
 ): HoundModel | null {
   const def = companionOf(state)
   if (!def) return null
-  const up = upHounds(state).length
-  if (up === 0) return { rate: new Decimal(0), hit: new Decimal(0), dps: new Decimal(0), redirect: 0 }
+  const empty = { rate: new Decimal(0), hit: new Decimal(0), dps: new Decimal(0), redirect: 0, standing: 0 }
+  // Свора зовёт псов, которых сейчас на поле нет: модель считает их стоящими,
+  // иначе умение, вся работа которого — второй пёс, мерилось бы нулём.
+  const up = upHounds(state).length + Math.max(0, tune.extraHounds)
+  if (up === 0) return empty
   const stats = state.stats
   const max = houndMaxHp(state)
   // Входящее по герою в секунду — после его смягчения и блока, как в тике.
+  // Хватка удлиняет замах моба на долю своего аптайма.
+  const slowed = monster.swingTime * (1 + Math.max(0, tune.slowShare))
   const incomingPerSec =
-    monster.swingTime > 0 && monster.damageMax.gt(0)
-      ? expectedMonsterDamage(monster, stats, state.level.toNumber()).div(monster.swingTime)
+    slowed > 0 && monster.damageMax.gt(0)
+      ? expectedMonsterDamage(monster, stats, state.level.toNumber()).div(slowed)
       : new Decimal(0)
+  // Отзыв снимает с пса урон на свою долю времени; скрадывание добавляет.
+  const redirectShare =
+    Math.min(1, def.redirectShare + Math.max(0, tune.redirectBonus)) *
+    (1 - Math.min(1, Math.max(0, tune.silentShare)))
   const lossPerSec = incomingPerSec
-    .times(def.redirectShare)
-    .minus(max.times(def.regenShare.inCombat))
-  // Стоит, пока запас держит перенаправленное; лежит `returnSec`.
+    .times(redirectShare)
+    .minus(max.times(def.regenShare.inCombat + Math.max(0, tune.healPerSecShare)))
+  // Стоит, пока запас держит перенаправленное; лежит `returnSec` — или
+  // меньше, если в ряду оклик.
+  const downSec = Math.min(def.returnSec, tune.rallyWaitSec)
   const aliveShare =
     lossPerSec.lte(0) || max.lte(0)
       ? 1
       : (() => {
           const untilFall = max.div(lossPerSec).toNumber()
-          return untilFall / (untilFall + def.returnSec)
+          return untilFall / (untilFall + downSec)
         })()
   const hit = expectedSwingDamage(stats).times(def.hitShare)
-  const rate = new Decimal(up).div(def.swingTime).times(aliveShare)
+  const swingTime = def.swingTime / (1 + Math.max(0, tune.hasteShare))
+  const standing = up * aliveShare
+  const rate = new Decimal(standing)
+    .div(swingTime)
+    .times(1 - Math.min(1, Math.max(0, tune.silentShare)))
   return {
     rate,
     hit,
     dps: hit.times(rate).times(critFactor(stats)),
-    redirect: def.redirectShare * aliveShare,
+    redirect: redirectShare * aliveShare,
+    standing,
   }
 }
 

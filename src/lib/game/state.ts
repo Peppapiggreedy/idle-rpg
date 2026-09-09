@@ -152,6 +152,13 @@ export interface GameState {
    */
   absorb: HeroAbsorb | null
   /**
+   * КОМАНДЫ ПСУ, КОТОРЫЕ ДЕРЖАТСЯ ВРЕМЯ: травля, отзыв, хватка, скрадывание.
+   * Живут на СВОРЕ (одним объектом на всех псов), а не на мобе и не на герое,
+   * тикают тем же игровым временем, что откаты, и в сейв не пишутся — как и
+   * всё, что висит секунду боя. У класса без пса — пустые.
+   */
+  houndMarks: HoundMarks
+  /**
    * РЯД ДЕЙСТВИЙ: какие умения герой носит и в каком порядке. Индекс — и
    * место кнопки под сценой, и приоритет автокаста. `null` — пустой слот.
    */
@@ -339,6 +346,27 @@ export interface HeroEdge {
   damagePerShare: number
   msLeft: number
 }
+
+/** Одна команда псу с длительностью; см. `HoundMarks`. */
+export interface HoundMark {
+  /** Число команды: доля ускорения, доля лечения в секунду, доля замедления, прибавка к перенаправлению. */
+  share: number
+  msLeft: number
+}
+
+/** Команды псу, которые держатся время: см. поле `houndMarks`. */
+export interface HoundMarks {
+  /** Травля: пёс кусает чаще на долю. */
+  haste: HoundMark | null
+  /** Отзыв: пёс не кусает, не принимает урона, лечится на долю запаса в секунду. */
+  recall: HoundMark | null
+  /** Хватка: моб замахивается медленнее на долю. */
+  grip: HoundMark | null
+  /** Скрадывание: доля перенаправления выше на долю. */
+  skulk: HoundMark | null
+}
+
+export const NO_HOUND_MARKS: HoundMarks = { haste: null, recall: null, grip: null, skulk: null }
 
 /** Упор героя: см. поле `resolve`. */
 export interface HeroResolve {
@@ -668,6 +696,7 @@ export function createInitialState(
     ramp: null,
     edge: null,
     absorb: null,
+    houndMarks: NO_HOUND_MARKS,
     abilitySlots: defaultAbilitySlots(hero.id),
     abilitySettings: defaultAbilitySettings(hero.id),
     autocastReadyMs: {},

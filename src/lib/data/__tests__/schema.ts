@@ -389,6 +389,18 @@ function checkNumber<T>(
 const idsOf = <T>(list: readonly T[], id: (e: T) => string | undefined): Set<string> =>
   new Set(list.map(id).filter((v): v is string => typeof v === 'string'))
 
+/** Команда псу без удара героя: поддержка, которой можно бить нулём. */
+function houndSupport(a: AbilityDef): boolean {
+  return Boolean(a.recall || a.houndHeal || a.unleash || a.skulk || a.rally || a.pack)
+}
+
+/** Умение адресовано псу или читает его состояние. */
+function commandsHound(a: AbilityDef): boolean {
+  return Boolean(
+    a.houndHaste || a.packStrike || a.recall || a.grip || a.flurry || a.houndHeal || a.unleash || a.skulk || a.rally || a.pack,
+  )
+}
+
 export const ABILITY_SCHEMA: EntitySchema<AbilityDef> = {
   kind: 'умение',
   file: 'data/abilities.ts',
@@ -463,16 +475,82 @@ export const ABILITY_SCHEMA: EntitySchema<AbilityDef> = {
         'data/abilities.ts',
         report,
       )
-    } else if (!ability.absorb && !ability.edge) {
-      // ПОДДЕРЖКА МОЖЕТ НЕ БИТЬ, БОЕВОЕ УМЕНИЕ — ОБЯЗАНО. Поддержка это три
-      // вещи и ровно три: лечение, поглощение и ПОРОГ (`edge` — умение, вся
-      // работа которого в том, чтобы включить состояние). Список назван здесь
-      // ПОИМЁННО намеренно: новый флаг, который тоже не бьёт, обязан
-      // появиться в этой строке — иначе умение с нулевым уроном проедет молча.
+    } else if (!ability.absorb && !ability.edge && !houndSupport(ability)) {
+      // ПОДДЕРЖКА МОЖЕТ НЕ БИТЬ, БОЕВОЕ УМЕНИЕ — ОБЯЗАНО. Поддержка это
+      // лечение, поглощение, ПОРОГ (`edge` — умение, вся работа которого в
+      // том, чтобы включить состояние) и КОМАНДЫ ПСУ БЕЗ УДАРА (отзыв,
+      // перевязка, спуск, скрадывание, оклик, свора — бьёт пёс или никто).
+      // Список назван ПОИМЁННО намеренно: новый флаг, который тоже не бьёт,
+      // обязан появиться в `houndSupport` или здесь — иначе умение с нулевым
+      // уроном проедет молча.
       report.need(
         toNumber(ability.weaponDamagePercent) > 0,
         where,
-        'урон умения — доля удара оружия (weaponDamagePercent), и она обязана быть положительной; ноль — только у поддержки (heal, absorb или edge) (data/abilities.ts)',
+        'урон умения — доля удара оружия (weaponDamagePercent), и она обязана быть положительной; ноль — только у поддержки (heal, absorb, edge или команда псу) (data/abilities.ts)',
+      )
+    }
+    // КОМАНДЫ ПСУ — ТОЛЬКО У КЛАССА СО СПУТНИКОМ. У класса без пса такое
+    // умение мертво: команда без адресата не делает ничего, а кнопка есть.
+    if (commandsHound(ability)) {
+      const owner = _content.classes.find((c) => c.abilityIds.includes(ability.id))
+      report.need(
+        owner === undefined || owner.companion !== undefined,
+        where,
+        `команда псу у класса «${owner?.id}» без спутника (companion в data/classes.ts) — умение мертво`,
+      )
+    }
+    // ЧИСЛА КОМАНД ПСУ: доли в 0..1 (кроме множителя укуса и счётчиков),
+    // длительности положительны, штучное — целое и не меньше единицы.
+    const shareRule = (field: string, value: number | undefined, max = 1) => {
+      if (value === undefined) return
+      checkNumber(
+        { value },
+        { field, get: (v) => v.value, min: 0, exclusiveMin: true, max },
+        where,
+        'data/abilities.ts',
+        report,
+      )
+    }
+    const positiveRule = (field: string, value: number | undefined) => {
+      if (value === undefined) return
+      checkNumber(
+        { value },
+        { field, get: (v) => v.value, min: 0, exclusiveMin: true },
+        where,
+        'data/abilities.ts',
+        report,
+      )
+    }
+    const countRule = (field: string, value: number | undefined, min: number) => {
+      if (value === undefined) return
+      checkNumber(
+        { value },
+        { field, get: (v) => v.value, min, integer: true },
+        where,
+        'data/abilities.ts',
+        report,
+      )
+    }
+    shareRule('houndHaste.share', ability.houndHaste?.share, 2)
+    positiveRule('houndHaste.durationSec', ability.houndHaste?.durationSec)
+    shareRule('packStrike.bonusShare', ability.packStrike?.bonusShare, 2)
+    positiveRule('recall.durationSec', ability.recall?.durationSec)
+    shareRule('recall.healShare', ability.recall?.healShare)
+    shareRule('grip.slowShare', ability.grip?.slowShare)
+    positiveRule('grip.durationSec', ability.grip?.durationSec)
+    countRule('flurry.hits', ability.flurry?.hits, 2)
+    shareRule('houndHeal.maxHpShare', ability.houndHeal?.maxHpShare)
+    shareRule('houndHeal.autocastBelowHpShare', ability.houndHeal?.autocastBelowHpShare)
+    positiveRule('unleash.biteMult', ability.unleash?.biteMult)
+    shareRule('skulk.redirectBonus', ability.skulk?.redirectBonus)
+    positiveRule('skulk.durationSec', ability.skulk?.durationSec)
+    shareRule('rally.hpShare', ability.rally?.hpShare)
+    countRule('pack.extraHounds', ability.pack?.extraHounds, 1)
+    if (ability.unleash) {
+      report.need(
+        ability.unleash.biteMult > 1,
+        where,
+        'спуск — укус СИЛЬНЕЕ обычного: множитель обязан быть больше единицы (data/abilities.ts)',
       )
     }
     // ОСЛАБЛЕНИЕ: доля и число ударов.
@@ -779,6 +857,7 @@ export const ABILITY_SCHEMA: EntitySchema<AbilityDef> = {
         { field: 'autocast.heroHpAbove', get: (a: typeof ability.autocast) => a!.heroHpAbove },
         { field: 'autocast.targetHpAbove', get: (a: typeof ability.autocast) => a!.targetHpAbove },
         { field: 'autocast.resourceBelow', get: (a: typeof ability.autocast) => a!.resourceBelow },
+        { field: 'autocast.houndHpBelow', get: (a: typeof ability.autocast) => a!.houndHpBelow },
       ]) {
         if (spec.get(ability.autocast) === undefined) continue
         checkNumber(
@@ -4064,6 +4143,23 @@ const TUNE_NEEDS: Record<AbilityTuneField | 'type', (a: AbilityDef) => boolean> 
   edgeDamagePerShare: (a) => a.edge !== undefined,
   edgeDurationSec: (a) => a.edge !== undefined,
   edgeResourceAbove: (a) => a.edge !== undefined,
+  // Команды псу: поле подкреплено своим флагом.
+  houndHasteShare: (a) => a.houndHaste !== undefined,
+  houndHasteDurationSec: (a) => a.houndHaste !== undefined,
+  packStrikeBonusShare: (a) => a.packStrike !== undefined,
+  recallDurationSec: (a) => a.recall !== undefined,
+  recallHealShare: (a) => a.recall !== undefined,
+  gripSlowShare: (a) => a.grip !== undefined,
+  gripDurationSec: (a) => a.grip !== undefined,
+  flurryHits: (a) => a.flurry !== undefined,
+  houndHealMaxHpShare: (a) => a.houndHeal !== undefined,
+  houndHealAutocastBelowHpShare: (a) => a.houndHeal !== undefined,
+  unleashBiteMult: (a) => a.unleash !== undefined,
+  skulkRedirectBonus: (a) => a.skulk !== undefined,
+  skulkDurationSec: (a) => a.skulk !== undefined,
+  rallyHpShare: (a) => a.rally !== undefined,
+  packExtraHounds: (a) => a.pack !== undefined,
+  autocastHoundHpBelow: (a) => a.autocast?.houndHpBelow !== undefined,
 }
 
 function checkTalentTunes(content: Content, report: Report): void {

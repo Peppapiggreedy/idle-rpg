@@ -415,10 +415,19 @@ function fundPlan(
           )
         : ability.weaponDamagePercent,
     )
+    // СЕРИЯ — несколько ударов за применение: в урон каста они входят все, а
+    // добить моба может любой из них — `hitDamage` остаётся ОДНИМ ударом, и
+    // поток ударов (`hitStream`) кладёт их по числу.
+    const hits = ability.flurry ? Math.max(1, Math.round(ability.flurry.hits)) : 1
     // Интервал между кастами — по фактическому темпу, а не по откату: маны
     // может не хватать, и тогда касты реже, а тиков эффекта между ними ложится
     // больше.
-    const totalDamage = withEffect(stats, ability, hitDamage, new Decimal(1).div(castsPerSecond).toNumber())
+    const totalDamage = withEffect(
+      stats,
+      ability,
+      hitDamage.times(hits),
+      new Decimal(1).div(castsPerSecond).toNumber(),
+    )
     manaBudget = manaBudget.minus(manaWanted.times(share))
     manaSpent = manaSpent.plus(manaWanted.times(share))
     damage = damage.plus(totalDamage.times(castsPerSecond))

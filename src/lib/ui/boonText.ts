@@ -53,6 +53,23 @@ export const TUNE_FIELD_NAME: Record<AbilityTuneField | 'type', string> = {
   leechHealShareFromResource: 'вампиризм от полоски',
   autocastResourceAbove: 'порог автокаста по ресурсу',
   autocastHeroHpAbove: 'порог автокаста',
+  // Команды псу.
+  houndHasteShare: 'ускорение пса',
+  houndHasteDurationSec: 'длительность травли',
+  packStrikeBonusShare: 'прибавка от пса',
+  recallDurationSec: 'длительность отзыва',
+  recallHealShare: 'лечение при отзыве',
+  gripSlowShare: 'замедление хваткой',
+  gripDurationSec: 'длительность хватки',
+  flurryHits: 'ударов в серии',
+  houndHealMaxHpShare: 'лечение пса',
+  houndHealAutocastBelowHpShare: 'порог перевязки',
+  unleashBiteMult: 'укус спуска',
+  skulkRedirectBonus: 'доля пса при скрадывании',
+  skulkDurationSec: 'длительность скрадывания',
+  rallyHpShare: 'здоровье при оклике',
+  packExtraHounds: 'псов в своре',
+  autocastHoundHpBelow: 'порог команды по псу',
 }
 
 /** Одна правка человеческим текстом: «лечение +40 %». */

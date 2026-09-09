@@ -177,6 +177,9 @@ export type CombatEvent =
   | { type: 'hound-hurt'; damage: Decimal; monsterName: string }
   | { type: 'hound-down'; returnMs: number }
   | { type: 'hound-return' }
+  // КОМАНДА ПСУ без урона героя: отзыв, перевязка, спуск, скрадывание, оклик,
+  // свора. Что именно сделал пёс, интерфейс читает по флагам умения.
+  | { type: 'hound-command'; abilityId: string }
 
 // Активный забег по данжу. Хранится в состоянии и в сейве: цепочку можно
 // продолжить после перезагрузки, но не после смерти внутри.

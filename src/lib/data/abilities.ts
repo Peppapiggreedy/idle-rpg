@@ -260,6 +260,11 @@ export interface AbilityAutocast {
    * систематически тратил бы откат на слабый удар.
    */
   resourceAbove?: number
+  /**
+   * Только пока самый раненый СТОЯЩИЙ пёс ниже этой доли своего запаса.
+   * Команда лечить или отозвать целого пса — потраченный откат.
+   */
+  houndHpBelow?: number
 }
 
 /**
@@ -311,6 +316,100 @@ export interface AbilityEdge {
   /** Прибавка к урону при ПОЛНОЙ полоске, доля. Между порогом и полной — линейно. */
   damagePerShare: number
   durationSec: number
+}
+
+/**
+ * КОМАНДЫ ПСУ — ФЛАГИ ПСАРЯ. Все до одного адресованы ВТОРОМУ ТЕЛУ, а не
+ * цели и не герою: класс спрашивает у боя «что сейчас делает пёс». Числа
+ * лежат payload'ом рядом с флагом, логика читает флаг и не знает id умения.
+ * У класса без спутника (`companion` в data/classes.ts) такие умения были бы
+ * мёртвыми — это держит `content:check`.
+ */
+
+/** ТРАВЛЯ: пёс кусает чаще — его замах короче на долю, пока держится. */
+export interface AbilityHoundHaste {
+  /** На сколько быстрее кусает пёс, доля. */
+  share: number
+  durationSec: number
+}
+
+/**
+ * ПОДРЕЗ: удар героя сильнее, если пёс СЕЙЧАС на ногах и грызёт ту же цель.
+ * Это чтение состояния пса, а не метка на цели: висит на нём ничего не
+ * остаётся, а прибавка живёт ровно один удар.
+ */
+export interface AbilityPackStrike {
+  /** Прибавка к урону удара, доля. */
+  bonusShare: number
+}
+
+/**
+ * ОТЗЫВ: пёс отходит — не кусает, не принимает перенаправленного урона и
+ * зализывает раны. Цена урона за живучесть второго тела.
+ */
+export interface AbilityRecall {
+  durationSec: number
+  /** Сколько своего запаса пёс возвращает за всё время отзыва, доля. */
+  healShare: number
+}
+
+/**
+ * ХВАТКА: пёс держит моба — тот замахивается медленнее. Состояние на псе,
+ * а не метка на мобе: кончится удержание или моб — кончится и хватка.
+ */
+export interface AbilityGrip {
+  /** На сколько длиннее замах моба, доля. */
+  slowShare: number
+  durationSec: number
+}
+
+/** СЕРИЯ: несколько коротких ударов за одну цену; пёс кусает на каждый. */
+export interface AbilityFlurry {
+  /** Ударов за применение, целое. */
+  hits: number
+}
+
+/**
+ * ПЕРЕВЯЗКА: лечит стоящих псов долей ИХ запаса. Зеркало `heal`, только
+ * адресат — второе тело; порог автокаста читает самого раненого пса.
+ */
+export interface AbilityHoundHeal {
+  maxHpShare: number
+  /** Автокаст жмёт, пока самый раненый стоящий пёс ниже этой доли. */
+  autocastBelowHpShare: number
+}
+
+/** СПУСК: каждый стоящий пёс кусает сразу и во много раз сильнее; герой не бьёт. */
+export interface AbilityUnleash {
+  /** Множитель к укусу. */
+  biteMult: number
+}
+
+/**
+ * СКРАДЫВАНИЕ: герой берёт на себя меньше, пёс — больше. Доля
+ * перенаправления растёт на время; это обмен живучести героя на живучесть
+ * пса, а не смягчение.
+ */
+export interface AbilitySkulk {
+  /** Прибавка к доле перенаправления, доля. */
+  redirectBonus: number
+  durationSec: number
+}
+
+/** ОКЛИК: павший пёс встаёт раньше срока с долей запаса. */
+export interface AbilityRally {
+  /** С какой долей запаса встаёт, 0..1. */
+  hpShare: number
+}
+
+/**
+ * СВОРА: зовёт ещё псов. Держится, пока умение стоит в ряду: снял кнопку —
+ * лишний пёс уходит (`houndCapacity`). Повторный зов при полной своре
+ * отказывает кодом `pack-full`.
+ */
+export interface AbilityPack {
+  /** Сколько псов сверх комплекта класса. */
+  extraHounds: number
 }
 
 export interface AbilityDef {
@@ -366,6 +465,17 @@ export interface AbilityDef {
   ramp?: AbilityRamp
   /** Грань: урон от избытка ресурса, пока держится: см. AbilityEdge. */
   edge?: AbilityEdge
+  /** Команды псу — флаги Псаря; см. интерфейсы выше. */
+  houndHaste?: AbilityHoundHaste
+  packStrike?: AbilityPackStrike
+  recall?: AbilityRecall
+  grip?: AbilityGrip
+  flurry?: AbilityFlurry
+  houndHeal?: AbilityHoundHeal
+  unleash?: AbilityUnleash
+  skulk?: AbilitySkulk
+  rally?: AbilityRally
+  pack?: AbilityPack
   /**
    * ТРАТИТ ВЕСЬ ТЕКУЩИЙ РЕСУРС, а не `manaCost`. Осмысленно только вместе с
    * `weaponDamageFromResource`: платить всем, что есть, стоит лишь за удар,
@@ -445,6 +555,24 @@ export const ABILITY_TUNABLE = {
   brandAutocastAboveHpShare: 'shift',
   healAutocastBelowHpShare: 'shift',
   autocastHeroHpAbove: 'shift',
+  // Команды псу. Величины масштабируются, пороги сдвигаются в пунктах — по
+  // тому же правилу, что и у прочих полей.
+  houndHasteShare: 'scale',
+  houndHasteDurationSec: 'scale',
+  packStrikeBonusShare: 'scale',
+  recallDurationSec: 'scale',
+  recallHealShare: 'scale',
+  gripSlowShare: 'scale',
+  gripDurationSec: 'scale',
+  flurryHits: 'scale',
+  houndHealMaxHpShare: 'scale',
+  unleashBiteMult: 'scale',
+  skulkRedirectBonus: 'scale',
+  skulkDurationSec: 'scale',
+  rallyHpShare: 'scale',
+  packExtraHounds: 'scale',
+  houndHealAutocastBelowHpShare: 'shift',
+  autocastHoundHpBelow: 'shift',
 } as const
 
 export type AbilityTuneField = keyof typeof ABILITY_TUNABLE
@@ -931,10 +1059,176 @@ export const ABILITIES: AbilityDef[] = [
     name: 'Подсечка',
     type: 'instant',
     unlockLevel: 1,
-    manaCost: new Decimal(20),
+    // ТРЕТЬ ШКАЛЫ, а не пятая часть, как стояло в стадии класса: спецификация
+    // энергии — «умение стоит треть-половину шкалы», и заполнитель не
+    // исключение. Один заполнитель уже дороже регенерации (30 за 2 с против
+    // 12 в секунду), то есть полоска ходит от полной к пустой с первой кнопки.
+    manaCost: new Decimal(30),
     cooldownSec: 2,
     weaponDamagePercent: new Decimal(1.5),
     triggersGcd: true,
+  },
+  {
+    // ТРАВЛЯ — КОМАНДА ПСУ: восемь секунд он кусает в полтора раза чаще.
+    // Сам удар героя лёгкий — это команда, а не удар. Без стоящего пса
+    // отказывает кодом: травить некого.
+    id: 'sic',
+    icon: 'ability-sic',
+    name: 'Травля',
+    type: 'instant',
+    unlockLevel: 2,
+    manaCost: new Decimal(35),
+    cooldownSec: 12,
+    weaponDamagePercent: new Decimal(1.0),
+    triggersGcd: true,
+    houndHaste: { share: 0.5, durationSec: 8 },
+  },
+  {
+    // ПОДРЕЗ — УДАР, ЧИТАЮЩИЙ ПСА: пока пёс на ногах и грызёт ту же цель,
+    // удар на шесть десятых сильнее. Прибавка живёт один удар и ничего не
+    // оставляет на цели — это чтение состояния второго тела, не метка.
+    id: 'hamstring',
+    icon: 'ability-hamstring',
+    name: 'Подрез',
+    type: 'instant',
+    unlockLevel: 4,
+    manaCost: new Decimal(40),
+    cooldownSec: 6,
+    weaponDamagePercent: new Decimal(1.6),
+    triggersGcd: true,
+    packStrike: { bonusShare: 0.6 },
+  },
+  {
+    // ОТЗЫВ — ПЁС ОТХОДИТ на пять секунд: не кусает, не принимает урона и
+    // возвращает половину запаса. Автокаст зовёт его только раненым (ниже
+    // половины): отозвать целого пса — потерять его укусы даром.
+    id: 'recall',
+    icon: 'ability-recall',
+    name: 'Отзыв',
+    type: 'instant',
+    unlockLevel: 6,
+    manaCost: new Decimal(35),
+    cooldownSec: 18,
+    weaponDamagePercent: new Decimal(0),
+    triggersGcd: true,
+    recall: { durationSec: 5, healShare: 0.5 },
+    autocast: { houndHpBelow: 0.5 },
+  },
+  {
+    // ХВАТКА — ПЁС ДЕРЖИТ МОБА: шесть секунд тот замахивается на треть
+    // медленнее. Порог автокаста по цели — тот самый `targetHpAbove`, что
+    // лежал в данных без единого умения: держать умирающего незачем.
+    id: 'grip',
+    icon: 'ability-grip',
+    name: 'Хватка',
+    type: 'instant',
+    unlockLevel: 8,
+    manaCost: new Decimal(40),
+    cooldownSec: 14,
+    weaponDamagePercent: new Decimal(0.8),
+    triggersGcd: true,
+    grip: { slowShare: 0.35, durationSec: 6 },
+    autocast: { targetHpAbove: 0.35 },
+  },
+  {
+    // СЕРИЯ — ТРИ КОРОТКИХ УДАРА ЗА ОДНУ ЦЕНУ, и пёс кусает на каждый. Самое
+    // дорогое умение первой десятки, поэтому автокаст ждёт шести десятых
+    // полоски: иначе серия съедала бы энергию заполнителя.
+    id: 'flurry',
+    icon: 'ability-flurry',
+    name: 'Серия',
+    type: 'instant',
+    unlockLevel: 10,
+    manaCost: new Decimal(50),
+    cooldownSec: 10,
+    weaponDamagePercent: new Decimal(0.7),
+    triggersGcd: true,
+    flurry: { hits: 3 },
+    autocast: { resourceAbove: 0.6 },
+  },
+  {
+    // ПЕРЕВЯЗКА — ЛЕЧЕНИЕ ПСА долей ЕГО запаса. Зеркало «Заживления ран»
+    // Стража с другим адресатом; автокаст жмёт, пока самый раненый стоящий
+    // пёс ниже шести десятых. Без стоящего пса — отказ: перевязывать некого.
+    id: 'bandage',
+    icon: 'ability-bandage',
+    name: 'Перевязка',
+    type: 'instant',
+    unlockLevel: 12,
+    manaCost: new Decimal(35),
+    cooldownSec: 15,
+    weaponDamagePercent: new Decimal(0),
+    triggersGcd: true,
+    houndHeal: { maxHpShare: 0.4, autocastBelowHpShare: 0.6 },
+  },
+  {
+    // СПУСК — ПЁС КУСАЕТ СРАЗУ И ВШЕСТЕРО СИЛЬНЕЕ; герой платит и не бьёт
+    // сам. Козырь урона класса, и он целиком в чужих зубах: без стоящего пса
+    // кнопка отказывает. Автокаст ждёт семи десятых полоски.
+    //
+    // МНОЖИТЕЛЬ ПОСЧИТАН ОТ ЭНЕРГИИ, А НЕ ВЗЯТ НА ГЛАЗ. Энергия — ограничитель
+    // ротации (один заполнитель уже дороже регенерации), поэтому умение
+    // живёт или умирает по урону НА ЕДИНИЦУ ЭНЕРГИИ: Подсечка даёт 1.5 удара
+    // за 30, то есть 0.05; укус пса — 0.55 удара оружия, и при ×3.5 за 50
+    // Спуск давал 0.0385 — хуже заполнителя, и модель честно ставила его в
+    // минус. ×6 за 45 — 0.073, выше заполнителя ровно настолько, насколько
+    // положено козырю с откатом в двенадцать секунд.
+    id: 'unleash',
+    icon: 'ability-unleash',
+    name: 'Спуск',
+    type: 'instant',
+    unlockLevel: 14,
+    manaCost: new Decimal(45),
+    cooldownSec: 12,
+    weaponDamagePercent: new Decimal(0),
+    triggersGcd: true,
+    unleash: { biteMult: 6 },
+    autocast: { resourceAbove: 0.7 },
+  },
+  {
+    // СКРАДЫВАНИЕ — ГЕРОЙ БЕРЁТ МЕНЬШЕ, ПЁС БОЛЬШЕ: десять секунд доля
+    // перенаправления выше на три десятых. Обмен живучести одного тела на
+    // живучесть другого; смягчения тут нет ни грамма.
+    id: 'skulk',
+    icon: 'ability-skulk',
+    name: 'Скрадывание',
+    type: 'instant',
+    unlockLevel: 16,
+    manaCost: new Decimal(40),
+    cooldownSec: 20,
+    weaponDamagePercent: new Decimal(0),
+    triggersGcd: true,
+    skulk: { redirectBonus: 0.3, durationSec: 10 },
+  },
+  {
+    // ОКЛИК — ПАВШИЙ ПЁС ВСТАЁТ с половиной запаса раньше срока. Дёшево и
+    // с длинным откатом: кнопка на случай, а не часть ротации. Пока пёс на
+    // ногах — отказывает: окликать некого.
+    id: 'rally',
+    icon: 'ability-rally',
+    name: 'Оклик',
+    type: 'instant',
+    unlockLevel: 18,
+    manaCost: new Decimal(15),
+    cooldownSec: 45,
+    weaponDamagePercent: new Decimal(0),
+    triggersGcd: true,
+    rally: { hpShare: 0.5 },
+  },
+  {
+    // СВОРА — ВЕНЕЦ: второй пёс, пока кнопка стоит в ряду. Зов при полной
+    // своре отказывает; снял кнопку — лишний пёс уходит. Держится
+    // `houndCapacity`: комплект класса плюс лишние от умений в ряду.
+    id: 'pack',
+    icon: 'ability-pack',
+    name: 'Свора',
+    type: 'instant',
+    unlockLevel: 20,
+    manaCost: new Decimal(50),
+    cooldownSec: 30,
+    weaponDamagePercent: new Decimal(0),
+    triggersGcd: true,
+    pack: { extraHounds: 1 },
   },
 ]
 

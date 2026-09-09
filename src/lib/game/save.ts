@@ -48,6 +48,7 @@ import {
 import { ABILITIES, ABILITY_BY_ID } from '../data/abilities'
 import { CLASS_BY_ID, DEFAULT_CLASS, classById } from '../data/classes'
 import { freshHounds, houndMaxHp } from './hound'
+import { houndCapacity } from './abilities'
 import { REAGENT_BY_ID } from '../data/reagents'
 import {
   MASTERY_MAX,
@@ -533,7 +534,15 @@ function houndsFromSaved(raw: unknown, state: GameState): GameState['hounds'] {
   if (!Array.isArray(raw) || fresh.length === 0) return fresh
   const def = classById(state.classId).companion
   const max = houndMaxHp(state)
-  return fresh.map((blank, i) => {
+  // СВОРА ПЕРЕЖИВАЕТ ПЕРЕЗАГРУЗКУ: псов сверх комплекта столько, сколько
+  // сохранено и сколько держит ряд (`houndCapacity`), — иначе венец класса
+  // приходилось бы звать заново после каждой вкладки.
+  const capacity = Math.max(fresh.length, houndCapacity(state))
+  const slots = Array.from(
+    { length: Math.min(capacity, Math.max(fresh.length, raw.length)) },
+    (_, i) => fresh[i] ?? fresh[0],
+  )
+  return slots.map((blank, i) => {
     const saved = raw[i] as Record<string, unknown> | undefined
     if (!saved || typeof saved !== 'object') return blank
     const downMsLeft =

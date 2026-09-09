@@ -42,6 +42,27 @@
       ]
     },
     {
+      "id": "item-2",
+      "name": "Пастуший Сапог",
+      "rarity": "common",
+      "slot": "legs",
+      "level": 8,
+      "mods": [
+        {
+          "stat": "armor",
+          "kind": "flat",
+          "value": "117",
+          "source": "equipment:legs"
+        },
+        {
+          "stat": "vitality",
+          "kind": "flat",
+          "value": "13",
+          "source": "equipment:legs"
+        }
+      ]
+    },
+    {
       "id": "item-3",
       "name": "Пастуший Венец",
       "rarity": "common",
@@ -86,33 +107,6 @@
           "kind": "flat",
           "value": "5",
           "source": "equipment:legs"
-        }
-      ]
-    },
-    {
-      "id": "item-7",
-      "name": "Ржавый Кафтан",
-      "rarity": "common",
-      "slot": "chest",
-      "level": 8,
-      "mods": [
-        {
-          "stat": "armor",
-          "kind": "flat",
-          "value": "117",
-          "source": "equipment:chest"
-        },
-        {
-          "stat": "intellect",
-          "kind": "flat",
-          "value": "8",
-          "source": "equipment:chest"
-        },
-        {
-          "stat": "vitality",
-          "kind": "flat",
-          "value": "4",
-          "source": "equipment:chest"
         }
       ]
     }
@@ -234,27 +228,7 @@
         }
       ]
     },
-    "legs": {
-      "id": "item-2",
-      "name": "Пастуший Сапог",
-      "rarity": "common",
-      "slot": "legs",
-      "level": 8,
-      "mods": [
-        {
-          "stat": "armor",
-          "kind": "flat",
-          "value": "117",
-          "source": "equipment:legs"
-        },
-        {
-          "stat": "vitality",
-          "kind": "flat",
-          "value": "13",
-          "source": "equipment:legs"
-        }
-      ]
-    },
+    "legs": null,
     "trinket": {
       "id": "item-1",
       "name": "Звёздный Оберег",
@@ -297,12 +271,52 @@
   "lootPolicy": "keep",
   "abilitySlots": [
     "undercut",
-    null,
-    null,
-    null
+    "sic",
+    "hamstring",
+    "recall"
   ],
   "abilitySettings": {
     "undercut": {
+      "autocast": true,
+      "reserve": 0
+    },
+    "sic": {
+      "autocast": true,
+      "reserve": 0
+    },
+    "hamstring": {
+      "autocast": true,
+      "reserve": 0
+    },
+    "recall": {
+      "autocast": true,
+      "reserve": 0
+    },
+    "grip": {
+      "autocast": true,
+      "reserve": 0
+    },
+    "flurry": {
+      "autocast": true,
+      "reserve": 0
+    },
+    "bandage": {
+      "autocast": true,
+      "reserve": 0
+    },
+    "unleash": {
+      "autocast": true,
+      "reserve": 0
+    },
+    "skulk": {
+      "autocast": true,
+      "reserve": 0
+    },
+    "rally": {
+      "autocast": true,
+      "reserve": 0
+    },
+    "pack": {
       "autocast": true,
       "reserve": 0
     }
@@ -311,7 +325,7 @@
   "gold": "3140",
   "level": "12",
   "currentXp": "804",
-  "currentHp": "430",
+  "currentHp": "352",
   "currentMana": "60",
   "heroState": "alive",
   "reviveMsLeft": 0,
@@ -323,7 +337,7 @@
   "abilityCasts": "0",
   "hounds": [
     {
-      "hp": "121",
+      "hp": "99",
       "downMsLeft": 0
     }
   ]
