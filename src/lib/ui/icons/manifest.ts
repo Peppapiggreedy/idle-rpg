@@ -208,6 +208,11 @@ export const ICONS = {
   'talent-fourth-cut': { file: 'lorc/claw-slashes.svg', author: 'Lorc' },
   'talent-fangs-of-old': { file: 'lorc/pretty-fangs.svg', author: 'Lorc' },
   'talent-twin-fang': { file: 'lorc/snake-bite.svg', author: 'Lorc' },
+  // Таланты Псаря — ветка Привязь.
+  'talent-fur-shield': { file: 'delapouite/animal-hide.svg', author: 'Delapouite' },
+  'talent-fast-return': { file: 'delapouite/jumping-dog.svg', author: 'Delapouite' },
+  'talent-hound-mending': { file: 'lorc/paw-heart.svg', author: 'Lorc' },
+  'talent-full-rally': { file: 'delapouite/mighty-horn.svg', author: 'Delapouite' },
 
   // --- Таланты Псаря ---
   'talent-quick-hands': { file: 'lorc/sprint.svg', author: 'Lorc' },

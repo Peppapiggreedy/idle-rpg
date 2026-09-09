@@ -2670,6 +2670,15 @@ const HOUNDMASTER_CHASE = branch('houndmaster-chase', [
   ],
 ])
 
+// ПРИВЯЗЬ: ЖИВУЧЕСТЬ ЧЕРЕЗ ПСА.
+//
+// Ветка Псаря про выживание, и выживает он ВТОРЫМ ТЕЛОМ: запас пса, доля
+// ударов, которые он принимает, его возврат и лечение — а не щит и не броня
+// героя. Ключевые пары: «долгое зализывание» (отзыв лечит вдвое) против
+// «второго дыхания» (быстрое воскрешение героя) — пёс живёт против герой не
+// умирает; «железная привязь» (скрадывание вдвое) против «полного оклика»
+// (пёс встаёт целым); венец — «неутомимый оклик» против «тени» (скрадывание
+// вдвое дольше) — часто поднимать против долго прятаться.
 const HOUNDMASTER_LEASH = branch('houndmaster-leash', [
   [
     {
@@ -2687,6 +2696,266 @@ const HOUNDMASTER_LEASH = branch('houndmaster-leash', [
       maxRank: 5,
       col: 3,
       effect: mods(m('hpRegen', 'percent', 0.05)),
+    },
+  ],
+  [
+    {
+      // ЗАПАС ПСА — доля запаса героя, и талант растит именно доли: пёс
+      // остаётся собой на любом уровне.
+      id: 'leash-tough-hide',
+      name: 'Крепкая шкура',
+      icon: 'talent-thick-hide',
+      maxRank: 5,
+      col: 2,
+      effect: houndTune('maxHpShare', 'percent', 0.08),
+    },
+    {
+      id: 'leash-quick-bandage',
+      name: 'Быстрая перевязка',
+      icon: 'talent-quick-mend',
+      maxRank: 5,
+      col: 3,
+      effect: tunes('bandage', { field: 'cooldownSec', kind: 'percent', value: -0.08 }),
+    },
+  ],
+  [
+    {
+      id: 'leash-firm-grip',
+      name: 'Крепкая хватка',
+      icon: 'talent-firm-press',
+      maxRank: 5,
+      col: 1,
+      effect: tunes('grip', { field: 'gripSlowShare', kind: 'percent', value: 0.08 }),
+    },
+    {
+      // ДОЛЯ ПЕРЕНАПРАВЛЕНИЯ — В ПУНКТАХ: она доля, и «на 10 % больше» от 0.3
+      // игрок прочитал бы как 40 %, а не 33.
+      id: 'leash-fur-shield',
+      name: 'Живой щит',
+      icon: 'talent-fur-shield',
+      maxRank: 5,
+      col: 2,
+      effect: houndTune('redirectShare', 'points', 0.03),
+    },
+    {
+      id: 'leash-deep-bandage',
+      name: 'Тугая перевязка',
+      icon: 'talent-deep-mend',
+      maxRank: 5,
+      col: 3,
+      effect: tunes('bandage', { field: 'houndHealMaxHpShare', kind: 'percent', value: 0.08 }),
+    },
+  ],
+  [
+    {
+      id: 'leash-fast-return',
+      name: 'Скорый возврат',
+      icon: 'talent-fast-return',
+      maxRank: 5,
+      col: 2,
+      effect: houndTune('returnSec', 'percent', -0.08),
+    },
+    {
+      id: 'leash-cheap-recall',
+      name: 'Лёгкий отзыв',
+      icon: 'talent-thrift-mercy',
+      maxRank: 5,
+      col: 3,
+      effect: tunes('recall', { field: 'manaCost', kind: 'percent', value: -0.07 }),
+    },
+  ],
+  [
+    // КЛЮЧЕВОЙ ЭТАЖ 5.
+    {
+      // ДОЛГОЕ ЗАЛИЗЫВАНИЕ: отзыв лечит вдвое. Пёс живёт — герой платит уроном.
+      id: 'leash-long-lick',
+      name: 'Зализать раны',
+      icon: 'talent-quiet-mend',
+      maxRank: 1,
+      col: 2,
+      exclusiveGroup: 'leash-key-5',
+      effect: tunes('recall', { field: 'recallHealShare', kind: 'percent', value: 1.0 }),
+    },
+    {
+      // ВТОРОЕ ДЫХАНИЕ: герой воскресает вдвое быстрее — общий флаг. Другой род:
+      // не пёс не падает, а смерть героя стоит дешевле.
+      id: 'leash-second-wind',
+      name: 'Второе дыхание',
+      icon: 'talent-second-wind',
+      maxRank: 1,
+      col: 3,
+      exclusiveGroup: 'leash-key-5',
+      effect: { kind: 'flag', flag: 'faster-revive', reviveMultiplier: 0.5 },
+    },
+  ],
+  [
+    {
+      id: 'leash-hound-mending',
+      name: 'Зализывание на ходу',
+      icon: 'talent-hound-mending',
+      maxRank: 5,
+      col: 1,
+      effect: houndTune('regenInCombat', 'points', 0.01),
+    },
+    {
+      id: 'leash-vitality',
+      name: 'Крепость тела',
+      icon: 'talent-vitality',
+      maxRank: 5,
+      col: 2,
+      effect: mods(m('maxHp', 'percent', 0.02)),
+    },
+    {
+      id: 'leash-long-skulk',
+      name: 'Долгое скрадывание',
+      icon: 'talent-long-stance',
+      maxRank: 5,
+      col: 3,
+      effect: tunes('skulk', { field: 'skulkDurationSec', kind: 'percent', value: 0.12 }),
+    },
+  ],
+  [
+    {
+      id: 'leash-armor',
+      name: 'Кожаный доспех',
+      icon: 'talent-shield-wall',
+      maxRank: 5,
+      col: 2,
+      effect: mods(m('armor', 'percent', 0.03)),
+    },
+    {
+      id: 'leash-cheap-bandage',
+      name: 'Лёгкая перевязка',
+      icon: 'talent-thrift-wall',
+      maxRank: 5,
+      col: 3,
+      effect: tunes('bandage', { field: 'manaCost', kind: 'percent', value: -0.07 }),
+    },
+  ],
+  [
+    {
+      // Стрелка: развивает «Крепкую шкуру».
+      id: 'leash-thicker-hide',
+      name: 'Толстая шкура',
+      icon: 'talent-hard-to-kill',
+      maxRank: 5,
+      col: 2,
+      requires: { talentId: 'leash-tough-hide', minRank: 3 },
+      effect: houndTune('maxHpShare', 'percent', 0.06),
+    },
+    {
+      id: 'leash-quick-rally',
+      name: 'Скорый оклик',
+      icon: 'talent-early-call',
+      maxRank: 5,
+      col: 3,
+      effect: tunes('rally', { field: 'cooldownSec', kind: 'percent', value: -0.1 }),
+    },
+  ],
+  [
+    // КЛЮЧЕВОЙ ЭТАЖ 9.
+    {
+      // ЖЕЛЕЗНАЯ ПРИВЯЗЬ: скрадывание перекладывает на пса вдвое больше.
+      id: 'leash-iron-leash',
+      name: 'Железная привязь',
+      icon: 'talent-immovable',
+      maxRank: 1,
+      col: 2,
+      exclusiveGroup: 'leash-key-9',
+      effect: tunes('skulk', { field: 'skulkRedirectBonus', kind: 'percent', value: 1.0 }),
+    },
+    {
+      // ПОЛНЫЙ ОКЛИК: павший пёс встаёт целым. Не «пёс держит больше», а
+      // «падение стоит меньше» — другой род.
+      id: 'leash-full-rally',
+      name: 'Полный оклик',
+      icon: 'talent-full-rally',
+      maxRank: 1,
+      col: 3,
+      exclusiveGroup: 'leash-key-9',
+      effect: tunes('rally', { field: 'rallyHpShare', kind: 'percent', value: 1.0 }),
+    },
+  ],
+  [
+    {
+      id: 'leash-even-breath',
+      name: 'Глубокое дыхание',
+      icon: 'talent-steady-breath',
+      maxRank: 5,
+      col: 2,
+      effect: mods(m('hpRegen', 'percent', 0.05)),
+    },
+    {
+      // Стрелка: развивает «Долгое скрадывание» — тот же столбец.
+      id: 'leash-deep-skulk',
+      name: 'Глубокое скрадывание',
+      icon: 'talent-spiked-guard',
+      maxRank: 5,
+      col: 3,
+      requires: { talentId: 'leash-long-skulk', minRank: 2 },
+      effect: tunes('skulk', { field: 'skulkRedirectBonus', kind: 'percent', value: 0.1 }),
+    },
+  ],
+  [
+    {
+      // Стрелка: развивает «Скорый возврат».
+      id: 'leash-swift-return',
+      name: 'Стремительный возврат',
+      icon: 'talent-swift-return',
+      maxRank: 5,
+      col: 2,
+      requires: { talentId: 'leash-fast-return', minRank: 3 },
+      effect: houndTune('returnSec', 'percent', -0.06),
+    },
+    {
+      id: 'leash-long-recall',
+      name: 'Долгий отзыв',
+      icon: 'talent-long-wall',
+      maxRank: 4,
+      col: 3,
+      effect: tunes('recall', { field: 'recallDurationSec', kind: 'percent', value: 0.15 }),
+    },
+  ],
+  [
+    {
+      id: 'leash-hardened',
+      name: 'Закалка',
+      icon: 'talent-bulwark-training',
+      maxRank: 5,
+      col: 2,
+      effect: mods(m('maxHp', 'percent', 0.02)),
+    },
+    {
+      id: 'leash-long-grip',
+      name: 'Долгая хватка',
+      icon: 'talent-braced',
+      maxRank: 5,
+      col: 3,
+      effect: tunes('grip', { field: 'gripDurationSec', kind: 'percent', value: 0.12 }),
+    },
+  ],
+  [
+    // ВЕНЕЦ.
+    {
+      // НЕУТОМИМЫЙ ОКЛИК: откат оклика в два с половиной раза короче —
+      // павший пёс почти не лежит.
+      id: 'leash-tireless-rally',
+      name: 'Неутомимый оклик',
+      icon: 'ability-rally',
+      maxRank: 1,
+      col: 2,
+      exclusiveGroup: 'leash-key-13',
+      effect: tunes('rally', { field: 'cooldownSec', kind: 'multiplier', value: 0.4 }),
+    },
+    {
+      // ТЕНЬ: скрадывание вдвое дольше — герой почти не выходит из-за пса.
+      id: 'leash-shadow-hound',
+      name: 'Тень пса',
+      icon: 'ability-skulk',
+      maxRank: 1,
+      col: 3,
+      exclusiveGroup: 'leash-key-13',
+      effect: tunes('skulk', { field: 'skulkDurationSec', kind: 'multiplier', value: 2 }),
     },
   ],
 ])
@@ -3430,6 +3699,76 @@ const BRANCH_PATHS: Partial<Record<BranchId, TalentPath[]>> = {
         'chase-cheap-sic',
         'chase-deep-hamstring',
         'chase-pack-cut',
+      ],
+    },
+  ],
+  'houndmaster-leash': [
+    {
+      // ПРИВЯЗЬ. Пёс стоит: крепче, чаще возвращается, отзыв лечит вдвое,
+      // оклик почти без отката. Четвёрка по умолчанию — первый путь прибор.
+      id: 'leash-hold',
+      name: 'Привязь',
+      abilities: ['undercut', 'sic', 'hamstring', 'recall'],
+      order: [
+        'leash-long-lick',
+        'leash-iron-leash',
+        'leash-tireless-rally',
+        'leash-tough-hide',
+        'leash-thick-coat',
+        'leash-steady-breath',
+        'leash-fur-shield',
+        'leash-fast-return',
+        'leash-cheap-recall',
+        'leash-hound-mending',
+        'leash-vitality',
+        'leash-thicker-hide',
+        'leash-quick-rally',
+        'leash-even-breath',
+        'leash-swift-return',
+        'leash-long-recall',
+        'leash-hardened',
+        'leash-firm-grip',
+        'leash-armor',
+        'leash-quick-bandage',
+        'leash-deep-bandage',
+        'leash-cheap-bandage',
+        'leash-long-grip',
+        'leash-long-skulk',
+        'leash-deep-skulk',
+      ],
+    },
+    {
+      // ТЕНЬ. Герой прячется за псом: скрадывание вдвое и вдвое дольше, пёс
+      // встаёт целым, герой воскресает вдвое быстрее. Четвёрка другая.
+      id: 'leash-shadow',
+      name: 'Тень',
+      abilities: ['undercut', 'skulk', 'bandage', 'rally'],
+      order: [
+        'leash-second-wind',
+        'leash-full-rally',
+        'leash-shadow-hound',
+        'leash-long-skulk',
+        'leash-deep-skulk',
+        'leash-quick-bandage',
+        'leash-deep-bandage',
+        'leash-cheap-bandage',
+        'leash-quick-rally',
+        'leash-tough-hide',
+        'leash-thick-coat',
+        'leash-steady-breath',
+        'leash-fur-shield',
+        'leash-fast-return',
+        'leash-hound-mending',
+        'leash-vitality',
+        'leash-thicker-hide',
+        'leash-even-breath',
+        'leash-swift-return',
+        'leash-hardened',
+        'leash-armor',
+        'leash-firm-grip',
+        'leash-long-grip',
+        'leash-cheap-recall',
+        'leash-long-recall',
       ],
     },
   ],
