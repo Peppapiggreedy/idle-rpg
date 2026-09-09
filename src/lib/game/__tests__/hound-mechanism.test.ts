@@ -125,3 +125,27 @@ describe('Страж и Изувер псом не командуют — обр
     for (const [id, list] of owners) expect(list, id).toHaveLength(1)
   })
 })
+
+describe('таблица развода — три класса, три вопроса', () => {
+  it('печатает, каким признаком каждый класс задаёт свой вопрос бою', () => {
+    // ТРИ СТОЛБЦА: класс, вопрос, чем он задан. Числа — из данных умений, а
+    // не из головы: сколько умений пишут на цель, сколько читают полоску,
+    // сколько командуют псом. У каждого класса ровно ОДИН столбец не ноль.
+    const rows = CLASSES.map((cls) => {
+      const own = abilitiesOf(cls.abilityIds)
+      const marks = own.filter(marksTarget).length
+      const reads = own.filter(readsResource).length
+      const hound = own.filter((a) => addressesHound(a) || readsHound(a)).length
+      const question =
+        hound > 0 ? 'что сейчас делает пёс' : reads > 0 ? 'в каком я состоянии' : 'что висит на мобе'
+      return { класс: cls.name, вопрос: question, 'меток на цели': marks, 'читают полоску': reads, 'команд псу': hound }
+    })
+    // eslint-disable-next-line no-console
+    console.table(rows)
+    for (const row of rows) {
+      const signals = [row['меток на цели'], row['читают полоску'], row['команд псу']].filter((n) => n > 0)
+      expect(signals, `${row.класс}: язык класса смешан`).toHaveLength(1)
+    }
+    expect(new Set(rows.map((r) => r.вопрос)).size).toBe(CLASSES.length)
+  })
+})

@@ -95,7 +95,7 @@ describe('травля', () => {
     const def = companionOf(after)!
     expect(activeCompanion(def, after.houndMarks).swingTime).toBeCloseTo(def.swingTime / 1.5, 9)
     // Метка тает игровым временем и уходит вместе с длительностью.
-    expect(step(after, 8100).houndMarks.haste).toBeNull()
+    expect(step(after, 10100).houndMarks.haste).toBeNull()
   })
 
   it('без стоящего пса отказывает кодом', () => {

@@ -30,10 +30,12 @@ import { ENCHANTS } from '../../data/enchants'
 import { RECIPES, type RecipeDef } from '../../data/recipes'
 import { craftedItem } from '../crafting'
 import { SLOT_IDS, type SlotId } from '../../data/slots'
-import { LEVEL_CAP, POTION_UNLOCK_LEVEL, POWER_BUDGET } from '../../data/balance'
+import { ABILITY_SLOTS, LEVEL_CAP, POTION_UNLOCK_LEVEL, POWER_BUDGET } from '../../data/balance'
 import { PROC_BY_ID } from '../../data/procs'
 import { ABILITIES } from '../../data/abilities'
-import { DEFAULT_CLASS } from '../../data/classes'
+import { CLASSES, DEFAULT_CLASS } from '../../data/classes'
+import { abilitiesOf } from '../state'
+import { classIt } from './class-set'
 import { dump } from './dump'
 
 const SEED = 4242
@@ -415,4 +417,107 @@ describe('бюджет силы Стража на потолке', () => {
       1,
     )
   })
+})
+
+// ---------------------------------------------------------------------------
+// СТРОКА ПСА. Класс со спутником получает свою лестницу: пёс — источник силы,
+// и мерится он снятием, как броня; набор команд — той же строкой умений, что
+// у Стража (лучшая четвёрка против четвёрки по умолчанию); доли урона — с
+// четвёртой строкой, укусами пса. Класс превью: контракты пишут в лог.
+// ---------------------------------------------------------------------------
+describe('бюджет силы Псаря: строка пса', () => {
+  const HOUND = CLASSES.find((c) => c.companion)
+  if (!HOUND) return
+  const hit = classIt(HOUND)
+  const zone = intendedZone(LEVEL_CAP)
+  const facing = (s: GameState): GameState => ({
+    ...s,
+    monster: monsterFromTemplate(representativeMonster(zone)),
+  })
+  const rate = (s: GameState, mode: 'auto' | 'manual' = 'auto'): CombatRate =>
+    estimateCombatRate(facing(s), mode)
+  const key = (tail: string) => `power/${HOUND.id}/level-${String(LEVEL_CAP).padStart(3, '0')}/${tail}`
+  const combos = <T,>(xs: readonly T[], k: number): T[][] => {
+    if (k === 0) return [[]]
+    if (xs.length < k) return []
+    const [head, ...rest] = xs
+    return [...combos(rest, k - 1).map((c) => [head, ...c]), ...combos(rest, k)]
+  }
+  const slotsOf = (ids: readonly string[]) => [...ids, null, null, null, null].slice(0, ABILITY_SLOTS)
+
+  let geared: GameState | null = null
+  const hero = (): GameState => {
+    if (!geared) geared = buildSimState({ ...referenceBuild(LEVEL_CAP, HOUND.id), talents: {} }, zone.id, SEED)
+    return geared
+  }
+
+  hit('пёс — источник силы: множитель в коридоре, пол выше единицы', () => {
+    const corridor = POWER_BUDGET.multipliers.hound
+    const withHound = hero()
+    const alone: GameState = { ...withHound, hounds: [] }
+    const mult = dump(
+      key('multiplier/hound/value'),
+      rate(withHound).killsPerSecond.div(rate(alone).killsPerSecond).toNumber(),
+    )
+    // eslint-disable-next-line no-console
+    console.log(`пёс: с псом / без пса ×${mult.toFixed(3)} (коридор ${corridor.min}–${corridor.max})`)
+    expect(dump(key('multiplier/hound/corridor-min'), corridor.min)).toBeGreaterThan(1)
+    expect(mult).toBeGreaterThanOrEqual(corridor.min)
+    expect(mult).toBeLessThanOrEqual(corridor.max)
+  }, 900_000)
+
+  hit('набор команд — перераспределение, а не прибавка: лучшая четвёрка в коридоре умений', () => {
+    const corridor = POWER_BUDGET.multipliers.abilities
+    const base = hero()
+    const open = abilitiesOf(HOUND.id).filter((a) => a.unlockLevel <= LEVEL_CAP)
+    const byDefault = rate({ ...base, abilitySlots: slotsOf(HOUND.abilityIds.slice(0, ABILITY_SLOTS)) })
+    const ranked = combos(open, ABILITY_SLOTS)
+      .map((combo) => ({
+        ids: combo.map((a) => a.id),
+        rate: rate({ ...base, abilitySlots: slotsOf(combo.map((a) => a.id)) }).killsPerSecond.toNumber(),
+      }))
+      .sort((a, b) => b.rate - a.rate)
+    const best = ranked[0]
+    const mult = dump(key('best-four-over-default/value'), best.rate / byDefault.killsPerSecond.toNumber())
+    // ВТОРОЙ ПЁС ОБЯЗАН ПОМЕЩАТЬСЯ В ТУ ЖЕ СТРОКУ: лучшая четвёрка СО сворой
+    // против четвёрки по умолчанию — если она пробивает потолок, ужимать надо
+    // пса (числа спутника), а не расширять коридор.
+    const withPack = ranked.find((r) => r.ids.includes('pack'))
+    const packMult = dump(
+      key('best-four-with-pack-over-default/value'),
+      (withPack?.rate ?? 0) / byDefault.killsPerSecond.toNumber(),
+    )
+    // eslint-disable-next-line no-console
+    console.log(
+      `Псарь: лучшая четвёрка ${best.ids.join(' + ')} ×${mult.toFixed(3)}; ` +
+        `лучшая со сворой ${withPack?.ids.join(' + ') ?? '—'} ×${packMult.toFixed(3)} ` +
+        `(коридор ${corridor.min}–${corridor.max})`,
+    )
+    expect(mult, 'набор подорожал').toBeLessThanOrEqual(corridor.max)
+    expect(mult, 'набор обесценился').toBeGreaterThanOrEqual(corridor.min)
+    expect(packMult, 'второй пёс не помещается в строку умений').toBeLessThanOrEqual(corridor.max)
+  }, 900_000)
+
+  hit('доли урона Псаря: автоатака, умения, проки и пёс — сумма сто процентов', () => {
+    const full = rate(hero(), 'manual')
+    const sum = full.autoDamagePerSecond
+      .plus(full.abilityDamagePerSecond)
+      .plus(full.procDamagePerSecond)
+      .plus(full.houndDamagePerSecond)
+    const share = (part: Decimal, name: string) => dump(key(`full-manual/damage-share/${name}`), part.div(sum).toNumber())
+    const shares = {
+      autoattack: share(full.autoDamagePerSecond, 'autoattack'),
+      abilities: share(full.abilityDamagePerSecond, 'abilities'),
+      procs: share(full.procDamagePerSecond, 'procs'),
+      hound: share(full.houndDamagePerSecond, 'hound'),
+    }
+    // eslint-disable-next-line no-console
+    console.log(
+      `доли урона Псаря: автоатака ${(shares.autoattack * 100).toFixed(1)} % · ` +
+        `умения ${(shares.abilities * 100).toFixed(1)} % · проки ${(shares.procs * 100).toFixed(1)} % · ` +
+        `пёс ${(shares.hound * 100).toFixed(1)} %`,
+    )
+    expect(shares.hound, 'пёс не бьёт вовсе').toBeGreaterThan(0)
+    expect(shares.autoattack + shares.abilities + shares.procs + shares.hound).toBeCloseTo(1, 6)
+  }, 900_000)
 })

@@ -20,6 +20,8 @@ import { ABILITY_SLOTS, AUTOCAST_MAX_LOSS, LEVEL_CAP, POWER_BUDGET } from '../..
 import { DEFAULT_CLASS } from '../../data/classes'
 import { ZONES } from '../../data/zones'
 import { dump } from './dump'
+import { classIt } from './class-set'
+import { CLASS_SET } from './balance-shared'
 import type { GameState } from '../state'
 
 /** Прежняя четвёрка Стража: ею играли до этой задачи, она и есть бюджет. */
@@ -305,4 +307,41 @@ describe('специализации играют РАЗНЫМ набором', 
       }
     }
   }, 900_000)
+})
+
+// ---------------------------------------------------------------------------
+// ПАРИТЕТ ЛУЧШИХ ЧЕТВЁРОК ТРЁХ КЛАССОВ. Одна таблица на всех: лучшая четвёрка
+// каждого класса на двадцатом уровне против его же четвёрки по умолчанию, и
+// коридор строки умений — один и тот же. У готового класса контракт роняет
+// прогон, у превью — пишет в лог. Прибор общий: нет своей формулы на класс.
+// ---------------------------------------------------------------------------
+describe('паритет четвёрок по классам', () => {
+  const LEVEL = 20
+  for (const cls of CLASS_SET) {
+    classIt(cls)(`${cls.name}: лучшая четвёрка против четвёрки по умолчанию — в коридоре умений`, () => {
+      const corridor = POWER_BUDGET.multipliers.abilities
+      const base = buildSimState(referenceBuild(LEVEL, cls.id), zoneFor(LEVEL).id, 7)
+      const open = abilitiesOf(cls.id).filter((a) => a.unlockLevel <= LEVEL)
+      const kps = (ids: readonly string[]) =>
+        estimateCombatRate({ ...base, abilitySlots: slotsOf(ids) }, 'auto').killsPerSecond.toNumber()
+      const byDefault = kps(cls.abilityIds.filter((id) => open.some((a) => a.id === id)).slice(0, ABILITY_SLOTS))
+      const ranked = combos(open, Math.min(ABILITY_SLOTS, open.length))
+        .map((combo) => ({ ids: combo.map((a) => a.id), rate: kps(combo.map((a) => a.id)) }))
+        .sort((a, b) => b.rate - a.rate)
+      const best = ranked[0]
+      const mult = dump(
+        `abilities/${cls.id}/level-${String(LEVEL).padStart(3, '0')}/best-four-over-default/value`,
+        best.rate / byDefault,
+      )
+      const used = new Set(ranked.slice(0, 5).flatMap((r) => r.ids))
+      const idle = open.map((a) => a.id).filter((id) => !used.has(id))
+      // eslint-disable-next-line no-console
+      console.log(
+        `${cls.name}: лучшая четвёрка ${best.ids.join(' + ')} ×${mult.toFixed(3)} ` +
+          `(коридор ${corridor.min}–${corridor.max}); невостребованных в верхней пятёрке: ${idle.join(', ') || 'нет'}`,
+      )
+      expect(mult, `${cls.id}: набор подорожал`).toBeLessThanOrEqual(corridor.max)
+      expect(mult, `${cls.id}: набор обесценился`).toBeGreaterThanOrEqual(corridor.min)
+    }, 900_000)
+  }
 })

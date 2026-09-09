@@ -341,6 +341,8 @@ export interface CombatRate {
   /** Сколько из damagePerSecond приносят проки — UI показывает это строкой. */
   procDamagePerSecond: Decimal
   abilityDamagePerSecond: Decimal // только умения при выбранном режиме игры
+  /** Сколько из damagePerSecond приносит спутник: укусы и команды. У класса без пса — ноль. */
+  houndDamagePerSecond: Decimal
   killsPerSecond: Decimal // убийств в секунду С УЧЁТОМ смертей героя (uptime)
   idealKillsPerSecond: Decimal // то же без учёта смертей — герой бессмертен
   // Чистая потеря HP в секунду: входящий урон минус реген. 0 — герой не тает.
@@ -1460,10 +1462,11 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
         ? 1
         : (1 + packShare * Math.min(1, hound.standing)) *
           (1 + (avenge ? avenge.bonusShare * Math.min(1, hound.fallsPerSec * avenge.durationSec) : 0))
-    const raw =
+    const houndDps =
       hound && hound.dps.gt(0)
-        ? heroRaw.times(houndMult).plus(hound.dps).plus(commandDamage(rot, hound).times(critFactor(stats)))
-        : heroRaw.times(houndMult)
+        ? hound.dps.plus(commandDamage(rot, hound).times(critFactor(stats)))
+        : new Decimal(0)
+    const raw = heroRaw.times(houndMult).plus(houndDps)
     const perKill = damagePerKill(s, plan, stream)
     const damagePerSecond = raw.times(s.monster.maxHp.div(perKill))
     // Длина боя — СРЕДНЕЕ число ударов потока на убийство, дробное. Перебой
@@ -1518,6 +1521,7 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
     return {
       rot,
       procDps,
+      houndDps,
       damagePerSecond,
       killCycleSec,
       fightSec,
@@ -1631,7 +1635,7 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
     healing = healFor(pass)
     ;({ netLossPerSec, cycle } = cycleFor(pass, healing))
   }
-  const { rot: rotation, procDps, damagePerSecond, idealKillsPerSecond } = pass
+  const { rot: rotation, procDps, houndDps, damagePerSecond, idealKillsPerSecond } = pass
   const healsPerCycle = healing?.casts ?? 0
   const grossHpLossPerSecond = Decimal.max(pass.grossLossPerFight.div(pass.killCycleSec), new Decimal(0))
 
@@ -1642,6 +1646,7 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
       autoDamagePerSecond: autoDps,
       abilityDamagePerSecond: rotation.damagePerSecond,
       procDamagePerSecond: procDps,
+      houndDamagePerSecond: houndDps,
       killsPerSecond: idealKillsPerSecond,
       idealKillsPerSecond,
       hpLossPerSecond: new Decimal(0),
@@ -1660,6 +1665,7 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
     autoDamagePerSecond: autoDps,
     abilityDamagePerSecond: rotation.damagePerSecond,
     procDamagePerSecond: procDps,
+    houndDamagePerSecond: houndDps,
     killsPerSecond: idealKillsPerSecond.times(cycle.uptime),
     idealKillsPerSecond,
     hpLossPerSecond: netLossPerSec,
