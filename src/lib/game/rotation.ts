@@ -231,6 +231,8 @@ function dutyCycle(
   pauseSec: number,
   refill: RestRefill | null,
   reserveMana: Decimal,
+  /** Пол ресурса класса: ниже него автокаст не тратит ничего (см. passesReserve). */
+  resourceFloor = 0,
 ): Decimal {
   const spend = desired.manaPerSecond
   if (spend.lte(0)) return new Decimal(1)
@@ -247,9 +249,13 @@ function dutyCycle(
 
   // Всплеск: запас срабатывает до самого низкого резерва среди тех умений,
   // которые вообще жмутся, — дальше молчат все.
+  // ПОЛ КЛАССА СКЛАДЫВАЕТСЯ С РЕЗЕРВАМИ ПО МАКСИМУМУ — ровно так же, как в
+  // `passesReserve` у тика: две формулы одного правила разъехались бы на
+  // первой правке, и модель обещала бы оффлайну касты, которых автокаст не
+  // делает.
   const reserves = desired.casts
     .filter((c) => resourceCost(c.ability, stats).gt(0))
-    .map((c) => settings[c.ability.id]?.reserve ?? 0)
+    .map((c) => Math.max(settings[c.ability.id]?.reserve ?? 0, resourceFloor))
   const floor = reserves.length > 0 ? Math.min(...reserves) : 0
   // Запас срабатывает не до нуля, а до самого дешёвого умения: ниже него
   // жать уже нечего. На первых уровнях, где весь запас — несколько применений,
@@ -306,7 +312,16 @@ function castPlan(
     freeShare > 0
       ? { ...desired, manaPerSecond: desired.manaPerSecond.times(1 - freeShare) }
       : desired
-  const duty = dutyCycle(stats, rotation.settings, discounted, income, pauseSec, refill, reserveMana)
+  const duty = dutyCycle(
+    stats,
+    rotation.settings,
+    discounted,
+    income,
+    pauseSec,
+    refill,
+    reserveMana,
+    rotation.resourceFloor,
+  )
   if (duty.gte(1)) return desired
   // Долю применяем ко ВСЕЙ ротации разом, а не отдаём бюджет по приоритету.
   // Так герой и играет: жмёт всё, что доступно, а когда запас кончился —

@@ -973,6 +973,8 @@ function rateKey(state: GameState, mode: PlayMode): string {
     state.abilitySlots.join(','),
     identityOf(state.activePotions),
     state.holdManaForHeal ? 1 : 0,
+    // Пол ресурса режет глубину всплеска в модели так же, как резервы.
+    state.resourceFloor,
     // Зона нужна только ручному режиму (травы для зелий), но стоит в ключе
     // всегда: лишний разряд не стоит ничего, забытая зависимость — неверный ответ.
     state.currentZoneId,
@@ -1196,6 +1198,7 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
     settings,
     talents: s.talents,
     boons: equippedBoons(s.equipment),
+    resourceFloor: s.resourceFloor,
   }
   // Ресурс из боя — уравнение с самим собой: удары умений тоже дают ярость,
   // а число умений зависит от ярости. Решаем ДВУМЯ проходами: сперва доход

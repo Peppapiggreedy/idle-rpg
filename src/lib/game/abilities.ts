@@ -344,7 +344,11 @@ export function healWanted(state: GameState, ability: AbilityDef): boolean {
  */
 export function passesReserve(state: GameState, ability: AbilityDef): boolean {
   const left = state.currentMana.minus(abilityCost(state, ability))
-  const reserve = state.abilitySettings[ability.id]?.reserve ?? 0
+  // ПОЛ КЛАССА И РЕЗЕРВ УМЕНИЯ СКЛАДЫВАЮТСЯ ПО МАКСИМУМУ: пол — «ниже чего
+  // автокаст не тратит вообще», резерв — «сколько держать под эту кнопку»,
+  // и действует тот, что выше. Оба — доли ЗАПАСА, а не числа: у героя,
+  // поднявшего ёмкость талантами, «30 %» обязано значить то же самое.
+  const reserve = Math.max(state.abilitySettings[ability.id]?.reserve ?? 0, state.resourceFloor)
   if (reserve > 0 && left.lt(state.stats.maxMana.times(reserve))) return false
   if (state.holdManaForHeal && !ability.heal) {
     const heal = autocastHeal(state)

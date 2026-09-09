@@ -469,12 +469,36 @@ export const MAX_REST_THRESHOLD = 1
  */
 export const REST_THRESHOLD_STEP = 0.1
 
-/** Порог с ползунка: кратен шагу и не выше потолка. */
-export function snapRestThreshold(share: number): number {
-  if (!Number.isFinite(share)) return REST_HP_THRESHOLD_DEFAULT
+/** Доля с ползунка: кратна шагу и не выше потолка; мусор — умолчание. */
+function snapShare(share: number, fallback: number, max: number): number {
+  if (!Number.isFinite(share)) return fallback
   const steps = Math.round(share / REST_THRESHOLD_STEP)
   const snapped = steps * REST_THRESHOLD_STEP
-  return Math.min(MAX_REST_THRESHOLD, Math.max(0, Number(snapped.toFixed(2))))
+  return Math.min(max, Math.max(0, Number(snapped.toFixed(2))))
+}
+
+/** Порог с ползунка: кратен шагу и не выше потолка. */
+export function snapRestThreshold(share: number): number {
+  return snapShare(share, REST_HP_THRESHOLD_DEFAULT, MAX_REST_THRESHOLD)
+}
+
+/**
+ * ПОЛ РЕСУРСА — «не тратить ниже N %», настройка автокаста, один на класс.
+ *
+ * Резерв у каждого умения отвечает на вопрос «сколько держать под ЭТУ
+ * кнопку»; пол — «ниже чего автокаст не тратит вообще». Шаг и потолок те же,
+ * что у порога привала: обе настройки — доли полоски, и два разных шага на
+ * двух соседних ползунках читались бы как ошибка. Потолок — единица: «не
+ * тратить никогда» — законный (плохой) выбор игрока, и игра его не запрещает.
+ * По умолчанию ноль: у Стража и Изувера автокаст жмёт до дна, как и прежде.
+ * Руками игрок волен тратить всё: это порог автокаста, а не запрет игры.
+ */
+export const MAX_RESOURCE_FLOOR = 1
+export const RESOURCE_FLOOR_DEFAULT = 0
+
+/** Пол ресурса с ползунка: кратен шагу и не выше потолка. */
+export function snapResourceFloor(share: number): number {
+  return snapShare(share, RESOURCE_FLOOR_DEFAULT, MAX_RESOURCE_FLOOR)
 }
 
 /**

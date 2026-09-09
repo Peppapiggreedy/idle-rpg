@@ -1,5 +1,5 @@
 {
-  "version": 35,
+  "version": 36,
   "classId": "houndmaster",
   "materials": {},
   "mastery": {},
@@ -291,6 +291,7 @@
   "regenDelayMsLeft": 0,
   "restHpThreshold": 0.6,
   "holdManaForHeal": true,
+  "resourceFloor": 0,
   "upgradePriority": "balance",
   "purchasedUpgradeIds": [],
   "lootPolicy": "keep",

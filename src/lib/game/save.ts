@@ -36,6 +36,8 @@ import {
   REGEN_TICK_S,
   REST_HP_THRESHOLD_DEFAULT,
   snapRestThreshold,
+  snapResourceFloor,
+  RESOURCE_FLOOR_DEFAULT,
   LEGACY_V3_SWING_TIME_S,
   OFFLINE_CAP_HOURS,
   OFFLINE_CHUNK_MIN,
@@ -117,7 +119,7 @@ const OFFLINE_LOOT_SALT = 0x9e37_79b9
 /** Все хваты одним списком: сейв принимает только их. */
 const GRIPS: Grip[] = ['one', 'two', 'shield']
 
-export const SAVE_VERSION = 35
+export const SAVE_VERSION = 36
 
 /**
  * ПОКОЛЕНИЕ ДЕРЕВА, КОТОРЫМ ПОМЕЧЕНЫ ВСЕ СЕЙВЫ ДО 33-й ВЕРСИИ. До неё номера
@@ -274,6 +276,8 @@ export interface SavePayloadV21 {
   restHpThreshold: number
   /** Беречь ману под лечение — настройка автокаста. */
   holdManaForHeal: boolean
+  /** Пол ресурса: ниже этой доли запаса автокаст не тратит ничего. */
+  resourceFloor: number
   /** Что игрок считает апгрейдом: урон, выживание или баланс. */
   upgradePriority: UpgradePriority
   /** Что куплено за золото: id ступеней лестницы покупок. */
@@ -488,6 +492,7 @@ export function payloadFromState(state: GameState, lastTimestamp: number): SaveP
     regenDelayMsLeft: Math.max(0, state.regenDelayMsLeft),
     restHpThreshold: state.restHpThreshold,
     holdManaForHeal: state.holdManaForHeal !== false,
+    resourceFloor: state.resourceFloor,
     upgradePriority: state.upgradePriority,
     purchasedUpgradeIds: [...state.purchasedUpgradeIds],
     lootPolicy: state.lootPolicy,
@@ -1061,6 +1066,10 @@ export function stateFromPayload(p: SavePayloadV21): GameState {
     // Отсутствие поля (старый сейв) читается как «включено» — так же, как
     // у нового героя.
     holdManaForHeal: p.holdManaForHeal !== false,
+    // Пол ресурса прижимается к шагу ползунка ЗДЕСЬ ЖЕ, где и порог привала:
+    // «0.2999» из правленого сейва читался бы на экране как 30 %, а считался
+    // бы иначе. Отсутствие поля (старый сейв) — ноль, как у нового героя.
+    resourceFloor: snapResourceFloor(share(p.resourceFloor, RESOURCE_FLOOR_DEFAULT)),
     // Незнакомое значение (руками правленый сейв) читается как умолчание —
     // терять из-за него доступ к игре не за что.
     upgradePriority: UPGRADE_PRIORITIES.includes(p.upgradePriority)
@@ -1248,6 +1257,11 @@ export const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
   // комплект из данных класса, а отсутствие поля читает как «свежий
   // комплект». Сейвы Стража и Изувера проходят нетронутыми, поле в поле.
   34: (raw) => ({ ...raw, version: 35 }),
+  // 35 -> 36: ПОЛ РЕСУРСА АВТОКАСТА («не тратить ниже N %»). У всех прежних
+  // героев он ноль — ровно то поведение, что было: автокаст жмёт до дна.
+  // Записывается явно, а не выводится из отсутствия поля: ноль здесь —
+  // выбор игрока по умолчанию, и сейв обязан его называть.
+  35: (raw) => ({ ...raw, version: 36, resourceFloor: RESOURCE_FLOOR_DEFAULT }),
   // 29 -> 30. ДЕРЕВО ТАЛАНТОВ ПЕРЕСОБРАНО — ОДИН БЕСПЛАТНЫЙ СБРОС.
   //
   // У Стража на каждом этаже стало по два-три таланта вместо одного, ёмкость

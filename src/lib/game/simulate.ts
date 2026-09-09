@@ -116,6 +116,11 @@ export interface SimBuild {
    * иначе мерили бы ещё и то, кто чаще садится отдыхать.
    */
   restThreshold?: number
+  /**
+   * Пол ресурса автокаста («не тратить ниже N %»). Не задан — как у свежего
+   * героя, то есть ноль: прогон мерит билд, и по умолчанию ротация жмёт до дна.
+   */
+  resourceFloor?: number
   // Экипировка эталонного героя. 'average' — все слоты заняты СРЕДНИМ по
   // рулетке предметом (см. TYPICAL_RARITY): это не «повезло» и не «не
   // повезло», а то, во что игрок одет обычно. 'none' — голый герой.
@@ -791,6 +796,7 @@ export function buildSimState(build: SimBuild, zoneId: string, seed: number): Ga
     abilitySettings: loadout.settings,
     // Прогон меряет ЗАДАННЫЙ билд: автонадевание подменило бы его на середине.
     restHpThreshold: build.restThreshold ?? base.restHpThreshold,
+    resourceFloor: build.resourceFloor ?? base.resourceFloor,
     currentZoneId: zone.id,
     // Смерть отбрасывает в последнюю зону, где герой выживал. Ставим её сразу:
     // иначе первая же смерть увела бы прогон в безопасную зону и он мерил бы

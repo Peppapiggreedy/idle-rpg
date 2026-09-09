@@ -17,6 +17,7 @@ import {
   AUTOCAST_DELAY_MS,
   REGEN_TICK_S,
   REST_HP_THRESHOLD_DEFAULT,
+  RESOURCE_FLOOR_DEFAULT,
 } from '../data/balance'
 import { recomputeStats, type StatBlock } from './stats'
 import { SLOT_IDS, type SlotId } from '../data/slots'
@@ -181,6 +182,14 @@ export interface GameState {
    * не делает.
    */
   holdManaForHeal: boolean
+  /**
+   * ПОЛ РЕСУРСА: ниже этой доли запаса автокаст не тратит ничего. Настройка
+   * автокаста, один на класс, лежит в сейве, по умолчанию ноль; шаг и
+   * потолок — как у порога привала (`snapResourceFloor`). Резерв каждого
+   * умения складывается с ним по максимуму. Руками игрок волен тратить всё.
+   * Не характеристика: таланту трогать его нечем — среди `StatId` его нет.
+   */
+  resourceFloor: number
   /**
    * ПРИОРИТЕТ АПГРЕЙДА: что игрок считает улучшением — урон, выживание или
    * то и другое. Настройка, а не свойство героя: лежит в сейве, меняется
@@ -399,6 +408,12 @@ export interface Rotation {
    * каждый из них считал бы по умению, которого у героя в руках нет.
    */
   boons: readonly string[]
+  /**
+   * ПОЛ РЕСУРСА ЕДЕТ С РОТАЦИЕЙ по тому же доводу, что ранги и свойства:
+   * модель боя раскладывает всплеск трат до пола, и модель, не знающая о
+   * нём, обещала бы оффлайну касты, которых автокаст не делает.
+   */
+  resourceFloor: number
 }
 
 export const rotationOf = (state: GameState): Rotation => ({
@@ -406,6 +421,7 @@ export const rotationOf = (state: GameState): Rotation => ({
   settings: state.abilitySettings,
   talents: state.talents,
   boons: equippedBoons(state.equipment),
+  resourceFloor: state.resourceFloor,
 })
 
 /**
@@ -623,6 +639,7 @@ export function createInitialState(
     restTotalMs: 0,
     restHpThreshold: REST_HP_THRESHOLD_DEFAULT,
     holdManaForHeal: true,
+    resourceFloor: RESOURCE_FLOOR_DEFAULT,
     upgradePriority: DEFAULT_UPGRADE_PRIORITY,
     purchasedUpgradeIds: [],
     lootPolicy: DEFAULT_LOOT_POLICY,
