@@ -6,7 +6,7 @@
   interface Props {
     value: Decimal | number
     // Семантика — за что это число отвечает; 'plain' не красит.
-    tone?: 'plain' | 'gold' | 'xp' | 'hp' | 'mana' | 'damage' | 'accent' | 'muted'
+    tone?: 'plain' | 'gold' | 'xp' | 'hp' | 'mana' | 'rage' | 'energy' | 'damage' | 'accent' | 'muted'
     size?: 'sm' | 'md' | 'lg' | 'xl'
     // Знак перед числом: 'auto' ставит + у положительных, '+' — всегда.
     sign?: 'none' | 'auto' | 'plus'
@@ -74,6 +74,12 @@
   }
   .num.mana {
     color: var(--c-mana);
+  }
+  .num.rage {
+    color: var(--c-rage);
+  }
+  .num.energy {
+    color: var(--c-energy);
   }
   .num.damage {
     color: var(--c-damage);

@@ -130,6 +130,25 @@ describe('версия сейва', () => {
     expect(next.gold).toBe('5')
   })
 
+  it('33 -> 34: третий класс — у Стража и Изувера не меняется ничего, кроме номера', () => {
+    // Форма сейва прежняя; миграция нужна ради обратного чтения (сборка без
+    // третьего класса откажет кодом, а не подменит героя молча). Поле в поле:
+    // это правило ночи «ключи двух готовых классов не двигаются» — для сейва.
+    for (const classId of ['warden', 'reaver']) {
+      const raw = {
+        version: 33,
+        classId,
+        currentMana: '37',
+        talents: { 'wrath-honed-edge': 3 },
+        treeRevision: 1,
+        abilitySlots: ['quick-strike', null, null, null],
+        gold: '5',
+      }
+      const next = MIGRATIONS[33](raw as never)
+      expect(next).toEqual({ ...raw, version: 34 })
+    }
+  })
+
   it('29 -> 30: сейв без счётчика сбросов не ломается', () => {
     const next = MIGRATIONS[29]({ version: 29 } as never)
     expect(next.talentResets).toBe(0)

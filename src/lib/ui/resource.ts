@@ -16,13 +16,14 @@ export interface ResourceWords {
   accusative: string
   /** Копится ли ресурс от ударов. У ярости да, у маны нет. */
   fromCombat: boolean
-  /** Тон полоски: у ярости свой цвет — она и ведёт себя иначе. */
-  tone: 'mana' | 'rage'
+  /** Тон полоски: у каждого рода ресурса свой цвет — они и ведут себя иначе. */
+  tone: 'mana' | 'rage' | 'energy'
 }
 
 const WORDS: Record<string, Pick<ResourceWords, 'name' | 'genitive' | 'accusative' | 'tone'>> = {
   mana: { name: 'Мана', genitive: 'маны', accusative: 'ману', tone: 'mana' },
   rage: { name: 'Ярость', genitive: 'ярости', accusative: 'ярость', tone: 'rage' },
+  energy: { name: 'Энергия', genitive: 'энергии', accusative: 'энергию', tone: 'energy' },
 }
 
 export function resourceWords(classId: string | undefined | null): ResourceWords {

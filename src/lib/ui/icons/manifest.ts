@@ -185,6 +185,18 @@ export const ICONS = {
   // --- Классы ---
   'class-warden': { file: 'delapouite/spiked-shield.svg', author: 'Delapouite' },
   'class-reaver': { file: 'lorc/axe-swing.svg', author: 'Lorc' },
+  'class-houndmaster': { file: 'lorc/hound.svg', author: 'Lorc' },
+
+  // --- Умения Псаря ---
+  'ability-undercut': { file: 'lorc/knife-thrust.svg', author: 'Lorc' },
+
+  // --- Таланты Псаря ---
+  'talent-quick-hands': { file: 'lorc/sprint.svg', author: 'Lorc' },
+  'talent-sure-cut': { file: 'lorc/crossed-slashes.svg', author: 'Lorc' },
+  'talent-thick-coat': { file: 'delapouite/animal-hide.svg', author: 'Delapouite' },
+  'talent-even-breath': { file: 'delapouite/lungs.svg', author: 'Delapouite' },
+  'talent-restless-legs': { file: 'lorc/run.svg', author: 'Lorc' },
+  'talent-short-camp': { file: 'lorc/campfire.svg', author: 'Lorc' },
 
   // --- Материалы профессий ---
   'material-herb': { file: 'delapouite/herbs-bundle.svg', author: 'Delapouite' },

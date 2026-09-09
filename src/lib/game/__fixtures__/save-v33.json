@@ -1,19 +1,7 @@
 {
-  "version": 34,
+  "version": 33,
   "classId": "warden",
-  "materials": {
-    "meadow-herb": "18",
-    "lean-meat": "18",
-    "quarry-ore": "18",
-    "bog-hide": "14",
-    "furrow-rust": "14",
-    "ember-shard": "10",
-    "glass-sliver": "10",
-    "shaft-iron": "6",
-    "root-fibre": "6"
-  },
-  "mastery": {},
-  "knownRecipeIds": [],
+  "materials": {},
   "activePotions": [],
   "enchantDust": "0",
   "saveId": 404,
@@ -485,16 +473,15 @@
   "currentMana": "205",
   "heroState": "alive",
   "reviveMsLeft": 0,
-  "talents": {
-    "wrath-honed-edge": 6,
-    "wrath-firm-hand": 5,
-    "wrath-keen-eye": 6,
-    "wrath-deep-cut": 5,
-    "wrath-savage-blows": 1
-  },
-  "treeRevision": 1,
+  "talents": {},
   "talentResets": 2,
   "totalTicks": "0",
   "playtimeMs": "0",
-  "abilityCasts": "0"
+  "abilityCasts": "0",
+  "mastery": {
+    "smithing": 40,
+    "herbalism": 40
+  },
+  "knownRecipeIds": [],
+  "treeRevision": 1
 }

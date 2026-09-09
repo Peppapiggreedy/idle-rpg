@@ -258,6 +258,8 @@
     <div class="bars">
       <StatBar value={pulse} tone="hp" size="lg" label="Здоровье" valueLabel="{pulse} / 100" />
       <StatBar value={pulse} tone="mana" label="Мана" valueLabel="{pulse} / 100" />
+      <StatBar value={pulse} tone="rage" label="Ярость" valueLabel="{pulse} / 100" />
+      <StatBar value={pulse} tone="energy" label="Энергия" valueLabel="{pulse} / 100" />
       <StatBar value={pulse} tone="xp" size="sm" label="Опыт" valueLabel="{pulse}%" />
       <StatBar value={100 - pulse} tone="damage" size="lg" label="HP моба" />
       <StatBar value={pulse} tone="accent" label="Акцент" />

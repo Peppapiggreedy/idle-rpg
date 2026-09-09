@@ -76,6 +76,9 @@ export type BranchId =
   | 'reaver-carnage'
   | 'reaver-sinew'
   | 'reaver-instinct'
+  | 'houndmaster-chase'
+  | 'houndmaster-leash'
+  | 'houndmaster-trail'
 
 export interface BranchDef {
   id: BranchId
@@ -94,6 +97,10 @@ export const BRANCHES: BranchDef[] = [
   { id: 'reaver-carnage', name: 'Резня', classId: 'reaver', style: 'damage' },
   { id: 'reaver-sinew', name: 'Жилы', classId: 'reaver', style: 'survival' },
   { id: 'reaver-instinct', name: 'Чутьё', classId: 'reaver', style: 'autonomy' },
+  // --- Псарь: энергия, лёгкий клинок и пёс ---
+  { id: 'houndmaster-chase', name: 'Гон', classId: 'houndmaster', style: 'damage' },
+  { id: 'houndmaster-leash', name: 'Привязь', classId: 'houndmaster', style: 'survival' },
+  { id: 'houndmaster-trail', name: 'Тропа', classId: 'houndmaster', style: 'autonomy' },
 ]
 
 export const BRANCH_BY_ID: Record<string, BranchDef> = Object.fromEntries(
@@ -2305,6 +2312,86 @@ const REAVER_INSTINCT = branch('reaver-instinct', [
   ],
 ])
 
+// ---------------------------------------------------------------------------
+// ПСАРЬ
+// ---------------------------------------------------------------------------
+//
+// ТРИ ВЕТКИ СТРОЯТСЯ СТАДИЯМИ ночи «два тела»: первый этаж заведён вместе с
+// классом, остальные двенадцать приходят своими стадиями — по коммиту на
+// ветку. Первый этаж намеренно из базовых чисел: до появления пса и его
+// команд править умения нечем.
+//
+//   ГОН     — урон: герой и пёс вместе.
+//   ПРИВЯЗЬ — живучесть ЧЕРЕЗ ПСА: доля перенаправления, здоровье пса, его
+//             возвращение, — а не щит и не броня героя.
+//   ТРОПА   — автономность ЭНЕРГИИ: скорость восстановления, цена умений,
+//             порог, поведение в оффлайне.
+const HOUNDMASTER_CHASE = branch('houndmaster-chase', [
+  [
+    {
+      // Ускорение — flat по haste (правило про weaponSpeed см. у Стража).
+      id: 'chase-quick-hands',
+      name: 'Быстрые руки',
+      icon: 'talent-quick-hands',
+      maxRank: 6,
+      col: 2,
+      effect: mods(m('haste', 'flat', 0.00703)),
+    },
+    {
+      id: 'chase-sure-cut',
+      name: 'Верный надрез',
+      icon: 'talent-sure-cut',
+      maxRank: 5,
+      col: 3,
+      effect: tunes('undercut', { field: 'weaponDamagePercent', kind: 'percent', value: 0.04 }),
+    },
+  ],
+])
+
+const HOUNDMASTER_LEASH = branch('houndmaster-leash', [
+  [
+    {
+      id: 'leash-thick-coat',
+      name: 'Густая шерсть',
+      icon: 'talent-thick-coat',
+      maxRank: 5,
+      col: 2,
+      effect: mods(m('maxHp', 'percent', 0.02)),
+    },
+    {
+      id: 'leash-steady-breath',
+      name: 'Ровное дыхание',
+      icon: 'talent-even-breath',
+      maxRank: 5,
+      col: 3,
+      effect: mods(m('hpRegen', 'percent', 0.05)),
+    },
+  ],
+])
+
+const HOUNDMASTER_TRAIL = branch('houndmaster-trail', [
+  [
+    {
+      // Энергия восстанавливается статом manaRegen: процент от постоянной
+      // базы — единственная законная правка её скорости.
+      id: 'trail-restless-legs',
+      name: 'Неутомимые ноги',
+      icon: 'talent-restless-legs',
+      maxRank: 5,
+      col: 2,
+      effect: mods(m('manaRegen', 'percent', 0.04)),
+    },
+    {
+      id: 'trail-short-camp',
+      name: 'Короткая стоянка',
+      icon: 'talent-short-camp',
+      maxRank: 5,
+      col: 3,
+      effect: mods(m('restDuration', 'percent', -0.04)),
+    },
+  ],
+])
+
 export const TALENTS: TalentDef[] = [
   ...WARDEN_WRATH,
   ...WARDEN_BULWARK,
@@ -2312,6 +2399,9 @@ export const TALENTS: TalentDef[] = [
   ...REAVER_CARNAGE,
   ...REAVER_SINEW,
   ...REAVER_INSTINCT,
+  ...HOUNDMASTER_CHASE,
+  ...HOUNDMASTER_LEASH,
+  ...HOUNDMASTER_TRAIL,
 ]
 
 export const TALENT_BY_ID: Record<string, TalentDef> = Object.fromEntries(
