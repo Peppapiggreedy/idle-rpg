@@ -213,6 +213,9 @@ export const ICONS = {
   'talent-fast-return': { file: 'delapouite/jumping-dog.svg', author: 'Delapouite' },
   'talent-hound-mending': { file: 'lorc/paw-heart.svg', author: 'Lorc' },
   'talent-full-rally': { file: 'delapouite/mighty-horn.svg', author: 'Delapouite' },
+  // Таланты Псаря — ветка Тропа.
+  'talent-hound-rests': { file: 'delapouite/sitting-dog.svg', author: 'Delapouite' },
+  'talent-hound-sleeps': { file: 'delapouite/dog-house.svg', author: 'Delapouite' },
 
   // --- Таланты Псаря ---
   'talent-quick-hands': { file: 'lorc/sprint.svg', author: 'Lorc' },

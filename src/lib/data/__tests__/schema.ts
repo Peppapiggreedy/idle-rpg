@@ -64,6 +64,7 @@ import {
   type TalentDef,
   type TalentStatRule, TREE_COLUMNS,
   HOUND_TUNE_FIELDS,
+  COMPANION_FLAGS,
 } from '../talents'
 import type { Zone } from '../zones'
 import type { StatId } from '../../game/stats'
@@ -1333,6 +1334,17 @@ export const TALENT_SCHEMA: EntitySchema<TalentDef> = {
     // талант: у флага одно числовое поле со своим диапазоном, и добавить
     // десятый флаг — значит дописать сюда строку, а не ещё одну ветку.
     if (talent.effect.kind === 'flag') {
+      // ФЛАГИ СПУТНИКА — ТОЛЬКО У КЛАССА СО СПУТНИКОМ. У класса без пса такой
+      // талант мёртв: читать флаг некому, а очко за него берут.
+      if (COMPANION_FLAGS.includes(talent.effect.flag)) {
+        const branch = content.branches.find((b) => b.id === talent.branch)
+        const owner = branch ? content.classes.find((c) => c.id === branch.classId) : undefined
+        report.need(
+          owner === undefined || owner.companion !== undefined,
+          where,
+          `флаг спутника «${talent.effect.flag}» у класса «${owner?.id}» без спутника — талант мёртв (data/talents.ts)`,
+        )
+      }
       // ПРАВКА ЧИСЛА СПУТНИКА — составной payload (поле, операция, величина),
       // и в таблицу одного числа он не ложится: поле из закрытого списка,
       // величина не ноль и в разумных долях.

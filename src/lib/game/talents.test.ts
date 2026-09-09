@@ -32,7 +32,7 @@ import {
   useAbility,
 } from './abilities'
 import { WEAPONS } from '../data/items'
-import { CLASSES, classById } from '../data/classes'
+import { CLASSES, DEFAULT_CLASS, classById } from '../data/classes'
 import {
   BRANCHES,
   groupHolder,
@@ -51,6 +51,7 @@ import {
   fillBranchRanks,
   talentsInBranch,
   type BranchId,
+  COMPANION_FLAGS,
 } from '../data/talents'
 import {
   LEVEL_CAP,
@@ -173,8 +174,9 @@ function fillBranch(state: GameState, branch: BranchId, points = 1000): GameStat
 // ветку, — и до своей стадии стоят одним этажом. Проверки ФОРМЫ ветки
 // (тринадцать этажей, ёмкость, повороты) идут по достроенным; исключение
 // снимается в той же ночи, стадией трёх веток, и в main без него не уходит.
-const UNDER_CONSTRUCTION = new Set(['houndmaster'])
-const BUILT_BRANCHES = BRANCHES.filter((b) => !UNDER_CONSTRUCTION.has(b.classId))
+// Все девять веток собраны: временного исключения для строящегося класса
+// больше нет, и форма проверяется у каждой.
+const BUILT_BRANCHES = BRANCHES
 
 describe('данные дерева', () => {
   it('шесть веток — по три на класс, и ни одной общей', () => {
@@ -339,26 +341,47 @@ describe('данные дерева', () => {
     // Теперь проверяются ОБА свойства порознь:
     //   1. общий закрытый набор — ни один класс не заводит своего флага;
     //   2. наборы РАЗНЫЕ — иначе один класс копия другого.
+    //
+    // С ТРЕТЬИМ КЛАССОМ ПРАВИЛО СТАЛО ПАРНЫМ: проверяется КАЖДАЯ пара классов,
+    // а не одна. Флаг, которого нет ни у кого другого, допустим ровно в одном
+    // случае — это машинерия спутника (`COMPANION_FLAGS`): её читал бы любой
+    // класс с псом, а класс без пса читать ей нечего. Своих флагов у класса
+    // по-прежнему не бывает.
     const flagsOf = (classId: string) =>
       BRANCHES.filter((b) => b.classId === classId).flatMap((b) =>
         talentsInBranch(b.id)
           .filter((t) => t.effect.kind === 'flag')
           .map((t) => (t.effect.kind === 'flag' ? t.effect.flag : '')),
       )
-    const warden = flagsOf('warden')
-    const reaver = flagsOf('reaver')
-    const known = new Set(warden)
-    for (const flag of reaver) {
-      expect(known.has(flag), `флаг «${flag}» есть только у Изувера — это своя машинерия`).toBe(true)
+    // ЭТАЛОН НАБОРА — ГОТОВЫЙ КЛАСС: его флаги и есть общая машинерия, а флаг
+    // превью-класса, которого у готового нет, — своя машинерия (кроме флагов
+    // спутника, у которых готовому классу читать нечего).
+    const sets = CLASSES.map((c) => ({ id: c.id, flags: flagsOf(c.id), set: new Set(flagsOf(c.id)) }))
+    const known = new Set(flagsOf(DEFAULT_CLASS.id))
+    for (const own of sets) {
+      if (own.id === DEFAULT_CLASS.id) continue
+      for (const flag of own.set) {
+        expect(
+          known.has(flag) || (COMPANION_FLAGS as readonly string[]).includes(flag),
+          `флаг «${flag}» есть только у ${own.id} — это своя машинерия`,
+        ).toBe(true)
+      }
     }
-    // Общего должно быть много: ветки решают одни и те же задачи.
-    const shared = reaver.filter((f) => known.has(f))
-    expect(shared.length * 2).toBeGreaterThanOrEqual(reaver.length)
-    // Но одинаковыми они быть не должны: это и есть развод по механизму.
-    expect(
-      [...warden].sort().join(',') === [...reaver].sort().join(','),
-      'наборы флагов совпали полностью — Изувер снова зеркало Стража',
-    ).toBe(false)
+    for (let i = 0; i < sets.length; i += 1) {
+      for (let j = i + 1; j < sets.length; j += 1) {
+        const a = sets[i]
+        const b = sets[j]
+        // Общего должно быть много: ветки решают одни и те же задачи.
+        const shared = [...a.set].filter((f) => b.set.has(f))
+        const smaller = Math.min(a.set.size, b.set.size)
+        expect(shared.length * 2, `${a.id} и ${b.id} почти не делят флагов`).toBeGreaterThanOrEqual(smaller)
+        // Но одинаковыми они быть не должны: это и есть развод по механизму.
+        expect(
+          [...a.set].sort().join(',') === [...b.set].sort().join(','),
+          `наборы флагов ${a.id} и ${b.id} совпали полностью — один класс зеркало другого`,
+        ).toBe(false)
+      }
+    }
   })
 
   it('первый ряд открыт сразу, у каждого таланта есть эффект', () => {

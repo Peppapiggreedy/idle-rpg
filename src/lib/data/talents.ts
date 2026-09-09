@@ -191,6 +191,13 @@ export type HoundTuneField =
   | 'returnSec'
   | 'regenInCombat'
   | 'regenOutOfCombat'
+/**
+ * ФЛАГИ, КОТОРЫМ НУЖЕН СПУТНИК. Это общая машинерия классов со спутником, а не
+ * своя машинерия одного класса: любой класс с `companion` прочёл бы их той же
+ * логикой. У класса без спутника такой талант мёртв — держит `content:check`.
+ */
+export const COMPANION_FLAGS: readonly TalentFlag[] = ['hound-tune', 'pack-tactics', 'hound-avenge']
+
 export const HOUND_TUNE_FIELDS: readonly HoundTuneField[] = [
   'hitShare',
   'swingTime',
@@ -2960,6 +2967,15 @@ const HOUNDMASTER_LEASH = branch('houndmaster-leash', [
   ],
 ])
 
+// ТРОПА: АВТОНОМНОСТЬ ЭНЕРГИИ.
+//
+// Ветка Псаря про то, сколько игра идёт сама: скорость возвращения энергии,
+// цена команд, длина привала, восстановление вне боя — героя и пса. Ключевые
+// пары — про РИТМ, а не про числа: «привал снимает откаты» против «убийство
+// срезает откаты» (пауза против непрерывности); «привал вдвое короче» против
+// «второй заряд серии» (меньше ждать против больше выстрелить); венец —
+// «неутомимая серия» (вдвое дешевле) против «дыхания охоты» (травля дешевле и
+// дольше) — рука против пса.
 const HOUNDMASTER_TRAIL = branch('houndmaster-trail', [
   [
     {
@@ -2979,6 +2995,267 @@ const HOUNDMASTER_TRAIL = branch('houndmaster-trail', [
       maxRank: 5,
       col: 3,
       effect: mods(m('restDuration', 'percent', -0.04)),
+    },
+  ],
+  [
+    {
+      id: 'trail-light-step',
+      name: 'Лёгкий шаг',
+      icon: 'talent-thrift-wound',
+      maxRank: 5,
+      col: 2,
+      effect: tunes('undercut', { field: 'manaCost', kind: 'percent', value: -0.06 }),
+    },
+    {
+      id: 'trail-second-breath',
+      name: 'Второе дыхание тропы',
+      icon: 'talent-clear-mind',
+      maxRank: 5,
+      col: 3,
+      effect: mods(m('hpRegenOutOfCombat', 'percent', 0.06)),
+    },
+  ],
+  [
+    {
+      id: 'trail-quick-camp',
+      name: 'Быстрый лагерь',
+      icon: 'talent-quick-camp',
+      maxRank: 5,
+      col: 1,
+      effect: mods(m('restDuration', 'percent', -0.04)),
+    },
+    {
+      // Стрелка: развивает «Неутомимые ноги».
+      id: 'trail-flow',
+      name: 'Ровный ток',
+      icon: 'talent-deep-well',
+      maxRank: 5,
+      col: 2,
+      requires: { talentId: 'trail-restless-legs', minRank: 3 },
+      effect: mods(m('manaRegen', 'percent', 0.04)),
+    },
+    {
+      id: 'trail-cheap-sic',
+      name: 'Лёгкая команда',
+      icon: 'talent-thrift-rupture',
+      maxRank: 5,
+      col: 3,
+      effect: tunes('sic', { field: 'manaCost', kind: 'percent', value: -0.07 }),
+    },
+  ],
+  [
+    {
+      // ПЁС ОТДЫХАЕТ ВМЕСТЕ С ГЕРОЕМ: восстановление вне боя — в пунктах доли
+      // запаса в секунду.
+      id: 'trail-hound-rests',
+      name: 'Пёс у костра',
+      icon: 'talent-hound-rests',
+      maxRank: 5,
+      col: 2,
+      effect: houndTune('regenOutOfCombat', 'points', 0.02),
+    },
+    {
+      id: 'trail-cheap-grip',
+      name: 'Лёгкая хватка',
+      icon: 'talent-thrift-stance',
+      maxRank: 5,
+      col: 3,
+      effect: tunes('grip', { field: 'manaCost', kind: 'percent', value: -0.07 }),
+    },
+  ],
+  [
+    // КЛЮЧЕВОЙ ЭТАЖ 5: пауза против непрерывности.
+    {
+      id: 'trail-camp-refresh',
+      name: 'Отдых снимает усталость',
+      icon: 'talent-quick-focus',
+      maxRank: 1,
+      col: 2,
+      exclusiveGroup: 'trail-key-5',
+      effect: { kind: 'flag', flag: 'rest-clears-cooldowns', cooldownShare: 0.5 },
+    },
+    {
+      id: 'trail-hunt-rhythm',
+      name: 'Ритм охоты',
+      icon: 'talent-kill-refund',
+      maxRank: 1,
+      col: 3,
+      exclusiveGroup: 'trail-key-5',
+      effect: { kind: 'flag', flag: 'kill-refunds-cooldowns', cooldownShare: 0.7 },
+    },
+  ],
+  [
+    {
+      id: 'trail-quick-undercut',
+      name: 'Частая подсечка',
+      icon: 'talent-firm-hand',
+      maxRank: 5,
+      col: 1,
+      effect: tunes('undercut', { field: 'cooldownSec', kind: 'percent', value: -0.05 }),
+    },
+    {
+      id: 'trail-deep-breath',
+      name: 'Глубокий вдох',
+      icon: 'talent-long-mind',
+      maxRank: 5,
+      col: 2,
+      effect: mods(m('manaRegen', 'percent', 0.04)),
+    },
+    {
+      id: 'trail-cheap-flurry',
+      name: 'Лёгкая серия',
+      icon: 'talent-thrift-shatter',
+      maxRank: 5,
+      col: 3,
+      effect: tunes('flurry', { field: 'manaCost', kind: 'percent', value: -0.06 }),
+    },
+  ],
+  [
+    {
+      id: 'trail-lean-bandage',
+      name: 'Бережная перевязка',
+      icon: 'talent-thrift-wall',
+      maxRank: 5,
+      col: 2,
+      effect: tunes('bandage', { field: 'manaCost', kind: 'percent', value: -0.08 }),
+    },
+    {
+      id: 'trail-cheap-unleash',
+      name: 'Лёгкий спуск',
+      icon: 'talent-thrift-mercy',
+      maxRank: 5,
+      col: 3,
+      effect: tunes('unleash', { field: 'manaCost', kind: 'percent', value: -0.06 }),
+    },
+  ],
+  [
+    {
+      // Стрелка: развивает «Короткую стоянку».
+      id: 'trail-brief-camp',
+      name: 'Стоянка на ходу',
+      icon: 'talent-shorter-rest',
+      maxRank: 5,
+      col: 3,
+      requires: { talentId: 'trail-short-camp', minRank: 3 },
+      effect: mods(m('restDuration', 'percent', -0.04)),
+    },
+    {
+      id: 'trail-cheap-hamstring',
+      name: 'Лёгкий подрез',
+      icon: 'talent-spare-edge',
+      maxRank: 5,
+      col: 2,
+      effect: tunes('hamstring', { field: 'manaCost', kind: 'percent', value: -0.06 }),
+    },
+  ],
+  [
+    // КЛЮЧЕВОЙ ЭТАЖ 9: меньше ждать против больше выстрелить.
+    {
+      id: 'trail-short-rest',
+      name: 'Полпривала',
+      icon: 'stat-hpRegenOutOfCombat',
+      maxRank: 1,
+      col: 2,
+      exclusiveGroup: 'trail-key-9',
+      effect: { kind: 'flag', flag: 'shorter-rest', durationMultiplier: 0.5 },
+    },
+    {
+      id: 'trail-flurry-charge',
+      name: 'Вторая серия',
+      icon: 'talent-second-charge',
+      maxRank: 1,
+      col: 3,
+      exclusiveGroup: 'trail-key-9',
+      effect: { kind: 'flag', flag: 'ability-extra-charge', abilityId: 'flurry', extraCharges: 1 },
+    },
+  ],
+  [
+    {
+      id: 'trail-out-regen',
+      name: 'Отдых у тропы',
+      icon: 'talent-cold-blood',
+      maxRank: 5,
+      col: 1,
+      effect: mods(m('hpRegenOutOfCombat', 'percent', 0.06)),
+    },
+    {
+      id: 'trail-endless-legs',
+      name: 'Бесконечные ноги',
+      icon: 'talent-endless-mind',
+      maxRank: 5,
+      col: 2,
+      effect: mods(m('manaRegen', 'percent', 0.04)),
+    },
+    {
+      id: 'trail-cheap-skulk',
+      name: 'Лёгкое скрадывание',
+      icon: 'talent-thrift-stance',
+      maxRank: 5,
+      col: 3,
+      effect: tunes('skulk', { field: 'manaCost', kind: 'percent', value: -0.06 }),
+    },
+  ],
+  [
+    {
+      // Стрелка: развивает «Пса у костра».
+      id: 'trail-hound-sleeps',
+      name: 'Пёс спит у ног',
+      icon: 'talent-hound-sleeps',
+      maxRank: 5,
+      col: 2,
+      requires: { talentId: 'trail-hound-rests', minRank: 3 },
+      effect: houndTune('regenOutOfCombat', 'points', 0.02),
+    },
+    {
+      id: 'trail-cheap-rally',
+      name: 'Лёгкий оклик',
+      icon: 'talent-early-call',
+      maxRank: 4,
+      col: 3,
+      effect: tunes('rally', { field: 'manaCost', kind: 'percent', value: -0.1 }),
+    },
+  ],
+  [
+    {
+      id: 'trail-short-halt',
+      name: 'Короткий привал',
+      icon: 'talent-long-focus',
+      maxRank: 5,
+      col: 2,
+      effect: mods(m('restDuration', 'percent', -0.04)),
+    },
+    {
+      id: 'trail-cheap-pack',
+      name: 'Лёгкий зов',
+      icon: 'talent-unbroken-focus',
+      maxRank: 5,
+      col: 3,
+      effect: tunes('pack', { field: 'manaCost', kind: 'percent', value: -0.08 }),
+    },
+  ],
+  [
+    // ВЕНЕЦ: рука против пса.
+    {
+      id: 'trail-tireless-flurry',
+      name: 'Неутомимая серия',
+      icon: 'ability-flurry',
+      maxRank: 1,
+      col: 2,
+      exclusiveGroup: 'trail-key-13',
+      effect: tunes('flurry', { field: 'manaCost', kind: 'multiplier', value: 0.5 }),
+    },
+    {
+      id: 'trail-hunting-breath',
+      name: 'Дыхание охоты',
+      icon: 'ability-sic',
+      maxRank: 1,
+      col: 3,
+      exclusiveGroup: 'trail-key-13',
+      effect: tunes(
+        'sic',
+        { field: 'manaCost', kind: 'multiplier', value: 0.5 },
+        { field: 'houndHasteDurationSec', kind: 'multiplier', value: 1.5 },
+      ),
     },
   ],
 ])
@@ -3769,6 +4046,78 @@ const BRANCH_PATHS: Partial<Record<BranchId, TalentPath[]>> = {
         'leash-long-grip',
         'leash-cheap-recall',
         'leash-long-recall',
+      ],
+    },
+  ],
+  'houndmaster-trail': [
+    {
+      // ТРОПА. Привал снимает откаты и короче вдвое, травля дешевле и дольше:
+      // герой идёт сам и почти не стоит. Четвёрка по умолчанию — прибор.
+      id: 'trail-walk',
+      name: 'Тропа',
+      abilities: ['undercut', 'sic', 'hamstring', 'recall'],
+      order: [
+        'trail-camp-refresh',
+        'trail-short-rest',
+        'trail-hunting-breath',
+        'trail-restless-legs',
+        'trail-short-camp',
+        'trail-light-step',
+        'trail-second-breath',
+        'trail-flow',
+        'trail-cheap-sic',
+        'trail-quick-camp',
+        'trail-hound-rests',
+        'trail-cheap-grip',
+        'trail-quick-undercut',
+        'trail-deep-breath',
+        'trail-lean-bandage',
+        'trail-brief-camp',
+        'trail-cheap-hamstring',
+        'trail-out-regen',
+        'trail-endless-legs',
+        'trail-hound-sleeps',
+        'trail-cheap-rally',
+        'trail-short-halt',
+        'trail-cheap-flurry',
+        'trail-cheap-unleash',
+        'trail-cheap-skulk',
+        'trail-cheap-pack',
+      ],
+    },
+    {
+      // РИТМ. Убийство срезает откаты, серия с двумя зарядами и вдвое
+      // дешевле: непрерывный бой без пауз. Четвёрка — всплесковая.
+      id: 'trail-rhythm',
+      name: 'Ритм',
+      abilities: ['undercut', 'sic', 'flurry', 'unleash'],
+      order: [
+        'trail-hunt-rhythm',
+        'trail-flurry-charge',
+        'trail-tireless-flurry',
+        'trail-cheap-flurry',
+        'trail-cheap-unleash',
+        'trail-restless-legs',
+        'trail-light-step',
+        'trail-flow',
+        'trail-cheap-sic',
+        'trail-quick-undercut',
+        'trail-deep-breath',
+        'trail-endless-legs',
+        'trail-short-camp',
+        'trail-second-breath',
+        'trail-quick-camp',
+        'trail-hound-rests',
+        'trail-cheap-grip',
+        'trail-lean-bandage',
+        'trail-brief-camp',
+        'trail-cheap-hamstring',
+        'trail-out-regen',
+        'trail-hound-sleeps',
+        'trail-cheap-rally',
+        'trail-short-halt',
+        'trail-cheap-skulk',
+        'trail-cheap-pack',
       ],
     },
   ],
