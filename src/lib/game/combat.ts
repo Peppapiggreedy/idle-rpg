@@ -52,7 +52,7 @@ import {
 import { statsWithPotionPlan, statsWithoutPotions } from './potions'
 import { PROC_BY_ID, type ProcDef } from '../data/procs'
 import { SLOT_IDS } from '../data/slots'
-import { NO_HOUND_TUNE, houndModel, upHounds, type HoundModel, type HoundTune } from './hound'
+import { NO_HOUND_TUNE, houndModel, isHoundCommand, upHounds, type HoundModel, type HoundTune } from './hound'
 
 // Какой рукой бьём. Правило нормализации скорости одно на обе, отличаются
 // только база боя и штраф левой руки.
@@ -836,8 +836,10 @@ function hitStream(
   let paced = killing
   for (const cast of rotation.casts) {
     // Лечение — не удар: моба не квантует и не добивает. Команда псу без
-    // удара героя — тоже: её укусы идут в поток псом (см. evaluate).
-    if (cast.ability.heal || cast.hitDamage.lte(0)) continue
+    // удара героя — тоже: её укусы идут в поток псом (см. evaluate). Ровно
+    // команда псу, а не любой нулевой каст: заслон и стойка Стража ударами
+    // потока считались до пса, и общее правило сдвинуло бы его отпечаток.
+    if (cast.ability.heal || isHoundCommand(cast.ability)) continue
     // Серия — несколько ударов за каст, каждый квантует бой и может добить.
     const hits = cast.ability.flurry ? Math.max(1, Math.round(cast.ability.flurry.hits)) : 1
     const castRate = new Decimal(cast.castsPerSecond).times(hits)

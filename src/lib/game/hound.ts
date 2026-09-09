@@ -15,6 +15,7 @@ import { TALENTS, rankOf } from '../data/talents'
 import { critFactor, expectedMonsterDamage, expectedSwingDamage, rollSwing } from './combat'
 import type { Rng } from './rng'
 import type { GameState, HoundMarks } from './state'
+import type { AbilityDef } from '../data/abilities'
 import type { HoundTuneField } from '../data/talents'
 import type { StatBlock } from './stats'
 import type { Monster } from '../types'
@@ -95,6 +96,22 @@ export function houndMaxHp(state: Pick<GameState, 'classId' | 'stats' | 'talents
 }
 
 /** Пёс на ногах: не лежит и здоровье выше нуля. */
+/**
+ * Команда псу, при которой герой сам не бьёт: отзыв, перевязка, спуск,
+ * скрадывание, оклик, свора. Читают её тик (каст без удара героя) и модель:
+ * в потоке ударов (`hitStream`) такой каст не квантует бой — его укусы идут
+ * псом. ТОЛЬКО команды псу: нулевые касты Стража (заслон, стойка) считались
+ * ударами потока до появления пса, и общее правило «нулевой каст — не удар»
+ * сдвинуло бы 14 ключей Стража в отпечатке на доли процента (найдено на
+ * матрице ночи «два тела» и записано в docs/HOUND.md как открытый вопрос).
+ */
+export function isHoundCommand(ability: AbilityDef): boolean {
+  return (
+    ability.weaponDamagePercent.lte(0) &&
+    Boolean(ability.recall || ability.houndHeal || ability.unleash || ability.skulk || ability.rally || ability.pack)
+  )
+}
+
 export function isHoundUp(hound: HoundState): boolean {
   return hound.downMsLeft <= 0 && hound.hp.gt(0)
 }

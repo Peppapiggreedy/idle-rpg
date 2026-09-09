@@ -13,6 +13,7 @@ import {
   HOUND_ID,
   companionOf,
   houndMaxHp,
+  isHoundCommand,
   isHoundUp,
   rollHoundBite,
   upHounds,
@@ -845,13 +846,6 @@ export function useAbility(
   return strikeWithAbility(payFor(state, ability), ability, rng, emitAttack, fill)
 }
 
-/** Команда псу, при которой герой сам не бьёт: отзыв, перевязка, спуск, скрадывание, оклик, свора. */
-export function isHoundCommand(ability: AbilityDef): boolean {
-  return (
-    ability.weaponDamagePercent.lte(0) &&
-    Boolean(ability.recall || ability.houndHeal || ability.unleash || ability.skulk || ability.rally || ability.pack)
-  )
-}
 
 /**
  * УКУС ПО КОМАНДЕ: каждый стоящий пёс кусает сразу, вне своего таймера, с
