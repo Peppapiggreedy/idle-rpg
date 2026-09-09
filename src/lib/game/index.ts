@@ -14,6 +14,9 @@ export {
 export type { GameState, Equipment, AbilitySlots, Rotation } from './tick'
 export { defaultAbilitySlots, fillAbilitySlots, rotationOf } from './tick'
 export { abilitiesOf } from './state'
+// Пёс: что сцене и панелям можно читать о втором теле.
+export { HOUND_ID, companionOf, houndMaxHp, isHoundUp, upHounds } from './hound'
+export type { HoundState } from './hound'
 // ЭФФЕКТИВНЫЕ умения героя: базовые данные плюс правки талантов.
 export { abilityOf, heroAbilities } from './abilities'
 export { xpToNextLevel, applyXp, MAX_LEVELUPS_PER_CALL } from './formulas'

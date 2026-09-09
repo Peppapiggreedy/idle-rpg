@@ -1,5 +1,5 @@
 {
-  "version": 34,
+  "version": 35,
   "classId": "warden",
   "materials": {},
   "mastery": {},
@@ -145,5 +145,6 @@
   "talentResets": 0,
   "totalTicks": "0",
   "playtimeMs": "0",
-  "abilityCasts": "0"
+  "abilityCasts": "0",
+  "hounds": []
 }

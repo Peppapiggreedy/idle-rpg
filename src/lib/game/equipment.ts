@@ -1,5 +1,6 @@
 // Надеть / снять / оценить экипировку. Чистые операции над состоянием.
 import { estimateCombatRate, mitigationAgainst, swingDamageRange, survival } from './combat'
+import { houndRedirect } from './hound'
 import { inventorySize } from './upgrades'
 import { SAFE_ZONE, ZONE_BY_ID, representativeMonster, type Zone } from '../data/zones'
 import { referenceMonsterTemplate } from '../data/monsters'
@@ -151,9 +152,13 @@ function withEquipped(state: GameState, item: Item): GameState {
 export function axesOf(state: GameState): Axes {
   const level = state.level.toNumber()
   const monster = monsterFromTemplate(referenceMonsterTemplate(level))
+  const facing = { ...state, monster }
   return {
-    damage: estimateCombatRate({ ...state, monster }).sustainedDamagePerSecond,
-    survival: survival(state.stats, level, monster),
+    // Урон пса уже внутри: модель боя читает второе тело сама.
+    damage: estimateCombatRate(facing).sustainedDamagePerSecond,
+    // Живучесть — с долей, которую пёс снимает с героя. Пёс лежит — доля
+    // ноль, и ось честно проседает: силы, которой сейчас нет, показывать нельзя.
+    survival: survival(state.stats, level, monster, houndRedirect(facing, monster)),
     mitigation: mitigationAgainst(monster, state.stats, level),
   }
 }

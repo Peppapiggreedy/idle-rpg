@@ -149,6 +149,14 @@ describe('версия сейва', () => {
     }
   })
 
+  it('34 -> 35: псы появились полем, а у Стража и Изувера не меняется ничего, кроме номера', () => {
+    for (const classId of ['warden', 'reaver']) {
+      const raw = { version: 34, classId, currentHp: '120', gold: '5' }
+      const next = MIGRATIONS[34](raw as never)
+      expect(next).toEqual({ ...raw, version: 35 })
+    }
+  })
+
   it('29 -> 30: сейв без счётчика сбросов не ломается', () => {
     const next = MIGRATIONS[29]({ version: 29 } as never)
     expect(next.talentResets).toBe(0)

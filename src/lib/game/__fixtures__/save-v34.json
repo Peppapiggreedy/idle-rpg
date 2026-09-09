@@ -1,5 +1,5 @@
 {
-  "version": 35,
+  "version": 34,
   "classId": "warden",
   "materials": {
     "meadow-herb": "18",
@@ -496,6 +496,5 @@
   "talentResets": 2,
   "totalTicks": "0",
   "playtimeMs": "0",
-  "abilityCasts": "0",
-  "hounds": []
+  "abilityCasts": "0"
 }

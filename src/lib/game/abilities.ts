@@ -589,8 +589,7 @@ function applySelfFlags(state: GameState, ability: AbilityDef): GameState {
  * же новой метке.
  */
 export function outgoingMultiplier(state: GameState): Decimal {
-  let mult = new Decimal(1)
-  if (state.monsterBrand) mult = mult.times(1 + state.monsterBrand.damageShare)
+  let mult = targetMultiplier(state)
   if (state.stance) mult = mult.times(1 - state.stance.damageShare)
   // РАЗГОН — набежавшая прибавка, зеркало «Упора»: там росло смягчение от
   // чужих ударов, здесь урон от своих.
@@ -603,6 +602,18 @@ export function outgoingMultiplier(state: GameState): Decimal {
     const over = room > 0 ? Math.max(0, fill - state.edge.resourceAbove) / room : 0
     mult = mult.times(1 + state.edge.damagePerShare * over)
   }
+  return mult
+}
+
+/**
+ * МНОЖИТЕЛЬ ОТ МЕТОК НА ЦЕЛИ — та часть исходящего, что принадлежит МОБУ, а
+ * не руке героя. Клеймо поднимает урон, который цель получает от кого угодно:
+ * и от удара героя, и от укуса пса. Собственные состояния героя (стойка,
+ * разгон, грань) сюда не входят — они про его руку, и пёс их не наследует.
+ */
+export function targetMultiplier(state: GameState): Decimal {
+  let mult = new Decimal(1)
+  if (state.monsterBrand) mult = mult.times(1 + state.monsterBrand.damageShare)
   return mult
 }
 

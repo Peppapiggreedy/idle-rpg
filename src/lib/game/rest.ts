@@ -15,6 +15,7 @@ import type { StatBlock } from './stats'
 import { restCooldownMultiplier, restDurationMultiplier } from './talents'
 import { takeFood } from './crafting'
 import { classById } from '../data/classes'
+import { restedHounds } from './hound'
 import type { GameState } from './state'
 import type { MonsterTemplate } from '../types'
 
@@ -104,6 +105,9 @@ export function finishRest(state: GameState, progress = 1): GameState {
     regenDelayMsLeft: 0,
     // Еда расходуется по одной порции на привал: источник снимается здесь.
     restSpeedupSource: null,
+    // Пёс отдыхает вместе с героем — на ту же долю. Павшего привал не
+    // поднимает: у падения свой таймер, и отдых героя его не ускоряет.
+    hounds: restedHounds(state, share),
   }
 }
 

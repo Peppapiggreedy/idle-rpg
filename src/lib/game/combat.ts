@@ -50,6 +50,7 @@ import {
 import { statsWithPotionPlan, statsWithoutPotions } from './potions'
 import { PROC_BY_ID, type ProcDef } from '../data/procs'
 import { SLOT_IDS } from '../data/slots'
+import { houndModel, upHounds, type HoundModel } from './hound'
 
 // Какой рукой бьём. Правило нормализации скорости одно на обе, отличаются
 // только база боя и штраф левой руки.
@@ -297,9 +298,17 @@ export function survival(
   stats: StatBlock,
   heroLevel: number,
   monster: GameState['monster'],
+  /**
+   * ДОЛЯ ВХОДЯЩЕГО, КОТОРУЮ ЗАБИРАЕТ СПУТНИК (см. `houndRedirect`). Пёс — не
+   * ресурс: он стоит рядом сам, и урон, ушедший ему, до героя не дошёл — это
+   * та же живучесть, что от брони, только адресатом. У класса без пса ноль,
+   * и формула остаётся прежней до последнего бита.
+   */
+  redirect = 0,
 ): Decimal {
   const pool = stats.maxHp.plus(stats.hpRegen.times(TYPICAL_FIGHT_SEC))
-  return pool.div(1 - mitigationAgainst(monster, stats, heroLevel))
+  const through = 1 - mitigationAgainst(monster, stats, heroLevel)
+  return pool.div(redirect > 0 ? through * (1 - redirect) : through)
 }
 
 export interface CombatRate {
@@ -794,6 +803,12 @@ function hitStream(
   rotation: RotationRate,
   doubleChance = 0,
   procs: ProcDef[] = [],
+  /**
+   * УКУСЫ СПУТНИКА — второй источник автоатаки. Входят в поток ПОСЛЕ проков:
+   * прок висит на оружии героя и от чужих зубов не срабатывает. Урон укуса
+   * приходит БЕЗ крита, как и замах: крит навешивается на весь поток разом.
+   */
+  hound: HoundModel | null = null,
 ): HitStream {
   const swingRate = new Decimal(1).div(stats.swingTime)
   const swing = expectedSwingDamage(stats)
@@ -841,6 +856,13 @@ function hitStream(
       paced = paced.plus(damage.times(per))
     }
     procHeal = procHeal.plus(expectedProcHeal(stats, proc).times(per))
+  }
+  // Пёс кусает по своему таймеру и добивает моба так же, как удар героя:
+  // его укус и квантует бой, и входит в перебой.
+  if (hound && hound.rate.gt(0)) {
+    rate = rate.plus(hound.rate)
+    killing = killing.plus(hound.hit.times(hound.rate))
+    paced = paced.plus(hound.hit.times(hound.rate))
   }
   // КРИТ ВХОДИТ В УРОН ПОТОКА, а не только в число «урон в секунду».
   //
@@ -955,6 +977,9 @@ function rateKey(state: GameState, mode: PlayMode): string {
     // всегда: лишний разряд не стоит ничего, забытая зависимость — неверный ответ.
     state.currentZoneId,
     monsterKey(state.monster),
+    // Псы: сколько на поле и сколько из них на ногах. Модель читает ровно это;
+    // здоровье пса в оценку не входит, и в ключ его класть незачем.
+    `${state.hounds.length}:${upHounds(state).length}`,
   ].join('|')
 }
 
@@ -1206,6 +1231,12 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
   const procs = equippedProcs(s)
   const autoDps = autoDamagePerSecond(stats, doubleChance)
   const avgIncoming = expectedMonsterDamage(s.monster, stats, s.level.toNumber())
+  // СПУТНИК — ВТОРОЕ ТЕЛО, и модель обязана видеть его в ОБЕ стороны: он
+  // добавляет укусы в поток ударов и забирает долю входящего. Иначе прогноз
+  // зоны, оффлайн и обе оси считали бы героя без половины его силы, а правило
+  // «оффлайн ≤ автокаст» ломалось бы молча — тик-то пса видит. У класса без
+  // спутника — null, и ни одна формула ниже не меняется.
+  const hound = houndModel(s, s.monster)
 
   /**
    * ЧТО МЕТКИ УМЕНИЙ ДЕЛАЮТ С МОДЕЛЬЮ БОЯ.
@@ -1332,7 +1363,7 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
   const evaluate = (rot: RotationRate, mods: AbilityMods = NEUTRAL_MODS) => {
     // Поток ударов считается ОДИН раз и уходит и в перебой, и в длину боя, и в
     // урон проков: две копии этого расчёта разошлись бы на первой же правке.
-    const stream = hitStream(stats, rot, doubleChance, procs)
+    const stream = hitStream(stats, rot, doubleChance, procs, hound)
     // Сложить автоатаку и умения напрямую НЕЛЬЗЯ: умение «на следующий удар»
     // ЗАМЕНЯЕТ автоатаку, а не добавляется к ней, — эти замахи посчитаны дважды.
     // Пока бой длился полтора удара, ошибка была незаметной; на длинном бою она
@@ -1341,7 +1372,7 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
     // Урон в секунду, реально дошедший до мобов: сырой темп минус перебой.
     // Урон проков — с критом: внутри потока он лежит без него, как killing и paced.
     const procDps = stream.procDamage.times(critFactor(stats))
-    const raw = autoDps
+    const heroRaw = autoDps
       .plus(rot.damagePerSecond)
       .minus(replaced)
       .plus(procDps)
@@ -1350,6 +1381,10 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
       // добавляет надбавку поверх — она уже с критом.
       .times(mods.outgoing)
       .plus(mods.extraDps)
+    // Укусы пса — поверх, без меток героя: стойка и разгон про его руку, а
+    // клеймо на цели модель первого порядка псу не приписывает (в тике оно
+    // его укус множит — расхождение в сторону занижения, и оно записано).
+    const raw = hound && hound.dps.gt(0) ? heroRaw.plus(hound.dps) : heroRaw
     const perKill = damagePerKill(s, plan, stream)
     const damagePerSecond = raw.times(s.monster.maxHp.div(perKill))
     // Длина боя — СРЕДНЕЕ число ударов потока на убийство, дробное. Перебой
@@ -1375,10 +1410,14 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
     // ВХОДЯЩЕЕ РЕЖУТ ОСЛАБЛЕНИЕ И СТОЙКА (долей), а ЩИТ съедает плоскую
     // величину за секунду. Ниже нуля не опускаемся: поглощать больше, чем
     // прилетело, нельзя — иначе щит начал бы лечить.
+    // ПЁС ЗАБИРАЕТ ДОЛЮ ВХОДЯЩЕГО — после смягчения, как и в тике: у класса
+    // без пса множитель не появляется вовсе.
+    const throughHero =
+      hound && hound.redirect > 0 ? mods.incoming * (1 - hound.redirect) : mods.incoming
     const incomingPerCycle = Decimal.max(
       monsterHitsPerCycle
         .times(avgIncoming)
-        .times(mods.incoming)
+        .times(throughHero)
         .minus(mods.absorbPerSecond.times(fightSec)),
       new Decimal(0),
     )

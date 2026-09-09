@@ -144,6 +144,16 @@
         return `${e.item.name} лучше надетого — освободил место, продав ${e.dropped.name} за ${formatNumber(e.gold)}`
       case 'spawn':
         return `Появился ${e.monsterName}`
+      case 'hound-hit':
+        return e.isCrit
+          ? `Пёс рвёт: ${formatNumber(e.damage)} урона — крит!`
+          : `Пёс кусает: ${formatNumber(e.damage)} урона`
+      case 'hound-hurt':
+        return `${e.monsterName} бьёт пса: −${formatNumber(e.damage)} здоровья`
+      case 'hound-down':
+        return `Пёс пал! Вернётся через ${Math.round(e.returnMs / 1000)} с`
+      case 'hound-return':
+        return 'Пёс снова в строю'
       case 'hurt':
         return `${e.monsterName} бьёт: −${formatNumber(e.damage)} здоровья`
       case 'block':
@@ -215,6 +225,12 @@
     'potion-expired': 'potion-fury',
     'rest-start': 'stat-hpRegenOutOfCombat',
     'rest-end': 'stat-hpRegenOutOfCombat',
+    // Всё про пса — значком класса, которому он принадлежит: второе тело
+    // читается одним силуэтом, а не четырьмя разными картинками.
+    'hound-hit': 'class-houndmaster',
+    'hound-hurt': 'class-houndmaster',
+    'hound-down': 'class-houndmaster',
+    'hound-return': 'class-houndmaster',
   }
 
   /** Свёрнутая строка: «12 ударов, 1.2K урона» вместо двенадцати строк. */
@@ -228,6 +244,10 @@
         return `${row.count} ударов по тебе${total}, часть в щит`
       case 'effect':
         return `${row.count} тиков эффекта${total}`
+      case 'hound-hit':
+        return `${row.count} укусов пса${total}`
+      case 'hound-hurt':
+        return `${row.count} ударов по псу${total}`
       default:
         return `${row.count} ударов${total}`
     }
@@ -236,7 +256,9 @@
   // Тон строки: лог должен читаться боковым зрением, поэтому важное — цветом.
   function tone(e: CombatEvent): string {
     if (e.type === 'hit' && e.isCrit) return 'crit'
-    if (e.type === 'hurt' || e.type === 'death') return 'hurt'
+    if (e.type === 'hound-hit' && e.isCrit) return 'crit'
+    if (e.type === 'hurt' || e.type === 'death' || e.type === 'hound-down') return 'hurt'
+    if (e.type === 'hound-return') return 'good'
     if (e.type === 'block') return 'block'
     if (e.type === 'ability-dropped') return 'warn'
     if (e.type === 'kill') return 'kill'

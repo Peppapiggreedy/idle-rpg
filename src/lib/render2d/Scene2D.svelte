@@ -22,6 +22,7 @@
   import { get } from 'svelte/store'
   import { formatNumber } from '../game'
   import { subscribe as subscribeAttacks, subscribeLog } from '../game/events'
+  import { HOUND_ID } from '../game/hound'
   import {
     CRIT_FLASH_MS,
     DEATH_FADE_MS,
@@ -223,6 +224,10 @@
 
   const unsubscribeAttacks = subscribeAttacks((event) => {
     const now = performance.now()
+    // Удары, в которых участвует пёс, сцена пока не рисует: его слой
+    // приходит своей стадией, а рисовать его укус как замах героя или удар
+    // по нему как удар по герою значило бы врать о том, кто бьёт и кого.
+    if (event.companion || event.targetId === HOUND_ID) return
     const targetIsHero = event.targetId === 'hero'
     if (event.sourceId === 'hero') heroStruckAt = now
     else monsterStruckAt = now

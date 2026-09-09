@@ -2509,6 +2509,24 @@ export const CLASS_SCHEMA: EntitySchema<ClassDef> = {
       where,
       `готовность «${String(hero.status)}» не из ready/preview (data/classes.ts)`,
     )
+    // СПУТНИК: числа — доли и секунды, и у каждой есть смысловая граница.
+    // Ноль здоровья или удара — пёс, которого нет; перенаправление выше
+    // единицы — герой, которого нельзя ударить; нулевой замах — бесконечные
+    // укусы за тик.
+    if (hero.companion) {
+      const c = hero.companion
+      const rules: NumberRule<typeof c>[] = [
+        { field: 'companion.maxHpShare', get: (x) => x.maxHpShare, min: 0, exclusiveMin: true, max: 5, why: 'доля запаса героя' },
+        { field: 'companion.hitShare', get: (x) => x.hitShare, min: 0, exclusiveMin: true, max: 5, why: 'доля удара оружия героя' },
+        { field: 'companion.swingTime', get: (x) => x.swingTime, min: 0, exclusiveMin: true, why: 'секунд между укусами' },
+        { field: 'companion.redirectShare', get: (x) => x.redirectShare, min: 0, max: 1, why: 'доля входящего, уходящая псу' },
+        { field: 'companion.returnSec', get: (x) => x.returnSec, min: 0, exclusiveMin: true, why: 'секунд до возврата павшего' },
+        { field: 'companion.regenShare.inCombat', get: (x) => x.regenShare?.inCombat, min: 0, max: 1, why: 'доля запаса в секунду' },
+        { field: 'companion.regenShare.outOfCombat', get: (x) => x.regenShare?.outOfCombat, min: 0, max: 1, why: 'доля запаса в секунду' },
+        { field: 'companion.count', get: (x) => x.count, min: 1, max: 3, integer: true, why: 'псов на поле; на сцене помещается не больше трёх' },
+      ]
+      for (const rule of rules) checkNumber(c, rule, where, 'data/classes.ts', report)
+    }
     // Умения: без них у класса нет ни одной кнопки.
     report.need(
       Array.isArray(hero.abilityIds) && hero.abilityIds.length > 0,

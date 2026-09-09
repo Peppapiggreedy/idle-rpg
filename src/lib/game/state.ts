@@ -21,6 +21,7 @@ import {
 import { recomputeStats, type StatBlock } from './stats'
 import { SLOT_IDS, type SlotId } from '../data/slots'
 import { createRng, type Rng } from './rng'
+import { freshHounds, type HoundState } from './hound'
 import type {
   CombatEvent,
   DungeonRun,
@@ -261,6 +262,13 @@ export interface GameState {
   respawnMsLeft: number
   combatLog: CombatEvent[] // последние события, новые в начале
   msSinceAutosave: number // служебный счётчик игрового времени с последнего сейва
+  /**
+   * ПСЫ ГЕРОЯ — СПИСКОМ, А НЕ ОДНИМ ПОЛЕМ. Длина обычно единица (или ноль у
+   * класса без спутника), но капстоун добавляет второго, и переделка поля в
+   * список потом стоила бы стадии. Здоровье, замах и таймер возврата каждого
+   * — см. `HoundState`; числа пса — в данных класса (`CompanionDef`).
+   */
+  hounds: HoundState[]
 }
 
 // Наложенный эффект. Урон тика ЗАСНЯТ в момент применения: смена оружия
@@ -669,15 +677,18 @@ export function createInitialState(
     respawnMsLeft: 0,
     combatLog: [],
     msSinceAutosave: 0,
+    hounds: [],
   }
   const stats = recomputeStats(base as GameState)
+  const withStats = { ...base, stats }
   return {
-    ...base,
-    stats,
+    ...withStats,
     currentHp: stats.maxHp,
     // Мана начинается полной, ярость — пустой. Это ДАННЫЕ класса, а не
     // условие в коде: обнули startFull, и класс начнёт с пустым ресурсом.
     currentMana: hero.resource.startFull ? stats.maxMana : new Decimal(0),
+    // Псы приходят полными: их запас — доля запаса героя, поэтому после статов.
+    hounds: freshHounds(withStats),
   }
 }
 

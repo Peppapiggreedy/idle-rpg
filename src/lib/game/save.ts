@@ -45,6 +45,7 @@ import {
 } from '../data/balance'
 import { ABILITIES, ABILITY_BY_ID } from '../data/abilities'
 import { CLASS_BY_ID, DEFAULT_CLASS, classById } from '../data/classes'
+import { freshHounds, houndMaxHp } from './hound'
 import { REAGENT_BY_ID } from '../data/reagents'
 import {
   MASTERY_MAX,
@@ -116,7 +117,7 @@ const OFFLINE_LOOT_SALT = 0x9e37_79b9
 /** Все хваты одним списком: сейв принимает только их. */
 const GRIPS: Grip[] = ['one', 'two', 'shield']
 
-export const SAVE_VERSION = 34
+export const SAVE_VERSION = 35
 
 /**
  * ПОКОЛЕНИЕ ДЕРЕВА, КОТОРЫМ ПОМЕЧЕНЫ ВСЕ СЕЙВЫ ДО 33-й ВЕРСИИ. До неё номера
@@ -191,6 +192,16 @@ export interface SavedTempleRun {
   cleared: number
   seed: number
   level: number
+}
+
+/**
+ * Пёс в сейве: здоровье и сколько ещё лежать. Замах не пишется — доли
+ * секунды прогрессом не считаются, как и таймер порции маны. Запас пса не
+ * пишется тоже: он выводится из статов героя при загрузке.
+ */
+export interface SavedHound {
+  hp: string
+  downMsLeft: number
 }
 
 export interface SavedDungeonRun {
@@ -313,6 +324,12 @@ export interface SavePayloadV21 {
   playtimeMs: string
   /** Применённых умений за игру — растущий счётчик, поэтому строкой. */
   abilityCasts: string
+  /**
+   * ПСЫ ГЕРОЯ — списком, как и в состоянии. У класса без спутника список
+   * пуст. Павший пёс переживает перезагрузку павшим: иначе выход и вход
+   * стали бы способом поднять его без ожидания.
+   */
+  hounds: SavedHound[]
 }
 
 export interface SaveStorage {
@@ -492,7 +509,37 @@ export function payloadFromState(state: GameState, lastTimestamp: number): SaveP
     totalTicks: state.totalTicks.toString(),
     playtimeMs: state.playtimeMs.toString(),
     abilityCasts: state.abilityCasts.floor().toString(),
+    hounds: state.hounds.map((h) => ({
+      hp: h.hp.toString(),
+      downMsLeft: Math.max(0, h.downMsLeft),
+    })),
   }
+}
+
+/**
+ * Псы из сейва — поверх свежего комплекта класса: сколько псов положено,
+ * решают ДАННЫЕ класса, а не длина списка в сейве (капстоун мог быть снят, а
+ * мусор в поле — не потеря сейва). Здоровье прижимается к пересчитанному
+ * запасу, отрицательный таймер — к нулю; павший (ноль здоровья без таймера)
+ * получает полный таймер возврата, а не встаёт даром.
+ */
+function houndsFromSaved(raw: unknown, state: GameState): GameState['hounds'] {
+  const fresh = freshHounds(state)
+  if (!Array.isArray(raw) || fresh.length === 0) return fresh
+  const def = classById(state.classId).companion
+  const max = houndMaxHp(state)
+  return fresh.map((blank, i) => {
+    const saved = raw[i] as Record<string, unknown> | undefined
+    if (!saved || typeof saved !== 'object') return blank
+    const downMsLeft =
+      typeof saved.downMsLeft === 'number' && Number.isFinite(saved.downMsLeft)
+        ? Math.max(0, saved.downMsLeft)
+        : 0
+    const hp = Decimal.min(parseDec(saved.hp, max.toString()), max)
+    if (downMsLeft > 0) return { hp: new Decimal(0), swing: 0, downMsLeft }
+    if (hp.lte(0)) return { hp: new Decimal(0), swing: 0, downMsLeft: (def?.returnSec ?? 0) * 1000 }
+    return { hp, swing: 0, downMsLeft: 0 }
+  })
 }
 
 const MODIFIER_KINDS: ModifierKind[] = ['base', 'flat', 'percent', 'multiplier']
@@ -1003,6 +1050,8 @@ export function stateFromPayload(p: SavePayloadV21): GameState {
     ...withStats,
     currentHp: dead ? new Decimal(0) : currentHp,
     currentMana,
+    // Псы — после статов: их запас выводится из запаса героя.
+    hounds: houndsFromSaved(p.hounds, withStats),
     heroState: dead ? 'dead' : 'alive',
     reviveMsLeft: dead && typeof p.reviveMsLeft === 'number' && p.reviveMsLeft > 0 ? p.reviveMsLeft : dead ? 1 : 0,
     // Привал не досиживается через перезагрузку: герой просыпается на ногах.
@@ -1194,6 +1243,11 @@ export const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
   // Сейвы Стража и Изувера проходят миграцию нетронутыми, поле в поле: это
   // и есть правило ночи — ключи двух готовых классов не двигаются.
   33: (raw) => ({ ...raw, version: 34 }),
+  // 34 -> 35: У ГЕРОЯ ПОЯВИЛИСЬ ПСЫ. Поле списком; у двух прежних классов он
+  // пуст, и записывать им пустоту миграция не обязана — загрузка выводит
+  // комплект из данных класса, а отсутствие поля читает как «свежий
+  // комплект». Сейвы Стража и Изувера проходят нетронутыми, поле в поле.
+  34: (raw) => ({ ...raw, version: 35 }),
   // 29 -> 30. ДЕРЕВО ТАЛАНТОВ ПЕРЕСОБРАНО — ОДИН БЕСПЛАТНЫЙ СБРОС.
   //
   // У Стража на каждом этаже стало по два-три таланта вместо одного, ёмкость

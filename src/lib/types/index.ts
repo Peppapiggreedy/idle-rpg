@@ -171,6 +171,12 @@ export type CombatEvent =
   | { type: 'quest-complete'; questId: string; chainComplete: boolean }
   | { type: 'rest-start' }
   | { type: 'rest-end'; interrupted: boolean }
+  // СПУТНИК — ВТОРОЕ ТЕЛО, И В ЖУРНАЛЕ У НЕГО СВОИ СТРОКИ: укус, полученный
+  // удар, падение (сколько лежать) и возврат. Текст рендерит UI.
+  | { type: 'hound-hit'; damage: Decimal; isCrit: boolean }
+  | { type: 'hound-hurt'; damage: Decimal; monsterName: string }
+  | { type: 'hound-down'; returnMs: number }
+  | { type: 'hound-return' }
 
 // Активный забег по данжу. Хранится в состоянии и в сейве: цепочку можно
 // продолжить после перезагрузки, но не после смерти внутри.
@@ -226,5 +232,11 @@ export interface AttackEvent {
   /** Сработавший прок (data/procs.ts). Удар прока замахом НЕ считается —
    *  ресурс копится от замахов героя, а не от того, что сработало само. */
   procId?: string
+  /**
+   * Удар СПУТНИКА (укус пса). Замахом героя не считается: ресурс копится
+   * от его ударов, а не от чужих зубов, и проки висят на его оружии. Сцена
+   * по этому флагу отводит лапу псу, а не руку герою.
+   */
+  companion?: boolean
   timestamp: number // игровое время (playtimeMs) на момент удара
 }
