@@ -7,8 +7,15 @@
 //
 // Файл нарочно не знает про Svelte и DOM: он проверяется в node.
 
-import { backgroundForLevel, monsterSpriteFor, type BackgroundBand, type SpriteAsset } from '../data/sprites'
+import {
+  HOUND_SPRITE,
+  backgroundForLevel,
+  monsterSpriteFor,
+  type BackgroundBand,
+  type SpriteAsset,
+} from '../data/sprites'
 import { activeDungeon, currentBoss, enrageMultiplier, formatNumber } from '../game'
+import { companionOf, houndMaxHp, isHoundUp } from '../game/hound'
 import type { GameState } from '../game/state'
 
 /** Что сейчас на площадке — от этого зависит поза сцены целиком. */
@@ -51,11 +58,37 @@ export interface MonsterView {
   sprite: SpriteAsset
 }
 
+/**
+ * ПЁС — ОТДЕЛЬНОЕ СУЩЕСТВО НА ПЛОЩАДКЕ, а не поле героя: у него своё
+ * здоровье, свой замах и своё состояние «лежит». Лежачий пёс ОСТАЁТСЯ в
+ * списке: исчезнувший читался бы как «его не было», а игра обещает возврат.
+ * Таймер возврата живёт в состоянии игры — сцена читает «лежит, осталось N».
+ */
+export interface HoundView {
+  /** Доля здоровья 0..1; у павшего ноль. */
+  health: number
+  /** На ногах: бьёт и принимает удары. */
+  up: boolean
+  /** Доля замаха 0..1: по ней пёс подаётся к цели. */
+  swing: number
+  /** Секунд до возврата, округлённых вверх; 0 — на ногах. */
+  downSecLeft: number
+  /** «Текущее / максимум» тем же formatNumber, что у героя и моба. */
+  hpLabel: string
+  sprite: SpriteAsset
+}
+
 export interface SceneModel {
   phase: ScenePhase
   hero: HeroView
   /** Моб; null — он мёртв и ждёт респауна, на площадке его нет. */
   monster: MonsterView | null
+  /**
+   * Псы — СПИСКОМ, как и в состоянии: у класса без спутника пуст, и слой
+   * псов тогда не рисуется вовсе — разметка двух прежних классов не меняется
+   * ни на узел.
+   */
+  hounds: HoundView[]
   /** Фон по уровню моба — полосы уровней, а не зоны: две зоны на картинку. */
   background: BackgroundBand
 }
@@ -87,8 +120,22 @@ export function sceneModel(state: GameState): SceneModel {
     isBoss && boss !== null && activeDungeon(state) !== null && state.dungeonRun !== null
       ? enrageMultiplier(boss, state.dungeonRun.fightMs) > 1
       : false
+  const houndMax = houndMaxHp(state)
+  const returnMs = (companionOf(state)?.returnSec ?? 0) * 1000
+  const hounds: HoundView[] = state.hounds.map((h) => {
+    const up = isHoundUp(h)
+    return {
+      health: up ? fraction(h.hp.toNumber(), houndMax.toNumber()) : 0,
+      up,
+      swing: up && phase === 'fight' ? fraction(h.swing, 1) : 0,
+      downSecLeft: up || returnMs <= 0 ? 0 : Math.ceil(Math.max(0, h.downMsLeft) / 1000),
+      hpLabel: `${formatNumber(h.hp)} / ${formatNumber(houndMax)}`,
+      sprite: HOUND_SPRITE,
+    }
+  })
   return {
     phase,
+    hounds,
     hero: {
       health: fraction(state.currentHp.toNumber(), state.stats.maxHp.toNumber()),
       alive: state.heroState !== 'dead',

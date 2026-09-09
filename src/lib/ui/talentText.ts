@@ -14,6 +14,7 @@ import {
   type TalentDef,
   type TalentFlag,
   type TalentModifier,
+  type HoundTuneField,
 } from '../data/talents'
 import { ABILITY_BY_ID } from '../data/abilities'
 import { flatText } from './statText'
@@ -90,6 +91,17 @@ export function modText(mod: TalentModifier, resource: ResourceWords): string {
 
 type FlagEffect = Extract<TalentDef['effect'], { kind: 'flag' }>
 
+/** Поля спутника словами: закрыто по `HoundTuneField`. */
+const HOUND_FIELD_NAME: Record<HoundTuneField, string> = {
+  hitShare: 'укус пса',
+  swingTime: 'замах пса',
+  redirectShare: 'доля ударов на псе',
+  maxHpShare: 'запас пса',
+  returnSec: 'время возврата пса',
+  regenInCombat: 'восстановление пса в бою',
+  regenOutOfCombat: 'восстановление пса вне боя',
+}
+
 const pct = (share: number) => `${(share * 100).toFixed(0)}%`
 
 /**
@@ -120,6 +132,20 @@ export function flagText(effect: FlagEffect, resource: ResourceWords): string {
       `Привал короче на ${'durationMultiplier' in e ? pct(1 - e.durationMultiplier) : '0%'}`,
     'faster-revive': (e) =>
       `Воскрешение быстрее на ${'reviveMultiplier' in e ? pct(1 - e.reviveMultiplier) : '0%'}`,
+    // Команды псу талантом: поле спутника названо словом, число — из payload.
+    'hound-tune': (e) => {
+      if (!('field' in e) || !('op' in e)) return 'Пёс становится сильнее'
+      const what = HOUND_FIELD_NAME[e.field] ?? e.field
+      const sign = e.value > 0 ? '+' : '−'
+      const amount = e.op === 'percent' ? pct(Math.abs(e.value)) : `${(Math.abs(e.value) * 100).toFixed(0)} п.`
+      return `${what}: ${sign}${amount} за ранг`
+    },
+    'pack-tactics': (e) =>
+      `Пока пёс на ногах, урон героя выше на ${'bonusShare' in e ? pct(e.bonusShare) : '0%'}`,
+    'hound-avenge': (e) =>
+      'bonusShare' in e && 'durationSec' in e
+        ? `Пал пёс — ${e.durationSec} с урон героя выше на ${pct(e.bonusShare)}`
+        : 'Пал пёс — герой бьёт сильнее',
   }
   return table[effect.flag](effect)
 }

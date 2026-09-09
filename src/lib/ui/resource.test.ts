@@ -13,6 +13,15 @@ describe('имя ресурса', () => {
     expect(resourceWords('reaver').accusative).toBe('ярость')
   })
 
+  it('у псаря энергия — третье слово и третий цвет', () => {
+    expect(resourceWords('houndmaster').name).toBe('Энергия')
+    expect(resourceWords('houndmaster').genitive).toBe('энергии')
+    expect(resourceWords('houndmaster').accusative).toBe('энергию')
+    expect(resourceWords('houndmaster').tone).toBe('energy')
+    // Энергия не копится боем: подпись «копится от ударов» ей не положена.
+    expect(resourceWords('houndmaster').fromCombat).toBe(false)
+  })
+
   // Отличие ресурса боя от ресурса времени берётся из ДАННЫХ, а не из имени
   // класса: подпись «копится от ударов» появляется у любого класса, у
   // которого удары что-то дают.

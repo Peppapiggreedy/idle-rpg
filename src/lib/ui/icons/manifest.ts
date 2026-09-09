@@ -185,6 +185,45 @@ export const ICONS = {
   // --- Классы ---
   'class-warden': { file: 'delapouite/spiked-shield.svg', author: 'Delapouite' },
   'class-reaver': { file: 'lorc/axe-swing.svg', author: 'Lorc' },
+  'class-houndmaster': { file: 'lorc/hound.svg', author: 'Lorc' },
+
+  // --- Умения Псаря ---
+  'ability-undercut': { file: 'lorc/knife-thrust.svg', author: 'Lorc' },
+  'ability-sic': { file: 'delapouite/sniffing-dog.svg', author: 'Delapouite' },
+  'ability-hamstring': { file: 'lorc/blade-bite.svg', author: 'Lorc' },
+  'ability-recall': { file: 'delapouite/whistle.svg', author: 'Delapouite' },
+  'ability-grip': { file: 'delapouite/neck-bite.svg', author: 'Delapouite' },
+  'ability-flurry': { file: 'lorc/crossed-claws.svg', author: 'Lorc' },
+  'ability-bandage': { file: 'lorc/bandage-roll.svg', author: 'Lorc' },
+  'ability-unleash': { file: 'lorc/direwolf.svg', author: 'Lorc' },
+  'ability-skulk': { file: 'lorc/hood.svg', author: 'Lorc' },
+  'ability-rally': { file: 'lorc/hunting-horn.svg', author: 'Lorc' },
+  'ability-pack': { file: 'lorc/paw-print.svg', author: 'Lorc' },
+  // Таланты Псаря — ветка Гон.
+  'talent-sharp-fangs': { file: 'lorc/bestial-fangs.svg', author: 'Lorc' },
+  'talent-fast-jaws': { file: 'lorc/croc-jaws.svg', author: 'Lorc' },
+  'talent-pack-tactics': { file: 'lorc/paw-front.svg', author: 'Lorc' },
+  'talent-savage-unleash': { file: 'delapouite/wolverine-claws.svg', author: 'Delapouite' },
+  'talent-avenger': { file: 'lorc/fanged-skull.svg', author: 'Lorc' },
+  'talent-fourth-cut': { file: 'lorc/claw-slashes.svg', author: 'Lorc' },
+  'talent-fangs-of-old': { file: 'lorc/pretty-fangs.svg', author: 'Lorc' },
+  'talent-twin-fang': { file: 'lorc/snake-bite.svg', author: 'Lorc' },
+  // Таланты Псаря — ветка Привязь.
+  'talent-fur-shield': { file: 'delapouite/animal-hide.svg', author: 'Delapouite' },
+  'talent-fast-return': { file: 'delapouite/jumping-dog.svg', author: 'Delapouite' },
+  'talent-hound-mending': { file: 'lorc/paw-heart.svg', author: 'Lorc' },
+  'talent-full-rally': { file: 'delapouite/mighty-horn.svg', author: 'Delapouite' },
+  // Таланты Псаря — ветка Тропа.
+  'talent-hound-rests': { file: 'delapouite/sitting-dog.svg', author: 'Delapouite' },
+  'talent-hound-sleeps': { file: 'delapouite/dog-house.svg', author: 'Delapouite' },
+
+  // --- Таланты Псаря ---
+  'talent-quick-hands': { file: 'lorc/sprint.svg', author: 'Lorc' },
+  'talent-sure-cut': { file: 'lorc/crossed-slashes.svg', author: 'Lorc' },
+  'talent-thick-coat': { file: 'delapouite/animal-hide.svg', author: 'Delapouite' },
+  'talent-even-breath': { file: 'delapouite/lungs.svg', author: 'Delapouite' },
+  'talent-restless-legs': { file: 'lorc/run.svg', author: 'Lorc' },
+  'talent-short-camp': { file: 'lorc/campfire.svg', author: 'Lorc' },
 
   // --- Материалы профессий ---
   'material-herb': { file: 'delapouite/herbs-bundle.svg', author: 'Delapouite' },

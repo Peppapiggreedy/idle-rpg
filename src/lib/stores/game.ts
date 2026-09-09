@@ -13,7 +13,7 @@ import { applyOfflineProgress, type OfflineAccrual } from '../game/save'
 import { sellItem } from '../game/loot'
 import type { UpgradePriority } from '../data/upgrade'
 import type { LootPolicy } from '../data/upgrades'
-import { snapRestThreshold } from '../data/balance'
+import { snapResourceFloor, snapRestThreshold } from '../data/balance'
 import { buyUpgrade } from '../game/upgrades'
 import { craft as craftAction } from '../game/crafting'
 import { recordDecision, resetTelemetry } from './telemetry'
@@ -554,6 +554,18 @@ export function buyGoldUpgrade(id: string): void {
 export function setLootPolicy(value: LootPolicy): void {
   recordDecision('inventory-policy')
   state.update((s) => ({ ...s, lootPolicy: value }))
+}
+
+/**
+ * ПОЛ РЕСУРСА: ниже этой доли запаса автокаст не тратит ничего. Один на класс,
+ * лежит в сейве; прижимается к шагу ползунка ЗДЕСЬ, как и порог привала, —
+ * значение приходит и из миграции сейва, и из отладочных путей. Статов не
+ * трогает, поэтому конвейер не пересчитывается; модель боя читает поле через
+ * ротацию и свой кеш обновляет по ключу.
+ */
+export function setResourceFloor(share: number): void {
+  recordDecision('autocast')
+  state.update((s) => ({ ...s, resourceFloor: snapResourceFloor(share) }))
 }
 
 /** Беречь ли ману под лечение: боевые умения автокаста оставляют цену одного лечения. */

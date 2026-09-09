@@ -1,5 +1,5 @@
 {
-  "version": 33,
+  "version": 36,
   "classId": "warden",
   "materials": {},
   "mastery": {},
@@ -70,6 +70,7 @@
   "regenDelayMsLeft": 0,
   "restHpThreshold": 0.6,
   "holdManaForHeal": true,
+  "resourceFloor": 0,
   "upgradePriority": "balance",
   "purchasedUpgradeIds": [],
   "lootPolicy": "keep",
@@ -138,5 +139,6 @@
   "talentResets": 0,
   "totalTicks": "0",
   "playtimeMs": "0",
-  "abilityCasts": "0"
+  "abilityCasts": "0",
+  "hounds": []
 }

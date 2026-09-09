@@ -37,10 +37,11 @@ function hero(classId: string, level = 1, patch: Partial<GameState> = {}): GameS
 }
 
 describe('род ресурса — данные, а не ветвление по классу', () => {
-  it('у каждого класса ресурс описан полем, и оба вида заняты', () => {
+  it('у каждого класса ресурс описан полем, и все три вида заняты', () => {
     const kinds = new Set(CLASSES.map((c) => c.resource.kind))
     expect(kinds.has('mana')).toBe(true)
     expect(kinds.has('rage')).toBe(true)
+    expect(kinds.has('energy')).toBe(true)
     for (const cls of CLASSES) {
       expect(typeof cls.resource.startFull, cls.id).toBe('boolean')
       expect(typeof cls.resource.restRefill, cls.id).toBe('boolean')

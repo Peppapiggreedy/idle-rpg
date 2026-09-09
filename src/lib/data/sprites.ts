@@ -38,6 +38,17 @@ export const HERO_SPRITE: SpriteAsset = {
   ...PLACEHOLDER,
 }
 
+/**
+ * Пёс Псаря — второе тело на площадке. Свой силуэт, нарисованный для
+ * проекта, как и остальные заглушки: сторонняя картинка сломала бы не счёт
+ * в CREDITS.md, а само слово «все». Замена на настоящую — правка этой строки.
+ */
+export const HOUND_SPRITE: SpriteAsset = {
+  id: 'hound',
+  path: 'sprites/hound.svg',
+  ...PLACEHOLDER,
+}
+
 /** Силуэты мобов: по одному на роль плюс босс и запасной. */
 export const MONSTER_SPRITES: readonly SpriteAsset[] = [
   { id: 'runt', path: 'sprites/monster-runt.svg', ...PLACEHOLDER },

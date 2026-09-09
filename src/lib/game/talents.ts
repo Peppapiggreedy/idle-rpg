@@ -398,3 +398,14 @@ export function reviveMultiplier(ranks: TalentRanks): number {
   return flagPayload(ranks, 'faster-revive')?.reviveMultiplier ?? 1
 }
 
+/** Стая: на сколько выше урон героя, пока пёс на ногах. 0 — таланта нет. */
+export function packTacticsShare(ranks: TalentRanks): number {
+  return flagPayload(ranks, 'pack-tactics')?.bonusShare ?? 0
+}
+
+/** Мститель: доля и длительность прибавки за павшего пса; null — таланта нет. */
+export function houndAvenge(ranks: TalentRanks): { bonusShare: number; durationSec: number } | null {
+  const payload = flagPayload(ranks, 'hound-avenge')
+  return payload ? { bonusShare: payload.bonusShare, durationSec: payload.durationSec } : null
+}
+

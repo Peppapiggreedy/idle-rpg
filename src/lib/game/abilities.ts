@@ -7,8 +7,18 @@ import { AUTOCAST_DELAY_MS, GCD_MS } from '../data/balance'
 import { ABILITIES, ABILITY_BY_ID, type AbilityDef } from '../data/abilities'
 import { tuneAbility, tunedById } from './abilityTune'
 import { abilitiesByPriority } from './rotation'
-import { talentExtraCharges } from './talents'
+import { packTacticsShare, talentExtraCharges } from './talents'
 import { punishResourceSpend } from './bossAbilities'
+import {
+  HOUND_ID,
+  companionOf,
+  houndMaxHp,
+  isHoundCommand,
+  isHoundUp,
+  rollHoundBite,
+  upHounds,
+  type HoundState,
+} from './hound'
 import {
   abilitiesOf,
   equippedBoons,
@@ -55,6 +65,12 @@ export type AbilityBlockReason =
   // бы игрока гадать, в какую сторону идти.
   | 'resource-low'
   | 'resource-high'
+  // КОМАНДЫ ПСУ — три своих отказа: некому командовать (пёс лежит или его
+  // нет), некого окликать (все на ногах), свора полна. Код на каждый, потому
+  // что лечатся они по-разному: ждать возврата, ждать падения, снять кнопку.
+  | 'no-hound'
+  | 'no-fallen-hound'
+  | 'pack-full'
 
 export interface AbilityStatus {
   abilityId: string
@@ -187,7 +203,55 @@ export function abilityStatus(state: GameState, ability: AbilityDef): AbilitySta
   // просто пропускает, пока цель выше порога, и это не особое правило
   // автокаста, а тот же отказ, что видит игрок.
   if (ability.execute && !targetLowEnough(state, ability)) return blocked('target-healthy')
+  // КОМАНДЫ ПСУ ЖДУТ ПСА. Команда стоящему псу без стоящего пса, оклик без
+  // павшего, зов при полной своре — отказ кодом, а не пустая трата: автокаст
+  // жал бы их систематически в пустоту.
+  if (needsStandingHound(ability) && upHounds(state).length === 0) return blocked('no-hound')
+  if (ability.rally && !state.hounds.some((h) => !isHoundUp(h))) return blocked('no-fallen-hound')
+  if (ability.pack && state.hounds.length >= houndCapacity(state)) return blocked('pack-full')
   return { ...base, usable: true, reason: null }
+}
+
+/** Команда, которой нужен пёс на ногах: без него ей некого слушать. */
+export function needsStandingHound(ability: AbilityDef): boolean {
+  return Boolean(
+    ability.houndHaste || ability.recall || ability.grip || ability.houndHeal || ability.unleash || ability.skulk,
+  )
+}
+
+/** Умение адресовано псу: командует им, лечит его, зовёт или поднимает. */
+export function commandsHound(ability: AbilityDef): boolean {
+  return needsStandingHound(ability) || Boolean(ability.rally || ability.pack || ability.packStrike || ability.flurry)
+}
+
+/**
+ * СКОЛЬКО ПСОВ ПОМЕЩАЕТСЯ НА ПОЛЕ: комплект класса плюс лишние от умений,
+ * стоящих В РЯДУ и открытых уровнем (`pack`), с правками талантов. Снял
+ * кнопку — лишний пёс уходит (тик подрезает список до ёмкости).
+ */
+export function houndCapacity(
+  state: Pick<GameState, 'classId' | 'abilitySlots' | 'level' | 'talents' | 'equipment'>,
+): number {
+  const def = companionOf(state)
+  if (!def) return 0
+  let extra = 0
+  for (const id of state.abilitySlots) {
+    if (id === null) continue
+    const base = ABILITY_BY_ID[id]
+    if (!base || state.level.lt(base.unlockLevel)) continue
+    const ability = tuneAbility(base, state.talents, equippedBoons(state.equipment))
+    if (ability.pack) extra += Math.max(0, Math.round(ability.pack.extraHounds))
+  }
+  return def.count + extra
+}
+
+/** Доля запаса у самого раненого стоящего пса; null — стоящих нет. */
+export function weakestHoundShare(state: GameState): number | null {
+  const standing = upHounds(state)
+  if (standing.length === 0) return null
+  const max = houndMaxHp(state)
+  if (max.lte(0)) return null
+  return Math.min(...standing.map((h) => h.hp.div(max).toNumber()))
 }
 
 export function allAbilityStatuses(state: GameState): AbilityStatus[] {
@@ -329,6 +393,13 @@ export function leechShare(ability: AbilityDef, fill: number): number {
   return extra > 0 ? base + extra * fill : base
 }
 
+/** Пора ли перевязывать пса: самый раненый стоящий ниже порога из данных умения. */
+export function houndHealWanted(state: GameState, ability: AbilityDef): boolean {
+  if (!ability.houndHeal) return false
+  const weakest = weakestHoundShare(state)
+  return weakest !== null && weakest < ability.houndHeal.autocastBelowHpShare
+}
+
 /** Пора ли лечиться: здоровье ниже порога автокаста из данных умения. */
 export function healWanted(state: GameState, ability: AbilityDef): boolean {
   if (!ability.heal) return false
@@ -344,7 +415,11 @@ export function healWanted(state: GameState, ability: AbilityDef): boolean {
  */
 export function passesReserve(state: GameState, ability: AbilityDef): boolean {
   const left = state.currentMana.minus(abilityCost(state, ability))
-  const reserve = state.abilitySettings[ability.id]?.reserve ?? 0
+  // ПОЛ КЛАССА И РЕЗЕРВ УМЕНИЯ СКЛАДЫВАЮТСЯ ПО МАКСИМУМУ: пол — «ниже чего
+  // автокаст не тратит вообще», резерв — «сколько держать под эту кнопку»,
+  // и действует тот, что выше. Оба — доли ЗАПАСА, а не числа: у героя,
+  // поднявшего ёмкость талантами, «30 %» обязано значить то же самое.
+  const reserve = Math.max(state.abilitySettings[ability.id]?.reserve ?? 0, state.resourceFloor)
   if (reserve > 0 && left.lt(state.stats.maxMana.times(reserve))) return false
   if (state.holdManaForHeal && !ability.heal) {
     const heal = autocastHeal(state)
@@ -413,9 +488,25 @@ export function strikeWithAbility(
    */
   fill: number,
 ): GameState {
+  // ПОДРЕЗ ЧИТАЕТ ПСА: пока хоть один стоит и грызёт ту же цель (не отозван),
+  // удар сильнее на долю. Один удар, ничего на цели не остаётся.
+  const packBonus =
+    ability.packStrike && upHounds(state).length > 0 && state.houndMarks.recall === null
+      ? 1 + ability.packStrike.bonusShare
+      : 1
+  // СЕРИЯ — несколько бросков за одно применение, каждый со своим критом; пёс
+  // кусает на каждый. Первый удар идёт общим путём ниже, остальные — здесь же.
+  const hits = ability.flurry ? Math.max(1, Math.round(ability.flurry.hits)) : 1
   const roll = rollSwing(state.stats, rng, abilityDamagePercent(ability, fill))
   const isCrit = roll.isCrit
-  const amount = roll.amount.times(outgoingMultiplier(state))
+  let amount = roll.amount.times(outgoingMultiplier(state)).times(packBonus)
+  for (let i = 1; i < hits; i += 1) {
+    amount = amount.plus(
+      rollSwing(state.stats, rng, abilityDamagePercent(ability, fill)).amount
+        .times(outgoingMultiplier(state))
+        .times(packBonus),
+    )
+  }
   const monster = {
     ...state.monster,
     currentHp: Decimal.max(state.monster.currentHp.minus(amount), new Decimal(0)),
@@ -491,6 +582,10 @@ export function strikeWithAbility(
       }),
     }
   }
+  // СЕРИЯ: пёс кусает на каждый удар героя — стоящий, не отозванный.
+  if (ability.flurry && after.houndMarks.recall === null) {
+    for (let i = 0; i < hits; i += 1) after = commandedBites(after, ability, 1, rng, emitAttack)
+  }
   return applySelfFlags(after, ability)
 }
 
@@ -501,6 +596,46 @@ export function strikeWithAbility(
  */
 function applySelfFlags(state: GameState, ability: AbilityDef): GameState {
   let next = state
+  // КОМАНДЫ СВОРЕ, ДЕРЖАЩИЕСЯ ВРЕМЯ. Повторная команда обновляет метку, а не
+  // копит вторую — как и метки героя. Отзыв хранит лечение В СЕКУНДУ: долю за
+  // всё время делим на длительность, чтобы тик не знал, сколько уже прошло.
+  if (ability.houndHaste) {
+    next = {
+      ...next,
+      houndMarks: {
+        ...next.houndMarks,
+        haste: { share: ability.houndHaste.share, msLeft: ability.houndHaste.durationSec * 1000 },
+      },
+    }
+  }
+  if (ability.recall) {
+    const seconds = Math.max(ability.recall.durationSec, 1e-9)
+    next = {
+      ...next,
+      houndMarks: {
+        ...next.houndMarks,
+        recall: { share: ability.recall.healShare / seconds, msLeft: ability.recall.durationSec * 1000 },
+      },
+    }
+  }
+  if (ability.grip) {
+    next = {
+      ...next,
+      houndMarks: {
+        ...next.houndMarks,
+        grip: { share: ability.grip.slowShare, msLeft: ability.grip.durationSec * 1000 },
+      },
+    }
+  }
+  if (ability.skulk) {
+    next = {
+      ...next,
+      houndMarks: {
+        ...next.houndMarks,
+        skulk: { share: ability.skulk.redirectBonus, msLeft: ability.skulk.durationSec * 1000 },
+      },
+    }
+  }
   if (ability.stance) {
     next = {
       ...next,
@@ -589,9 +724,16 @@ function applySelfFlags(state: GameState, ability: AbilityDef): GameState {
  * же новой метке.
  */
 export function outgoingMultiplier(state: GameState): Decimal {
-  let mult = new Decimal(1)
-  if (state.monsterBrand) mult = mult.times(1 + state.monsterBrand.damageShare)
+  let mult = targetMultiplier(state)
   if (state.stance) mult = mult.times(1 - state.stance.damageShare)
+  // СТАЯ (талант-флаг): пока хоть один пёс стоит и не отозван, весь урон
+  // героя выше на долю. Состояние второго тела — множитель первого.
+  const pack = packTacticsShare(state.talents)
+  if (pack > 0 && state.houndMarks.recall === null && upHounds(state).length > 0) {
+    mult = mult.times(1 + pack)
+  }
+  // МСТИТЕЛЬ: пал пёс — метка своры с длительностью, и герой бьёт сильнее.
+  if (state.houndMarks.avenge) mult = mult.times(1 + state.houndMarks.avenge.share)
   // РАЗГОН — набежавшая прибавка, зеркало «Упора»: там росло смягчение от
   // чужих ударов, здесь урон от своих.
   if (state.ramp) mult = mult.times(1 + state.ramp.share)
@@ -603,6 +745,18 @@ export function outgoingMultiplier(state: GameState): Decimal {
     const over = room > 0 ? Math.max(0, fill - state.edge.resourceAbove) / room : 0
     mult = mult.times(1 + state.edge.damagePerShare * over)
   }
+  return mult
+}
+
+/**
+ * МНОЖИТЕЛЬ ОТ МЕТОК НА ЦЕЛИ — та часть исходящего, что принадлежит МОБУ, а
+ * не руке героя. Клеймо поднимает урон, который цель получает от кого угодно:
+ * и от удара героя, и от укуса пса. Собственные состояния героя (стойка,
+ * разгон, грань) сюда не входят — они про его руку, и пёс их не наследует.
+ */
+export function targetMultiplier(state: GameState): Decimal {
+  let mult = new Decimal(1)
+  if (state.monsterBrand) mult = mult.times(1 + state.monsterBrand.damageShare)
   return mult
 }
 
@@ -685,9 +839,103 @@ export function useAbility(
   if (ability.heal) return healWithAbility(payFor(state, ability), ability)
   // Поглощение — тоже поддержка: платит как все, но вместо удара вешает щит.
   if (ability.absorb) return absorbWithAbility(payFor(state, ability), ability)
+  // КОМАНДА ПСУ БЕЗ УДАРА ГЕРОЯ: платит как все, а делает — пёс.
+  if (isHoundCommand(ability)) return commandHounds(payFor(state, ability), ability, rng, emitAttack)
   // Доля полоски снимается ДО оплаты: по ней считаются и урон, и вампиризм.
   const fill = resourceFill(state)
   return strikeWithAbility(payFor(state, ability), ability, rng, emitAttack, fill)
+}
+
+
+/**
+ * УКУС ПО КОМАНДЕ: каждый стоящий пёс кусает сразу, вне своего таймера, с
+ * множителем. Тот же бросок и та же метка на цели, что у обычного укуса —
+ * второй формулы укуса нет.
+ */
+function commandedBites(
+  state: GameState,
+  ability: AbilityDef,
+  mult: number,
+  rng: Rng,
+  emitAttack: (event: AttackEvent) => void,
+): GameState {
+  const def = companionOf(state)
+  if (!def) return state
+  let monster = state.monster
+  let combatLog = state.combatLog
+  state.hounds.forEach((hound, index) => {
+    if (!isHoundUp(hound) || monster.currentHp.lte(0)) return
+    const bite = rollHoundBite(state.stats, def, rng)
+    const amount = bite.amount.times(mult).times(targetMultiplier(state))
+    monster = { ...monster, currentHp: Decimal.max(monster.currentHp.minus(amount), new Decimal(0)) }
+    combatLog = pushEvent(combatLog, { type: 'hound-hit', damage: amount, isCrit: bite.isCrit })
+    emitAttack({
+      sourceId: HOUND_ID,
+      targetId: monster.id,
+      amount,
+      isCrit: bite.isCrit,
+      abilityId: ability.id,
+      companion: true,
+      companionIndex: index,
+      timestamp: state.playtimeMs.toNumber(),
+    })
+  })
+  return { ...state, monster, combatLog }
+}
+
+/**
+ * КОМАНДЫ ПСУ. Одна точка на все шесть, и ни одной ветки по id: каждая читает
+ * свой флаг и его payload. Команды, держащиеся время (отзыв, скрадывание),
+ * ставят метку своры через `applySelfFlags` — той же точкой, что травля и
+ * хватка у бьющих умений.
+ */
+function commandHounds(
+  state: GameState,
+  ability: AbilityDef,
+  rng: Rng,
+  emitAttack: (event: AttackEvent) => void,
+): GameState {
+  let next: GameState = {
+    ...state,
+    abilityCasts: state.abilityCasts.plus(1),
+    combatLog: pushEvent(state.combatLog, { type: 'hound-command', abilityId: ability.id }),
+  }
+  const max = houndMaxHp(next)
+  // ПЕРЕВЯЗКА: стоящие псы получают долю СВОЕГО запаса; перелив режется.
+  if (ability.houndHeal) {
+    const share = ability.houndHeal.maxHpShare
+    next = {
+      ...next,
+      hounds: next.hounds.map((h) =>
+        isHoundUp(h) ? { ...h, hp: Decimal.min(h.hp.plus(max.times(share)), max) } : h,
+      ),
+    }
+  }
+  // СПУСК: каждый стоящий пёс кусает сразу и сильнее.
+  if (ability.unleash) next = commandedBites(next, ability, ability.unleash.biteMult, rng, emitAttack)
+  // ОКЛИК: павшие встают с долей запаса, не дожидаясь таймера.
+  if (ability.rally) {
+    const share = ability.rally.hpShare
+    let raised = 0
+    const hounds: HoundState[] = next.hounds.map((h) => {
+      if (isHoundUp(h)) return h
+      raised += 1
+      return { hp: Decimal.max(max.times(share), new Decimal(1)), swing: 0, downMsLeft: 0 }
+    })
+    let combatLog = next.combatLog
+    for (let i = 0; i < raised; i += 1) combatLog = pushEvent(combatLog, { type: 'hound-return' })
+    next = { ...next, hounds, combatLog }
+  }
+  // СВОРА: ещё псы, до ёмкости ряда. Приходят целыми — это зов, а не подъём.
+  if (ability.pack) {
+    const room = Math.max(0, houndCapacity(next) - next.hounds.length)
+    const called = Math.min(room, Math.max(0, Math.round(ability.pack.extraHounds)))
+    if (called > 0) {
+      const fresh: HoundState[] = Array.from({ length: called }, () => ({ hp: max, swing: 0, downMsLeft: 0 }))
+      next = { ...next, hounds: [...next.hounds, ...fresh] }
+    }
+  }
+  return applySelfFlags(next, ability)
 }
 
 function absorbWithAbility(state: GameState, ability: AbilityDef): GameState {
@@ -769,6 +1017,12 @@ export function autocastAllows(state: GameState, ability: AbilityDef): boolean {
   if (guard.resourceAbove !== undefined) {
     if (state.currentMana.lt(state.stats.maxMana.times(guard.resourceAbove))) return false
   }
+  // НЕ ЛЕЧИТЬ И НЕ ОТЗЫВАТЬ ЦЕЛОГО ПСА: команда читает самого раненого из
+  // стоящих; стоящих нет — командовать некому.
+  if (guard.houndHpBelow !== undefined) {
+    const weakest = weakestHoundShare(state)
+    if (weakest === null || weakest >= guard.houndHpBelow) return false
+  }
   return true
 }
 
@@ -778,6 +1032,9 @@ export function autocastCandidates(state: GameState): AbilityDef[] {
     if (!passesReserve(state, ability)) return false
     // Лечение автокаст жмёт только когда оно нужно: порог — из данных умения.
     if (ability.heal && !healWanted(state, ability)) return false
+    // ПЕРЕВЯЗКА — то же правило для второго тела: пока самый раненый
+    // стоящий пёс выше порога, откат не тратится.
+    if (ability.houndHeal && !houndHealWanted(state, ability)) return false
     // КЛЕЙМО НЕ ВЕШАЕТСЯ НА УМИРАЮЩЕГО. Двадцать секунд повышенного урона на
     // мобе, которому осталось две, не окупаются — а ресурс тратят, и делали
     // бы это систематически. Порог из данных умения; РУКАМИ игрок волен
@@ -889,6 +1146,22 @@ export function advanceCooldowns(state: GameState, dtMs: number): GameState {
   const resolve = countdown(state.resolve, dtMs)
   const ramp = countdown(state.ramp, dtMs)
   const edge = countdown(state.edge, dtMs)
+  // КОМАНДЫ СВОРЕ тикают здесь же: у своры нет своего таймера, как нет его у
+  // щита и стойки. Объект пересобирается только если хоть одна метка сдвинулась.
+  const marks = state.houndMarks
+  const haste = countdown(marks.haste, dtMs)
+  const recall = countdown(marks.recall, dtMs)
+  const grip = countdown(marks.grip, dtMs)
+  const skulk = countdown(marks.skulk, dtMs)
+  const avenge = countdown(marks.avenge, dtMs)
+  const houndMarks =
+    haste === marks.haste &&
+    recall === marks.recall &&
+    grip === marks.grip &&
+    skulk === marks.skulk &&
+    avenge === marks.avenge
+      ? marks
+      : { haste, recall, grip, skulk, avenge }
   // ОКНО тикает здесь же и тем же игровым временем, что откаты: своего
   // таймера у него нет и заводить второй незачем.
   const freeCastsMsLeft = Math.max(0, state.freeCastsMsLeft - dtMs)
@@ -901,6 +1174,7 @@ export function advanceCooldowns(state: GameState, dtMs: number): GameState {
     resolve === state.resolve &&
     ramp === state.ramp &&
     edge === state.edge &&
+    houndMarks === state.houndMarks &&
     freeCastsMsLeft === state.freeCastsMsLeft
   ) {
     return state
@@ -911,6 +1185,7 @@ export function advanceCooldowns(state: GameState, dtMs: number): GameState {
     abilityCharges,
     gcdMsLeft,
     absorb,
+    houndMarks,
     monsterBrand,
     stance,
     resolve,

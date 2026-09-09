@@ -1,5 +1,5 @@
 {
-  "version": 36,
+  "version": 35,
   "classId": "warden",
   "materials": {
     "meadow-herb": "18",
@@ -422,7 +422,6 @@
   "regenDelayMsLeft": 0,
   "restHpThreshold": 0.6,
   "holdManaForHeal": true,
-  "resourceFloor": 0,
   "upgradePriority": "balance",
   "purchasedUpgradeIds": [],
   "lootPolicy": "keep",

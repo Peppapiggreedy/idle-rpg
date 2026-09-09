@@ -157,6 +157,21 @@ describe('описание умения собирается из данных',
       },
       must: 'Затем 3 раза по 50%',
     },
+    // Команды псу.
+    { field: 'houndHaste', over: { houndHaste: { share: 0.5, durationSec: 8 } }, must: 'кусает на 50% чаще' },
+    { field: 'packStrike', over: { packStrike: { bonusShare: 0.6 } }, must: 'сильнее на 60%' },
+    { field: 'recall', over: { recall: { durationSec: 5, healShare: 0.5 } }, must: 'отходит на 5с' },
+    { field: 'grip', over: { grip: { slowShare: 0.35, durationSec: 6 } }, must: 'длиннее на 35%' },
+    { field: 'flurry', over: { flurry: { hits: 3 } }, must: '3 удара за одно применение' },
+    {
+      field: 'houndHeal',
+      over: { weaponDamagePercent: new Decimal(0), houndHeal: { maxHpShare: 0.4, autocastBelowHpShare: 0.6 } },
+      must: 'Лечит пса на 40%',
+    },
+    { field: 'unleash', over: { unleash: { biteMult: 3.5 } }, must: 'укус ×3.5' },
+    { field: 'skulk', over: { skulk: { redirectBonus: 0.3, durationSec: 10 } }, must: 'на 30% больше входящего' },
+    { field: 'rally', over: { rally: { hpShare: 0.5 } }, must: 'встаёт с 50% запаса' },
+    { field: 'pack', over: { pack: { extraHounds: 1 } }, must: 'ещё одного пса' },
   ]
 
   it.each(FIELDS)('поле $field описывает себя само', ({ over, must }) => {

@@ -16,6 +16,7 @@
   import { resourceWords } from './resource'
   import { Button, NumberText, Panel, Tag } from './kit'
   import AbilityBook from './AbilityBook.svelte'
+  import ResourceFloorRow from './ResourceFloorRow.svelte'
 
   // Ресурс называется так, как у класса: у изувера умения стоят ярость.
   const resource = $derived(resourceWords($gameState.classId))
@@ -128,6 +129,9 @@
   </ul>
 
   {#snippet footer()}
+    <!-- ПОЛ РЕСУРСА — ПЕРВОЙ СТРОКОЙ ПОДВАЛА: он про ротацию целиком, как и
+         общий выключатель наверху, а резервы в списке — про каждое умение. -->
+    <ResourceFloorRow />
     {#if healAbility}
       <label class="auto hold">
         <input

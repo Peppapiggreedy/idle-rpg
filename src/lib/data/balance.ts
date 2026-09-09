@@ -469,12 +469,36 @@ export const MAX_REST_THRESHOLD = 1
  */
 export const REST_THRESHOLD_STEP = 0.1
 
-/** Порог с ползунка: кратен шагу и не выше потолка. */
-export function snapRestThreshold(share: number): number {
-  if (!Number.isFinite(share)) return REST_HP_THRESHOLD_DEFAULT
+/** Доля с ползунка: кратна шагу и не выше потолка; мусор — умолчание. */
+function snapShare(share: number, fallback: number, max: number): number {
+  if (!Number.isFinite(share)) return fallback
   const steps = Math.round(share / REST_THRESHOLD_STEP)
   const snapped = steps * REST_THRESHOLD_STEP
-  return Math.min(MAX_REST_THRESHOLD, Math.max(0, Number(snapped.toFixed(2))))
+  return Math.min(max, Math.max(0, Number(snapped.toFixed(2))))
+}
+
+/** Порог с ползунка: кратен шагу и не выше потолка. */
+export function snapRestThreshold(share: number): number {
+  return snapShare(share, REST_HP_THRESHOLD_DEFAULT, MAX_REST_THRESHOLD)
+}
+
+/**
+ * ПОЛ РЕСУРСА — «не тратить ниже N %», настройка автокаста, один на класс.
+ *
+ * Резерв у каждого умения отвечает на вопрос «сколько держать под ЭТУ
+ * кнопку»; пол — «ниже чего автокаст не тратит вообще». Шаг и потолок те же,
+ * что у порога привала: обе настройки — доли полоски, и два разных шага на
+ * двух соседних ползунках читались бы как ошибка. Потолок — единица: «не
+ * тратить никогда» — законный (плохой) выбор игрока, и игра его не запрещает.
+ * По умолчанию ноль: у Стража и Изувера автокаст жмёт до дна, как и прежде.
+ * Руками игрок волен тратить всё: это порог автокаста, а не запрет игры.
+ */
+export const MAX_RESOURCE_FLOOR = 1
+export const RESOURCE_FLOOR_DEFAULT = 0
+
+/** Пол ресурса с ползунка: кратен шагу и не выше потолка. */
+export function snapResourceFloor(share: number): number {
+  return snapShare(share, RESOURCE_FLOOR_DEFAULT, MAX_RESOURCE_FLOOR)
 }
 
 /**
@@ -842,6 +866,23 @@ export const POWER_BUDGET = {
     talents: { min: 1.43, max: 1.75 },
     enchants: { min: 1.15, max: 1.35 },
     potions: { min: 1.15, max: 1.35 },
+    /**
+     * СПУТНИК — СИСТЕМА, ДОБАВЛЯЮЩАЯ СИЛУ, и по правилу бюджета получает
+     * строку в тот же день, когда появилась. Мерится СНЯТИЕМ: Псарь на
+     * потолке в эталонном снаряжении с псом против него же без пса (список
+     * псов пуст — ни укусов, ни перенаправления). Строка есть только у
+     * классов со спутником: у Стража и Изувера мерить нечего, и прибор их
+     * не трогает.
+     *
+     * Коридор ±20 % вокруг замера, как у брони и каденции: «сколько должен
+     * давать пёс» владелец не назначал, число вышло из чисел спутника
+     * (`companion` в data/classes.ts) и строки умений. ЗАМЕР: ×1.19 на
+     * потолке при укусе 0.22 (при укусе 0.55 было ×1.38, но тогда второй пёс
+     * пробивал строку умений — см. companion). Пол поднят с 0.95 до 1.05:
+     * правило «пол выше единицы» сильнее арифметики ±20 %. Разбор —
+     * `docs/HOUND.md`, стадия 9.
+     */
+    hound: { min: 1.05, max: 1.42 },
   },
   /**
    * ЛЕГЕНДАРНАЯ СБОРКА: ЕДИНСТВЕННАЯ СТРОКА БЮДЖЕТА С КОРИДОРОМ ВОКРУГ

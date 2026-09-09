@@ -11,6 +11,7 @@
   import { ABILITY_BY_ID } from '../data/abilities'
   import { startNewGame } from '../stores/game'
   import { resourceKindName } from './resource'
+  import { classAccusative } from './classText'
   import { Button, Panel, Tag } from './kit'
   import { Icon } from './icons'
 
@@ -50,7 +51,7 @@
             <dd>{abilityNames(hero)}</dd>
           </dl>
           <Button variant="primary" block onclick={() => startNewGame(hero.id)}>
-            Играть за {hero.name.toLowerCase()}а
+            Играть за {classAccusative(hero.name).toLowerCase()}
           </Button>
         </section>
       {/each}

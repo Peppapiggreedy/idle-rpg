@@ -29,6 +29,11 @@ export function abilityReasonText(
     // ДОБИВАНИЕ ЖДЁТ СВОЕГО МОМЕНТА, а не «нельзя вообще»: игрок обязан
     // понять, что кнопка загорится сама, когда цель просядет.
     'target-healthy': 'Цель ещё слишком цела — добивание ждёт',
+    // КОМАНДЫ ПСУ: три причины, и каждая говорит, чего ждать — возврата пса,
+    // его падения или снятия кнопки зова.
+    'no-hound': 'Пёс не на ногах — командовать некому',
+    'no-fallen-hound': 'Все псы на ногах — окликать некого',
+    'pack-full': 'Свора полна: больше псов ряд не держит',
   }
   if (reason === 'locked') return `Откроется на ${unlockLevel} уровне`
   // ВОРОТА ПО ПОЛОСКЕ. Оба отказа НАЗЫВАЮТ РЕСУРС ПО ИМЕНИ КЛАССА и говорят,
@@ -71,6 +76,18 @@ export const ABILITY_ROLE: Record<string, string> = {
   'blood-price': 'Обмен: платит здоровьем за ярость. Когда бить нечем, а полоска пуста.',
   'blood-roar': 'Окно: восемь секунд умения не стоят ничего. Против ямы ресурса, а не отката.',
   berserk: 'Обмен наоборот: свой урон выше, входящий жёстче. Держится сама и занимает слот.',
+  // --- Псарь ---
+  undercut: 'Заполнитель: бьёт часто, а потраченная энергия возвращается сама.',
+  sic: 'Команда псу: восемь секунд он кусает в полтора раза чаще. Урон второго тела.',
+  hamstring: 'Удар от пса: сильнее, пока пёс на ногах и грызёт ту же цель.',
+  recall: 'Отзыв: пёс отходит, не кусает и не получает урона, зато лечится. Для раненого пса.',
+  grip: 'Хватка: пёс держит моба, и тот бьёт реже. Защита через второе тело.',
+  flurry: 'Серия: три коротких удара за одну цену, и пёс кусает на каждый. Козырь урона вдвоём.',
+  bandage: 'Перевязка: лечит пса долей его запаса. Держит второе тело на ногах.',
+  unleash: 'Спуск: пёс кусает сразу и в разы сильнее, герой платит. Всплеск в чужих зубах.',
+  skulk: 'Скрадывание: герой берёт на себя меньше, пёс — больше. Здоровье одного тела за здоровье другого.',
+  rally: 'Оклик: павший пёс встаёт раньше срока. Дёшево, редко, на случай.',
+  pack: 'Свора: второй пёс, пока кнопка стоит в ряду. Венец класса.',
 }
 
 /**
@@ -328,6 +345,54 @@ export function abilityLines(ability: AbilityDef, ctx: AbilityTextContext): stri
   if (ability.window) {
     lines.push(`${sec(ability.window.durationSec)}: умения ничего не стоят`)
   }
+  // КОМАНДЫ ПСУ — каждая описывает свой payload; пёс назван словом, а не id.
+  if (ability.houndHaste) {
+    lines.push(
+      `Пёс кусает на ${pct(ability.houndHaste.share)} чаще ${sec(ability.houndHaste.durationSec)}`,
+    )
+  }
+  if (ability.packStrike) {
+    lines.push(`Пока пёс на ногах и грызёт цель — удар сильнее на ${pct(ability.packStrike.bonusShare)}`)
+  }
+  if (ability.recall) {
+    lines.push(
+      `Пёс отходит на ${sec(ability.recall.durationSec)}: не кусает, не получает урона, ` +
+        `возвращает ${pct(ability.recall.healShare)} своего запаса`,
+    )
+  }
+  if (ability.grip) {
+    lines.push(
+      `Пёс держит цель ${sec(ability.grip.durationSec)}: её замах длиннее на ${pct(ability.grip.slowShare)}`,
+    )
+  }
+  if (ability.flurry) {
+    const n = Math.max(1, Math.round(ability.flurry.hits))
+    lines.push(`${n} ${plural(n, 'удар', 'удара', 'ударов')} за одно применение, пёс кусает на каждый`)
+  }
+  if (ability.houndHeal) {
+    lines.push(`Лечит пса на ${pct(ability.houndHeal.maxHpShare)} его запаса`)
+    lines.push(`Автокаст перевязывает пса ниже ${pct(ability.houndHeal.autocastBelowHpShare)} здоровья`)
+  }
+  if (ability.unleash) {
+    lines.push(`Пёс кусает сразу, укус ×${Math.round(ability.unleash.biteMult * 10) / 10}`)
+  }
+  if (ability.skulk) {
+    lines.push(
+      `${sec(ability.skulk.durationSec)}: пёс принимает на ${pct(ability.skulk.redirectBonus)} больше входящего вместо героя`,
+    )
+  }
+  if (ability.rally) {
+    lines.push(`Павший пёс встаёт с ${pct(ability.rally.hpShare)} запаса`)
+  }
+  if (ability.pack) {
+    const n = Math.max(0, Math.round(ability.pack.extraHounds))
+    lines.push(
+      n === 1 ? 'Зовёт ещё одного пса, пока кнопка в ряду' : `Зовёт ещё ${n} псов, пока кнопка в ряду`,
+    )
+  }
+  if (ability.autocast?.houndHpBelow !== undefined) {
+    lines.push(`Автокаст жмёт, пока пёс ниже ${pct(ability.autocast.houndHpBelow)} здоровья`)
+  }
   if (ability.autocast?.heroHpAbove !== undefined) {
     lines.push(`Автокаст жмёт при здоровье выше ${pct(ability.autocast.heroHpAbove)}`)
   }
@@ -369,6 +434,23 @@ export function abilityDropRefusalText(reason: AbilityDropRefusal, unlockLevel =
  * живут здесь, потому что это текст для игрока, а не имя в коде.
  */
 const TUNE_LABEL: Record<string, string> = {
+  // Команды псу.
+  houndHasteShare: 'ускорение пса',
+  houndHasteDurationSec: 'длительность травли',
+  packStrikeBonusShare: 'прибавка от пса',
+  recallDurationSec: 'длительность отзыва',
+  recallHealShare: 'лечение при отзыве',
+  gripSlowShare: 'замедление хваткой',
+  gripDurationSec: 'длительность хватки',
+  flurryHits: 'ударов в серии',
+  houndHealMaxHpShare: 'лечение пса',
+  houndHealAutocastBelowHpShare: 'порог перевязки',
+  unleashBiteMult: 'укус спуска',
+  skulkRedirectBonus: 'доля пса при скрадывании',
+  skulkDurationSec: 'длительность скрадывания',
+  rallyHpShare: 'здоровье при оклике',
+  packExtraHounds: 'псов в своре',
+  autocastHoundHpBelow: 'порог команды по псу',
   cooldownSec: 'откат',
   manaCost: 'цена',
   weaponDamagePercent: 'урон',

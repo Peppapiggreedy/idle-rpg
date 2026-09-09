@@ -1,5 +1,5 @@
 {
-  "version": 36,
+  "version": 34,
   "classId": "warden",
   "materials": {
     "meadow-herb": "18",
@@ -422,7 +422,6 @@
   "regenDelayMsLeft": 0,
   "restHpThreshold": 0.6,
   "holdManaForHeal": true,
-  "resourceFloor": 0,
   "upgradePriority": "balance",
   "purchasedUpgradeIds": [],
   "lootPolicy": "keep",
@@ -497,6 +496,5 @@
   "talentResets": 2,
   "totalTicks": "0",
   "playtimeMs": "0",
-  "abilityCasts": "0",
-  "hounds": []
+  "abilityCasts": "0"
 }

@@ -15,6 +15,7 @@ import { ensureStats } from '../../stats'
 import { xpToNextLevel } from '../../formulas'
 import { equipItem } from '../../equipment'
 import { equipUpgrades } from '../../simulate'
+import { houndMaxHp } from '../../hound'
 import { rollBossLoot, rollLoot } from '../../loot'
 import { investTalent } from '../../talents'
 import { travelToZone } from '../../zones'
@@ -26,9 +27,11 @@ import { LEVEL_BANDS, bandDepth } from '../../../data/bands'
 import { commonReagentsInBand } from '../../../data/reagents'
 import type { Item } from '../../../types'
 
-export type PresetName = 'fresh' | 'mid' | 'rich' | 'tree'
+export type PresetName = 'fresh' | 'mid' | 'rich' | 'tree' | 'hound'
 
-export const PRESET_NAMES: PresetName[] = ['fresh', 'mid', 'rich', 'tree']
+// Порядок важен: presets.test.ts читает первые три позиционно как «свежий,
+// середина, поздний». Новые пресеты — только В КОНЕЦ.
+export const PRESET_NAMES: PresetName[] = ['fresh', 'mid', 'rich', 'tree', 'hound']
 
 // Время сейва фиксировано: иначе json менялся бы при каждой перегенерации,
 // а оффлайн-расчёт в режиме съёмки всё равно не запускается.
@@ -213,7 +216,32 @@ function tree(): GameState {
   return { ...state, currentHp: state.stats.maxHp, currentMana: state.stats.maxMana }
 }
 
-const BUILDERS: Record<PresetName, () => GameState> = { fresh, mid, rich, tree }
+/**
+ * Псарь с псом на площадке: середина игры третьего класса. Снимается ради
+ * сцены — пёс стоит рядом с героем, у него своя полоска, и здоровье ей дано
+ * неполным, чтобы полоска читалась полоской, а не рамкой.
+ */
+function hound(): GameState {
+  let state = createInitialState(606, 'houndmaster', 606)
+  state = atLevel(state, 12)
+  const loot = rollItems(state, 2626, 14, 8)
+  state = addToInventory(state, loot)
+  const weapon = loot.find((i) => i.slot === 'mainHand')
+  if (weapon) state = equipItem(state, weapon.id)
+  state = equipUpgrades(state)
+  state = { ...state, inventory: state.inventory.slice(0, 4) }
+  state = travelToZone(state, 'hollow-quarry', createRng(606))
+  const max = houndMaxHp(state)
+  return {
+    ...state,
+    gold: new Decimal(3140),
+    currentHp: state.stats.maxHp.times(0.85).floor(),
+    currentMana: state.stats.maxMana.times(0.6).floor(),
+    hounds: state.hounds.map((h) => ({ ...h, hp: max.times(0.6).floor() })),
+  }
+}
+
+const BUILDERS: Record<PresetName, () => GameState> = { fresh, mid, rich, tree, hound }
 
 export function buildPreset(name: PresetName): GameState {
   return BUILDERS[name]()

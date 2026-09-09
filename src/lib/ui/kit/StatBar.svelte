@@ -5,7 +5,7 @@
     value: number
     max?: number
     // Семантика цвета: за что эта полоска отвечает.
-    tone?: 'hp' | 'mana' | 'rage' | 'xp' | 'damage' | 'accent' | 'neutral'
+    tone?: 'hp' | 'mana' | 'rage' | 'energy' | 'xp' | 'damage' | 'accent' | 'neutral'
     size?: 'sm' | 'md' | 'lg'
     // Подпись слева и справа под полоской.
     label?: string
@@ -85,6 +85,11 @@
      иначе: одинаковый синий читался бы как «та же мана, только цифры другие». */
   .fill.rage {
     background: var(--c-rage);
+  }
+  /* ЭНЕРГИЯ — ТРЕТИЙ ЦВЕТ ПО ТОМУ ЖЕ ДОВОДУ: она падает рывком и возвращается
+     сама за секунды, и ни синий маны, ни рыжий ярости этого не обещают. */
+  .fill.energy {
+    background: var(--c-energy);
   }
   .fill.xp {
     background: var(--c-xp);

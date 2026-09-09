@@ -56,13 +56,14 @@ Idle RPG собрана на чужих плечах. Здесь перечис�
 ## Картинки боевой сцены
 
 Боевая сцена двумерная: фон полосы уровней, силуэт героя, силуэт моба.
-Все шестнадцать картинок в `public/sprites/` нарисованы для проекта и
+Все семнадцать картинок в `public/sprites/` нарисованы для проекта и
 отданы под [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) —
 это цветные силуэты-заглушки, которые предстоит заменить настоящими.
 
 | Что | Файлы | Автор | Лицензия |
 |---|---|---|---|
 | Герой | `public/sprites/hero.svg` | Idle RPG | CC0 1.0 |
+| Пёс Псаря | `public/sprites/hound.svg` | Idle RPG | CC0 1.0 |
 | Мобы по ролям, босс и запасной силуэт | `public/sprites/monster-{runt,common,brute,boss,unknown}.svg` | Idle RPG | CC0 1.0 |
 | Фоны десяти полос уровней | `public/sprites/bg-{meadow,furrows,glass,mines,flood,sulfur,pass,salt,rime,dell}.svg` | Idle RPG | CC0 1.0 |
 
@@ -86,17 +87,17 @@ Idle RPG собрана на чужих плечах. Здесь перечис�
 текста; иконки собраны в один встроенный SVG-спрайт
 (`src/lib/ui/icons/sprite.svg`, собирается `npm run icons:build`).
 
-Всего иконок в игре: 243.
+Всего иконок в игре: 283.
 
 | Автор | Иконок |
 |---|---|
 | DarkZaitzev | 1 |
-| Delapouite | 60 |
+| Delapouite | 72 |
 | FaithToken | 1 |
 | GeneralAce135 | 1 |
-| Lorc | 172 |
+| Lorc | 199 |
 | Sbed | 5 |
-| Skoll | 2 |
+| Skoll | 3 |
 | Zeromancer | 1 |
 
 Полный список «иконка → файл автора» — в реестре

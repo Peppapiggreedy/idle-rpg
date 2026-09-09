@@ -258,6 +258,14 @@ export function tuneAbility(
       ...(def.autocast.heroHpAbove === undefined
         ? {}
         : { heroHpAbove: apply(def.autocast.heroHpAbove, get('autocastHeroHpAbove')) }),
+      ...(def.autocast.houndHpBelow === undefined
+        ? {}
+        : {
+            houndHpBelow: Math.min(
+              1,
+              Math.max(0, apply(def.autocast.houndHpBelow, get('autocastHoundHpBelow'))),
+            ),
+          }),
       ...(def.autocast.resourceAbove === undefined
         ? {}
         : {
@@ -292,6 +300,56 @@ export function tuneAbility(
       def.weaponDamageFromResource,
       get('weaponDamageFromResource'),
     )
+  }
+  // КОМАНДЫ ПСУ — тем же конвейером. Штучное (удары серии, псы своры)
+  // округляется к ближайшему, как тики; пороги прижимаются к шкале.
+  if (def.houndHaste) {
+    out.houndHaste = {
+      share: apply(def.houndHaste.share, get('houndHasteShare')),
+      durationSec: apply(def.houndHaste.durationSec, get('houndHasteDurationSec')),
+    }
+  }
+  if (def.packStrike) {
+    out.packStrike = { bonusShare: apply(def.packStrike.bonusShare, get('packStrikeBonusShare')) }
+  }
+  if (def.recall) {
+    out.recall = {
+      durationSec: apply(def.recall.durationSec, get('recallDurationSec')),
+      healShare: apply(def.recall.healShare, get('recallHealShare')),
+    }
+  }
+  if (def.grip) {
+    out.grip = {
+      slowShare: apply(def.grip.slowShare, get('gripSlowShare')),
+      durationSec: apply(def.grip.durationSec, get('gripDurationSec')),
+    }
+  }
+  if (def.flurry) {
+    out.flurry = { hits: Math.max(1, Math.round(apply(def.flurry.hits, get('flurryHits')))) }
+  }
+  if (def.houndHeal) {
+    out.houndHeal = {
+      maxHpShare: apply(def.houndHeal.maxHpShare, get('houndHealMaxHpShare')),
+      autocastBelowHpShare: Math.min(
+        1,
+        Math.max(0, apply(def.houndHeal.autocastBelowHpShare, get('houndHealAutocastBelowHpShare'))),
+      ),
+    }
+  }
+  if (def.unleash) {
+    out.unleash = { biteMult: apply(def.unleash.biteMult, get('unleashBiteMult')) }
+  }
+  if (def.skulk) {
+    out.skulk = {
+      redirectBonus: apply(def.skulk.redirectBonus, get('skulkRedirectBonus')),
+      durationSec: apply(def.skulk.durationSec, get('skulkDurationSec')),
+    }
+  }
+  if (def.rally) {
+    out.rally = { hpShare: Math.min(1, apply(def.rally.hpShare, get('rallyHpShare'))) }
+  }
+  if (def.pack) {
+    out.pack = { extraHounds: Math.max(0, Math.round(apply(def.pack.extraHounds, get('packExtraHounds')))) }
   }
   return out
 }

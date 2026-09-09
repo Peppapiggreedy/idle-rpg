@@ -17,10 +17,12 @@ import {
   AUTOCAST_DELAY_MS,
   REGEN_TICK_S,
   REST_HP_THRESHOLD_DEFAULT,
+  RESOURCE_FLOOR_DEFAULT,
 } from '../data/balance'
 import { recomputeStats, type StatBlock } from './stats'
 import { SLOT_IDS, type SlotId } from '../data/slots'
 import { createRng, type Rng } from './rng'
+import { freshHounds, type HoundState } from './hound'
 import type {
   CombatEvent,
   DungeonRun,
@@ -150,6 +152,13 @@ export interface GameState {
    */
   absorb: HeroAbsorb | null
   /**
+   * КОМАНДЫ ПСУ, КОТОРЫЕ ДЕРЖАТСЯ ВРЕМЯ: травля, отзыв, хватка, скрадывание.
+   * Живут на СВОРЕ (одним объектом на всех псов), а не на мобе и не на герое,
+   * тикают тем же игровым временем, что откаты, и в сейв не пишутся — как и
+   * всё, что висит секунду боя. У класса без пса — пустые.
+   */
+  houndMarks: HoundMarks
+  /**
    * РЯД ДЕЙСТВИЙ: какие умения герой носит и в каком порядке. Индекс — и
    * место кнопки под сценой, и приоритет автокаста. `null` — пустой слот.
    */
@@ -180,6 +189,14 @@ export interface GameState {
    * не делает.
    */
   holdManaForHeal: boolean
+  /**
+   * ПОЛ РЕСУРСА: ниже этой доли запаса автокаст не тратит ничего. Настройка
+   * автокаста, один на класс, лежит в сейве, по умолчанию ноль; шаг и
+   * потолок — как у порога привала (`snapResourceFloor`). Резерв каждого
+   * умения складывается с ним по максимуму. Руками игрок волен тратить всё.
+   * Не характеристика: таланту трогать его нечем — среди `StatId` его нет.
+   */
+  resourceFloor: number
   /**
    * ПРИОРИТЕТ АПГРЕЙДА: что игрок считает улучшением — урон, выживание или
    * то и другое. Настройка, а не свойство героя: лежит в сейве, меняется
@@ -261,6 +278,13 @@ export interface GameState {
   respawnMsLeft: number
   combatLog: CombatEvent[] // последние события, новые в начале
   msSinceAutosave: number // служебный счётчик игрового времени с последнего сейва
+  /**
+   * ПСЫ ГЕРОЯ — СПИСКОМ, А НЕ ОДНИМ ПОЛЕМ. Длина обычно единица (или ноль у
+   * класса без спутника), но капстоун добавляет второго, и переделка поля в
+   * список потом стоила бы стадии. Здоровье, замах и таймер возврата каждого
+   * — см. `HoundState`; числа пса — в данных класса (`CompanionDef`).
+   */
+  hounds: HoundState[]
 }
 
 // Наложенный эффект. Урон тика ЗАСНЯТ в момент применения: смена оружия
@@ -321,6 +345,35 @@ export interface HeroEdge {
   /** Прибавка при полной полоске. */
   damagePerShare: number
   msLeft: number
+}
+
+/** Одна команда псу с длительностью; см. `HoundMarks`. */
+export interface HoundMark {
+  /** Число команды: доля ускорения, доля лечения в секунду, доля замедления, прибавка к перенаправлению. */
+  share: number
+  msLeft: number
+}
+
+/** Команды псу, которые держатся время: см. поле `houndMarks`. */
+export interface HoundMarks {
+  /** Травля: пёс кусает чаще на долю. */
+  haste: HoundMark | null
+  /** Отзыв: пёс не кусает, не принимает урона, лечится на долю запаса в секунду. */
+  recall: HoundMark | null
+  /** Хватка: моб замахивается медленнее на долю. */
+  grip: HoundMark | null
+  /** Скрадывание: доля перенаправления выше на долю. */
+  skulk: HoundMark | null
+  /** Мститель (талант-флаг): пал пёс — урон героя выше на долю. */
+  avenge: HoundMark | null
+}
+
+export const NO_HOUND_MARKS: HoundMarks = {
+  haste: null,
+  recall: null,
+  grip: null,
+  skulk: null,
+  avenge: null,
 }
 
 /** Упор героя: см. поле `resolve`. */
@@ -391,6 +444,12 @@ export interface Rotation {
    * каждый из них считал бы по умению, которого у героя в руках нет.
    */
   boons: readonly string[]
+  /**
+   * ПОЛ РЕСУРСА ЕДЕТ С РОТАЦИЕЙ по тому же доводу, что ранги и свойства:
+   * модель боя раскладывает всплеск трат до пола, и модель, не знающая о
+   * нём, обещала бы оффлайну касты, которых автокаст не делает.
+   */
+  resourceFloor: number
 }
 
 export const rotationOf = (state: GameState): Rotation => ({
@@ -398,6 +457,7 @@ export const rotationOf = (state: GameState): Rotation => ({
   settings: state.abilitySettings,
   talents: state.talents,
   boons: equippedBoons(state.equipment),
+  resourceFloor: state.resourceFloor,
 })
 
 /**
@@ -615,6 +675,7 @@ export function createInitialState(
     restTotalMs: 0,
     restHpThreshold: REST_HP_THRESHOLD_DEFAULT,
     holdManaForHeal: true,
+    resourceFloor: RESOURCE_FLOOR_DEFAULT,
     upgradePriority: DEFAULT_UPGRADE_PRIORITY,
     purchasedUpgradeIds: [],
     lootPolicy: DEFAULT_LOOT_POLICY,
@@ -643,6 +704,7 @@ export function createInitialState(
     ramp: null,
     edge: null,
     absorb: null,
+    houndMarks: NO_HOUND_MARKS,
     abilitySlots: defaultAbilitySlots(hero.id),
     abilitySettings: defaultAbilitySettings(hero.id),
     autocastReadyMs: {},
@@ -669,15 +731,18 @@ export function createInitialState(
     respawnMsLeft: 0,
     combatLog: [],
     msSinceAutosave: 0,
+    hounds: [],
   }
   const stats = recomputeStats(base as GameState)
+  const withStats = { ...base, stats }
   return {
-    ...base,
-    stats,
+    ...withStats,
     currentHp: stats.maxHp,
     // Мана начинается полной, ярость — пустой. Это ДАННЫЕ класса, а не
     // условие в коде: обнули startFull, и класс начнёт с пустым ресурсом.
     currentMana: hero.resource.startFull ? stats.maxMana : new Decimal(0),
+    // Псы приходят полными: их запас — доля запаса героя, поэтому после статов.
+    hounds: freshHounds(withStats),
   }
 }
 

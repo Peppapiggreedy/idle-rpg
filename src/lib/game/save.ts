@@ -36,6 +36,8 @@ import {
   REGEN_TICK_S,
   REST_HP_THRESHOLD_DEFAULT,
   snapRestThreshold,
+  snapResourceFloor,
+  RESOURCE_FLOOR_DEFAULT,
   LEGACY_V3_SWING_TIME_S,
   OFFLINE_CAP_HOURS,
   OFFLINE_CHUNK_MIN,
@@ -45,6 +47,8 @@ import {
 } from '../data/balance'
 import { ABILITIES, ABILITY_BY_ID } from '../data/abilities'
 import { CLASS_BY_ID, DEFAULT_CLASS, classById } from '../data/classes'
+import { companionOf, freshHounds, houndMaxHp } from './hound'
+import { houndCapacity } from './abilities'
 import { REAGENT_BY_ID } from '../data/reagents'
 import {
   MASTERY_MAX,
@@ -116,7 +120,7 @@ const OFFLINE_LOOT_SALT = 0x9e37_79b9
 /** Все хваты одним списком: сейв принимает только их. */
 const GRIPS: Grip[] = ['one', 'two', 'shield']
 
-export const SAVE_VERSION = 33
+export const SAVE_VERSION = 36
 
 /**
  * ПОКОЛЕНИЕ ДЕРЕВА, КОТОРЫМ ПОМЕЧЕНЫ ВСЕ СЕЙВЫ ДО 33-й ВЕРСИИ. До неё номера
@@ -193,6 +197,16 @@ export interface SavedTempleRun {
   level: number
 }
 
+/**
+ * Пёс в сейве: здоровье и сколько ещё лежать. Замах не пишется — доли
+ * секунды прогрессом не считаются, как и таймер порции маны. Запас пса не
+ * пишется тоже: он выводится из статов героя при загрузке.
+ */
+export interface SavedHound {
+  hp: string
+  downMsLeft: number
+}
+
 export interface SavedDungeonRun {
   dungeonId: string
   /** Сложность забега: обычная и героическая — разные числа одной цепочки. */
@@ -263,6 +277,8 @@ export interface SavePayloadV21 {
   restHpThreshold: number
   /** Беречь ману под лечение — настройка автокаста. */
   holdManaForHeal: boolean
+  /** Пол ресурса: ниже этой доли запаса автокаст не тратит ничего. */
+  resourceFloor: number
   /** Что игрок считает апгрейдом: урон, выживание или баланс. */
   upgradePriority: UpgradePriority
   /** Что куплено за золото: id ступеней лестницы покупок. */
@@ -313,6 +329,12 @@ export interface SavePayloadV21 {
   playtimeMs: string
   /** Применённых умений за игру — растущий счётчик, поэтому строкой. */
   abilityCasts: string
+  /**
+   * ПСЫ ГЕРОЯ — списком, как и в состоянии. У класса без спутника список
+   * пуст. Павший пёс переживает перезагрузку павшим: иначе выход и вход
+   * стали бы способом поднять его без ожидания.
+   */
+  hounds: SavedHound[]
 }
 
 export interface SaveStorage {
@@ -471,6 +493,7 @@ export function payloadFromState(state: GameState, lastTimestamp: number): SaveP
     regenDelayMsLeft: Math.max(0, state.regenDelayMsLeft),
     restHpThreshold: state.restHpThreshold,
     holdManaForHeal: state.holdManaForHeal !== false,
+    resourceFloor: state.resourceFloor,
     upgradePriority: state.upgradePriority,
     purchasedUpgradeIds: [...state.purchasedUpgradeIds],
     lootPolicy: state.lootPolicy,
@@ -492,7 +515,45 @@ export function payloadFromState(state: GameState, lastTimestamp: number): SaveP
     totalTicks: state.totalTicks.toString(),
     playtimeMs: state.playtimeMs.toString(),
     abilityCasts: state.abilityCasts.floor().toString(),
+    hounds: state.hounds.map((h) => ({
+      hp: h.hp.toString(),
+      downMsLeft: Math.max(0, h.downMsLeft),
+    })),
   }
+}
+
+/**
+ * Псы из сейва — поверх свежего комплекта класса: сколько псов положено,
+ * решают ДАННЫЕ класса, а не длина списка в сейве (капстоун мог быть снят, а
+ * мусор в поле — не потеря сейва). Здоровье прижимается к пересчитанному
+ * запасу, отрицательный таймер — к нулю; павший (ноль здоровья без таймера)
+ * получает полный таймер возврата, а не встаёт даром.
+ */
+function houndsFromSaved(raw: unknown, state: GameState): GameState['hounds'] {
+  const fresh = freshHounds(state)
+  if (!Array.isArray(raw) || fresh.length === 0) return fresh
+  const def = companionOf(state)
+  const max = houndMaxHp(state)
+  // СВОРА ПЕРЕЖИВАЕТ ПЕРЕЗАГРУЗКУ: псов сверх комплекта столько, сколько
+  // сохранено и сколько держит ряд (`houndCapacity`), — иначе венец класса
+  // приходилось бы звать заново после каждой вкладки.
+  const capacity = Math.max(fresh.length, houndCapacity(state))
+  const slots = Array.from(
+    { length: Math.min(capacity, Math.max(fresh.length, raw.length)) },
+    (_, i) => fresh[i] ?? fresh[0],
+  )
+  return slots.map((blank, i) => {
+    const saved = raw[i] as Record<string, unknown> | undefined
+    if (!saved || typeof saved !== 'object') return blank
+    const downMsLeft =
+      typeof saved.downMsLeft === 'number' && Number.isFinite(saved.downMsLeft)
+        ? Math.max(0, saved.downMsLeft)
+        : 0
+    const hp = Decimal.min(parseDec(saved.hp, max.toString()), max)
+    if (downMsLeft > 0) return { hp: new Decimal(0), swing: 0, downMsLeft }
+    if (hp.lte(0)) return { hp: new Decimal(0), swing: 0, downMsLeft: (def?.returnSec ?? 0) * 1000 }
+    return { hp, swing: 0, downMsLeft: 0 }
+  })
 }
 
 const MODIFIER_KINDS: ModifierKind[] = ['base', 'flat', 'percent', 'multiplier']
@@ -1003,6 +1064,8 @@ export function stateFromPayload(p: SavePayloadV21): GameState {
     ...withStats,
     currentHp: dead ? new Decimal(0) : currentHp,
     currentMana,
+    // Псы — после статов: их запас выводится из запаса героя.
+    hounds: houndsFromSaved(p.hounds, withStats),
     heroState: dead ? 'dead' : 'alive',
     reviveMsLeft: dead && typeof p.reviveMsLeft === 'number' && p.reviveMsLeft > 0 ? p.reviveMsLeft : dead ? 1 : 0,
     // Привал не досиживается через перезагрузку: герой просыпается на ногах.
@@ -1012,6 +1075,10 @@ export function stateFromPayload(p: SavePayloadV21): GameState {
     // Отсутствие поля (старый сейв) читается как «включено» — так же, как
     // у нового героя.
     holdManaForHeal: p.holdManaForHeal !== false,
+    // Пол ресурса прижимается к шагу ползунка ЗДЕСЬ ЖЕ, где и порог привала:
+    // «0.2999» из правленого сейва читался бы на экране как 30 %, а считался
+    // бы иначе. Отсутствие поля (старый сейв) — ноль, как у нового героя.
+    resourceFloor: snapResourceFloor(share(p.resourceFloor, RESOURCE_FLOOR_DEFAULT)),
     // Незнакомое значение (руками правленый сейв) читается как умолчание —
     // терять из-за него доступ к игре не за что.
     upgradePriority: UPGRADE_PRIORITIES.includes(p.upgradePriority)
@@ -1183,6 +1250,27 @@ function savedSellPrice(raw: unknown): number {
 }
 
 export const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
+  // 33 -> 34: ТРЕТИЙ КЛАСС. Форма сейва не меняется ни полем — миграции
+  // остаётся только номер, и он нужен не ради формы, а ради ЧТЕНИЯ В ОБРАТНУЮ
+  // СТОРОНУ: сейв Псаря, открытый сборкой без Псаря, деградировал бы до
+  // Стража МОЛЧА (`classById` отдаёт класс по умолчанию на неизвестный id),
+  // и игрок обнаружил бы чужого героя вместо своего. Сборка без третьего
+  // класса не знает и 34-й версии — она откажет кодом `newer-version`,
+  // положив исходную строку в запасную копию.
+  //
+  // Сейвы Стража и Изувера проходят миграцию нетронутыми, поле в поле: это
+  // и есть правило ночи — ключи двух готовых классов не двигаются.
+  33: (raw) => ({ ...raw, version: 34 }),
+  // 34 -> 35: У ГЕРОЯ ПОЯВИЛИСЬ ПСЫ. Поле списком; у двух прежних классов он
+  // пуст, и записывать им пустоту миграция не обязана — загрузка выводит
+  // комплект из данных класса, а отсутствие поля читает как «свежий
+  // комплект». Сейвы Стража и Изувера проходят нетронутыми, поле в поле.
+  34: (raw) => ({ ...raw, version: 35 }),
+  // 35 -> 36: ПОЛ РЕСУРСА АВТОКАСТА («не тратить ниже N %»). У всех прежних
+  // героев он ноль — ровно то поведение, что было: автокаст жмёт до дна.
+  // Записывается явно, а не выводится из отсутствия поля: ноль здесь —
+  // выбор игрока по умолчанию, и сейв обязан его называть.
+  35: (raw) => ({ ...raw, version: 36, resourceFloor: RESOURCE_FLOOR_DEFAULT }),
   // 29 -> 30. ДЕРЕВО ТАЛАНТОВ ПЕРЕСОБРАНО — ОДИН БЕСПЛАТНЫЙ СБРОС.
   //
   // У Стража на каждом этаже стало по два-три таланта вместо одного, ёмкость

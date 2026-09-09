@@ -41,7 +41,7 @@ import {
   REVIVE_DELAY_MS,
   xpGapShare,
 } from '../data/balance'
-import { abilityOf, grownRamp } from './abilities'
+import { abilityOf, grownRamp, houndCapacity } from './abilities'
 import { currentZone, reviveInZone } from './zones'
 import {
   advanceCooldowns,
@@ -49,17 +49,29 @@ import {
   consumeQueuedAbility,
   outgoingMultiplier,
   queuedAbilityDropReason,
+  targetMultiplier,
 } from './abilities'
 import { finishRest, needsRest, startRest } from './rest'
 import { addMaterial, rollZoneReagent } from './crafting'
 import { classById } from '../data/classes'
 import { advancePotions, gatherHerbs } from './potions'
 import {
+  HOUND_ID,
+  activeCompanion,
+  advanceHounds,
+  companionOf,
+  freshHounds,
+  isHoundUp,
+  redirectToHounds,
+  rollHoundBite,
+} from './hound'
+import {
   blockReflectShare,
   blockResourceShare,
   doubleStrikeChance,
   killCooldownMultiplier,
   reviveMultiplier,
+  houndAvenge,
 } from './talents'
 
 /**
@@ -165,6 +177,9 @@ const applyRevive: TickStep = (s, ctx) => {
     activeEffects: [],
     monsterWeaken: null,
     monsterBrand: null,
+    // Псы возвращаются вместе с героем и целыми: воскрешение — полный запас
+    // сил, и второе тело здесь не исключение. У класса без пса — тот же список.
+    hounds: freshHounds(revived),
   }
 }
 
@@ -688,6 +703,86 @@ const applyOffhandCombat: TickStep = (s, ctx) => {
   return { ...s, offhandSwingProgress: progress, monster, combatLog }
 }
 
+/**
+ * ТАЙМЕРЫ ПСОВ: лежащий досиживает возврат, стоящий восстанавливается. Стоит
+ * рядом с откатами умений и идёт тем же игровым временем. У класса без пса
+ * список пуст, и шаг возвращает состояние тем же объектом.
+ */
+const applyHoundTimers: TickStep = (s, ctx) => {
+  if (s.hounds.length === 0) return s
+  const inCombat = s.heroState === 'alive' && s.respawnMsLeft <= 0
+  // ХВАТКА КОНЧАЕТСЯ ВМЕСТЕ С МОБОМ: держать некого — пёс отпускает. Одна
+  // проверка здесь вместо правки каждого места, где моб умирает или выходит.
+  const grip =
+    s.houndMarks.grip && (s.respawnMsLeft > 0 || s.monster.currentHp.lte(0)) ? null : s.houndMarks.grip
+  // СВОРА НЕ БОЛЬШЕ ЁМКОСТИ РЯДА: снял кнопку зова — лишний пёс уходит.
+  const capacity = houndCapacity(s)
+  const advanced = advanceHounds(s, ctx.dtMs, inCombat)
+  const hounds = advanced.hounds.length > capacity ? advanced.hounds.slice(0, capacity) : advanced.hounds
+  if (hounds === s.hounds && grip === s.houndMarks.grip) return s
+  let combatLog = s.combatLog
+  for (let i = 0; i < advanced.returned; i += 1) combatLog = pushEvent(combatLog, { type: 'hound-return' })
+  return {
+    ...s,
+    hounds,
+    combatLog,
+    houndMarks: grip === s.houndMarks.grip ? s.houndMarks : { ...s.houndMarks, grip },
+  }
+}
+
+/**
+ * УКУСЫ ПСОВ — ВТОРОЙ ИСТОЧНИК АВТОАТАКИ. У каждого пса свой таймер замаха, и
+ * бьёт он ту же цель, что герой: ни наведения, ни угрозы, ни своего выбора
+ * цели у него нет. Пока герой на привале, мёртв или моба нет — пёс молчит.
+ *
+ * Укус идёт в шину с пометкой `companion`: замахом героя он не считается
+ * (ресурс от него не копится, проки от него не срабатывают), а сцена по ней
+ * отводит лапу псу. Метка на цели (клеймо) умножает укус так же, как удар
+ * героя: она висит на мобе; собственные состояния героя (стойка, разгон) —
+ * нет: они про его руку.
+ */
+const applyHoundCombat: TickStep = (s, ctx) => {
+  if (s.hounds.length === 0) return s
+  if (s.heroState !== 'alive' || s.respawnMsLeft > 0) return s
+  // ОТОЗВАННЫЙ ПЁС НЕ КУСАЕТ: он отошёл. Замах при этом не идёт — вернётся
+  // с той же долей, с какой ушёл.
+  if (s.houndMarks.recall) return s
+  const base = companionOf(s)
+  if (!base || base.swingTime <= 0) return s
+  // Травля укорачивает замах: числа спутника читаются через команды своры.
+  const def = activeCompanion(base, s.houndMarks)
+  let monster = s.monster
+  let combatLog = s.combatLog
+  let changed = false
+  const hounds = s.hounds.map((hound, index) => {
+    if (!isHoundUp(hound)) return hound
+    let swing = hound.swing + ctx.dtMs / (def.swingTime * 1000)
+    changed = true
+    while (swing >= 1 - SWING_EPS && ctx.killedMonster === null) {
+      swing = Math.max(0, swing - 1)
+      const bite = rollHoundBite(s.stats, def, ctx.rng)
+      const amount = bite.amount.times(targetMultiplier(s))
+      const hpLeft = monster.currentHp.minus(amount)
+      monster = { ...monster, currentHp: Decimal.max(hpLeft, new Decimal(0)) }
+      combatLog = pushEvent(combatLog, { type: 'hound-hit', damage: amount, isCrit: bite.isCrit })
+      ctx.emitAttack({
+        sourceId: HOUND_ID,
+        targetId: monster.id,
+        amount,
+        isCrit: bite.isCrit,
+        abilityId: null,
+        companion: true,
+        companionIndex: index,
+        timestamp: s.playtimeMs.toNumber(),
+      })
+      if (hpLeft.lte(0)) ctx.killedMonster = monster
+    }
+    return { ...hound, swing }
+  })
+  if (!changed) return s
+  return { ...s, hounds, monster, combatLog }
+}
+
 const applyMonsterAttack: TickStep = (s, ctx) => {
   // Моб бьёт, только пока оба живы; мирные мобы (damage 0) не бьют вовсе.
   // На привале по герою не бьют: он вышел из боя, а не отвернулся в нём.
@@ -697,12 +792,25 @@ const applyMonsterAttack: TickStep = (s, ctx) => {
   const resourceShare = blockResourceShare(s.talents)
   // Время замаха берём через bossSwingTime: героический босс ускоряется на
   // низком здоровье, обычный отдаёт своё число как было.
-  let monsterSwing = s.monster.swingProgress + ctx.dtMs / (bossSwingTime(s) * 1000)
+  // ХВАТКА: пёс держит моба, и тот замахивается медленнее на долю — делим,
+  // а не вычитаем, чтобы замах не ушёл в ноль (тот же довод, что у ярости).
+  const gripSlow = s.houndMarks.grip?.share ?? 0
+  let monsterSwing =
+    s.monster.swingProgress + ctx.dtMs / (bossSwingTime(s) * (1 + gripSlow) * 1000)
   let monster = s.monster
   let currentHp = s.currentHp
   let currentMana = s.currentMana
   let combatLog = s.combatLog
   let died = false
+  // Псы — локально, как и метки: за жирный тик моб бьёт дважды, и второй
+  // удар обязан встретить пса уже раненым или уже павшим.
+  let hounds = s.hounds
+  // Доля перенаправления — с командами своры: скрадывание её поднимает,
+  // отзыв обнуляет (отошедший пёс не принимает ничего).
+  const baseCompanion = hounds.length > 0 ? companionOf(s) : null
+  const companion = baseCompanion ? activeCompanion(baseCompanion, s.houndMarks) : null
+  const avenge = companion ? houndAvenge(s.talents) : null
+  let avengeMark = s.houndMarks.avenge
   // Метки живут ЛОКАЛЬНО в цикле ударов: за один жирный тик моб может ударить
   // дважды, и ослабление обязано сойти после первого же удара.
   let weaken = s.monsterWeaken
@@ -757,6 +865,40 @@ const applyMonsterAttack: TickStep = (s, ctx) => {
       amount = amount.minus(eaten)
       const left = absorb.left.minus(eaten)
       absorb = left.gt(0) ? { ...absorb, left } : null
+    }
+    // ПЕРЕНАПРАВЛЕНИЕ ПСУ — ПОСЛЕДНИМ, уже со смягчённого и дошедшего до
+    // полоски: это не смягчение и не блок, урон не исчезает, а меняет
+    // адресата. Сумма частей равна удару. Пёс, у которого здоровье кончилось,
+    // ложится на свой таймер — и журнал говорит об этом отдельной строкой.
+    if (companion) {
+      const split = redirectToHounds(hounds, amount, companion)
+      if (split.index !== -1) {
+        hounds = split.hounds
+        amount = split.heroPart
+        combatLog = pushEvent(combatLog, {
+          type: 'hound-hurt',
+          damage: split.houndPart,
+          monsterName: s.monster.name,
+        })
+        ctx.emitAttack({
+          sourceId: s.monster.id,
+          targetId: HOUND_ID,
+          amount: split.houndPart,
+          isCrit: false,
+          abilityId: null,
+          companionIndex: split.index,
+          timestamp: s.playtimeMs.toNumber(),
+        })
+        if (split.fell) {
+          combatLog = pushEvent(combatLog, {
+            type: 'hound-down',
+            returnMs: companion.returnSec * 1000,
+          })
+          // МСТИТЕЛЬ (талант-флаг): падение пса открывает герою окно урона.
+          // Метка своры с длительностью; повторное падение продлевает её с нуля.
+          if (avenge) avengeMark = { share: avenge.bonusShare, msLeft: avenge.durationSec * 1000 }
+        }
+      }
     }
     currentHp = Decimal.max(currentHp.minus(amount), new Decimal(0))
     // Два флага живучести, оба срабатывают ТОЛЬКО на удачном блоке; числа
@@ -815,6 +957,8 @@ const applyMonsterAttack: TickStep = (s, ctx) => {
     monsterWeaken: weaken,
     absorb,
     resolve,
+    hounds,
+    houndMarks: avengeMark === s.houndMarks.avenge ? s.houndMarks : { ...s.houndMarks, avenge: avengeMark },
   }
   if (!died) return next
   // Смерть героя: 30 игровых секунд простоя, награды не капают.
@@ -1008,12 +1152,17 @@ const PIPELINE: TickStep[] = [
   applyRest,
   applyPotions,
   applyCooldowns,
+  // Таймеры псов — рядом с откатами: тем же игровым временем.
+  applyHoundTimers,
   applyBossDispel,
   applyEnrage,
   applyAutocast,
   applyPendingKill,
   applyCombat,
   applyOffhandCombat,
+  // Укусы псов — после обеих рук героя и ДО проков: проки бросаются по ударам
+  // героя (ctx.swingsDealt), а укус ударом героя не считается.
+  applyHoundCombat,
   applyProcs,
   applyEffects,
   applyKillRewards,
@@ -1052,13 +1201,15 @@ export function tick(
     dtMs,
     rng,
     emitAttack: (event) => {
+      // Удар по псу — не удар по герою: доля запаса за него не капает.
       if (event.targetId === 'hero') ctx.hitsTaken += 1
-      // Тики урона по времени ударами не считаются: иначе одно умение с
-      // эффектом кормило бы ресурс втрое лучше остальных.
       // Тики урона по времени и удары ПРОКОВ ударами не считаются: ресурс
       // копится от замахов героя, а не от того, что сработало само. Иначе
-      // одна реликвия кормила бы ярость лучше любого умения.
-      else if (!event.overTime && !event.procId) ctx.swingsDealt += 1
+      // одна реликвия кормила бы ярость лучше любого умения. Укус ПСА — тоже
+      // не замах героя: у пса нет ресурса, а герою чужие зубы его не дают.
+      else if (event.targetId !== HOUND_ID && !event.overTime && !event.procId && !event.companion) {
+        ctx.swingsDealt += 1
+      }
       emitAttack(event)
     },
     killedMonster: null,
