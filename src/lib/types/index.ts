@@ -238,5 +238,7 @@ export interface AttackEvent {
    * по этому флагу отводит лапу псу, а не руку герою.
    */
   companion?: boolean
+  /** Какой из псов бьёт или получает удар: индекс в `GameState.hounds`. */
+  companionIndex?: number
   timestamp: number // игровое время (playtimeMs) на момент удара
 }

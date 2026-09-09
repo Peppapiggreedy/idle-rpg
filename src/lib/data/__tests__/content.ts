@@ -5,7 +5,7 @@
 // нельзя было бы прогнать на заведомо битой фикстуре.
 import { readFileSync, readdirSync } from 'node:fs'
 import { ABILITIES } from '../abilities'
-import { BACKGROUND_BANDS, HERO_SPRITE, MONSTER_SPRITES, MONSTER_SPRITE_BY_ARCHETYPE } from '../sprites'
+import { BACKGROUND_BANDS, HERO_SPRITE, HOUND_SPRITE, MONSTER_SPRITES, MONSTER_SPRITE_BY_ARCHETYPE } from '../sprites'
 import {
   AUTOCAST_MAX_LOSS,
   BASE_STATS,
@@ -107,7 +107,7 @@ export function realContent(): Content {
     weapons: WEAPONS,
     shields: SHIELDS,
     rarities: RARITIES,
-    sprites: [HERO_SPRITE, ...MONSTER_SPRITES],
+    sprites: [HERO_SPRITE, HOUND_SPRITE, ...MONSTER_SPRITES],
     backgrounds: BACKGROUND_BANDS,
     spriteByArchetype: MONSTER_SPRITE_BY_ARCHETYPE,
     spriteFiles: readdirSync(SPRITES_DIR),

@@ -8,10 +8,13 @@ import {
   BACKGROUND_BANDS,
   BOSS_SPRITE_ID,
   FALLBACK_SPRITE_ID,
+  HOUND_SPRITE,
   MONSTER_SPRITE_BY_ARCHETYPE,
   backgroundForLevel,
   monsterSpriteFor,
 } from '../data/sprites'
+import { CLASSES } from '../data/classes'
+import { houndMaxHp } from '../game/hound'
 import { createFloaterQueue, floaterKind, floaterProgress } from './floaters'
 import { createLevelUpTracker, levelUpProgress } from './levelup'
 import { fraction, sceneModel } from './model'
@@ -341,5 +344,93 @@ describe('реестр спрайтов', () => {
       expect(level).toBeGreaterThanOrEqual(band.minLevel)
       expect(level).toBeLessThanOrEqual(band.maxLevel)
     }
+  })
+})
+
+describe('пёс на сцене', () => {
+  const HOUND = CLASSES.find((c) => c.companion)!
+  const NO_HOUND = CLASSES.filter((c) => !c.companion)
+  const scene = readFileSync(new URL('Scene2D.svelte', RENDER2D_DIR), 'utf8')
+
+  it('HoundView — список в SceneModel, а не поле героя', () => {
+    const state = createInitialState(7, HOUND.id, 7)
+    const model = sceneModel(state)
+    expect(model.hounds).toHaveLength(HOUND.companion!.count)
+    expect(model.hounds[0]).toMatchObject({ up: true, health: 1, downSecLeft: 0 })
+    expect(model.hounds[0].sprite).toBe(HOUND_SPRITE)
+    expect(model.hounds[0].hpLabel).toBe(
+      `${formatNumber(houndMaxHp(state))} / ${formatNumber(houndMaxHp(state))}`,
+    )
+    // Второго пса нельзя было бы вынести без стадии, будь он полем героя.
+    expect('hounds' in model.hero).toBe(false)
+    expect('sprite' in model.hero).toBe(false)
+  })
+
+  it('у классов без спутника список пуст — слой не рисуется', () => {
+    for (const cls of NO_HOUND) {
+      expect(sceneModel(createInitialState(7, cls.id, 7)).hounds, cls.id).toEqual([])
+    }
+    // Разметка слоя стоит за условием на длину списка: у Стража и Изувера
+    // ни одного нового узла, и их снимки зелёные без перезакладки.
+    expect(scene).toMatch(/\{#if view\.hounds\.length > 0\}\s*<div class="pack">/)
+  })
+
+  it('лежачий пёс остаётся в списке — приглушённым и с числом секунд', () => {
+    const base = createInitialState(7, HOUND.id, 7)
+    const state = { ...base, hounds: [{ hp: new Decimal(0), swing: 0.4, downMsLeft: 7_400 }] }
+    const [hound] = sceneModel(state).hounds
+    expect(hound.up).toBe(false)
+    expect(hound.health).toBe(0)
+    expect(hound.swing).toBe(0)
+    // Секунды читаются из состояния игры, своего таймера у сцены нет.
+    expect(hound.downSecLeft).toBe(8)
+    expect(scene).toContain('class:down={!hound.up}')
+    expect(scene).toContain('.actor.hound.down .body')
+  })
+
+  it('слой псов стоит между героем и эффектами', () => {
+    const hero = scene.indexOf('class="actor hero"')
+    const pack = scene.indexOf('<div class="pack">')
+    const fx = scene.indexOf('<div class="fx">')
+    expect(hero).toBeGreaterThan(0)
+    expect(pack).toBeGreaterThan(hero)
+    expect(fx).toBeGreaterThan(pack)
+  })
+
+  it('два пса не ложатся друг на друга: место зависит от номера в списке', () => {
+    // Место и размер считаются от --slot, а движение идёт трансформом теми
+    // же ручками, что у героя: в углу пёс так же не дрожит.
+    expect(scene).toMatch(/\.actor\.hound\s*\{[^}]*--slot/)
+    expect(scene).toContain('style="--swing: {hound.swing.toFixed(3)}; --slot: {i}"')
+    const state = createInitialState(7, HOUND.id, 7)
+    const two = { ...state, hounds: [state.hounds[0], state.hounds[0]] }
+    expect(sceneModel(two).hounds).toHaveLength(2)
+  })
+
+  it('полоска здоровья пса — рядом с ним, внутри его фигуры', () => {
+    const actor = scene.indexOf('class="actor hound"')
+    const tag = scene.indexOf('<div class="tag">')
+    const pack = scene.indexOf('<div class="pack">')
+    const fx = scene.indexOf('<div class="fx">')
+    expect(tag).toBeGreaterThan(actor)
+    expect(tag).toBeGreaterThan(pack)
+    expect(tag).toBeLessThan(fx)
+    expect(scene).toContain('.hound .tag .bar i')
+  })
+
+  it('спрайт пса — в реестре, со всеми полями, CC0 и авторством проекта', () => {
+    expect(HOUND_SPRITE.id).toBe('hound')
+    expect(HOUND_SPRITE.path).toBe('sprites/hound.svg')
+    expect(HOUND_SPRITE.license).toBe('CC0-1.0')
+    expect(HOUND_SPRITE.author).toContain('Idle RPG')
+    expect(HOUND_SPRITE.sourceUrl).toMatch(/^https:\/\//)
+    const svg = readFileSync(new URL('../../../public/sprites/hound.svg', import.meta.url), 'utf8')
+    expect(svg).toContain('viewBox="0 0 200 120"')
+  })
+
+  it('фраза-счётчик в CREDITS говорит семнадцать и называет пса', () => {
+    const credits = readFileSync(new URL('../../../CREDITS.md', import.meta.url), 'utf8')
+    expect(credits).toContain('Все семнадцать картинок')
+    expect(credits).toContain('public/sprites/hound.svg')
   })
 })

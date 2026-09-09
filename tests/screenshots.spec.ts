@@ -264,6 +264,22 @@ for (const preset of PRESETS) {
   }
 }
 
+// Псарь: пёс — отдельное существо на площадке со своей полоской, и снимается
+// он своим пресетом. У Стража и Изувера слоя псов нет вовсе (список пуст), и
+// их снимки эта стадия не трогает.
+for (const width of SCENE_WIDTHS) {
+  test(`сцена: hound @ ${width}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 })
+    await openPreset(page, 'hound', false)
+    await expect(page.locator('[data-scene="ready"]')).toBeAttached({ timeout: 30_000 })
+    // Пёс на площадке и со своей полоской — не строкой в панели героя.
+    await expect(page.locator('.actor.hound')).toHaveCount(1)
+    await expect(page.locator('.actor.hound .tag .bar')).toHaveCount(1)
+    const name = `scene-hound-${width}`
+    expect(await capture(page, name)).toMatchSnapshot(`${name}.png`)
+  })
+}
+
 // Позы сцены: по одному эталону на эффект. Снимаются на пресете rich —
 // там герой в снаряжении и числа урона не однозначные. Это эталоны на сами
 // эффекты: пока они зелёные, сцена цела. Список поз — тот же SCENE_POSES,

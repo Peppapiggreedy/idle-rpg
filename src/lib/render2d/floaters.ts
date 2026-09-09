@@ -6,11 +6,15 @@
 
 import { FLOATER_LIFE_MS, FLOATER_LIMIT } from '../data/render'
 
-/** К кому привязано число: над чьей головой оно всплывает. */
-export type FloaterAnchor = 'hero' | 'monster'
+/** К кому привязано число: над чьей головой оно всплывает. Пёс — своя голова. */
+export type FloaterAnchor = 'hero' | 'monster' | 'hound'
 
-/** Смысл числа — от него цвет и размер. Тот же словарь, что у семантики токенов. */
-export type FloaterKind = 'damage' | 'crit' | 'ability' | 'player-damage' | 'heal'
+/**
+ * Смысл числа — от него цвет и размер. Тот же словарь, что у семантики
+ * токенов. `companion` — укус пса: мельче и приглушённее удара героя, чтобы
+ * два потока чисел над мобом не сливались в один.
+ */
+export type FloaterKind = 'damage' | 'crit' | 'ability' | 'player-damage' | 'heal' | 'companion'
 
 export interface Floater {
   id: number
@@ -72,8 +76,14 @@ export function floaterProgress(f: Floater, now: number, lifeMs: number = FLOATE
  * Вид числа по удару: по герою — красное, крит — крупное и жёлтое,
  * умение — цвета опыта, остальное — обычный урон.
  */
-export function floaterKind(targetIsHero: boolean, isCrit: boolean, ability: string | null): FloaterKind {
+export function floaterKind(
+  targetIsHero: boolean,
+  isCrit: boolean,
+  ability: string | null,
+  companion = false,
+): FloaterKind {
   if (targetIsHero) return 'player-damage'
   if (isCrit) return 'crit'
+  if (companion) return 'companion'
   return ability ? 'ability' : 'damage'
 }

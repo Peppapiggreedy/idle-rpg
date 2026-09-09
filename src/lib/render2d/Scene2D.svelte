@@ -72,6 +72,12 @@
     monsterAbility: boolean
     /** Кольцо лечения над героем. */
     heroHeal: boolean
+    /**
+     * ПСЫ — ПО ИНДЕКСУ В СПИСКЕ: выпад укуса и вспышка удара по псу у каждого
+     * свои. Списки пусты у класса без спутника, и слой не рисуется вовсе.
+     */
+    houndLunge: boolean[]
+    houndHit: HitState[]
   }
 
   const NO_EFFECTS: Effects = {
@@ -81,6 +87,8 @@
     monsterHit: 'none',
     monsterAbility: false,
     heroHeal: false,
+    houndLunge: [],
+    houndHit: [],
   }
 
   const base = import.meta.env.BASE_URL
@@ -122,6 +130,10 @@
   let monsterHurtCrit = false
   let monsterHurtAbility = false
   let healAt = -Infinity
+  // Метки псов — по индексу в списке; таймер возврата пса живёт в СОСТОЯНИИ
+  // игры, сцена читает только «лежит, осталось N» из модели.
+  let houndStruckAt: number[] = []
+  let houndHurtAt: number[] = []
 
   function hitState(at: number, crit: boolean, now: number): HitState {
     const life = crit ? CRIT_FLASH_MS : HIT_FLASH_MS
@@ -137,6 +149,8 @@
       monsterHit: hitState(monsterHurtAt, monsterHurtCrit, now),
       monsterAbility: monsterHurtAbility && now - monsterHurtAt < HIT_FLASH_MS,
       heroHeal: now - healAt < HEAL_PULSE_MS,
+      houndLunge: houndStruckAt.map((at) => now - at < STRIKE_MS),
+      houndHit: houndHurtAt.map((at) => hitState(at, false, now)),
     }
   }
 
@@ -151,6 +165,8 @@
       monsterHit: pose === 'hit' ? 'hit' : pose === 'crit' ? 'crit' : 'none',
       monsterAbility: false,
       heroHeal: pose === 'heal',
+      houndLunge: [],
+      houndHit: [],
     }
   }
 
@@ -224,27 +240,32 @@
 
   const unsubscribeAttacks = subscribeAttacks((event) => {
     const now = performance.now()
-    // Удары, в которых участвует пёс, сцена пока не рисует: его слой
-    // приходит своей стадией, а рисовать его укус как замах героя или удар
-    // по нему как удар по герою значило бы врать о том, кто бьёт и кого.
-    if (event.companion || event.targetId === HOUND_ID) return
     const targetIsHero = event.targetId === 'hero'
-    if (event.sourceId === 'hero') heroStruckAt = now
+    const targetIsHound = event.targetId === HOUND_ID
+    const slot = event.companionIndex ?? 0
+    // Кто бьёт: герой, пёс или моб. Укус пса отводит лапу ПСУ, а не руку
+    // герою — два тела бьют своими замахами, и сцена обязана это показывать.
+    if (event.companion) houndStruckAt[slot] = now
+    else if (event.sourceId === 'hero') heroStruckAt = now
     else monsterStruckAt = now
     if (targetIsHero) {
       heroHurtAt = now
       heroHurtCrit = event.isCrit
+    } else if (targetIsHound) {
+      houndHurtAt[slot] = now
     } else {
       monsterHurtAt = now
       monsterHurtCrit = event.isCrit
-      monsterHurtAbility = event.abilityId !== null
+      monsterHurtAbility = event.abilityId !== null && !event.companion
     }
     // Числа не создаются вовсе, когда их некому читать: спрятанная вкладка
     // и ускоренная симуляция. На ×100 сюда прилетают сотни событий за кадр.
     if (document.hidden || speed > FLOATER_MAX_SPEED) return
     floaters.push({
-      anchor: targetIsHero ? 'hero' : 'monster',
-      kind: floaterKind(targetIsHero, event.isCrit, event.abilityId),
+      anchor: targetIsHero ? 'hero' : targetIsHound ? 'hound' : 'monster',
+      // Удар по псу — красное число над псом, как по герою; укус —
+      // приглушённое над мобом, чтобы не сливалось с ударами героя.
+      kind: floaterKind(targetIsHero || targetIsHound, event.isCrit, event.abilityId, event.companion),
       text: formatNumber(event.amount),
       bornAt: now,
       // Math.random, а НЕ game/rng: поток случайности игры принадлежит
@@ -298,10 +319,13 @@
   // Готовность — когда фон и герой на месте (или точно не приедут): снимок
   // сцены без картинок был бы снимком пустоты. Ошибка загрузки готовности
   // не мешает: на месте картинки остаётся цветной прямоугольник, игра идёт.
+  // Псов ждём тоже: их столько, сколько в списке при старте. Снимок сцены
+  // Псаря без пса был бы снимком другого класса.
+  const NEEDED_IMAGES = 2 + initial.hounds.length
   let settled = 0
   function settle(): void {
     settled += 1
-    if (settled >= 2 && host && !host.dataset.scene) host.dataset.scene = 'ready'
+    if (settled >= NEEDED_IMAGES && host && !host.dataset.scene) host.dataset.scene = 'ready'
   }
 
   function onVisibility(): void {
@@ -317,6 +341,9 @@
   onMount(() => {
     // Картинка из кеша может успеть загрузиться до подписки на onload.
     for (const img of [bgImg, heroImg]) if (img?.complete) settle()
+    for (const img of host?.querySelectorAll<HTMLImageElement>('img.hound-sprite') ?? []) {
+      if (img.complete) settle()
+    }
     seedPoseFloater()
     document.addEventListener('visibilitychange', onVisibility)
     return () => document.removeEventListener('visibilitychange', onVisibility)
@@ -404,6 +431,44 @@
     </div>
   </div>
 
+  <!-- Слой 3½: ПСЫ — между героем и эффектами, и ТОЛЬКО при непустом списке:
+       у Стража и Изувера разметка не меняется ни на узел. Рисуются списком,
+       по той же причине, что и хранятся: капстоун добавляет второго. Пёс
+       стоит впереди героя, ближе к мобу; второй — за первым. Лежачий пёс
+       ОСТАЁТСЯ на площадке приглушённым с числом секунд до возврата: число
+       читается из состояния игры, своего таймера у сцены нет. Полоска
+       здоровья — маленькая, над самим псом: второе тело читается как второе
+       тело, а не как строка в панели героя. -->
+  {#if view.hounds.length > 0}
+    <div class="pack">
+      {#each view.hounds as hound, i (i)}
+        <div
+          class="actor hound"
+          class:down={!hound.up}
+          style="--swing: {hound.swing.toFixed(3)}; --slot: {i}"
+        >
+          <div
+            class="body"
+            class:lunge={effects.houndLunge[i] ?? false}
+            class:kick={(effects.houndHit[i] ?? 'none') !== 'none'}
+          >
+            <img class="sprite hound-sprite" alt="" src={base + hound.sprite.path} onload={settle} onerror={settle} />
+          </div>
+          <div class="tag">
+            {#if hound.up}
+              <div class="bar">
+                <i style="width: {Math.round(hound.health * 100)}%"></i>
+                <span class="hp">{hound.hpLabel}</span>
+              </div>
+            {:else}
+              <span class="down-left">{hound.downSecLeft} с</span>
+            {/if}
+          </div>
+        </div>
+      {/each}
+    </div>
+  {/if}
+
   <!-- Слой 4: эффекты — след умения на мобе, кольцо лечения на герое. -->
   <div class="fx">
     {#if view.monster && effects.monsterHit !== 'none'}
@@ -412,6 +477,11 @@
     {#if effects.heroHit !== 'none'}
       <i class="flash hero"></i>
     {/if}
+    {#each view.hounds as hound, i (i)}
+      {#if hound.up && (effects.houndHit[i] ?? 'none') !== 'none'}
+        <i class="flash hound" style="--slot: {i}"></i>
+      {/if}
+    {/each}
     {#if effects.heroHeal && !mini}
       <i class="ring"></i>
     {/if}
@@ -502,6 +572,11 @@
     --kick: 6%;
     /* Голова — над ней полоска и числа. */
     --head: calc(var(--ground) + var(--figure-h));
+    /* Пёс: впереди героя, ближе к мобу, ростом чуть меньше половины его;
+       второй пёс встаёт за первым на --slot. */
+    --hound-x: calc(var(--hero-x) + 14%);
+    --hound-step: 9%;
+    --hound-h: calc(var(--figure-h) * 0.42);
   }
   @media (max-width: 719px) {
     .host {
@@ -609,6 +684,62 @@
     transform: translateY(12%) scaleY(0.88);
   }
 
+  /* ПСЫ. Свой ряд бойцов: ниже героя ростом, впереди него, замах и выпад
+     теми же ручками движения (--lean/--lunge/--kick), что и у героя, —
+     значит в углу они так же обнулены. Второй пёс уходит назад по --slot и
+     чуть меньше: ближний крупнее, как и положено. */
+  .pack {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+  .actor.hound {
+    left: calc(var(--hound-x) - var(--slot) * var(--hound-step));
+    height: calc(var(--hound-h) * (1 - var(--slot) * 0.12));
+    aspect-ratio: 200 / 120;
+  }
+  .hound .body {
+    /* Пёс смотрит вправо, как герой: знаки те же. */
+    --dir: 1;
+  }
+  /* Лежачий: приглушён и прижат к земле, но НА ПЛОЩАДКЕ — исчезнувший
+     читался бы как «его не было», а игра обещает возврат. */
+  .actor.hound.down .body {
+    transform: translateY(30%) scaleY(0.55);
+    opacity: 0.45;
+    filter: grayscale(0.8) brightness(0.7);
+    transition: transform var(--dur-slow) ease-in, opacity var(--dur-slow) ease-in;
+  }
+  /* Маленькая полоска над самим псом. Заливка — цветом энергии: это тело
+     Псаря, и оно читается его цветом, а не зелёным героя и не красным моба. */
+  .hound .tag {
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + 0.2rem);
+    width: clamp(3.2rem, 11%, 4.4rem);
+    transform: translateX(-50%);
+    display: flex;
+    justify-content: center;
+  }
+  .hound .tag .bar {
+    width: 100%;
+    height: var(--bar-sm);
+  }
+  .hound .tag .bar i {
+    background: var(--c-energy);
+  }
+  .hound .tag .bar .hp {
+    font-size: var(--text-2xs);
+  }
+  .hound .down-left {
+    font-size: var(--text-2xs);
+    font-weight: var(--weight-bold);
+    font-variant-numeric: tabular-nums;
+    color: var(--c-text-muted);
+    text-shadow: var(--shadow-sm);
+    white-space: nowrap;
+  }
+
   .fx {
     position: absolute;
     inset: 0;
@@ -640,6 +771,15 @@
   }
   .fx .flash.hero {
     left: var(--hero-x);
+    transform: translate(-50%, 50%) rotate(-62deg);
+    background: var(--c-damage);
+    box-shadow: 0 0 0.6rem var(--c-damage);
+  }
+  /* Удар по псу: та же красная полоса, короче и над псом. */
+  .fx .flash.hound {
+    left: calc(var(--hound-x) - var(--slot) * var(--hound-step));
+    bottom: calc(var(--ground) + var(--hound-h) * 0.5);
+    height: calc(var(--hound-h) * 0.9);
     transform: translate(-50%, 50%) rotate(-62deg);
     background: var(--c-damage);
     box-shadow: 0 0 0.6rem var(--c-damage);
@@ -803,8 +943,19 @@
   .floater.monster {
     left: var(--monster-x);
   }
+  /* Число над псом стартует над его головой, а не над головой героя. */
+  .floater.hound {
+    left: var(--hound-x);
+    bottom: calc(var(--ground) + var(--hound-h) + 1.2rem);
+  }
   .floater.damage {
     color: var(--c-text);
+  }
+  /* Укус пса — мельче и приглушённее удара героя: два потока чисел над
+     мобом не должны сливаться в один. */
+  .floater.companion {
+    color: var(--c-text-muted);
+    font-size: var(--text-xs);
   }
   .floater.ability {
     color: var(--c-xp);

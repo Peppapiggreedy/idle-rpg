@@ -735,7 +735,7 @@ const applyHoundCombat: TickStep = (s, ctx) => {
   let monster = s.monster
   let combatLog = s.combatLog
   let changed = false
-  const hounds = s.hounds.map((hound) => {
+  const hounds = s.hounds.map((hound, index) => {
     if (!isHoundUp(hound)) return hound
     let swing = hound.swing + ctx.dtMs / (def.swingTime * 1000)
     changed = true
@@ -753,6 +753,7 @@ const applyHoundCombat: TickStep = (s, ctx) => {
         isCrit: bite.isCrit,
         abilityId: null,
         companion: true,
+        companionIndex: index,
         timestamp: s.playtimeMs.toNumber(),
       })
       if (hpLeft.lte(0)) ctx.killedMonster = monster
@@ -857,6 +858,7 @@ const applyMonsterAttack: TickStep = (s, ctx) => {
           amount: split.houndPart,
           isCrit: false,
           abilityId: null,
+          companionIndex: split.index,
           timestamp: s.playtimeMs.toNumber(),
         })
         if (split.fell) {

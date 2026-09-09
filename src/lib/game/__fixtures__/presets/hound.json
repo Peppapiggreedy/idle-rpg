@@ -1,0 +1,329 @@
+{
+  "version": 35,
+  "classId": "houndmaster",
+  "materials": {},
+  "mastery": {},
+  "knownRecipeIds": [],
+  "activePotions": [],
+  "enchantDust": "0",
+  "saveId": 606,
+  "templeRun": null,
+  "templeBestWave": 0,
+  "templeCleared": false,
+  "procCooldownsMs": {},
+  "restSpeedupSource": null,
+  "lastTimestamp": 1700000000000,
+  "inventory": [
+    {
+      "id": "item-0",
+      "name": "Щербатый Панцирь",
+      "rarity": "common",
+      "slot": "chest",
+      "level": 8,
+      "mods": [
+        {
+          "stat": "armor",
+          "kind": "flat",
+          "value": "117",
+          "source": "equipment:chest"
+        },
+        {
+          "stat": "intellect",
+          "kind": "flat",
+          "value": "8",
+          "source": "equipment:chest"
+        },
+        {
+          "stat": "vitality",
+          "kind": "flat",
+          "value": "4",
+          "source": "equipment:chest"
+        }
+      ]
+    },
+    {
+      "id": "item-3",
+      "name": "Пастуший Венец",
+      "rarity": "common",
+      "slot": "head",
+      "level": 8,
+      "mods": [
+        {
+          "stat": "armor",
+          "kind": "flat",
+          "value": "117",
+          "source": "equipment:head"
+        },
+        {
+          "stat": "vitality",
+          "kind": "flat",
+          "value": "13",
+          "source": "equipment:head"
+        }
+      ]
+    },
+    {
+      "id": "item-4",
+      "name": "Щербатый Набедренник",
+      "rarity": "uncommon",
+      "slot": "legs",
+      "level": 8,
+      "mods": [
+        {
+          "stat": "armor",
+          "kind": "flat",
+          "value": "146",
+          "source": "equipment:legs"
+        },
+        {
+          "stat": "intellect",
+          "kind": "flat",
+          "value": "11",
+          "source": "equipment:legs"
+        },
+        {
+          "stat": "vitality",
+          "kind": "flat",
+          "value": "5",
+          "source": "equipment:legs"
+        }
+      ]
+    },
+    {
+      "id": "item-7",
+      "name": "Ржавый Кафтан",
+      "rarity": "common",
+      "slot": "chest",
+      "level": 8,
+      "mods": [
+        {
+          "stat": "armor",
+          "kind": "flat",
+          "value": "117",
+          "source": "equipment:chest"
+        },
+        {
+          "stat": "intellect",
+          "kind": "flat",
+          "value": "8",
+          "source": "equipment:chest"
+        },
+        {
+          "stat": "vitality",
+          "kind": "flat",
+          "value": "4",
+          "source": "equipment:chest"
+        }
+      ]
+    }
+  ],
+  "equipment": {
+    "mainHand": {
+      "id": "item-8",
+      "name": "Пастуший Крушитель",
+      "rarity": "uncommon",
+      "slot": "mainHand",
+      "level": 8,
+      "grip": "two",
+      "mods": [
+        {
+          "stat": "weaponSpeed",
+          "kind": "base",
+          "value": "3.4",
+          "source": "equipment:mainHand"
+        },
+        {
+          "stat": "weaponDamageMin",
+          "kind": "base",
+          "value": "68",
+          "source": "equipment:mainHand"
+        },
+        {
+          "stat": "weaponDamageMax",
+          "kind": "base",
+          "value": "135",
+          "source": "equipment:mainHand"
+        },
+        {
+          "stat": "strength",
+          "kind": "flat",
+          "value": "37",
+          "source": "equipment:mainHand"
+        }
+      ]
+    },
+    "offHand": null,
+    "head": {
+      "id": "item-9",
+      "name": "Сумрачный Капюшон",
+      "rarity": "rare",
+      "slot": "head",
+      "level": 8,
+      "mods": [
+        {
+          "stat": "armor",
+          "kind": "flat",
+          "value": "181",
+          "source": "equipment:head"
+        },
+        {
+          "stat": "strength",
+          "kind": "flat",
+          "value": "13",
+          "source": "equipment:head"
+        },
+        {
+          "stat": "vitality",
+          "kind": "flat",
+          "value": "7",
+          "source": "equipment:head"
+        }
+      ]
+    },
+    "chest": {
+      "id": "item-10",
+      "name": "Пастуший Кафтан",
+      "rarity": "common",
+      "slot": "chest",
+      "level": 8,
+      "mods": [
+        {
+          "stat": "armor",
+          "kind": "flat",
+          "value": "117",
+          "source": "equipment:chest"
+        },
+        {
+          "stat": "agility",
+          "kind": "flat",
+          "value": "8",
+          "source": "equipment:chest"
+        },
+        {
+          "stat": "vitality",
+          "kind": "flat",
+          "value": "4",
+          "source": "equipment:chest"
+        }
+      ]
+    },
+    "hands": {
+      "id": "item-6",
+      "name": "Гремящий Хват",
+      "rarity": "rare",
+      "slot": "hands",
+      "level": 8,
+      "mods": [
+        {
+          "stat": "armor",
+          "kind": "flat",
+          "value": "181",
+          "source": "equipment:hands"
+        },
+        {
+          "stat": "agility",
+          "kind": "flat",
+          "value": "13",
+          "source": "equipment:hands"
+        },
+        {
+          "stat": "vitality",
+          "kind": "flat",
+          "value": "7",
+          "source": "equipment:hands"
+        }
+      ]
+    },
+    "legs": {
+      "id": "item-2",
+      "name": "Пастуший Сапог",
+      "rarity": "common",
+      "slot": "legs",
+      "level": 8,
+      "mods": [
+        {
+          "stat": "armor",
+          "kind": "flat",
+          "value": "117",
+          "source": "equipment:legs"
+        },
+        {
+          "stat": "vitality",
+          "kind": "flat",
+          "value": "13",
+          "source": "equipment:legs"
+        }
+      ]
+    },
+    "trinket": {
+      "id": "item-1",
+      "name": "Звёздный Оберег",
+      "rarity": "uncommon",
+      "slot": "trinket",
+      "level": 8,
+      "mods": [
+        {
+          "stat": "strength",
+          "kind": "flat",
+          "value": "11",
+          "source": "equipment:trinket"
+        },
+        {
+          "stat": "vitality",
+          "kind": "flat",
+          "value": "5",
+          "source": "equipment:trinket"
+        }
+      ]
+    }
+  },
+  "currentZoneId": "hollow-quarry",
+  "lastSurvivedZoneId": null,
+  "dungeonRun": null,
+  "dungeonsCleared": {},
+  "unlockedZoneIds": {},
+  "questProgress": {
+    "done": {},
+    "counter": 0
+  },
+  "gcdMsLeft": 0,
+  "abilityCooldownsMs": {},
+  "regenDelayMsLeft": 0,
+  "restHpThreshold": 0.6,
+  "holdManaForHeal": true,
+  "upgradePriority": "balance",
+  "purchasedUpgradeIds": [],
+  "lootPolicy": "keep",
+  "abilitySlots": [
+    "undercut",
+    null,
+    null,
+    null
+  ],
+  "abilitySettings": {
+    "undercut": {
+      "autocast": true,
+      "reserve": 0
+    }
+  },
+  "itemSeq": 14,
+  "gold": "3140",
+  "level": "12",
+  "currentXp": "804",
+  "currentHp": "430",
+  "currentMana": "60",
+  "heroState": "alive",
+  "reviveMsLeft": 0,
+  "talents": {},
+  "treeRevision": 1,
+  "talentResets": 0,
+  "totalTicks": "0",
+  "playtimeMs": "0",
+  "abilityCasts": "0",
+  "hounds": [
+    {
+      "hp": "121",
+      "downMsLeft": 0
+    }
+  ]
+}

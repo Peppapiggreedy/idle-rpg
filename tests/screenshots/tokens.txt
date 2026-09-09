@@ -9,6 +9,7 @@
 --c-border: #2f3542
 --c-border-strong: #454d5e
 --c-damage: #e05555
+--c-energy: #c9c34a
 --c-gold: #d4a017
 --c-heal: #3fa34d
 --c-mana: #5a94e8
