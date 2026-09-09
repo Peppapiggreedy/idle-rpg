@@ -11,9 +11,11 @@
 // не меняются ни на одно число.
 import { Decimal } from './numbers'
 import { classById, type CompanionDef } from '../data/classes'
+import { TALENTS, rankOf } from '../data/talents'
 import { critFactor, expectedMonsterDamage, expectedSwingDamage, rollSwing } from './combat'
 import type { Rng } from './rng'
 import type { GameState, HoundMarks } from './state'
+import type { HoundTuneField } from '../data/talents'
 import type { StatBlock } from './stats'
 import type { Monster } from '../types'
 
@@ -30,8 +32,43 @@ export interface HoundState {
   downMsLeft: number
 }
 
-export function companionOf(state: Pick<GameState, 'classId'>): CompanionDef | null {
-  return classById(state.classId).companion ?? null
+/**
+ * СПУТНИК КЛАССА С ПРАВКАМИ ТАЛАНТОВ. Талант правит число спутника флагом
+ * `hound-tune` — полем и операцией, как правку умения: величина × ранг, сперва
+ * сдвиги, потом доли, — и читают это ВСЕ: тик, модель, сцена, сейв. Без
+ * талантов возвращается ТОТ ЖЕ объект из данных, бит в бит.
+ */
+export function companionOf(state: Pick<GameState, 'classId' | 'talents'>): CompanionDef | null {
+  const base = classById(state.classId).companion ?? null
+  if (!base) return null
+  const points: Partial<Record<HoundTuneField, number>> = {}
+  const percent: Partial<Record<HoundTuneField, number>> = {}
+  let touched = false
+  for (const talent of TALENTS) {
+    const effect = talent.effect
+    if (effect.kind !== 'flag' || effect.flag !== 'hound-tune') continue
+    const rank = rankOf(state.talents, talent.id)
+    if (rank <= 0) continue
+    touched = true
+    const bucket = effect.op === 'points' ? points : percent
+    bucket[effect.field] = (bucket[effect.field] ?? 0) + effect.value * rank
+  }
+  if (!touched) return base
+  const tune = (field: HoundTuneField, value: number): number =>
+    Math.max(0, (value + (points[field] ?? 0)) * (1 + (percent[field] ?? 0)))
+  return {
+    ...base,
+    hitShare: tune('hitShare', base.hitShare),
+    // Замах не уходит в ноль: талант делит секунды долей, а не вычитает их.
+    swingTime: Math.max(0.1, tune('swingTime', base.swingTime)),
+    redirectShare: Math.min(1, tune('redirectShare', base.redirectShare)),
+    maxHpShare: tune('maxHpShare', base.maxHpShare),
+    returnSec: Math.max(1, tune('returnSec', base.returnSec)),
+    regenShare: {
+      inCombat: tune('regenInCombat', base.regenShare.inCombat),
+      outOfCombat: tune('regenOutOfCombat', base.regenShare.outOfCombat),
+    },
+  }
 }
 
 /**
@@ -52,7 +89,7 @@ export function activeCompanion(def: CompanionDef, marks: HoundMarks): Companion
 }
 
 /** Запас пса — доля запаса героя: растёт с ним, своей лестницы у пса нет. */
-export function houndMaxHp(state: Pick<GameState, 'classId' | 'stats'>): Decimal {
+export function houndMaxHp(state: Pick<GameState, 'classId' | 'stats' | 'talents'>): Decimal {
   const def = companionOf(state)
   return def ? state.stats.maxHp.times(def.maxHpShare) : new Decimal(0)
 }
@@ -67,7 +104,7 @@ export function upHounds(state: Pick<GameState, 'hounds'>): HoundState[] {
 }
 
 /** Полный комплект свежих псов класса. У класса без спутника — прежний список. */
-export function freshHounds(state: Pick<GameState, 'classId' | 'stats' | 'hounds'>): HoundState[] {
+export function freshHounds(state: Pick<GameState, 'classId' | 'stats' | 'hounds' | 'talents'>): HoundState[] {
   const def = companionOf(state)
   if (!def) return state.hounds
   const hp = houndMaxHp(state)
@@ -165,6 +202,8 @@ export interface HoundModel {
   redirect: number
   /** Псов на ногах в среднем: стоящие сейчас (плюс зов своры) × доля «на ногах». */
   standing: number
+  /** Сколько раз в секунду пёс падает (на всех псов): от этого живёт «Мститель». */
+  fallsPerSec: number
 }
 
 /**
@@ -210,13 +249,20 @@ export const NO_HOUND_TUNE: HoundTune = {
  * меняется — пёс входит в неё только там, где он есть.
  */
 export function houndModel(
-  state: Pick<GameState, 'classId' | 'stats' | 'hounds' | 'level'>,
+  state: Pick<GameState, 'classId' | 'stats' | 'hounds' | 'level' | 'talents'>,
   monster: Monster,
   tune: HoundTune = NO_HOUND_TUNE,
 ): HoundModel | null {
   const def = companionOf(state)
   if (!def) return null
-  const empty = { rate: new Decimal(0), hit: new Decimal(0), dps: new Decimal(0), redirect: 0, standing: 0 }
+  const empty = {
+    rate: new Decimal(0),
+    hit: new Decimal(0),
+    dps: new Decimal(0),
+    redirect: 0,
+    standing: 0,
+    fallsPerSec: 0,
+  }
   // Свора зовёт псов, которых сейчас на поле нет: модель считает их стоящими,
   // иначе умение, вся работа которого — второй пёс, мерилось бы нулём.
   const up = upHounds(state).length + Math.max(0, tune.extraHounds)
@@ -240,13 +286,9 @@ export function houndModel(
   // Стоит, пока запас держит перенаправленное; лежит `returnSec` — или
   // меньше, если в ряду оклик.
   const downSec = Math.min(def.returnSec, tune.rallyWaitSec)
-  const aliveShare =
-    lossPerSec.lte(0) || max.lte(0)
-      ? 1
-      : (() => {
-          const untilFall = max.div(lossPerSec).toNumber()
-          return untilFall / (untilFall + downSec)
-        })()
+  const untilFall = lossPerSec.lte(0) || max.lte(0) ? Number.POSITIVE_INFINITY : max.div(lossPerSec).toNumber()
+  const aliveShare = Number.isFinite(untilFall) ? untilFall / (untilFall + downSec) : 1
+  const fallsPerSec = Number.isFinite(untilFall) ? up / (untilFall + downSec) : 0
   const hit = expectedSwingDamage(stats).times(def.hitShare)
   const swingTime = def.swingTime / (1 + Math.max(0, tune.hasteShare))
   const standing = up * aliveShare
@@ -259,12 +301,13 @@ export function houndModel(
     dps: hit.times(rate).times(critFactor(stats)),
     redirect: redirectShare * aliveShare,
     standing,
+    fallsPerSec,
   }
 }
 
 /** Доля входящего, которую пёс снимает с героя против этого моба; 0 — пса нет. */
 export function houndRedirect(
-  state: Pick<GameState, 'classId' | 'stats' | 'hounds' | 'level'>,
+  state: Pick<GameState, 'classId' | 'stats' | 'hounds' | 'level' | 'talents'>,
   monster: Monster,
 ): number {
   return houndModel(state, monster)?.redirect ?? 0

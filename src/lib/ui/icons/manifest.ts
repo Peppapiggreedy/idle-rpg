@@ -199,6 +199,15 @@ export const ICONS = {
   'ability-skulk': { file: 'lorc/hood.svg', author: 'Lorc' },
   'ability-rally': { file: 'lorc/hunting-horn.svg', author: 'Lorc' },
   'ability-pack': { file: 'lorc/paw-print.svg', author: 'Lorc' },
+  // Таланты Псаря — ветка Гон.
+  'talent-sharp-fangs': { file: 'lorc/bestial-fangs.svg', author: 'Lorc' },
+  'talent-fast-jaws': { file: 'lorc/croc-jaws.svg', author: 'Lorc' },
+  'talent-pack-tactics': { file: 'lorc/paw-front.svg', author: 'Lorc' },
+  'talent-savage-unleash': { file: 'delapouite/wolverine-claws.svg', author: 'Delapouite' },
+  'talent-avenger': { file: 'lorc/fanged-skull.svg', author: 'Lorc' },
+  'talent-fourth-cut': { file: 'lorc/claw-slashes.svg', author: 'Lorc' },
+  'talent-fangs-of-old': { file: 'lorc/pretty-fangs.svg', author: 'Lorc' },
+  'talent-twin-fang': { file: 'lorc/snake-bite.svg', author: 'Lorc' },
 
   // --- Таланты Псаря ---
   'talent-quick-hands': { file: 'lorc/sprint.svg', author: 'Lorc' },

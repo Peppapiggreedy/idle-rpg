@@ -87,15 +87,15 @@ Idle RPG собрана на чужих плечах. Здесь перечис�
 текста; иконки собраны в один встроенный SVG-спрайт
 (`src/lib/ui/icons/sprite.svg`, собирается `npm run icons:build`).
 
-Всего иконок в игре: 269.
+Всего иконок в игре: 277.
 
 | Автор | Иконок |
 |---|---|
 | DarkZaitzev | 1 |
-| Delapouite | 66 |
+| Delapouite | 67 |
 | FaithToken | 1 |
 | GeneralAce135 | 1 |
-| Lorc | 191 |
+| Lorc | 198 |
 | Sbed | 5 |
 | Skoll | 3 |
 | Zeromancer | 1 |

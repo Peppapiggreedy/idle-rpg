@@ -46,6 +46,8 @@ import {
   blockResourceShare,
   doubleStrikeChance,
   restDurationMultiplier,
+  packTacticsShare,
+  houndAvenge,
 } from './talents'
 import { statsWithPotionPlan, statsWithoutPotions } from './potions'
 import { PROC_BY_ID, type ProcDef } from '../data/procs'
@@ -1448,10 +1450,20 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
     // Укусы пса — поверх, без меток героя: стойка и разгон про его руку, а
     // клеймо на цели модель первого порядка псу не приписывает (в тике оно
     // его укус множит — расхождение в сторону занижения, и оно записано).
+    // ФЛАГИ ТАЛАНТОВ ПРО ПСА — тем же первым порядком: стая множит урон героя
+    // на долю времени, когда пёс стоит; мститель — на долю времени, когда
+    // окно после падения открыто (падений в секунду × длительность).
+    const packShare = packTacticsShare(s.talents)
+    const avenge = houndAvenge(s.talents)
+    const houndMult =
+      hound === null
+        ? 1
+        : (1 + packShare * Math.min(1, hound.standing)) *
+          (1 + (avenge ? avenge.bonusShare * Math.min(1, hound.fallsPerSec * avenge.durationSec) : 0))
     const raw =
       hound && hound.dps.gt(0)
-        ? heroRaw.plus(hound.dps).plus(commandDamage(rot, hound).times(critFactor(stats)))
-        : heroRaw
+        ? heroRaw.times(houndMult).plus(hound.dps).plus(commandDamage(rot, hound).times(critFactor(stats)))
+        : heroRaw.times(houndMult)
     const perKill = damagePerKill(s, plan, stream)
     const damagePerSecond = raw.times(s.monster.maxHp.div(perKill))
     // Длина боя — СРЕДНЕЕ число ударов потока на убийство, дробное. Перебой

@@ -364,9 +364,17 @@ export interface HoundMarks {
   grip: HoundMark | null
   /** Скрадывание: доля перенаправления выше на долю. */
   skulk: HoundMark | null
+  /** Мститель (талант-флаг): пал пёс — урон героя выше на долю. */
+  avenge: HoundMark | null
 }
 
-export const NO_HOUND_MARKS: HoundMarks = { haste: null, recall: null, grip: null, skulk: null }
+export const NO_HOUND_MARKS: HoundMarks = {
+  haste: null,
+  recall: null,
+  grip: null,
+  skulk: null,
+  avenge: null,
+}
 
 /** Упор героя: см. поле `resolve`. */
 export interface HeroResolve {

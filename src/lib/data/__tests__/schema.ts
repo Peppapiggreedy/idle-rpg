@@ -62,7 +62,9 @@ import {
   pathsOf,
   type BranchDef,
   type TalentDef,
-  type TalentStatRule, TREE_COLUMNS } from '../talents'
+  type TalentStatRule, TREE_COLUMNS,
+  HOUND_TUNE_FIELDS,
+} from '../talents'
 import type { Zone } from '../zones'
 import type { StatId } from '../../game/stats'
 
@@ -1041,6 +1043,20 @@ const FLAG_PAYLOADS: Record<
     max: 1,
     why: 'множитель времени воскрешения только сокращает его',
   },
+  'pack-tactics': {
+    field: 'bonusShare',
+    min: 0,
+    exclusiveMin: true,
+    max: 1,
+    why: 'прибавка к урону героя, пока пёс стоит: доля, а не множитель',
+  },
+  'hound-avenge': {
+    field: 'bonusShare',
+    min: 0,
+    exclusiveMin: true,
+    max: 1,
+    why: 'прибавка к урону героя за павшего пса: доля, а не множитель',
+  },
 }
 
 /**
@@ -1317,6 +1333,36 @@ export const TALENT_SCHEMA: EntitySchema<TalentDef> = {
     // талант: у флага одно числовое поле со своим диапазоном, и добавить
     // десятый флаг — значит дописать сюда строку, а не ещё одну ветку.
     if (talent.effect.kind === 'flag') {
+      // ПРАВКА ЧИСЛА СПУТНИКА — составной payload (поле, операция, величина),
+      // и в таблицу одного числа он не ложится: поле из закрытого списка,
+      // величина не ноль и в разумных долях.
+      if (talent.effect.flag === 'hound-tune') {
+        const e = talent.effect
+        report.need(
+          HOUND_TUNE_FIELDS.includes(e.field),
+          where,
+          `правит поле спутника «${e.field}», которого нет в HOUND_TUNE_FIELDS (data/talents.ts)`,
+        )
+        report.need(
+          Number.isFinite(e.value) && e.value !== 0 && Math.abs(e.value) <= 1,
+          where,
+          `величина правки спутника ${e.value} — ноль не правит ничего, больше единицы за ранг — не доля (data/talents.ts)`,
+        )
+        report.need(
+          e.op === 'percent' || e.op === 'points',
+          where,
+          'операция правки спутника — percent или points (data/talents.ts)',
+        )
+      }
+      if (talent.effect.flag === 'hound-avenge') {
+        checkNumber(
+          talent.effect,
+          { field: 'effect.durationSec', get: (e) => e.durationSec, min: 0, exclusiveMin: true },
+          where,
+          'data/talents.ts',
+          report,
+        )
+      }
       const spec = FLAG_PAYLOADS[talent.effect.flag]
       if (spec) {
         const effect = talent.effect as unknown as Record<string, number>

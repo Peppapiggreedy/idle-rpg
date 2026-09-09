@@ -23,7 +23,7 @@ import { averageGear } from './simulate'
 import { payloadFromState, stateFromPayload } from './save'
 import { ABILITY_BY_ID } from '../data/abilities'
 import { CLASSES, CLASS_BY_ID } from '../data/classes'
-import type { GameState } from './state'
+import { NO_HOUND_MARKS, type GameState } from './state'
 import type { AttackEvent } from '../types'
 
 const HOUND = CLASS_BY_ID.houndmaster
@@ -333,7 +333,7 @@ describe('Стража и Изувера это не касается', () => {
       }
       let s = ensureStats({ ...createInitialState(1, cls.id, 1), level: new Decimal(20), statsDirty: true })
       s = step(withDummy({ ...s, currentHp: s.stats.maxHp, currentMana: s.stats.maxMana }), 5000)
-      expect(s.houndMarks).toEqual({ haste: null, recall: null, grip: null, skulk: null })
+      expect(s.houndMarks).toEqual(NO_HOUND_MARKS)
       expect(s.hounds).toEqual([])
     }
   })

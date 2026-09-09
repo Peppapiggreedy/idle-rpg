@@ -7,7 +7,7 @@ import { AUTOCAST_DELAY_MS, GCD_MS } from '../data/balance'
 import { ABILITIES, ABILITY_BY_ID, type AbilityDef } from '../data/abilities'
 import { tuneAbility, tunedById } from './abilityTune'
 import { abilitiesByPriority } from './rotation'
-import { talentExtraCharges } from './talents'
+import { packTacticsShare, talentExtraCharges } from './talents'
 import { punishResourceSpend } from './bossAbilities'
 import {
   HOUND_ID,
@@ -725,6 +725,14 @@ function applySelfFlags(state: GameState, ability: AbilityDef): GameState {
 export function outgoingMultiplier(state: GameState): Decimal {
   let mult = targetMultiplier(state)
   if (state.stance) mult = mult.times(1 - state.stance.damageShare)
+  // СТАЯ (талант-флаг): пока хоть один пёс стоит и не отозван, весь урон
+  // героя выше на долю. Состояние второго тела — множитель первого.
+  const pack = packTacticsShare(state.talents)
+  if (pack > 0 && state.houndMarks.recall === null && upHounds(state).length > 0) {
+    mult = mult.times(1 + pack)
+  }
+  // МСТИТЕЛЬ: пал пёс — метка своры с длительностью, и герой бьёт сильнее.
+  if (state.houndMarks.avenge) mult = mult.times(1 + state.houndMarks.avenge.share)
   // РАЗГОН — набежавшая прибавка, зеркало «Упора»: там росло смягчение от
   // чужих ударов, здесь урон от своих.
   if (state.ramp) mult = mult.times(1 + state.ramp.share)
@@ -1151,10 +1159,15 @@ export function advanceCooldowns(state: GameState, dtMs: number): GameState {
   const recall = countdown(marks.recall, dtMs)
   const grip = countdown(marks.grip, dtMs)
   const skulk = countdown(marks.skulk, dtMs)
+  const avenge = countdown(marks.avenge, dtMs)
   const houndMarks =
-    haste === marks.haste && recall === marks.recall && grip === marks.grip && skulk === marks.skulk
+    haste === marks.haste &&
+    recall === marks.recall &&
+    grip === marks.grip &&
+    skulk === marks.skulk &&
+    avenge === marks.avenge
       ? marks
-      : { haste, recall, grip, skulk }
+      : { haste, recall, grip, skulk, avenge }
   // ОКНО тикает здесь же и тем же игровым временем, что откаты: своего
   // таймера у него нет и заводить второй незачем.
   const freeCastsMsLeft = Math.max(0, state.freeCastsMsLeft - dtMs)

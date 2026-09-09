@@ -140,6 +140,13 @@ export type TalentFlag =
   | 'shorter-rest'
   // Воскрешение занимает долю обычного времени.
   | 'faster-revive'
+  // Число спутника (укус, замах, доля перенаправления, запас, возврат,
+  // восстановление) правится полем и операцией — как правка умения.
+  | 'hound-tune'
+  // Пока пёс на ногах, весь урон героя выше на долю.
+  | 'pack-tactics'
+  // Пал пёс — герой несколько секунд бьёт сильнее на долю.
+  | 'hound-avenge'
 
 /**
  * ТРЕТИЙ РОД ЭФФЕКТА: талант правит УМЕНИЕ ДАННЫМИ.
@@ -166,6 +173,33 @@ export type TalentEffect =
   | { kind: 'flag'; flag: 'rest-clears-cooldowns'; cooldownShare: number }
   | { kind: 'flag'; flag: 'shorter-rest'; durationMultiplier: number }
   | { kind: 'flag'; flag: 'faster-revive'; reviveMultiplier: number }
+  | { kind: 'flag'; flag: 'hound-tune'; field: HoundTuneField; op: 'percent' | 'points'; value: number }
+  | { kind: 'flag'; flag: 'pack-tactics'; bonusShare: number }
+  | { kind: 'flag'; flag: 'hound-avenge'; bonusShare: number; durationSec: number }
+
+/**
+ * ЧТО У СПУТНИКА МОЖНО ПРАВИТЬ ТАЛАНТОМ. Список закрыт: поле спутника, которого
+ * здесь нет, талант тронуть не может — тот же довод, что у `ABILITY_TUNABLE`.
+ * Величина × ранг, как у всех правок; `percent` — доля от базы, `points` —
+ * сдвиг в пунктах (для долей вроде перенаправления).
+ */
+export type HoundTuneField =
+  | 'hitShare'
+  | 'swingTime'
+  | 'redirectShare'
+  | 'maxHpShare'
+  | 'returnSec'
+  | 'regenInCombat'
+  | 'regenOutOfCombat'
+export const HOUND_TUNE_FIELDS: readonly HoundTuneField[] = [
+  'hitShare',
+  'swingTime',
+  'redirectShare',
+  'maxHpShare',
+  'returnSec',
+  'regenInCombat',
+  'regenOutOfCombat',
+]
 
 /**
  * СТРЕЛКА-ПРЕДПОСЫЛКА: талант дорабатывает конкретный талант выше.
@@ -266,6 +300,15 @@ const tunes = (abilityId: string, ...tune: AbilityTune[]): TalentEffect => ({
   kind: 'ability',
   abilityId,
   tune,
+})
+
+/** Талант, правящий число спутника: поле, операция, величина за ранг. */
+const houndTune = (field: HoundTuneField, op: 'percent' | 'points', value: number): TalentEffect => ({
+  kind: 'flag',
+  flag: 'hound-tune',
+  field,
+  op,
+  value,
 })
 
 // ---------------------------------------------------------------------------
@@ -2326,6 +2369,14 @@ const REAVER_INSTINCT = branch('reaver-instinct', [
 //             возвращение, — а не щит и не броня героя.
 //   ТРОПА   — автономность ЭНЕРГИИ: скорость восстановления, цена умений,
 //             порог, поведение в оффлайне.
+// ГОН: УРОН — ГЕРОЙ И ПЁС ВМЕСТЕ.
+//
+// Ветка Псаря про урон, и урон у него ДВУХТЕЛЫЙ: половина талантов правит
+// команды псу (`hound-tune` на укус и замах, правки травли, спуска, серии),
+// половина — руку героя. Ключевые этажи — пары: «стая» (герой сильнее, пока
+// пёс стоит) против «спуск вдвое злее»; «мститель» (пал пёс — герой в ярости)
+// против «четвёртый удар серии»; венец — «двойной укус спуска» против «второй
+// замах» автоатаки.
 const HOUNDMASTER_CHASE = branch('houndmaster-chase', [
   [
     {
@@ -2344,6 +2395,277 @@ const HOUNDMASTER_CHASE = branch('houndmaster-chase', [
       maxRank: 5,
       col: 3,
       effect: tunes('undercut', { field: 'weaponDamagePercent', kind: 'percent', value: 0.04 }),
+    },
+  ],
+  [
+    {
+      // ПЁС КУСАЕТ СИЛЬНЕЕ: число спутника правится флагом с payload'ом —
+      // `hound-tune`, поле и операция как у правки умения.
+      id: 'chase-sharp-fangs',
+      name: 'Острые клыки',
+      icon: 'talent-sharp-fangs',
+      maxRank: 5,
+      col: 2,
+      effect: houndTune('hitShare', 'percent', 0.06),
+    },
+    {
+      id: 'chase-deep-hamstring',
+      name: 'Глубокий подрез',
+      icon: 'talent-deep-cut',
+      maxRank: 5,
+      col: 3,
+      effect: tunes('hamstring', { field: 'weaponDamagePercent', kind: 'percent', value: 0.05 }),
+    },
+  ],
+  [
+    {
+      id: 'chase-keen-eye',
+      name: 'Зоркий глаз',
+      icon: 'talent-keen-eye',
+      maxRank: 5,
+      col: 1,
+      effect: mods(m('critChance', 'flat', 0.01)),
+    },
+    {
+      id: 'chase-long-chase',
+      name: 'Долгий гон',
+      icon: 'talent-long-focus',
+      maxRank: 4,
+      col: 2,
+      effect: tunes('sic', { field: 'houndHasteDurationSec', kind: 'percent', value: 0.15 }),
+    },
+    {
+      id: 'chase-wide-flurry',
+      name: 'Широкая серия',
+      icon: 'talent-savage-blows',
+      maxRank: 5,
+      col: 3,
+      effect: tunes('flurry', { field: 'weaponDamagePercent', kind: 'percent', value: 0.05 }),
+    },
+  ],
+  [
+    {
+      // ЗАМАХ ПСА КОРОЧЕ — процентом от секунд, а не плоско: плоская правка
+      // увела бы замах в ноль тем же путём, что и у оружия героя.
+      id: 'chase-fast-jaws',
+      name: 'Быстрые челюсти',
+      icon: 'talent-fast-jaws',
+      maxRank: 5,
+      col: 2,
+      effect: houndTune('swingTime', 'percent', -0.05),
+    },
+    {
+      id: 'chase-heavy-hand',
+      name: 'Тяжёлая рука',
+      icon: 'talent-heavy-shatter',
+      maxRank: 5,
+      col: 3,
+      effect: mods(m('critMultiplier', 'flat', 0.04)),
+    },
+  ],
+  [
+    // КЛЮЧЕВОЙ ЭТАЖ 5: два поворота, берётся один.
+    {
+      // СТАЯ: пока пёс на ногах, ВЕСЬ урон героя выше. Состояние второго
+      // тела становится множителем первого — вопрос класса в одном флаге.
+      id: 'chase-pack-tactics',
+      name: 'Стая',
+      icon: 'talent-pack-tactics',
+      maxRank: 1,
+      col: 2,
+      exclusiveGroup: 'chase-key-5',
+      effect: { kind: 'flag', flag: 'pack-tactics', bonusShare: 0.12 },
+    },
+    {
+      // ЗЛОЙ СПУСК: укус по команде в полтора раза злее. Всплеск против
+      // ровного множителя стаи — разные роды, а не разные величины.
+      id: 'chase-savage-unleash',
+      name: 'Злой спуск',
+      icon: 'talent-savage-unleash',
+      maxRank: 1,
+      col: 3,
+      exclusiveGroup: 'chase-key-5',
+      effect: tunes('unleash', { field: 'unleashBiteMult', kind: 'percent', value: 0.5 }),
+    },
+  ],
+  [
+    {
+      id: 'chase-honed',
+      name: 'Точёный нож',
+      icon: 'talent-honed-edge',
+      maxRank: 5,
+      col: 2,
+      effect: mods(m('attackPower', 'percent', 0.02)),
+    },
+    {
+      id: 'chase-cheap-cut',
+      name: 'Лёгкая подсечка',
+      icon: 'talent-thrift-wound',
+      maxRank: 5,
+      col: 3,
+      effect: tunes('undercut', { field: 'manaCost', kind: 'percent', value: -0.06 }),
+    },
+    {
+      id: 'chase-sic-fury',
+      name: 'Азарт травли',
+      icon: 'talent-frenzy',
+      maxRank: 4,
+      col: 1,
+      effect: tunes('sic', { field: 'houndHasteShare', kind: 'percent', value: 0.1 }),
+    },
+  ],
+  [
+    {
+      // Стрелка: развивает «Быстрые руки» — тот же столбец, доработка буквально.
+      id: 'chase-swift',
+      name: 'Стремительность',
+      icon: 'talent-headlong',
+      maxRank: 5,
+      col: 2,
+      requires: { talentId: 'chase-quick-hands', minRank: 3 },
+      effect: mods(m('haste', 'flat', 0.007)),
+    },
+    {
+      id: 'chase-crush-grip',
+      name: 'Дробящая хватка',
+      icon: 'talent-firm-press',
+      maxRank: 5,
+      col: 3,
+      effect: tunes('grip', { field: 'weaponDamagePercent', kind: 'percent', value: 0.06 }),
+    },
+  ],
+  [
+    {
+      // Стрелка: развивает «Острые клыки».
+      id: 'chase-relentless',
+      name: 'Неотступный',
+      icon: 'talent-relentless',
+      maxRank: 5,
+      col: 2,
+      requires: { talentId: 'chase-sharp-fangs', minRank: 3 },
+      effect: houndTune('hitShare', 'percent', 0.04),
+    },
+    {
+      id: 'chase-lean-flurry',
+      name: 'Экономная серия',
+      icon: 'talent-thrift-shatter',
+      maxRank: 5,
+      col: 3,
+      effect: tunes('flurry', { field: 'manaCost', kind: 'percent', value: -0.07 }),
+    },
+  ],
+  [
+    // КЛЮЧЕВОЙ ЭТАЖ 9.
+    {
+      // МСТИТЕЛЬ: пал пёс — герой шесть секунд бьёт на треть сильнее. Урон,
+      // растущий из ПОТЕРИ второго тела: наказание за слабого пса становится
+      // окном.
+      id: 'chase-avenger',
+      name: 'Мститель',
+      icon: 'talent-avenger',
+      maxRank: 1,
+      col: 2,
+      exclusiveGroup: 'chase-key-9',
+      effect: { kind: 'flag', flag: 'hound-avenge', bonusShare: 0.3, durationSec: 6 },
+    },
+    {
+      // ЧЕТВЁРТЫЙ УДАР: серия из четырёх, и пёс кусает четыре раза. Ровный
+      // прирост против окна мстителя.
+      id: 'chase-fourth-cut',
+      name: 'Четвёртый удар',
+      icon: 'talent-fourth-cut',
+      maxRank: 1,
+      col: 3,
+      exclusiveGroup: 'chase-key-9',
+      effect: tunes('flurry', { field: 'flurryHits', kind: 'percent', value: 0.34 }),
+    },
+  ],
+  [
+    {
+      id: 'chase-power',
+      name: 'Сила удара',
+      icon: 'talent-strength',
+      maxRank: 5,
+      col: 2,
+      effect: mods(m('attackPower', 'percent', 0.02)),
+    },
+    {
+      id: 'chase-quick-unleash',
+      name: 'Скорый спуск',
+      icon: 'talent-quick-mercy',
+      maxRank: 5,
+      col: 3,
+      effect: tunes('unleash', { field: 'cooldownSec', kind: 'percent', value: -0.08 }),
+    },
+    {
+      id: 'chase-keener-eye',
+      name: 'Зорче',
+      icon: 'talent-wide-mercy',
+      maxRank: 5,
+      col: 1,
+      effect: mods(m('critChance', 'flat', 0.01)),
+    },
+  ],
+  [
+    {
+      // Стрелка: развивает «Неотступного» — третья ступень клыков.
+      id: 'chase-fangs-of-old',
+      name: 'Клыки матёрого',
+      icon: 'talent-fangs-of-old',
+      maxRank: 5,
+      col: 2,
+      requires: { talentId: 'chase-relentless', minRank: 3 },
+      effect: houndTune('hitShare', 'percent', 0.04),
+    },
+    {
+      id: 'chase-pack-cut',
+      name: 'Стайный подрез',
+      icon: 'talent-open-wound',
+      maxRank: 4,
+      col: 3,
+      effect: tunes('hamstring', { field: 'packStrikeBonusShare', kind: 'percent', value: 0.15 }),
+    },
+  ],
+  [
+    {
+      id: 'chase-haste-of-hunt',
+      name: 'Охотничий шаг',
+      icon: 'talent-swift-return',
+      maxRank: 5,
+      col: 2,
+      effect: mods(m('haste', 'flat', 0.007)),
+    },
+    {
+      id: 'chase-cheap-sic',
+      name: 'Лёгкая травля',
+      icon: 'talent-thrift-rupture',
+      maxRank: 5,
+      col: 3,
+      effect: tunes('sic', { field: 'manaCost', kind: 'percent', value: -0.07 }),
+    },
+  ],
+  [
+    // ВЕНЕЦ: два капстоуна, берётся один.
+    {
+      // ДВОЙНОЙ УКУС: спуск вдвое злее. Козырь класса целиком в зубах пса.
+      id: 'chase-twin-fang',
+      name: 'Двойной укус',
+      icon: 'talent-twin-fang',
+      maxRank: 1,
+      col: 2,
+      exclusiveGroup: 'chase-key-13',
+      effect: tunes('unleash', { field: 'unleashBiteMult', kind: 'multiplier', value: 2 }),
+    },
+    {
+      // ВТОРОЙ ЗАМАХ: автоатака героя с шансом бьёт дважды — общий флаг,
+      // урон руки против урона зубов.
+      id: 'chase-double-strike',
+      name: 'Второй замах',
+      icon: 'talent-double-strike',
+      maxRank: 1,
+      col: 3,
+      exclusiveGroup: 'chase-key-13',
+      effect: { kind: 'flag', flag: 'double-strike', chance: 0.2 },
     },
   ],
 ])
@@ -3035,6 +3357,79 @@ const BRANCH_PATHS: Partial<Record<BranchId, TalentPath[]>> = {
         'instinct-long-berserk',
         'instinct-steady-hand',
         'instinct-cheap-roar',
+      ],
+    },
+  ],
+  'houndmaster-chase': [
+    {
+      // СТАЯ. Герой и пёс сильнее вместе: стая, мститель, двойной укус —
+      // всё про то, чтобы пёс стоял и кусал, а герой бил рядом. Четвёрка —
+      // та же, что по умолчанию: первый путь — прибор.
+      id: 'chase-pack',
+      name: 'Стая',
+      abilities: ['undercut', 'sic', 'hamstring', 'recall'],
+      order: [
+        'chase-pack-tactics',
+        'chase-avenger',
+        'chase-twin-fang',
+        'chase-sharp-fangs',
+        'chase-quick-hands',
+        'chase-sure-cut',
+        'chase-deep-hamstring',
+        'chase-long-chase',
+        'chase-fast-jaws',
+        'chase-keen-eye',
+        'chase-heavy-hand',
+        'chase-sic-fury',
+        'chase-honed',
+        'chase-cheap-cut',
+        'chase-relentless',
+        'chase-swift',
+        'chase-crush-grip',
+        'chase-lean-flurry',
+        'chase-power',
+        'chase-keener-eye',
+        'chase-fangs-of-old',
+        'chase-pack-cut',
+        'chase-haste-of-hunt',
+        'chase-cheap-sic',
+        'chase-quick-unleash',
+        'chase-wide-flurry',
+      ],
+    },
+    {
+      // ЗУБЫ И СЕРИЯ. Всплески: злой спуск, четвёртый удар серии, второй
+      // замах героя. Четвёрка другая — спуск и серия вместо отзыва и подреза.
+      id: 'chase-burst',
+      name: 'Зубы',
+      abilities: ['undercut', 'sic', 'flurry', 'unleash'],
+      order: [
+        'chase-savage-unleash',
+        'chase-fourth-cut',
+        'chase-double-strike',
+        'chase-wide-flurry',
+        'chase-quick-unleash',
+        'chase-lean-flurry',
+        'chase-sharp-fangs',
+        'chase-quick-hands',
+        'chase-sure-cut',
+        'chase-fast-jaws',
+        'chase-heavy-hand',
+        'chase-keen-eye',
+        'chase-long-chase',
+        'chase-sic-fury',
+        'chase-honed',
+        'chase-cheap-cut',
+        'chase-relentless',
+        'chase-swift',
+        'chase-crush-grip',
+        'chase-power',
+        'chase-keener-eye',
+        'chase-fangs-of-old',
+        'chase-haste-of-hunt',
+        'chase-cheap-sic',
+        'chase-deep-hamstring',
+        'chase-pack-cut',
       ],
     },
   ],

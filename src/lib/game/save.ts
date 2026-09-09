@@ -47,7 +47,7 @@ import {
 } from '../data/balance'
 import { ABILITIES, ABILITY_BY_ID } from '../data/abilities'
 import { CLASS_BY_ID, DEFAULT_CLASS, classById } from '../data/classes'
-import { freshHounds, houndMaxHp } from './hound'
+import { companionOf, freshHounds, houndMaxHp } from './hound'
 import { houndCapacity } from './abilities'
 import { REAGENT_BY_ID } from '../data/reagents'
 import {
@@ -532,7 +532,7 @@ export function payloadFromState(state: GameState, lastTimestamp: number): SaveP
 function houndsFromSaved(raw: unknown, state: GameState): GameState['hounds'] {
   const fresh = freshHounds(state)
   if (!Array.isArray(raw) || fresh.length === 0) return fresh
-  const def = classById(state.classId).companion
+  const def = companionOf(state)
   const max = houndMaxHp(state)
   // СВОРА ПЕРЕЖИВАЕТ ПЕРЕЗАГРУЗКУ: псов сверх комплекта столько, сколько
   // сохранено и сколько держит ряд (`houndCapacity`), — иначе венец класса

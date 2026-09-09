@@ -71,6 +71,7 @@ import {
   doubleStrikeChance,
   killCooldownMultiplier,
   reviveMultiplier,
+  houndAvenge,
 } from './talents'
 
 /**
@@ -808,6 +809,8 @@ const applyMonsterAttack: TickStep = (s, ctx) => {
   // отзыв обнуляет (отошедший пёс не принимает ничего).
   const baseCompanion = hounds.length > 0 ? companionOf(s) : null
   const companion = baseCompanion ? activeCompanion(baseCompanion, s.houndMarks) : null
+  const avenge = companion ? houndAvenge(s.talents) : null
+  let avengeMark = s.houndMarks.avenge
   // Метки живут ЛОКАЛЬНО в цикле ударов: за один жирный тик моб может ударить
   // дважды, и ослабление обязано сойти после первого же удара.
   let weaken = s.monsterWeaken
@@ -891,6 +894,9 @@ const applyMonsterAttack: TickStep = (s, ctx) => {
             type: 'hound-down',
             returnMs: companion.returnSec * 1000,
           })
+          // МСТИТЕЛЬ (талант-флаг): падение пса открывает герою окно урона.
+          // Метка своры с длительностью; повторное падение продлевает её с нуля.
+          if (avenge) avengeMark = { share: avenge.bonusShare, msLeft: avenge.durationSec * 1000 }
         }
       }
     }
@@ -952,6 +958,7 @@ const applyMonsterAttack: TickStep = (s, ctx) => {
     absorb,
     resolve,
     hounds,
+    houndMarks: avengeMark === s.houndMarks.avenge ? s.houndMarks : { ...s.houndMarks, avenge: avengeMark },
   }
   if (!died) return next
   // Смерть героя: 30 игровых секунд простоя, награды не капают.
