@@ -16,6 +16,7 @@ import { CLASS_BY_ID, type ClassDef } from '../../classes'
 import type { ShieldTemplate, WeaponTemplate } from '../../items'
 import { masteryToKnow, type RecipeDef } from '../../recipes'
 import { realContent } from '../content'
+import type { TalentDef } from '../../talents'
 import type { Content } from '../schema'
 
 /** Подмена одного поля у сущности с заданным id. */
@@ -26,6 +27,45 @@ function patch<T extends { id: string }>(list: readonly T[], id: string, fields:
 /** Первый элемент списка — на нём удобно показывать поломку. */
 function first<T>(list: readonly T[]): T {
   return list[0]
+}
+
+/** Талант, который правит умение, и умение ЧУЖОГО класса для подмены. */
+function foreignTunedTalent(real: Content) {
+  const talent = real.talents.find((t) => t.effect.kind === 'ability')!
+  const branch = real.branches.find((b) => b.id === talent.branch)!
+  const foreign = real.classes.find((c) => c.id !== branch.classId)!
+  return { talent, foreignAbilityId: foreign.abilityIds[0] }
+}
+
+/**
+ * Дерево без венца ПЕРВОЙ ветки: талант последнего этажа убран целиком.
+ * Ломать надо данные, а не путь: путь называет порядок, и талант, которого
+ * нет, заливка просто пропустит — ровно как если бы его забыли вписать.
+ */
+function withoutCapstone(real: Content) {
+  const branchId = real.branches[0].id
+  const rows = real.talents.filter((t) => t.branch === branchId).map((t) => t.row)
+  const last = Math.max(...rows)
+  return real.talents.filter((t) => !(t.branch === branchId && t.row === last))
+}
+
+/**
+ * Пути ПЕРВОЙ ветки без венца в порядке покупки: сам талант на месте, но
+ * очередь до него не доходит. Ломается ровно то, что проверка и стережёт.
+ */
+function pathsWithoutCapstone(real: Content) {
+  const branchId = real.branches[0].id
+  const rows = real.talents.filter((t) => t.branch === branchId).map((t) => t.row)
+  const last = Math.max(...rows)
+  const capstones = new Set(
+    real.talents.filter((t) => t.branch === branchId && t.row === last).map((t) => t.id),
+  )
+  return (id: string) =>
+    real
+      .pathsOf(id)
+      .map((path) =>
+        id === branchId ? { ...path, order: path.order.filter((o) => !capstones.has(o)) } : path,
+      )
 }
 
 /** Реагент последнего подземелья: у него источник — данж, а не храм. */
@@ -1772,6 +1812,46 @@ export function brokenCases(): BrokenCase[] {
         recipes: real.recipes.filter((r) => r.id !== firstMasteryId(real)),
       },
       expect: ['учить не на чем'],
+    },
+    // --- ТРИ ПОЛОМКИ ПРО ДЕРЕВО, КОТОРЫЕ НЕ ВИДНЫ ЧТЕНИЕМ ---
+    //
+    // У всех трёх общая беда: имена настоящие, ссылки целые, схема довольна,
+    // а таланта как будто нет. Такое ловится только проверкой.
+    {
+      // Талант Стража правит умение Псаря: чужое умение не попадает ни в ряд
+      // действий, ни в модель боя, и правка не делает НИЧЕГО.
+      title: 'талант правит умение чужого класса',
+      content: {
+        ...real,
+        talents: patch(real.talents, foreignTunedTalent(real).talent.id, {
+          effect: {
+            ...(foreignTunedTalent(real).talent.effect as { kind: 'ability' }),
+            abilityId: foreignTunedTalent(real).foreignAbilityId,
+          },
+        } as Partial<TalentDef>),
+      },
+      expect: [foreignTunedTalent(real).talent.id, 'не делает НИЧЕГО'],
+    },
+    {
+      // Из ПОРЯДКА ПОКУПКИ убран венец: талант на месте, ветка цела, а путь
+      // тратит все очки игры и до того, ради чего ветку берут, не доходит.
+      // Прогон при этом зелёный — он просто меряет другую ветку.
+      title: 'путь ветки не берёт венец',
+      content: { ...real, pathsOf: pathsWithoutCapstone(real) },
+      expect: ['не берёт венец'],
+    },
+    {
+      // Венца нет вовсе: последний этаж ветки пуст, брать её незачем.
+      title: 'у ветки нет венца',
+      content: { ...real, talents: withoutCapstone(real) },
+      expect: ['венца у ветки нет'],
+    },
+    {
+      // Один талант режет откат вдвое за ранг: на потолке рангов откат
+      // уходит в ноль, и умение жмётся каждый тик бесплатно.
+      title: 'таланты на потолке рангов уводят откат в ноль',
+      content: { ...real, tuneAbility: () => ({ ...first(real.abilities), cooldownSec: 0 }) },
+      expect: ['откат'],
     },
     // --- ТРИ ПОЛОМКИ ПРО СВОЙСТВО СБОРКИ ---
     //
