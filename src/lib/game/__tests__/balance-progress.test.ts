@@ -16,8 +16,6 @@ import {
   currentCell,
   pacingTable,
   referenceBuild,
-  branchPoints,
-  pureBranchTalents,
   simulate,
   spreadOf,
   styleBuild,
@@ -52,7 +50,6 @@ import {
   type Zone,
 } from '../../data/zones'
 import { ONE_HANDED, WEAPONS } from '../../data/items'
-import { BRANCHES, type BranchDef, type BranchStyle } from '../../data/talents'
 import { DEFAULT_CLASS, classById } from '../../data/classes'
 import { classIt, contractClasses } from './class-set'
 import { dump } from './dump'

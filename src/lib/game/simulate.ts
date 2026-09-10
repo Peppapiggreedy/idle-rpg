@@ -41,7 +41,12 @@ import {
   zoneStanding,
   type ZoneStanding,
 } from './zones'
-import { LEVEL_CAP, xpGapShare, RUN_PLAYER_DEATH_TOLERANCE_PER_HOUR } from '../data/balance'
+import {
+  LEVEL_CAP,
+  REFERENCE_BUILD,
+  xpGapShare,
+  RUN_PLAYER_DEATH_TOLERANCE_PER_HOUR,
+} from '../data/balance'
 import { inventorySize } from './upgrades'
 import { ABILITIES, ABILITY_BY_ID } from '../data/abilities'
 import { RARITY_BY_ID, TYPICAL_RARITY } from '../data/rarity'
@@ -452,7 +457,19 @@ export function referenceBuild(level: number, classId: string = DEFAULT_CLASS.id
     pacingCache.set(classId, rows)
   }
   const row = rows.find((r) => r.level === level) ?? rows[rows.length - 1]
-  return { classId, level, gearLevel: row.gearLevel, gear: row.gear }
+  // РОТАЦИЯ И ТАЛАНТЫ — ИЗ ЗАПИСИ, А НЕ ИЗ УМОЛЧАНИЙ. Поведение то же самое
+  // (пустые таланты и четвёрка по умолчанию — это и есть дефолты
+  // `buildSimState`), но теперь оно ЗАПИСАНО: контракт мира меряется на
+  // сборке, про которую можно спросить «сколько в ней очков талантов» и
+  // получить ответ, а не «поле не задано».
+  return {
+    classId,
+    level,
+    gearLevel: row.gearLevel,
+    gear: row.gear,
+    talents: { ...REFERENCE_BUILD.talents },
+    autocast: REFERENCE_BUILD.autocast,
+  }
 }
 
 /**
