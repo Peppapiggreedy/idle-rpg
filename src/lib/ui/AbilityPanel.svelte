@@ -2,7 +2,9 @@
   // Настройки умений: что автокаст жмёт сам и в каком порядке.
   // Сами КНОПКИ умений живут в ActionBar рядом со сценой — они нужны в бою,
   // а бой идёт в любом разделе. Здесь только то, что настраивают редко.
-  import { abilitiesByPriority, rotationOf, abilityStatus, formatNumber } from '../game'
+  import { abilitiesByPriority, rotationOf, abilityStatus, formatNumber,
+  heroSettings,
+} from '../game'
   import { ABILITY_BY_ID, type AbilityDef } from '../data/abilities'
   import { AUTOCAST_DELAY_MS, REGEN_DELAY_S, RESERVE_PRESETS } from '../data/balance'
   import {
@@ -42,7 +44,7 @@
   // включать и выключать ротацию целиком — их первая строка. Своего
   // состояния она не заводит: жмёт те же галки тем же экшеном, все разом.
   const autocastOn = $derived(
-    ordered.some((a) => $gameState.abilitySettings[a.id]?.autocast ?? false),
+    ordered.some((a) => heroSettings($gameState)[a.id]?.autocast ?? false),
   )
   function toggleAll(): void {
     const next = !autocastOn
@@ -113,14 +115,14 @@
           <label class="auto">
             <input
               type="checkbox"
-              checked={$gameState.abilitySettings[ability.id]?.autocast ?? false}
+              checked={heroSettings($gameState)[ability.id]?.autocast ?? false}
               onchange={(e) => setAbilityAutocast(ability.id, e.currentTarget.checked)}
             />
             Использовать автоматически
           </label>
         {/if}
         {#if ability.manaCost.gt(0)}
-          {@const reserve = $gameState.abilitySettings[ability.id]?.reserve ?? 0}
+          {@const reserve = heroSettings($gameState)[ability.id]?.reserve ?? 0}
           <div class="reserve">
             <span class="label">Беречь {resource.accusative}:</span>
             {#each RESERVE_PRESETS as preset (preset)}

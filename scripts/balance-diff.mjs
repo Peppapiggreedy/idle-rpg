@@ -109,6 +109,26 @@ for (const key of [...Object.keys(base), ...fresh.keys()]) {
   }
 }
 
+// КОРОТКИЕ ИМЕНА ВЕТОК — ТОЖЕ ИЗ ОТПЕЧАТКА, И ЭТО ВТОРАЯ ПОЛОВИНА ТОГО ЖЕ
+// ПРИНЦИПА. Ключ `talents/warden-wrath/...` объявляет ветку полным именем, а
+// ключ сравнения пар — коротким: `talents/vigil-vs-wrath/wrath-bleed/...`.
+// Слова `warden` в нём нет вовсе, и шестнадцать ключей СТРАЖА читались как
+// ключи МИРА: правка одной ветки Стража выглядела как «уехало что-то ещё».
+//
+// Пары собираются из полных имён: увидели `warden-wrath` — значит `wrath`
+// принадлежит `warden`. Второй список веток в скрипте разъехался бы с
+// data/talents.ts на первой же новой ветке.
+const branchOwner = new Map()
+for (const key of [...Object.keys(base), ...fresh.keys()]) {
+  for (const seg of key.split('/')) {
+    const at = seg.indexOf('-')
+    if (at <= 0) continue
+    const head = seg.slice(0, at)
+    const tail = seg.slice(at + 1)
+    if (classIds.has(head) && tail && !tail.includes('-')) branchOwner.set(tail, head)
+  }
+}
+
 /**
  * Класс ключа или null, если ключ про мир.
  *
@@ -122,6 +142,12 @@ for (const key of [...Object.keys(base), ...fresh.keys()]) {
 const classOf = (key) => {
   const words = new Set(key.split(/[/-]/))
   for (const id of classIds) if (words.has(id)) return id
+  // Имени класса в ключе нет — ищем КОРОТКОЕ ИМЯ ВЕТКИ. Если оно называет
+  // ветку известного класса, ключ принадлежит этому классу, а не миру.
+  for (const word of words) {
+    const owner = branchOwner.get(word)
+    if (owner) return owner
+  }
   return null
 }
 

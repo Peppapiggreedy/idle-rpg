@@ -543,11 +543,7 @@ export function heroSettings(state: Pick<GameState, 'talents' | 'abilitySettings
 
 /** Умения, доступные ЭТОМУ герою: книга класса плюс выданные талантами. */
 export function heroAbilityDefs(state: Pick<GameState, 'classId' | 'talents'>): AbilityDef[] {
-  const own = abilitiesOf(state.classId)
-  const granted = grantedAbilityIds(state.talents)
-  if (granted.length === 0) return own
-  const extra = granted.map((id) => ABILITY_BY_ID[id]).filter((a): a is AbilityDef => !!a)
-  return [...own, ...extra]
+  return availableAbilities(state.classId, state.talents)
 }
 
 /**
@@ -572,10 +568,32 @@ export function abilitiesOf(classId: string): AbilityDef[] {
   return hero.abilityIds.map((id) => ABILITY_BY_ID[id]).filter((a): a is AbilityDef => !!a)
 }
 
-export function defaultAbilitySettings(classId: string = DEFAULT_CLASS.id): AbilitySettings {
+export function defaultAbilitySettings(
+  classId: string = DEFAULT_CLASS.id,
+  talents: Readonly<Record<string, number>> = {},
+): AbilitySettings {
   return Object.fromEntries(
-    abilitiesOf(classId).map((a) => [a.id, { autocast: true, reserve: 0 }]),
+    availableAbilities(classId, talents).map((a) => [a.id, { autocast: true, reserve: 0 }]),
   )
+}
+
+/**
+ * УМЕНИЯ, ДОСТУПНЫЕ ГЕРОЮ ЭТОГО КЛАССА С ЭТИМИ ТАЛАНТАМИ: книга класса плюс
+ * выданные талантами. ОДНА функция на все три места, где список «своих»
+ * умений решает исход: настройки, ряд действий и чистка ряда.
+ *
+ * Без неё выданное умение чистилось бы из ряда как «чужое имя» при первой же
+ * загрузке сейва — то есть венец пропадал бы у игрока молча.
+ */
+function availableAbilities(
+  classId: string,
+  talents: Readonly<Record<string, number>>,
+): AbilityDef[] {
+  const own = abilitiesOf(classId)
+  const granted = grantedAbilityIds(talents)
+  if (granted.length === 0) return own
+  const extra = granted.map((id) => ABILITY_BY_ID[id]).filter((a): a is AbilityDef => !!a)
+  return [...own, ...extra]
 }
 
 /**
@@ -604,13 +622,14 @@ export function defaultAbilitySlots(classId: string = DEFAULT_CLASS.id): Ability
 export function fillAbilitySlots(
   slots: readonly (string | null)[],
   classId: string,
+  talents: Readonly<Record<string, number>> = {},
 ): AbilitySlots {
   const next: AbilitySlots = [...slots]
   // Длина ряда — свойство игры, а не сейва: короткий массив дополняем,
   // длинный (ряд когда-то ужали) обрезаем.
   while (next.length < ABILITY_SLOTS) next.push(null)
   next.length = ABILITY_SLOTS
-  const own = new Set(abilitiesOf(classId).map((a) => a.id))
+  const own = new Set(availableAbilities(classId, talents).map((a) => a.id))
   // Чужое или неизвестное имя в слоте — не «пустой слот», а мусор: чистим,
   // иначе оно займёт место и ряд молча станет короче.
   for (let i = 0; i < next.length; i += 1) {
@@ -628,9 +647,12 @@ export function fillAbilitySlots(
 }
 
 /** Все галки автокаста сняты — герой бьёт только автоатакой. */
-export function manualOnlySettings(classId: string = DEFAULT_CLASS.id): AbilitySettings {
+export function manualOnlySettings(
+  classId: string = DEFAULT_CLASS.id,
+  talents: Readonly<Record<string, number>> = {},
+): AbilitySettings {
   return Object.fromEntries(
-    abilitiesOf(classId).map((a) => [a.id, { autocast: false, reserve: 0 }]),
+    availableAbilities(classId, talents).map((a) => [a.id, { autocast: false, reserve: 0 }]),
   )
 }
 

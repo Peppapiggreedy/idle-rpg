@@ -784,14 +784,28 @@ function buildEquipment(build: SimBuild, weapon: Item | null): Equipment {
 function loadoutFor(
   autocast: SimBuild['autocast'],
   classId: string,
+  /**
+   * ТАЛАНТЫ НУЖНЫ ЗДЕСЬ, И ЭТО НЕ ЛИШНИЙ ПАРАМЕТР. Умение от таланта в книге
+   * КЛАССА не лежит: без рангов оно не попало бы ни в настройки, ни в ряд, а
+   * `fillAbilitySlots` вычистила бы его из слота как «чужое имя». Путь
+   * «Взрыв» держит в четвёрке «Отголосок» — и мерился бы ПУСТЫМ слотом, то
+   * есть хуже героя без единого очка (замер 0.95 якоря).
+   */
+  talents: Readonly<Record<string, number>> = {},
 ): { slots: AbilitySlots; settings: AbilitySettings } {
   if (autocast === undefined || autocast === 'all') {
-    return { slots: defaultAbilitySlots(classId), settings: defaultAbilitySettings(classId) }
+    return {
+      slots: fillAbilitySlots([], classId, talents),
+      settings: defaultAbilitySettings(classId, talents),
+    }
   }
   if (autocast === 'none') {
-    return { slots: defaultAbilitySlots(classId), settings: manualOnlySettings(classId) }
+    return {
+      slots: fillAbilitySlots([], classId, talents),
+      settings: manualOnlySettings(classId, talents),
+    }
   }
-  const settings = manualOnlySettings(classId)
+  const settings = manualOnlySettings(classId, talents)
   for (const id of autocast) {
     if (settings[id]) settings[id] = { ...settings[id], autocast: true }
   }
@@ -801,7 +815,7 @@ function loadoutFor(
   autocast.slice(0, ABILITY_SLOTS).forEach((id, index) => {
     if (settings[id]) slots[index] = id
   })
-  return { slots: fillAbilitySlots(slots, classId), settings }
+  return { slots: fillAbilitySlots(slots, classId, talents), settings }
 }
 
 /** Стартовое состояние прогона: билд разложен по тем же источникам статов,
@@ -817,7 +831,7 @@ export function buildSimState(build: SimBuild, zoneId: string, seed: number): Ga
   // и том же коммите то 18 этажей, то 20: прибор мерил часы. Прогон обязан
   // быть повторяемым, иначе контракт на нём не поставишь.
   const base = createInitialState(seed, build.classId ?? DEFAULT_CLASS.id, seed)
-  const loadout = loadoutFor(build.autocast, base.classId)
+  const loadout = loadoutFor(build.autocast, base.classId, build.talents ?? {})
   const state: GameState = {
     ...base,
     level,

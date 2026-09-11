@@ -13,7 +13,7 @@ export {
 } from './tick'
 export type { GameState, Equipment, AbilitySlots, Rotation } from './tick'
 export { defaultAbilitySlots, fillAbilitySlots, rotationOf } from './tick'
-export { abilitiesOf } from './state'
+export { abilitiesOf, heroSettings } from './state'
 // Метки на герое и на цели — ряду значков под сценой.
 export { effectViews } from './effectViews'
 export type { EffectView, EffectKind, EffectTarget } from './effectViews'

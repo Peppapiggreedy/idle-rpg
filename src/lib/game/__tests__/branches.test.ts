@@ -49,8 +49,21 @@ import { dump } from './dump'
 const LEVEL = BALANCE_PRESET.branchDownLevel
 const HOURS = BALANCE_PRESET.branchProbeHours
 const SEEDS = BALANCE_PRESET.branchProbeSeeds
-/** Очков к этому уровню: `branchPoints` из simulate.ts, но без импорта прогона. */
-const POINTS = LEVEL - TALENT_FIRST_LEVEL + 1
+/**
+ * Очков к этому уровню: `branchPoints` из simulate.ts, но без импорта прогона.
+ *
+ * ПЛЮС ЧЕТЫРЕ, И ЭТО НЕ ПОДГОНКА. Порог венца — 60 очков, но заливка идёт ПО
+ * ПОРЯДКУ ПУТИ и после каждой покупки начинает с головы списка: на 61 очке
+ * венец берёт один путь из восемнадцати, на 65 — все (замер записан в
+ * CLAUDE.md, раздел «Таланты»). Прибор мерил «ветку до венца» на 61 и этого
+ * не видел; пока венцы были правками чисел, разница читалась как проценты.
+ *
+ * С ВЕНЦОМ-УМЕНИЕМ ОНА ПЕРЕСТАЛА БЫТЬ ПРОЦЕНТАМИ. Путь «Взрыв» держит в
+ * четвёрке «Отголосок» — умение, ВЫДАННОЕ венцом; без венца это пустой слот,
+ * и ветка мерилась в 0.95 якоря, то есть ХУЖЕ героя без единого очка. Прибор
+ * обязан мерить сборку, которую он же и описывает.
+ */
+const POINTS = LEVEL - TALENT_FIRST_LEVEL + 5
 
 const ownZone = intendedZone(LEVEL)
 const ownIndex = ZONES.findIndex((z) => z.id === ownZone.id)
@@ -250,11 +263,18 @@ describe('ветки: не в разы', () => {
 })
 
 describe('прибор', () => {
-  it('меряет ВСЕ ветки обоими путями и каждый класс своим якорем', () => {
+  it('меряет ВСЕ ветки ВСЕМИ путями и каждый класс своим якорем', () => {
+    // ПУТЕЙ У ВЕТКИ СТОЛЬКО, СКОЛЬКО ИХ ОБЪЯВЛЕНО. Здесь стояло «ровно два», и
+    // это было верно ровно пока венец был один на две клетки. У Гнева венцов
+    // четыре — четыре разных механизма, — и путей столько же: венец берётся
+    // один на сборку, а талант вне путей не измерен ничем.
     expect(rows.filter((r) => r.branchId === null)).toHaveLength(CLASSES.length)
-    expect(rows.filter((r) => r.branchId !== null)).toHaveLength(BRANCHES.length * 2)
+    const declared = BRANCHES.reduce((n, b) => n + pathsOf(b.id).length, 0)
+    expect(rows.filter((r) => r.branchId !== null)).toHaveLength(declared)
     for (const branch of BRANCHES) {
-      expect(rows.filter((r) => r.branchId === branch.id), branch.id).toHaveLength(2)
+      const paths = pathsOf(branch.id).length
+      expect(paths, `${branch.id}: путей меньше двух — выбора нет`).toBeGreaterThanOrEqual(2)
+      expect(rows.filter((r) => r.branchId === branch.id), branch.id).toHaveLength(paths)
     }
   })
 

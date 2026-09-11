@@ -13,6 +13,7 @@ import type { IconName } from '../../../ui/icons/manifest'
 import type { StatId } from '../../../game/stats'
 import type { SlotId } from '../../slots'
 import { CLASS_BY_ID, type ClassDef } from '../../classes'
+import type { AbilityDef } from '../../abilities'
 import type { ShieldTemplate, WeaponTemplate } from '../../items'
 import { masteryToKnow, type RecipeDef } from '../../recipes'
 import { realContent } from '../content'
@@ -53,6 +54,32 @@ function withoutCapstone(real: Content) {
  * Пути ПЕРВОЙ ветки без венца в порядке покупки: сам талант на месте, но
  * очередь до него не доходит. Ломается ровно то, что проверка и стережёт.
  */
+/** Талант выдачи умения. */
+function grantTalent(real: Content) {
+  const found = real.talents.find(
+    (t) => t.effect.kind === 'flag' && t.effect.flag === 'grant-ability',
+  )
+  if (!found) throw new Error('в дереве нет выдачи умения — образец мерить не на чем')
+  return found
+}
+
+function grantTalentId(real: Content) {
+  return grantTalent(real).id
+}
+
+function grantTalentWith(real: Content, abilityId: string): TalentDef[] {
+  const talent = grantTalent(real)
+  return patch(real.talents, talent.id, {
+    effect: { ...(talent.effect as object), abilityId },
+  } as unknown as Partial<TalentDef>)
+}
+
+/** Выданное умение с уровнем открытия выше первого. */
+function grantedWithUnlock(real: Content, unlockLevel: number): AbilityDef[] {
+  const id = (grantTalent(real).effect as { abilityId: string }).abilityId
+  return real.abilities.map((a) => (a.id === id ? { ...a, unlockLevel } : a))
+}
+
 /** Талант замены умения. */
 function swapTalent(real: Content) {
   const found = real.talents.find(
@@ -2156,6 +2183,20 @@ export function brokenCases(): BrokenCase[] {
       title: 'умение-сирота: ни в книге, ни в замене',
       content: { ...real, talents: withoutSwapTalent(real) },
       expect: ['не лежит ни в одной книге класса'],
+    },
+    {
+      // Талант выдаёт умение, которое и так лежит в книге класса: очко
+      // покупает то, что открывается уровнем.
+      title: 'талант выдаёт умение из книги класса',
+      content: { ...real, talents: grantTalentWith(real, ownedAbilityId(real)) },
+      expect: [grantTalentId(real), 'лежит в книге класса'],
+    },
+    {
+      // У выданного умения уровень открытия выше первого: вторые ворота
+      // поверх очка — кнопка, которую видно и нельзя нажать.
+      title: 'у выданного талантом умения есть уровень открытия',
+      content: { ...real, abilities: grantedWithUnlock(real, 20) },
+      expect: [grantTalentId(real), 'вторые ворота по уровню'],
     },
     {
       // Из ПОРЯДКА ПОКУПКИ убран венец: талант на месте, ветка цела, а путь

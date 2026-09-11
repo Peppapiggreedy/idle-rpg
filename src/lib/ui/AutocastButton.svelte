@@ -15,7 +15,9 @@
   // хотя бы одно умение на автокасте. Полувключённого состояния у кнопки
   // нет, а полувключённая ротация есть, и честнее показать её включённой,
   // чем врать выключенной.
-  import { abilitiesByPriority, rotationOf } from '../game'
+  import { abilitiesByPriority, rotationOf,
+  heroSettings,
+} from '../game'
   import { gameState } from '../stores/game'
   import { openMenu, toggleMenu } from '../stores/ui'
   import { Tooltip } from './kit'
@@ -24,7 +26,7 @@
 
   const ordered = $derived(abilitiesByPriority(rotationOf($gameState), false))
   const autocastOn = $derived(
-    ordered.some((a) => $gameState.abilitySettings[a.id]?.autocast ?? false),
+    ordered.some((a) => heroSettings($gameState)[a.id]?.autocast ?? false),
   )
   const open = $derived($openMenu === 'autocast')
 </script>

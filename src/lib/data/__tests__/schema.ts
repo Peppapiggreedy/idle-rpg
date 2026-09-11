@@ -4649,6 +4649,33 @@ function checkAbilityReplacements(content: Content, report: Report): void {
       'заменяет умение на себя же — талант, который ничего не меняет (data/talents.ts)',
     )
   }
+  // ВЫДАЧА — ВТОРАЯ ДОРОГА, И ПРАВИЛА У НЕЁ СВОИ.
+  for (const talent of content.talents) {
+    const effect = talent.effect
+    if (effect.kind !== 'flag' || effect.flag !== 'grant-ability') continue
+    const where = `талант ${talent.id}`
+    const ability = content.abilities.find((a) => a.id === effect.abilityId)
+    report.need(
+      !inSomeBook.has(effect.abilityId),
+      where,
+      `выдаёт «${effect.abilityId}», а оно лежит в книге класса: своему классу ` +
+        'талант выдал бы то, что и так открыто уровнем, чужому — умение чужого ' +
+        'класса (data/talents.ts против data/classes.ts)',
+    )
+    // УРОВЕНЬ ОТКРЫТИЯ У ВЫДАННОГО — ПЕРВЫЙ, и это не формальность: его
+    // воротами служит ОЧКО, а вторые ворота по уровню сделали бы кнопку,
+    // которую герой видит и нажать не может. Сетка открытий класса такое
+    // умение не считает вовсе — значит и уровню его сторожить нечем.
+    if (ability) {
+      report.need(
+        ability.unlockLevel <= 1,
+        where,
+        `выдаёт «${ability.id}» с уровнем открытия ${ability.unlockLevel}: у умения ` +
+          'от таланта воротами служит ОЧКО, и вторые ворота по уровню — это ' +
+          'кнопка, которую видно и нельзя нажать (data/abilities.ts)',
+      )
+    }
+  }
   for (const to of substitutes) {
     report.need(
       !replaced.has(to),
