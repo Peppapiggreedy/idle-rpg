@@ -511,3 +511,47 @@ test('карточка героя: два числа крупно, осталь�
   await page.locator('.pane').getByRole('button', { name: 'Свернуть детали' }).click()
   await expect(details).toHaveCount(0)
 })
+
+// ---------------------------------------------------------------------------
+// РЯД ДЕЙСТВИЙ И ПОРОГ ПРИВАЛА ДЕЛЯТ ОДНУ ПОЛОСУ
+// ---------------------------------------------------------------------------
+//
+// Жалоба из живой игры звучала как две: «на полосе видны все зелья» и
+// «ползунок привала сломался полностью». Причина одна — ряд распухал до
+// двенадцати кнопок и выдавливал соседа по ячейке. Поэтому проверять надо на
+// САМОМ ШИРОКОМ ряду, какой бывает: пресет `potions` держит полный набор
+// склянок, и ни один прежний пресет этого случая не показывал.
+
+async function openPotions(page: Page, width: number): Promise<void> {
+  await page.setViewportSize({ width, height: 900 })
+  await page.goto('?debug=1&state=potions&scene=off')
+  await expect(page.locator('html')).toHaveAttribute('data-ready', 'preset')
+}
+
+for (const width of [390, 1280]) {
+  test(`ползунок привала жив при полном наборе склянок (${width}px)`, async ({ page }) => {
+    await openPotions(page, width)
+    const slider = page.locator('#rest-threshold')
+    await expect(slider).toBeVisible()
+    // ШИРИНА, А НЕ ВИДИМОСТЬ: сплющенный до нитки ползунок «виден», но взять
+    // его нечем — именно так он и «сломался полностью».
+    const box = (await slider.boundingBox())!
+    expect(box.width, 'ползунок сплющен рядом действий').toBeGreaterThan(80)
+
+    // И он ДВИГАЕТСЯ: значение меняется и доезжает до подписи.
+    await slider.fill('30')
+    await slider.dispatchEvent('input')
+    await expect(page.locator('.rest b')).toHaveText('30%')
+  })
+
+  test(`ряд действий не выдавливает страницу вбок (${width}px)`, async ({ page }) => {
+    await openPotions(page, width)
+    // Кнопок в ряду — все склянки плюс слоты умений: это потолок ряда.
+    expect(await page.locator('[data-kind="potion"]').count()).toBeGreaterThan(4)
+    // Ряд прокручивается В СВОЁМ контейнере, а страница — нет.
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    )
+    expect(overflow, 'страница поехала вбок').toBeLessThanOrEqual(0)
+  })
+}

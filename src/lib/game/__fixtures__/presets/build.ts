@@ -10,7 +10,7 @@ import { createInitialState, type GameState } from '../../state'
 // saveId у пресета ФИКСИРОВАН вместе с сидом: он входит в сейв, а снимок
 // обязан быть воспроизводим до байта.
 import { DEFAULT_CLASS } from '../../../data/classes'
-import { CRAFT_UNLOCK_LEVEL } from '../../../data/balance'
+import { CRAFT_UNLOCK_LEVEL, POTION_UNLOCK_LEVEL } from '../../../data/balance'
 import { ensureStats } from '../../stats'
 import { xpToNextLevel } from '../../formulas'
 import { equipItem } from '../../equipment'
@@ -18,20 +18,21 @@ import { equipUpgrades } from '../../simulate'
 import { houndMaxHp } from '../../hound'
 import { rollBossLoot, rollLoot } from '../../loot'
 import { investTalent } from '../../talents'
-import { travelToZone } from '../../zones'
+import { intendedZone, travelToZone } from '../../zones'
 import { payloadFromState, type SavePayloadV21 } from '../../save'
 import { DUNGEONS } from '../../../data/dungeons'
+import { POTION_RECIPES } from '../../../data/recipes'
 import { TALENTS } from '../../../data/talents'
 import { SLOT_IDS } from '../../../data/slots'
 import { LEVEL_BANDS, bandDepth } from '../../../data/bands'
 import { commonReagentsInBand } from '../../../data/reagents'
 import type { Item } from '../../../types'
 
-export type PresetName = 'fresh' | 'mid' | 'rich' | 'tree' | 'hound'
+export type PresetName = 'fresh' | 'mid' | 'rich' | 'tree' | 'hound' | 'potions'
 
 // Порядок важен: presets.test.ts читает первые три позиционно как «свежий,
 // середина, поздний». Новые пресеты — только В КОНЕЦ.
-export const PRESET_NAMES: PresetName[] = ['fresh', 'mid', 'rich', 'tree', 'hound']
+export const PRESET_NAMES: PresetName[] = ['fresh', 'mid', 'rich', 'tree', 'hound', 'potions']
 
 // Время сейва фиксировано: иначе json менялся бы при каждой перегенерации,
 // а оффлайн-расчёт в режиме съёмки всё равно не запускается.
@@ -241,7 +242,39 @@ function hound(): GameState {
   }
 }
 
-const BUILDERS: Record<PresetName, () => GameState> = { fresh, mid, rich, tree, hound }
+/**
+ * ПОЛНЫЙ НАБОР СКЛЯНОК — САМЫЙ ШИРОКИЙ РЯД ДЕЙСТВИЙ, КАКОЙ БЫВАЕТ В ИГРЕ.
+ *
+ * Ряд один на умения и склянки, и его потолок — четыре слота плюс все
+ * рецепты склянок. Ни один прежний пресет этого случая не показывал: «поздний»
+ * стоит ниже порога травничества, и склянок у него нет вовсе. Жалоба про
+ * распухший ряд и умерший рядом ползунок привала пришла из живой игры именно
+ * отсюда — то есть из состояния, которого не было ни на одном снимке.
+ *
+ * Склянок по пять: одной штуки хватило бы для ряда, но пять читаются на
+ * кнопке числом, а не единицей, которую легко принять за значок.
+ */
+function potions(): GameState {
+  let state = createInitialState(808, DEFAULT_CLASS.id, 808)
+  state = atLevel(state, POTION_UNLOCK_LEVEL + 5)
+  const loot = rollItems(state, 8080, state.level.toNumber(), 10)
+  state = addToInventory(state, loot)
+  state = equipUpgrades(state)
+  state = { ...state, inventory: state.inventory.slice(0, 5) }
+  state = travelToZone(state, intendedZone(state.level.toNumber()).id, createRng(808))
+  return {
+    ...state,
+    gold: new Decimal('4.2e5'),
+    materials: {
+      ...passedBandMaterials(state.level.toNumber()),
+      ...Object.fromEntries(POTION_RECIPES.map((r) => [r.output.id, new Decimal(5)])),
+    },
+    currentHp: state.stats.maxHp.times(0.72).floor(),
+    currentMana: state.stats.maxMana.times(0.8).floor(),
+  }
+}
+
+const BUILDERS: Record<PresetName, () => GameState> = { fresh, mid, rich, tree, hound, potions }
 
 export function buildPreset(name: PresetName): GameState {
   return BUILDERS[name]()
