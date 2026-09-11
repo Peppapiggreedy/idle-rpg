@@ -1278,6 +1278,18 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
       dotRate += cast.castsPerSecond
       dotDamage = expectedAbilityDamage(stats, effect.weaponDamagePercent).times(effect.ticks)
     }
+    // ПАССИВНЫЕ — ОТДЕЛЬНЫМ ПРОХОДОМ, И ЭТО НЕ УДОБСТВО, А НЕОБХОДИМОСТЬ.
+    // Ниже стоит `if (rate <= 0) continue`: у пассивного темп ноль по
+    // определению — его не жмут, — и в общем цикле оно было бы невидимо
+    // модели целиком. А здесь ему и нечего считать по темпу: все формулы
+    // ниже — «доля × аптайм», а у пассивного аптайм всегда единица.
+    for (const cast of rot.casts) {
+      const a = cast.ability
+      if (a.type !== 'passive') continue
+      // СВОРА: псы, которых на поле ещё нет. Единственный пассивный флаг;
+      // новый обязан появиться здесь, а не в цикле по темпу.
+      if (a.pack) hound.extraHounds += Math.max(0, Math.round(a.pack.extraHounds))
+    }
     for (const cast of rot.casts) {
       const a = cast.ability
       const rate = cast.castsPerSecond
@@ -1375,8 +1387,6 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
       if (a.skulk) hound.redirectBonus += a.skulk.redirectBonus * Math.min(1, rate * a.skulk.durationSec)
       // ОКЛИК жмётся, когда пёс лёг: ждать его в среднем полцикла отката.
       if (a.rally && rate > 0) hound.rallyWaitSec = Math.min(hound.rallyWaitSec, 0.5 / rate)
-      // СВОРА зовёт псов, которых на поле ещё нет.
-      if (a.pack) hound.extraHounds += Math.max(0, Math.round(a.pack.extraHounds))
     }
     return {
       outgoing,

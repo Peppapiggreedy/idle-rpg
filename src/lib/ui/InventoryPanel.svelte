@@ -31,7 +31,7 @@
   import BoonLine from './BoonLine.svelte'
   import ItemCompare from './ItemCompare.svelte'
   import { RARITY_BY_ID } from '../data/rarity'
-  import { SLOT_ICONS } from '../data/slots'
+  import { itemIcon } from '../data/items'
   import { UPGRADE_PRIORITIES, type UpgradePriority } from '../data/upgrade'
   import type { GoldUpgradeDef, LootPolicy } from '../data/upgrades'
   import { plural } from './plural'
@@ -438,7 +438,7 @@
              (он же значок слота), редкость — рамка, а насколько она сильна —
              уровень числом. Всё остальное про находку показывается ВЫБРАННОЙ:
              сравнение под курсором и карточка выбранного ниже. -->
-        <Icon name={SLOT_ICONS[item.slot]} size="lg" />
+        <Icon name={itemIcon(item)} size="lg" />
         <span class="lvl">{item.level}</span>
         {#if upgradeLabel(share)}
           <span class="upgrade" data-upgrade title="Апгрейд {upgradeLabel(share)}">
@@ -483,7 +483,7 @@
     {@const eq = equipStatus($gameState, carried)}
     <section class="chosen" data-chosen style={rarityStyle(carried.rarity)}>
       <header class="chosen-head">
-        <Icon name={SLOT_ICONS[carried.slot]} size="lg" />
+        <Icon name={itemIcon(carried)} size="lg" />
         <div class="chosen-title">
           <b>{carried.name}</b>
           <Tag

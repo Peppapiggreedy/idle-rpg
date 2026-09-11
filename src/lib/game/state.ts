@@ -289,6 +289,36 @@ export interface GameState {
 
 // Наложенный эффект. Урон тика ЗАСНЯТ в момент применения: смена оружия
 // посреди эффекта не меняет уже наложенный урон.
+/**
+ * КТО ПОВЕСИЛ МЕТКУ. Значок и имя метки берутся отсюда, и другого способа их
+ * взять нет: искать умение перебором флагов («у кого есть `stance`?») значило
+ * бы УГАДЫВАТЬ — и угадывать неверно ровно там, где у класса два умения
+ * одного рода («Стойка» Стража и «Бешенство» Изувера, оба `stance`).
+ *
+ * ДВА ВИДА, А НЕ ОДИН, потому что источников и правда два: почти все метки
+ * вешает УМЕНИЕ, а окно мстителя — ТАЛАНТ (`hound-avenge`), у которого своего
+ * умения нет вовсе. Поле `abilityId` на таком было бы прямой неправдой.
+ */
+export interface EffectSource {
+  kind: 'ability' | 'talent'
+  id: string
+}
+
+/**
+ * КАЖДАЯ ВИСЯЩАЯ МЕТКА НАЗЫВАЕТ СВОЙ ИСТОЧНИК. Поле было ровно у одной записи
+ * (`ActiveEffect`), а у остальных восьми не было, и до ряда значков это
+ * никому не мешало: тику нужны ЧИСЛА метки, а откуда она взялась — всё равно.
+ * Игроку не всё равно, и ряд значков без источника не собрать.
+ *
+ * ЗДЕСЬ ИМЯ ДРУГОЕ, И ЭТО НЕ РАЗНОБОЙ. `ActiveEffect.abilityId` читает ЛОГИКА
+ * (тик берёт по нему интервал тика эффекта), поэтому он и остался полем с
+ * конкретным типом. Остальные восемь источник читают ТОЛЬКО на экране, и у
+ * одного из них источник — талант; общий тип `EffectSource` называет обоих.
+ *
+ * Поле бесплатно: НИ ОДНА из этих записей в сейв не пишется (они висят секунду
+ * боя и снимаются загрузкой), поэтому ни версии, ни миграции правка не
+ * потребовала.
+ */
 export interface ActiveEffect {
   abilityId: string
   damagePerTick: Decimal
@@ -298,24 +328,28 @@ export interface ActiveEffect {
 
 /** Ослабление моба: см. поле `monsterWeaken`. */
 export interface MonsterWeaken {
+  source: EffectSource
   damageShare: number
   hitsLeft: number
 }
 
 /** Щит героя: см. поле `absorb`. */
 export interface HeroAbsorb {
+  source: EffectSource
   left: Decimal
   msLeft: number
 }
 
 /** Клеймо на мобе: см. поле `monsterBrand`. */
 export interface MonsterBrand {
+  source: EffectSource
   damageShare: number
   msLeft: number
 }
 
 /** Стойка героя: см. поле `stance`. */
 export interface HeroStance {
+  source: EffectSource
   damageShare: number
   mitigationShare: number
   msLeft: number
@@ -326,6 +360,7 @@ export interface HeroStance {
  * ЧУЖИХ ударов, здесь урон растёт от своих.
  */
 export interface HeroRamp {
+  source: EffectSource
   /** Сколько прибавки уже набежало, доля. */
   share: number
   /** Сколько прибавляет каждый следующий СВОЙ удар. */
@@ -340,6 +375,7 @@ export interface HeroRamp {
  * считается из текущего ресурса в момент удара.
  */
 export interface HeroEdge {
+  source: EffectSource
   /** Ниже этой доли запаса прибавки нет. */
   resourceAbove: number
   /** Прибавка при полной полоске. */
@@ -349,6 +385,7 @@ export interface HeroEdge {
 
 /** Одна команда псу с длительностью; см. `HoundMarks`. */
 export interface HoundMark {
+  source: EffectSource
   /** Число команды: доля ускорения, доля лечения в секунду, доля замедления, прибавка к перенаправлению. */
   share: number
   msLeft: number
@@ -378,6 +415,7 @@ export const NO_HOUND_MARKS: HoundMarks = {
 
 /** Упор героя: см. поле `resolve`. */
 export interface HeroResolve {
+  source: EffectSource
   /** Сколько смягчения уже набежало, доля 0..1. */
   share: number
   /** Сколько прибавляет каждый следующий пропущенный удар. */

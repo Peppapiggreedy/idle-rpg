@@ -266,6 +266,41 @@ export function brokenCases(): BrokenCase[] {
       },
       expect: ['mend-wounds', 'мгновенным'],
     },
+    // ПАССИВНОЕ — ЧЕТЫРЕ НУЛЯ ВМЕСТЕ, и каждый из них проверен своим
+    // образцом: правило, у которого проверена только одна половина, молча
+    // пропускает вторую.
+    {
+      title: 'пассивное умение стоит ресурса',
+      content: {
+        ...real,
+        abilities: patch(real.abilities, 'pack', { manaCost: new Decimal(50) }),
+      },
+      expect: ['pack', 'manaCost'],
+    },
+    {
+      title: 'пассивное умение с откатом',
+      content: { ...real, abilities: patch(real.abilities, 'pack', { cooldownSec: 30 }) },
+      expect: ['pack', 'cooldownSec'],
+    },
+    {
+      title: 'пассивное умение бьёт',
+      content: {
+        ...real,
+        abilities: patch(real.abilities, 'pack', { weaponDamagePercent: new Decimal(1.2) }),
+      },
+      expect: ['pack', 'weaponDamagePercent'],
+    },
+    {
+      title: 'пассивное умение тратит общую задержку',
+      content: { ...real, abilities: patch(real.abilities, 'pack', { triggersGcd: true }) },
+      expect: ['pack', 'triggersGcd'],
+    },
+    {
+      // ПУСТАЯ КНОПКА: четыре нуля есть, а делать нечего.
+      title: 'пассивное умение без пассивного флага',
+      content: { ...real, abilities: patch(real.abilities, 'pack', { pack: undefined }) },
+      expect: ['pack', 'флагом'],
+    },
     {
       // СТОЙКА НАОБОРОТ — законна, а стойка «в обе стороны хорошо» — нет.
       title: 'стойка усиливает и урон, и защиту разом',
@@ -392,6 +427,30 @@ export function brokenCases(): BrokenCase[] {
         ),
       },
       expect: [first(real.branches).id, 'невозможно войти'],
+    },
+    {
+      // ДВЕ СТРЕЛКИ ИЗ ОДНОГО УЗЛА — ДВЕ ЛИНИИ В ОДНОМ СТОЛБЦЕ, НАЛОЖЕННЫЕ
+      // ДРУГ НА ДРУГА. Именно это и читалось как «стрелка тянется не от
+      // предыдущего таланта», и именно на этом образце проверено, что
+      // проверка срабатывает.
+      title: 'из одного таланта выходят две стрелки',
+      content: {
+        ...real,
+        talents: (() => {
+          const branch = first(real.branches).id
+          const inBranch = real.talents
+            .filter((t) => t.branch === branch)
+            .sort((a, b) => a.row - b.row)
+          const anchor = inBranch[0]
+          const dependents = inBranch.filter((t) => t.row > anchor.row).slice(0, 2)
+          return real.talents.map((t) =>
+            dependents.some((x) => x.id === t.id)
+              ? { ...t, col: anchor.col, requires: { talentId: anchor.id, minRank: 1 } }
+              : t,
+          )
+        })(),
+      },
+      expect: ['выходит 2', 'стрелки'],
     },
     {
       title: 'этажи ветки идут с дыркой — на панели останется пустая строка',

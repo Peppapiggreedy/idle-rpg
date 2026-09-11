@@ -24,6 +24,7 @@
   import { OFFHAND_PENALTY, UNARMED } from '../data/balance'
   import { LONG_PRESS_MS } from '../data/render'
   import { DOLL_COLS, SLOT_CELL, SLOT_ICONS, SLOT_IDS, SLOT_NAMES, type SlotId } from '../data/slots'
+  import { itemIcon } from '../data/items'
   import { gameState, equipInventoryItem, unequipSlot } from '../stores/game'
   import { carriedItem, releaseItem, takeItem, toggleCarried } from '../stores/ui'
   import { carriedOf, slotOutcome } from './dropTarget'
@@ -217,7 +218,7 @@
             {#if !item && !held}<Icon name={SLOT_ICONS[slot]} size="lg" />{/if}
           {/snippet}
           {#if item}
-            <Icon name={SLOT_ICONS[slot]} size="lg" />
+            <Icon name={itemIcon(item)} size="lg" />
             <span class="lvl">{item.level}</span>
           {/if}
         </IconSlot>

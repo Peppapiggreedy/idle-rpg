@@ -4,6 +4,10 @@
 // проверяются они по одному правилу: механика делает ровно то, что обещает
 // её строка в книге, и ничего сверх.
 import { describe, expect, it } from 'vitest'
+
+// Метки, собранные руками: тесты мерят их ЧИСЛА, а источник нужен только
+// ряду значков — берётся любой настоящий id, лишь бы поле было заполнено.
+const SRC = { kind: 'ability', id: 'quick-strike' } as const
 import { Decimal } from './numbers'
 import { createInitialState, tick } from './tick'
 import { ensureStats } from './stats'
@@ -147,7 +151,7 @@ describe('СТЕНА: поглощение растёт от брони и си�
     // посчитанный от нулевой брони, был бы нулевым. Формулу запаса проверяет
     // соседний тест — здесь проверяется, что тик его тратит.
     const base = withDummy(hero())
-    const armedStart: GameState = { ...base, absorb: { left: new Decimal(30), msLeft: 60_000 } }
+    const armedStart: GameState = { ...base, absorb: { source: SRC, left: new Decimal(30), msLeft: 60_000 } }
     let bare = base
     let armed = armedStart
     for (let i = 0; i < 40; i += 1) {
@@ -164,6 +168,8 @@ describe('ТОЛЧОК ЩИТОМ ослабляет следующий удар
   it('метка появляется и живёт ровно столько ударов, сколько в данных', () => {
     const s = useAbility(hero(), SHOVE, createRng(1), () => {})
     expect(s.monsterWeaken).toEqual({
+      // Метка НАЗЫВАЕТ СВОЙ ИСТОЧНИК: по нему ряд значков берёт имя и значок.
+      source: { kind: 'ability', id: SHOVE },
       damageShare: ABILITY_BY_ID[SHOVE].weaken!.damageShare,
       hitsLeft: ABILITY_BY_ID[SHOVE].weaken!.hits,
     })
@@ -171,7 +177,7 @@ describe('ТОЛЧОК ЩИТОМ ослабляет следующий удар
 
   it('ослабленный удар снимает меньше здоровья', () => {
     const base = withDummy(hero())
-    const shoved: GameState = { ...base, monsterWeaken: { damageShare: 0.5, hitsLeft: 1 } }
+    const shoved: GameState = { ...base, monsterWeaken: { source: SRC, damageShare: 0.5, hitsLeft: 1 } }
     let bare = base
     let soft = shoved
     // Одного удара моба достаточно: метка сходит после него.
@@ -228,7 +234,7 @@ describe('КЛЕЙМО поднимает получаемый урон и не 
     const plain = withDummy(hero())
     const marked: GameState = {
       ...plain,
-      monsterBrand: { damageShare: brand.brand!.damageShare, msLeft: 20_000 },
+      monsterBrand: { source: SRC, damageShare: brand.brand!.damageShare, msLeft: 20_000 },
     }
     expect(outgoingMultiplier(marked).gt(outgoingMultiplier(plain))).toBe(true)
     expect(outgoingMultiplier(marked).eq(1 + brand.brand!.damageShare)).toBe(true)
@@ -292,7 +298,7 @@ describe('ГЛУХАЯ СТОЙКА меняет одну ось на другу
     const base = withDummy(hero())
     const guarded: GameState = {
       ...base,
-      stance: { damageShare: 0.25, mitigationShare: 0.5, msLeft: 60_000 },
+      stance: { source: SRC, damageShare: 0.25, mitigationShare: 0.5, msLeft: 60_000 },
     }
     let bare = base
     let held = guarded

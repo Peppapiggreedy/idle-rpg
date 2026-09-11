@@ -14,6 +14,11 @@ export {
 export type { GameState, Equipment, AbilitySlots, Rotation } from './tick'
 export { defaultAbilitySlots, fillAbilitySlots, rotationOf } from './tick'
 export { abilitiesOf } from './state'
+// Метки на герое и на цели — ряду значков под сценой.
+export { effectViews } from './effectViews'
+export type { EffectView, EffectKind, EffectTarget } from './effectViews'
+export type { EffectSource } from './state'
+
 // Пёс: что сцене и панелям можно читать о втором теле.
 export { HOUND_ID, companionOf, houndMaxHp, isHoundUp, upHounds } from './hound'
 export type { HoundState } from './hound'

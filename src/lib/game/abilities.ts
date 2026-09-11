@@ -70,7 +70,10 @@ export type AbilityBlockReason =
   // что лечатся они по-разному: ждать возврата, ждать падения, снять кнопку.
   | 'no-hound'
   | 'no-fallen-hound'
-  | 'pack-full'
+  // ПАССИВНОЕ НЕ НАЖИМАЕТСЯ ВОВСЕ, и это не «пока нельзя», а «не нужно».
+  // Отдельный код, потому что лечить его нечем и ждать нечего: умение уже
+  // работает — ровно тем, что стоит в ряду.
+  | 'passive'
 
 export interface AbilityStatus {
   abilityId: string
@@ -178,6 +181,12 @@ export function abilityStatus(state: GameState, ability: AbilityDef): AbilitySta
   const blocked = (reason: AbilityBlockReason) => ({ ...base, usable: false, reason })
   // Запертое уровнем — первым: эта причина не лечится ни ожиданием, ни маной.
   if (state.level.lt(ability.unlockLevel)) return blocked('locked')
+  // ПАССИВНОЕ — ВТОРЫМ, СРАЗУ ЗА УРОВНЕМ И ДАЖЕ РАНЬШЕ СМЕРТИ: остальные
+  // причины отвечают на вопрос «почему сейчас нельзя», а у пассивного этого
+  // вопроса нет вовсе — его не нажимают ни живым, ни мёртвым. Отсюда же
+  // берётся его невидимость для автокаста: кандидаты фильтруются по
+  // `usable`, и отдельного правила «автокаст не жмёт пассивные» не нужно.
+  if (ability.type === 'passive') return blocked('passive')
   if (state.heroState === 'dead') return blocked('dead')
   // Запирает НЕ «идёт откат», а «зарядов не осталось»: у умения с одним
   // зарядом это ровно прежнее поведение, у двухзарядного — второе нажатие
@@ -208,7 +217,11 @@ export function abilityStatus(state: GameState, ability: AbilityDef): AbilitySta
   // жал бы их систематически в пустоту.
   if (needsStandingHound(ability) && upHounds(state).length === 0) return blocked('no-hound')
   if (ability.rally && !state.hounds.some((h) => !isHoundUp(h))) return blocked('no-fallen-hound')
-  if (ability.pack && state.hounds.length >= houndCapacity(state)) return blocked('pack-full')
+  // ОТКАЗА «СВОРА ПОЛНА» ЗДЕСЬ БОЛЬШЕ НЕТ, и это следствие пассивности, а не
+  // потеря правила. Зов был нажатием, и нажатие при полной своре надо было
+  // отклонять; теперь псы приходят тиком РОВНО до ёмкости ряда, и лишнего
+  // зова не бывает по построению. Само правило ёмкости никуда не делось —
+  // оно в `houndCapacity` и в тике, где всегда и жило.
   return { ...base, usable: true, reason: null }
 }
 
@@ -557,7 +570,11 @@ export function strikeWithAbility(
   if (ability.weaken) {
     after = {
       ...after,
-      monsterWeaken: { damageShare: ability.weaken.damageShare, hitsLeft: ability.weaken.hits },
+      monsterWeaken: {
+        source: { kind: 'ability', id: ability.id },
+        damageShare: ability.weaken.damageShare,
+        hitsLeft: ability.weaken.hits,
+      },
     }
   }
   // КЛЕЙМО. Повторное наложение обновляет метку, а не копит вторую.
@@ -565,6 +582,7 @@ export function strikeWithAbility(
     after = {
       ...after,
       monsterBrand: {
+        source: { kind: 'ability', id: ability.id },
         damageShare: ability.brand.damageShare,
         msLeft: ability.brand.durationSec * 1000,
       },
@@ -604,7 +622,11 @@ function applySelfFlags(state: GameState, ability: AbilityDef): GameState {
       ...next,
       houndMarks: {
         ...next.houndMarks,
-        haste: { share: ability.houndHaste.share, msLeft: ability.houndHaste.durationSec * 1000 },
+        haste: {
+          source: { kind: 'ability', id: ability.id },
+          share: ability.houndHaste.share,
+          msLeft: ability.houndHaste.durationSec * 1000,
+        },
       },
     }
   }
@@ -614,7 +636,11 @@ function applySelfFlags(state: GameState, ability: AbilityDef): GameState {
       ...next,
       houndMarks: {
         ...next.houndMarks,
-        recall: { share: ability.recall.healShare / seconds, msLeft: ability.recall.durationSec * 1000 },
+        recall: {
+          source: { kind: 'ability', id: ability.id },
+          share: ability.recall.healShare / seconds,
+          msLeft: ability.recall.durationSec * 1000,
+        },
       },
     }
   }
@@ -623,7 +649,11 @@ function applySelfFlags(state: GameState, ability: AbilityDef): GameState {
       ...next,
       houndMarks: {
         ...next.houndMarks,
-        grip: { share: ability.grip.slowShare, msLeft: ability.grip.durationSec * 1000 },
+        grip: {
+          source: { kind: 'ability', id: ability.id },
+          share: ability.grip.slowShare,
+          msLeft: ability.grip.durationSec * 1000,
+        },
       },
     }
   }
@@ -632,7 +662,11 @@ function applySelfFlags(state: GameState, ability: AbilityDef): GameState {
       ...next,
       houndMarks: {
         ...next.houndMarks,
-        skulk: { share: ability.skulk.redirectBonus, msLeft: ability.skulk.durationSec * 1000 },
+        skulk: {
+          source: { kind: 'ability', id: ability.id },
+          share: ability.skulk.redirectBonus,
+          msLeft: ability.skulk.durationSec * 1000,
+        },
       },
     }
   }
@@ -640,6 +674,7 @@ function applySelfFlags(state: GameState, ability: AbilityDef): GameState {
     next = {
       ...next,
       stance: {
+        source: { kind: 'ability', id: ability.id },
         damageShare: ability.stance.damageShare,
         mitigationShare: ability.stance.mitigationShare,
         msLeft: ability.stance.durationSec * 1000,
@@ -659,6 +694,7 @@ function applySelfFlags(state: GameState, ability: AbilityDef): GameState {
     next = {
       ...next,
       resolve: {
+        source: { kind: 'ability', id: ability.id },
         share: 0,
         perHitTaken: ability.resolve.perHitTaken,
         maxShare: ability.resolve.maxShare,
@@ -672,6 +708,7 @@ function applySelfFlags(state: GameState, ability: AbilityDef): GameState {
     next = {
       ...next,
       ramp: {
+        source: { kind: 'ability', id: ability.id },
         share: 0,
         perSwing: ability.ramp.perSwing,
         maxShare: ability.ramp.maxShare,
@@ -685,6 +722,7 @@ function applySelfFlags(state: GameState, ability: AbilityDef): GameState {
     next = {
       ...next,
       edge: {
+        source: { kind: 'ability', id: ability.id },
         resourceAbove: ability.edge.resourceAbove,
         damagePerShare: ability.edge.damagePerShare,
         msLeft: ability.edge.durationSec * 1000,
@@ -926,15 +964,9 @@ function commandHounds(
     for (let i = 0; i < raised; i += 1) combatLog = pushEvent(combatLog, { type: 'hound-return' })
     next = { ...next, hounds, combatLog }
   }
-  // СВОРА: ещё псы, до ёмкости ряда. Приходят целыми — это зов, а не подъём.
-  if (ability.pack) {
-    const room = Math.max(0, houndCapacity(next) - next.hounds.length)
-    const called = Math.min(room, Math.max(0, Math.round(ability.pack.extraHounds)))
-    if (called > 0) {
-      const fresh: HoundState[] = Array.from({ length: called }, () => ({ hp: max, swing: 0, downMsLeft: 0 }))
-      next = { ...next, hounds: [...next.hounds, ...fresh] }
-    }
-  }
+  // СВОРЫ ЗДЕСЬ БОЛЬШЕ НЕТ: она пассивна, нажатием не приходит и до этой
+  // функции не доходит вовсе. Псы до ёмкости ряда приходят тиком
+  // (`applyHoundTimers`) — там же, где ряд их и подрезает.
   return applySelfFlags(next, ability)
 }
 
@@ -944,7 +976,11 @@ function absorbWithAbility(state: GameState, ability: AbilityDef): GameState {
     ...state,
     // Повторное применение ЗАМЕНЯЕТ щит, а не копит второй: иначе умение с
     // коротким откатом складывалось бы само с собой.
-    absorb: { left: pool, msLeft: ability.absorb!.durationSec * 1000 },
+    absorb: {
+      source: { kind: 'ability', id: ability.id },
+      left: pool,
+      msLeft: ability.absorb!.durationSec * 1000,
+    },
     combatLog: pushEvent(state.combatLog, {
       type: 'ability',
       abilityId: ability.id,

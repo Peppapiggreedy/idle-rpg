@@ -44,6 +44,7 @@
   import TempleHud from './lib/ui/TempleHud.svelte'
   import VitalsBar from './lib/ui/VitalsBar.svelte'
   import RestRow from './lib/ui/RestRow.svelte'
+  import EffectRow from './lib/ui/EffectRow.svelte'
   import MenuButtons from './lib/ui/MenuButtons.svelte'
   import SwingIndicator from './lib/ui/SwingIndicator.svelte'
   import { IconSprite } from './lib/ui/icons'
@@ -209,6 +210,11 @@
           {:else}
             <BattleScene mini={miniScene} />
           {/if}
+          <!-- ЧТО ВИСИТ СЕЙЧАС: метки героя слева, метки цели справа. Ряд
+               стоит ПОД сценой и внутри неё же по ширине — иначе «слева» и
+               «справа» перестали бы совпадать с телами на площадке. В
+               строке-сводке его нет: одна строка значит одна строка. -->
+          <EffectRow />
           <SwingIndicator />
           <DungeonHud />
           <TempleHud />
@@ -367,13 +373,16 @@
     min-width: 0;
     flex-wrap: wrap;
   }
-  /* Ряд умений держит свою ширину, порог привала забирает остаток. */
+  /* КОГДА ПОЛОСЫ НЕ ХВАТАЕТ, УСТУПАЕТ РЯД, А НЕ ПОРОГ: у ряда есть своя
+     горизонтальная прокрутка, у ползунка её нет и быть не может. Поэтому
+     основа порога больше его прежних 16rem — при нехватке места сжатие
+     раскладывается по основам, и ряд забирает почти всё. */
   .acts {
     flex: 0 1 auto;
     min-width: 0;
   }
   .rest {
-    flex: 1 1 16rem;
+    flex: 1 1 20rem;
     min-width: 0;
   }
   .stage {

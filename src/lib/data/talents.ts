@@ -997,15 +997,21 @@ const WARDEN_BULWARK = branch('warden-bulwark', [
       effect: { kind: 'flag', flag: 'faster-revive', reviveMultiplier: 0.5 },
     },
     {
-      // СТРЕЛКА: щит, который герой уже растил. Откат вдвое короче — «Стена»
-      // из козыря на схватку превращается в постоянную часть ротации.
+      // СТРЕЛКИ ЗДЕСЬ БОЛЬШЕ НЕТ, И ЭТО НЕ ПОТЕРЯ СВЯЗИ, А ПОЧИНКА КАРТИНКИ.
+      // Из «Долгой стены» выходили ДВЕ стрелки — сюда (этаж 9) и на «Широкую
+      // стену» (этаж 10), — обе в четвёртом столбце, одна поверх другой.
+      // Нижняя накрывала верхнюю целиком, и наконечник на девятом этаже
+      // читался как конец чужой линии: ровно жалоба «стрелка тянется не от
+      // предыдущего таланта». Держит `content:check` (одна исходящая на узел).
+      //
+      // Смысл связки при этом никуда не делся: «Стена» стоит на втором этаже
+      // той же ветки, и до девятого этажа игрок всё равно проходит через неё.
       id: 'bulwark-often-wall',
       name: 'Частая стена',
       icon: 'talent-often-wall',
       maxRank: 1,
       col: 4,
       exclusiveGroup: 'bulwark-key-9',
-      requires: { talentId: 'bulwark-long-wall', minRank: 3 },
       effect: tunes('bulwark', { field: 'cooldownSec', kind: 'multiplier', value: 0.5 }),
     },
   ],
@@ -1019,14 +1025,15 @@ const WARDEN_BULWARK = branch('warden-bulwark', [
       effect: mods(m('damageReduction', 'flat', 0.0047)),
     },
     {
-      // СТРЕЛКА: та же «Стена». Щит растёт от брони — талант удваивает эту
-      // долю, и броня получает третий адрес после смягчения и блока.
+      // ВТОРАЯ ИЗ ПАРЫ, У КОТОРОЙ СНЯТА СТРЕЛКА: из «Долгой стены» выходили
+      // две линии в один столбец (подробности — у «Частой стены» выше).
+      // Щит растёт от брони, талант удваивает эту долю, и броня получает
+      // третий адрес после смягчения и блока — это остаётся.
       id: 'bulwark-wide-wall',
       name: 'Широкая стена',
       icon: 'talent-wide-wall',
       maxRank: 5,
       col: 4,
-      requires: { talentId: 'bulwark-long-wall', minRank: 3 },
       effect: tunes('bulwark', { field: 'absorbArmorShare', kind: 'percent', value: 0.14 }),
     },
   ],
@@ -3225,12 +3232,25 @@ const HOUNDMASTER_TRAIL = branch('houndmaster-trail', [
       effect: mods(m('restDuration', 'percent', -0.04)),
     },
     {
-      id: 'trail-cheap-pack',
-      name: 'Лёгкий зов',
+      // БЫЛ «ЛЁГКИЙ ЗОВ» — СКИДКА НА «СВОРУ», И ОН УМЕР ВМЕСТЕ С ЕЁ ЦЕНОЙ.
+      // «Свора» стала пассивной, её цена — ноль, а процент от нуля есть ноль:
+      // талант проходил бы все ссылочные проверки и не делал РОВНО НИЧЕГО.
+      // Ловит это `checkTalentTunes` (TUNE_NEEDS.manaCost требует цены), и
+      // поймал он это сразу — то есть правило работает ровно так, как
+      // задумано: тихая поломка дерева стала громкой.
+      //
+      // НА ЕГО МЕСТЕ — СКИДКА НА ПОДСЕЧКУ, единственное умение класса, цены
+      // которого «Тропа» ещё не касалась (откат ей режет «Частая подсечка»
+      // этажом выше). Ставка ВТРОЕ МЕНЬШЕ соседей по ветке (-0.03 против
+      // -0.06…-0.10) нарочно: те режут цену умений с откатом в 14–45 секунд,
+      // а подсечка жмётся раз в две секунды — та же доля стоила бы на порядок
+      // дороже в энергии за минуту.
+      id: 'trail-cheap-undercut',
+      name: 'Лёгкая подсечка',
       icon: 'talent-unbroken-focus',
       maxRank: 5,
       col: 3,
-      effect: tunes('pack', { field: 'manaCost', kind: 'percent', value: -0.08 }),
+      effect: tunes('undercut', { field: 'manaCost', kind: 'percent', value: -0.03 }),
     },
   ],
   [
@@ -4082,7 +4102,7 @@ const BRANCH_PATHS: Partial<Record<BranchId, TalentPath[]>> = {
         'trail-cheap-flurry',
         'trail-cheap-unleash',
         'trail-cheap-skulk',
-        'trail-cheap-pack',
+        'trail-cheap-undercut',
       ],
     },
     {
@@ -4117,7 +4137,7 @@ const BRANCH_PATHS: Partial<Record<BranchId, TalentPath[]>> = {
         'trail-cheap-rally',
         'trail-short-halt',
         'trail-cheap-skulk',
-        'trail-cheap-pack',
+        'trail-cheap-undercut',
       ],
     },
   ],
