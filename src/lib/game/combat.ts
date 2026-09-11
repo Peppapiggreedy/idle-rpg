@@ -44,6 +44,7 @@ import { classById } from '../data/classes'
 import {
   blockReflectShare,
   blockResourceShare,
+  carryShares,
   doubleStrikeChance,
   restDurationMultiplier,
   packTacticsShare,
@@ -1282,6 +1283,9 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
    * `fightSec` приходит из ПРЕДЫДУЩЕГО прохода — тем же приёмом, что и
    * лечение: длина боя зависит от урона, урон от меток, метки от длины боя.
    */
+  // ПЕРЕНОС МЕТКИ — ИЗ ТАЛАНТОВ, ОДИН РАЗ НА ВЫЗОВ. Ветки по id таланта нет:
+  // доля приходит записью по меткам, а имя метки лежит в payload'е флага.
+  const brandCarry = carryShares(s.talents).monsterBrand ?? 0
   const abilityMods = (rot: RotationRate, fightSec: number) => {
     let outgoing = new Decimal(1)
     let incoming = 1
@@ -1320,8 +1324,17 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
       // КЛЕЙМО живёт на МОБЕ и умирает вместе с ним: дольше боя оно не висит,
       // сколько бы секунд ни было в данных. Ровно поэтому оно окупается на
       // боссе и едва окупается на рядовом мобе — модель обязана это видеть.
+      //
+      // ПЕРЕНОС ОТОДВИГАЕТ ЭТОТ ПОТОЛОК, и ровно этим модель видит «Память
+      // клинка». Метку обрывает КОНЕЦ схватки, но при переносе гибнет только
+      // доля `1 − share` оставшегося времени, поэтому горизонт, на котором
+      // она может жить, растягивается в `1 / (1 − share)` раз. На нуле это
+      // сегодняшний `fightSec`, на единице — бесконечность, то есть метку
+      // держит только её собственная длительность. Первый порядок, как и всё
+      // остальное в этой функции.
       if (a.brand) {
-        const uptime = Math.min(1, rate * Math.min(a.brand.durationSec, fightSec))
+        const horizon = brandCarry >= 1 ? Number.POSITIVE_INFINITY : fightSec / (1 - brandCarry)
+        const uptime = Math.min(1, rate * Math.min(a.brand.durationSec, horizon))
         outgoing = outgoing.times(1 + a.brand.damageShare * uptime)
       }
       // СТОЙКА живёт на ГЕРОЕ и боем не ограничена: её аптайм — это отношение

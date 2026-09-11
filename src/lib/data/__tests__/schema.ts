@@ -64,6 +64,7 @@ import {
   type BranchDef,
   type TalentDef,
   type TalentStatRule,
+  type CarryMark,
   HOUND_TUNE_FIELDS,
   COMPANION_FLAGS,
 } from '../talents'
@@ -4510,6 +4511,19 @@ function checkProcTalents(content: Content, report: Report): void {
           '(TALENT_STAT_RULE в data/talents.ts)',
       )
     }
+    // УСЛОВИЕ — ДОЛЯ, И ДОЛЯ ОСМЫСЛЕННАЯ. Нулевая отметка значит «никогда»:
+    // прок есть, очко за него берут, а окно не открывается ни разу. Единица
+    // значит «всегда» — условие в записи есть, а не ограничивает ничего, и
+    // игрок читает в подсказке ограничение, которого нет.
+    if (effect.when) {
+      report.need(
+        effect.when.share > 0 && effect.when.share < 1,
+        where,
+        `условие «${effect.when.kind}» с долей ${effect.when.share}: ноль значит ` +
+          '«никогда», единица — «всегда», и в обоих случаях условие не условие ' +
+          '(data/talents.ts)',
+      )
+    }
     const window =
       effect.effect.kind === 'stat-swings' ? effect.effect.swings : effect.effect.durationSec
     report.need(
@@ -4523,6 +4537,54 @@ function checkProcTalents(content: Content, report: Report): void {
       where,
       `«everyNth» = ${effect.everyNth}: заряды считаются штуками, и меньше ` +
         'одного их не бывает (data/talents.ts)',
+    )
+  }
+}
+
+/**
+ * ПЕРЕНОС МЕТКИ — ИСКЛЮЧЕНИЕ ИЗ ПРАВИЛА, И ИСКЛЮЧЕНИЕ ОБЯЗАНО БЫТЬ ПОЛЕЗНЫМ.
+ *
+ * Метки живут на конкретном мобе — это умолчание всей игры. Талант переноса
+ * его отменяет, и потому за ним смотрят отдельно:
+ *
+ *  1. **доля не ноль и не больше единицы за ранг.** Ноль — талант, который не
+ *     делает ничего; больше единицы — «переносится больше, чем было», то есть
+ *     метка отрастает от смены цели;
+ *  2. **у КЛАССА ВЕТКИ есть умение, которое эту метку вешает.** Перенос метки,
+ *     которую классу нечем поставить, — мёртвый талант того же рода, что
+ *     флаг спутника у класса без пса: имена настоящие, ссылки целые, эффекта
+ *     нет. Заметить это чтением нельзя.
+ */
+function checkCarryTalents(content: Content, report: Report): void {
+  // КАКОЕ ПОЛЕ УМЕНИЯ СТАВИТ КАКУЮ МЕТКУ. Запись закрыта по `CarryMark`:
+  // новая переносимая метка не пройдёт проверку типов без строки здесь.
+  const SETTER: Record<CarryMark, (a: AbilityDef) => boolean> = {
+    monsterBrand: (a) => a.brand !== undefined,
+  }
+  for (const talent of content.talents) {
+    const effect = talent.effect
+    if (effect.kind !== 'flag' || effect.flag !== 'carry-over') continue
+    const where = `талант ${talent.id}`
+    report.need(
+      effect.share > 0 && effect.share * talent.maxRank <= 1,
+      where,
+      `переносит ${effect.share} метки за ранг при ${talent.maxRank} рангах: ноль ` +
+        'не делает ничего, а больше единицы значит «переносится больше, чем ' +
+        'было» — метка отрастала бы от смены цели (data/talents.ts)',
+    )
+    const branch = content.branches.find((b) => b.id === talent.branch)
+    if (!branch) continue
+    const owner = content.classes.find((c) => c.id === branch.classId)
+    if (!owner) continue
+    const setters = content.abilities.filter(
+      (a) => owner.abilityIds.includes(a.id) && SETTER[effect.mark](a),
+    )
+    report.need(
+      setters.length > 0,
+      where,
+      `переносит метку «${effect.mark}», а у класса ${owner.id} нет ни одного ` +
+        'умения, которое её вешает: талант мёртв, и заметить это чтением нельзя ' +
+        '(data/talents.ts против data/abilities.ts)',
     )
   }
 }
@@ -4676,6 +4738,7 @@ export function checkContent(content: Content): ContentIssue[] {
   checkTalentOwnership(content, report)
   checkTalentTuneDuplicates(content, report)
   checkProcTalents(content, report)
+  checkCarryTalents(content, report)
   checkTalentArrows(content, report)
   checkBranchCapstones(content, report)
   checkTuneFloors(content, report)

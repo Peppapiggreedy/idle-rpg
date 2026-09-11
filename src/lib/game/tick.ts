@@ -31,7 +31,13 @@ import {
   rollSwing,
 } from './combat'
 import type { Rng } from './rng'
-import { advanceProcs, fireProcs, spendProcSwing, takenProcs } from './talentProcs'
+import {
+  advanceProcs,
+  fireProcs,
+  spendProcSwing,
+  takenProcs,
+  type ProcSituation,
+} from './talentProcs'
 import type { ProcTrigger as TalentProcTrigger } from '../data/talents'
 import { pushEvent, spawnMonster, type ActiveEffect, type GameState } from './state'
 import { ensureStats } from './stats'
@@ -71,6 +77,7 @@ import {
 import {
   blockReflectShare,
   blockResourceShare,
+  carryShares,
   doubleStrikeChance,
   killCooldownMultiplier,
   reviveMultiplier,
@@ -82,6 +89,12 @@ import {
  * теперь герой может упасть и не от удара моба (героическая отдача списывает
  * HP в момент траты ресурса), и оформлять смерть двумя способами нельзя.
  */
+/** Доля здоровья цели: 1 — целая, 0 — мертва. Её и читают условия проков. */
+function hpShareOf(monster: GameState['monster']): number {
+  if (monster.maxHp.lte(0)) return 0
+  return Math.min(1, Math.max(0, monster.currentHp.div(monster.maxHp).toNumber()))
+}
+
 function heroDies(state: GameState, rng: Rng): GameState {
   // Талант «Скорое возвращение» режет простой; множитель живёт в данных.
   const reviveMs = REVIVE_DELAY_MS * reviveMultiplier(state)
@@ -165,6 +178,14 @@ interface TickContext {
    * когда-нибудь забудут, а заметить это можно будет только замером.
    */
   procEvents: TalentProcTrigger[]
+  /**
+   * ПОЛОЖЕНИЕ ДЕЛ НА ПОЛЕ БОЯ для условных проков, снятое В НАЧАЛЕ ТИКА.
+   *
+   * Именно в начале, а не после ударов: «Добой» спрашивает, была ли цель уже
+   * добиваема В МОМЕНТ КРИТА, и крит, который сам увёл моба под отметку, под
+   * условие попасть не должен — на замахе цель была цела.
+   */
+  procSituation: ProcSituation
 }
 
 type TickStep = (state: GameState, ctx: TickContext) => GameState
@@ -1130,9 +1151,26 @@ const applyRespawn: TickStep = (s, ctx) => {
     monster,
     activeEffects: [], // эффекты были на прежнем мобе
     monsterWeaken: null,
-    monsterBrand: null,
+    // МЕТКА ПЕРЕЖИВАЕТ ЦЕЛЬ — ЕДИНСТВЕННОЕ ИСКЛЮЧЕНИЕ, И ОНО ФЛАГОМ ИЗ ДАННЫХ.
+    // Без такого таланта `carried` отдаёт null, и строка значит ровно то же,
+    // что значила: «метки живут на конкретном мобе».
+    monsterBrand: carriedBrand(s),
     combatLog: pushEvent(s.combatLog, { type: 'spawn', monsterName: monster.name }),
   }
+}
+
+/**
+ * Клеймо, перенесённое на нового моба: доля оставшегося времени по таланту.
+ * Ветки по id таланта здесь нет — доля приходит из `carryShares`, а имя метки
+ * лежит в payload'е флага.
+ */
+function carriedBrand(s: GameState): GameState['monsterBrand'] {
+  const brand = s.monsterBrand
+  if (!brand) return null
+  const share = carryShares(s.talents).monsterBrand ?? 0
+  if (share <= 0) return null
+  const msLeft = Math.round(brand.msLeft * share)
+  return msLeft > 0 ? { ...brand, msLeft } : null
 }
 
 const applyAutosaveCounter: TickStep = (s, ctx) => {
@@ -1205,7 +1243,9 @@ const applyTalentProcs: TickStep = (s, ctx) => {
   let procs = advanceProcs(s.talentProcs, ctx.dtMs)
   if (taken.length > 0) {
     for (let i = 0; i < ctx.swingsDealt; i += 1) procs = spendProcSwing(procs)
-    for (const trigger of ctx.procEvents) procs = fireProcs(procs, taken, trigger)
+    for (const trigger of ctx.procEvents) {
+      procs = fireProcs(procs, taken, trigger, ctx.procSituation)
+    }
   }
   if (procs === s.talentProcs) return s
   // Окно открылось или закрылось — статы пересчитываются: прибавка прока
@@ -1296,6 +1336,7 @@ export function tick(
     logHead: state.combatLog[0] ?? null,
     hitsTaken: 0,
     procEvents: [],
+    procSituation: { targetHpShare: hpShareOf(state.monster) },
   }
   // Кеш статов: пересчёт только если источники менялись с прошлого тика.
   let s: GameState = {

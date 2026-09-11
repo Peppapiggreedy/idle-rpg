@@ -53,6 +53,57 @@ function withoutCapstone(real: Content) {
  * Пути ПЕРВОЙ ветки без венца в порядке покупки: сам талант на месте, но
  * очередь до него не доходит. Ломается ровно то, что проверка и стережёт.
  */
+/** Прок С УСЛОВИЕМ — на нём проверяются правила условий. */
+function conditionalProc(real: Content) {
+  const found = real.talents.find(
+    (t) => t.effect.kind === 'flag' && t.effect.flag === 'proc' && t.effect.when,
+  )
+  if (!found) throw new Error('в дереве нет условного прока — образец мерить не на чем')
+  return found
+}
+
+function conditionalProcId(real: Content) {
+  return conditionalProc(real).id
+}
+
+/** Тот же условный прок с подменённой долей условия. */
+function procTalentWhen(real: Content, share: number): TalentDef[] {
+  const talent = conditionalProc(real)
+  const effect = talent.effect as { when: { kind: string; share: number } }
+  return patch(real.talents, talent.id, {
+    effect: { ...effect, when: { ...effect.when, share } },
+  } as unknown as Partial<TalentDef>)
+}
+
+/** Талант переноса метки. */
+function carryTalent(real: Content) {
+  const found = real.talents.find((t) => t.effect.kind === 'flag' && t.effect.flag === 'carry-over')
+  if (!found) throw new Error('в дереве нет переноса метки — образец мерить не на чем')
+  return found
+}
+
+function carryTalentId(real: Content) {
+  return carryTalent(real).id
+}
+
+function carryTalentWith(real: Content, fields: { share?: number }): TalentDef[] {
+  const talent = carryTalent(real)
+  return patch(real.talents, talent.id, {
+    effect: { ...(talent.effect as object), ...fields },
+  } as unknown as Partial<TalentDef>)
+}
+
+/**
+ * Тот же перенос, переехавший в ветку ЧУЖОГО класса: у того класса умения,
+ * вешающего эту метку, нет, и талант мёртв.
+ */
+function carryTalentInForeignBranch(real: Content): TalentDef[] {
+  const talent = carryTalent(real)
+  const own = real.branches.find((b) => b.id === talent.branch)!
+  const foreign = real.branches.find((b) => b.classId !== own.classId)!
+  return patch(real.talents, talent.id, { branch: foreign.id } as Partial<TalentDef>)
+}
+
 /** Первый талант-прок дерева: на нём и проверяются правила проков. */
 function procTalent(real: Content) {
   const found = real.talents.find((t) => t.effect.kind === 'flag' && t.effect.flag === 'proc')
@@ -2017,6 +2068,27 @@ export function brokenCases(): BrokenCase[] {
       title: 'у прока нулевое окно',
       content: { ...real, talents: procTalentWith(real, { durationSec: 0, swings: 0 }) },
       expect: [procTalentId(real), 'не делает НИЧЕГО'],
+    },
+    {
+      // Условие «ниже ста процентов здоровья» верно ВСЕГДА: в записи
+      // ограничение есть, в игре его нет, а игрок читает его в подсказке.
+      title: 'условие прока верно всегда',
+      content: { ...real, talents: procTalentWhen(real, 1) },
+      expect: [conditionalProcId(real), 'условие не условие'],
+    },
+    {
+      // Клеймо переносится ЦЕЛИКОМ уже на первом ранге при пяти рангах: на
+      // потолке переносилось бы впятеро больше, чем было.
+      title: 'перенос метки отдаёт больше, чем было',
+      content: { ...real, talents: carryTalentWith(real, { share: 1 }) },
+      expect: [carryTalentId(real), 'больше, чем было'],
+    },
+    {
+      // Перенос метки, которую классу ветки нечем поставить: имена
+      // настоящие, ссылки целые, а талант не делает НИЧЕГО.
+      title: 'перенос метки, которую класс не вешает',
+      content: { ...real, talents: carryTalentInForeignBranch(real) },
+      expect: ['нет ни одного', 'умения, которое её вешает'],
     },
     {
       // Из ПОРЯДКА ПОКУПКИ убран венец: талант на месте, ветка цела, а путь

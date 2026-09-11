@@ -15,6 +15,8 @@ import {
   type TalentFlag,
   type TalentModifier,
   type HoundTuneField,
+  type CarryMark,
+  type ProcCondition,
   type ProcTrigger,
 } from '../data/talents'
 import { ABILITY_BY_ID } from '../data/abilities'
@@ -125,6 +127,20 @@ const PROC_TRIGGER_TEXT: Record<ProcTrigger, string> = {
   hit: 'попадание',
 }
 
+/**
+ * УСЛОВИЯ ПРОКОВ СЛОВАМИ. Запись закрыта по роду условия — и по тому же
+ * доводу, что и события: новое условие обязано получить свою строку, иначе
+ * игрок прочитает прок как безусловный.
+ */
+const PROC_WHEN_TEXT: Record<ProcCondition['kind'], (c: ProcCondition) => string> = {
+  'target-below': (c) => `по цели ниже ${pct(c.share)} здоровья`,
+}
+
+/** МЕТКИ СЛОВАМИ — для таланта переноса. Запись закрыта по `CarryMark`. */
+const CARRY_MARK_TEXT: Record<CarryMark, string> = {
+  monsterBrand: 'Клеймо',
+}
+
 
 /**
  * Текст флага собирается из ПЕЙЛОАДА таланта: число живёт в данных, а не в
@@ -165,7 +181,20 @@ export function flagText(effect: FlagEffect, resource: ResourceWords, perRank = 
         e.effect.kind === 'stat'
           ? `на ${e.effect.durationSec} с`
           : `на ${e.effect.swings} ${pluralRu(e.effect.swings, 'замах', 'замаха', 'замахов')}`
-      return `${every}${when}: +${pct(e.effect.value)} ${what} ${window}${perRank ? ' за ранг' : ''}`
+      const cond = e.when ? ` ${PROC_WHEN_TEXT[e.when.kind](e.when)}` : ''
+      return (
+        `${every}${when}${cond}: +${pct(e.effect.value)} ${what} ${window}` +
+        `${perRank ? ' за ранг' : ''}`
+      )
+    },
+    // ПЕРЕНОС МЕТКИ: доля оставшегося времени, переживающая смерть цели.
+    'carry-over': (e) => {
+      if (!('mark' in e) || !('share' in e)) return 'Метка переходит на следующую цель'
+      const what = CARRY_MARK_TEXT[e.mark]
+      return (
+        `${what} переходит на следующего противника, сохраняя ${pct(e.share)} ` +
+        `оставшегося времени${perRank ? ' за ранг' : ''}`
+      )
     },
     // Команды псу талантом: поле спутника названо словом, число — из payload.
     'hound-tune': (e) => {

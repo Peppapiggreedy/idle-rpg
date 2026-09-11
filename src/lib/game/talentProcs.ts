@@ -13,7 +13,7 @@
 // ОКНО ПРОКА В СЕЙВ НЕ ПИШЕТСЯ — как стойка, щит и метки на мобе: после
 // загрузки нет ни того боя, ни той секунды.
 import { Decimal } from './numbers'
-import { TALENTS, rankOf, type ProcBonus, type ProcTrigger } from '../data/talents'
+import { TALENTS, rankOf, type ProcBonus, type ProcCondition, type ProcTrigger } from '../data/talents'
 import { applyModifiers, type StatBlock, type StatModifier } from './stats'
 import type { GameState, TalentProcState } from './state'
 
@@ -27,7 +27,38 @@ export interface TakenProc {
   trigger: ProcTrigger
   /** На каждом N-м событии; единица — на каждом. */
   everyNth: number
+  /** Условие поля боя; без него окно открывает любое своё событие. */
+  when?: ProcCondition
   effect: ProcBonus
+}
+
+/**
+ * СОСТОЯНИЕ ПОЛЯ БОЯ, КОТОРОЕ ЧИТАЮТ УСЛОВИЯ ПРОКОВ. Отдельный тип, а не
+ * `GameState`: условие обязано быть считаемым И ТИКОМ, И МОДЕЛЬЮ, а у модели
+ * состояния нет вовсе — у неё есть только «доля боя, в которой это верно».
+ * Одна запись на все условия держит их в поле зрения друг друга.
+ */
+export interface ProcSituation {
+  /** Доля здоровья цели: 1 — целая, 0 — мертва. */
+  targetHpShare: number
+}
+
+/** Условие выполнено СЕЙЧАС — вопрос тика. */
+function conditionHolds(when: ProcCondition | undefined, at: ProcSituation): boolean {
+  if (!when) return true
+  return at.targetHpShare < when.share
+}
+
+/**
+ * ДОЛЯ БОЯ, В КОТОРОЙ УСЛОВИЕ ВЕРНО — вопрос модели.
+ *
+ * Здоровье цели падает от полного к нулю, поэтому ниже отметки `share` она
+ * проводит ровно долю `share` схватки. Это первый порядок, и он честный: темп
+ * урона по ходу боя модель и так считает постоянным.
+ */
+function conditionShare(when: ProcCondition | undefined): number {
+  if (!when) return 1
+  return Math.min(1, Math.max(0, when.share))
 }
 
 /**
@@ -47,6 +78,7 @@ export function takenProcs(ranks: Readonly<Record<string, number>>): TakenProc[]
       rank,
       trigger: effect.trigger,
       everyNth: Math.max(1, Math.round(effect.everyNth ?? 1)),
+      when: effect.when,
       effect: effect.effect,
     })
   }
@@ -83,11 +115,16 @@ export function fireProcs(
   procs: readonly TalentProcState[],
   taken: readonly TakenProc[],
   trigger: ProcTrigger,
+  situation: ProcSituation,
 ): TalentProcState[] {
   let changed = false
   const next = procs.slice()
   for (const proc of taken) {
     if (proc.trigger !== trigger) continue
+    // УСЛОВИЕ ОТСЕКАЕТ ДО ЗАРЯДОВ, А НЕ ПОСЛЕ. Иначе «Добой» копил бы заряды
+    // всю схватку и срабатывал первым же критом по добиваемой цели — то есть
+    // условие не ограничивало бы ничего.
+    if (!conditionHolds(proc.when, situation)) continue
     const at = next.findIndex((p) => p.talentId === proc.talentId)
     const current = at === -1 ? emptyState(proc.talentId) : next[at]
     const charges = current.charges + 1
@@ -181,8 +218,10 @@ export function procUptime(proc: TakenProc, stats: StatBlock): number {
   // ровно по этому признаку: попадание — каждый замах, крит — его доля.
   const perSwing = proc.trigger === 'crit' ? Math.min(1, Math.max(0, stats.critChance)) : 1
   if (perSwing <= 0) return 0
-  // Заряды режут частоту ровно во столько раз, во сколько их нужно набрать.
-  const chance = perSwing / proc.everyNth
+  // Заряды режут частоту ровно во столько раз, во сколько их нужно набрать;
+  // условие — ещё раз, на долю боя, в которой оно верно.
+  const chance = (perSwing / proc.everyNth) * conditionShare(proc.when)
+  if (chance <= 0) return 0
   if (proc.effect.kind === 'stat-swings') {
     const swings = Math.max(1, Math.round(proc.effect.swings))
     return 1 - Math.pow(1 - Math.min(1, chance), swings)

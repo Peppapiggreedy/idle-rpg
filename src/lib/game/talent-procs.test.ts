@@ -26,6 +26,11 @@ import {
 } from './talentProcs'
 import { payloadFromState, stateFromPayload } from './save'
 
+/** Целая цель: условие «ниже трети здоровья» на ней НЕ выполняется. */
+const HEALTHY = { targetHpShare: 1 }
+/** Добиваемая цель: под любым порогом из дерева. */
+const DYING = { targetHpShare: 0.01 }
+
 /** Таланты-проки, какие есть в дереве: обход явный, ветки по id нет. */
 const PROC_TALENTS = TALENTS.filter((t) => t.effect.kind === 'flag' && t.effect.flag === 'proc')
 
@@ -84,10 +89,10 @@ describe('окно открывается событием и закрывает
     // Заряды: до последнего события окно не открывается вовсе.
     let procs = [] as ReturnType<typeof fireProcs>
     for (let i = 1; i < p.everyNth; i += 1) {
-      procs = fireProcs(procs, [p], p.trigger)
+      procs = fireProcs(procs, [p], p.trigger, DYING)
       expect(isProcOpen(procs[0]), `заряд ${i}`).toBe(false)
     }
-    procs = fireProcs(procs, [p], p.trigger)
+    procs = fireProcs(procs, [p], p.trigger, DYING)
     expect(isProcOpen(procs[0])).toBe(true)
     procs = advanceProcs(procs, bonus.durationSec * 1000 - 1)
     expect(isProcOpen(procs[0])).toBe(true)
@@ -100,7 +105,7 @@ describe('окно открывается событием и закрывает
     expect(proc, 'в дереве нет прока с окном по замахам').toBeTruthy()
     const p = proc!
     const bonus = p.effect as Extract<ProcBonus, { kind: 'stat-swings' }>
-    let procs = fireProcs([], [p], p.trigger)
+    let procs = fireProcs([], [p], p.trigger, DYING)
     expect(isProcOpen(procs[0])).toBe(true)
     // ЧАС ПРОСТОЯ ОКНО ПО ЗАМАХАМ НЕ ЗАКРЫВАЕТ, и это не мелочь: тем оно и
     // отличается от окна по секундам, что подгоняется под ТЕМП, а не под часы.
@@ -113,7 +118,7 @@ describe('окно открывается событием и закрывает
   it('событие не своего рода окно не открывает', () => {
     const p = procOf(PROC_TALENTS[0].id)
     const other: ProcTrigger = p.trigger === 'crit' ? 'hit' : 'crit'
-    const procs = fireProcs([], [p], other)
+    const procs = fireProcs([], [p], other, DYING)
     expect(procs).toHaveLength(0)
   })
 
@@ -124,10 +129,10 @@ describe('окно открывается событием и закрывает
     // Прок с зарядами переоткрывается только на каждом N-м, и правило то же;
     // отдельный случай здесь нужен лишь если такой прок в дереве есть.
     if (!proc) return
-    let procs = fireProcs([], [proc], proc.trigger)
+    let procs = fireProcs([], [proc], proc.trigger, DYING)
     procs = advanceProcs(procs, 500)
     const half = procs[0].msLeft
-    procs = fireProcs(procs, [proc], proc.trigger)
+    procs = fireProcs(procs, [proc], proc.trigger, DYING)
     expect(procs[0].msLeft).toBeGreaterThan(half)
   })
 })

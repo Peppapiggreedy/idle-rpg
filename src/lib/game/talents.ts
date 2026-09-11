@@ -25,6 +25,7 @@ import {
   groupHolder,
   type BranchDef,
   type BranchId,
+  type CarryMark,
   type TalentDef,
   type TalentEffect,
   type TalentFlag,
@@ -426,6 +427,30 @@ export function restDurationMultiplier(ranks: TalentRanks): number {
 export function reviveMultiplier(state: Pick<GameState, 'talents' | 'stats'>): number {
   const fromFlag = flagPayload(state.talents, 'faster-revive')?.reviveMultiplier ?? 1
   return Math.max(0, fromFlag * (1 - Math.min(1, Math.max(0, state.stats.reviveSpeed))))
+}
+
+/**
+ * ПЕРЕНОС МЕТОК: какая доля оставшегося времени переживает смерть цели.
+ *
+ * Возвращается ЗАПИСЬ ПО МЕТКАМ, а не одно число: талантов переноса может
+ * оказаться несколько, и каждый называет свою метку. Доля множится на ранг и
+ * зажимается единицей — больше, чем было, перенести нельзя.
+ *
+ * Пустая запись значит «ни одного такого таланта», и тогда тик сносит метки
+ * ровно как сносил: правило «метка живёт на конкретном мобе» остаётся
+ * умолчанием, а талант — единственным исключением из него.
+ */
+export function carryShares(ranks: TalentRanks): Partial<Record<CarryMark, number>> {
+  const out: Partial<Record<CarryMark, number>> = {}
+  for (const talent of TALENTS) {
+    const effect = talent.effect
+    if (effect.kind !== 'flag' || effect.flag !== 'carry-over') continue
+    const rank = rankOf(ranks, talent.id)
+    if (rank <= 0) continue
+    const share = Math.min(1, Math.max(0, effect.share * rank))
+    out[effect.mark] = Math.max(out[effect.mark] ?? 0, share)
+  }
+  return out
 }
 
 /** Стая: на сколько выше урон героя, пока пёс на ногах. 0 — таланта нет. */
