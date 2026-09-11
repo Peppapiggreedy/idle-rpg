@@ -916,7 +916,15 @@ const applyMonsterAttack: TickStep = (s, ctx) => {
           })
           // МСТИТЕЛЬ (талант-флаг): падение пса открывает герою окно урона.
           // Метка своры с длительностью; повторное падение продлевает её с нуля.
-          if (avenge) avengeMark = { share: avenge.bonusShare, msLeft: avenge.durationSec * 1000 }
+          if (avenge) {
+            // ИСТОЧНИК ЭТОЙ МЕТКИ — ТАЛАНТ, а не умение: «Мститель» своего
+            // умения не имеет вовсе, и `abilityId` на ней был бы неправдой.
+            avengeMark = {
+              source: { kind: 'talent', id: 'hound-avenge' },
+              share: avenge.bonusShare,
+              msLeft: avenge.durationSec * 1000,
+            }
+          }
         }
       }
     }

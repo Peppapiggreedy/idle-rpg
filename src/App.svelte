@@ -44,6 +44,7 @@
   import TempleHud from './lib/ui/TempleHud.svelte'
   import VitalsBar from './lib/ui/VitalsBar.svelte'
   import RestRow from './lib/ui/RestRow.svelte'
+  import EffectRow from './lib/ui/EffectRow.svelte'
   import MenuButtons from './lib/ui/MenuButtons.svelte'
   import SwingIndicator from './lib/ui/SwingIndicator.svelte'
   import { IconSprite } from './lib/ui/icons'
@@ -209,6 +210,11 @@
           {:else}
             <BattleScene mini={miniScene} />
           {/if}
+          <!-- ЧТО ВИСИТ СЕЙЧАС: метки героя слева, метки цели справа. Ряд
+               стоит ПОД сценой и внутри неё же по ширине — иначе «слева» и
+               «справа» перестали бы совпадать с телами на площадке. В
+               строке-сводке его нет: одна строка значит одна строка. -->
+          <EffectRow />
           <SwingIndicator />
           <DungeonHud />
           <TempleHud />

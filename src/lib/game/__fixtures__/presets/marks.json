@@ -1,0 +1,248 @@
+{
+  "version": 36,
+  "classId": "warden",
+  "materials": {},
+  "mastery": {},
+  "knownRecipeIds": [],
+  "activePotions": [],
+  "enchantDust": "0",
+  "saveId": 909,
+  "templeRun": null,
+  "templeBestWave": 0,
+  "templeCleared": false,
+  "procCooldownsMs": {},
+  "restSpeedupSource": null,
+  "lastTimestamp": 1700000000000,
+  "inventory": [
+    {
+      "id": "item-0",
+      "name": "Ржавый Венец",
+      "rarity": "common",
+      "slot": "head",
+      "level": 32,
+      "mods": [
+        {
+          "stat": "armor",
+          "kind": "flat",
+          "value": "328",
+          "source": "equipment:head"
+        },
+        {
+          "stat": "vitality",
+          "kind": "flat",
+          "value": "36",
+          "source": "equipment:head"
+        }
+      ]
+    },
+    {
+      "id": "item-1",
+      "name": "Сумрачный Сапог",
+      "rarity": "common",
+      "slot": "legs",
+      "level": 32,
+      "mods": [
+        {
+          "stat": "armor",
+          "kind": "flat",
+          "value": "328",
+          "source": "equipment:legs"
+        },
+        {
+          "stat": "intellect",
+          "kind": "flat",
+          "value": "24",
+          "source": "equipment:legs"
+        },
+        {
+          "stat": "vitality",
+          "kind": "flat",
+          "value": "12",
+          "source": "equipment:legs"
+        }
+      ]
+    },
+    {
+      "id": "item-2",
+      "name": "Закалённый Панцирь",
+      "rarity": "common",
+      "slot": "chest",
+      "level": 32,
+      "mods": [
+        {
+          "stat": "armor",
+          "kind": "flat",
+          "value": "328",
+          "source": "equipment:chest"
+        },
+        {
+          "stat": "vitality",
+          "kind": "flat",
+          "value": "36",
+          "source": "equipment:chest"
+        }
+      ]
+    },
+    {
+      "id": "item-3",
+      "name": "Гремящий Полуторник",
+      "rarity": "uncommon",
+      "slot": "mainHand",
+      "level": 32,
+      "grip": "one",
+      "mods": [
+        {
+          "stat": "weaponSpeed",
+          "kind": "base",
+          "value": "2.2",
+          "source": "equipment:mainHand"
+        },
+        {
+          "stat": "weaponDamageMin",
+          "kind": "base",
+          "value": "82",
+          "source": "equipment:mainHand"
+        },
+        {
+          "stat": "weaponDamageMax",
+          "kind": "base",
+          "value": "164",
+          "source": "equipment:mainHand"
+        },
+        {
+          "stat": "strength",
+          "kind": "flat",
+          "value": "52",
+          "source": "equipment:mainHand"
+        }
+      ]
+    }
+  ],
+  "equipment": {
+    "mainHand": {
+      "id": "start-mainHand-bastard",
+      "name": "Полуторник",
+      "rarity": "common",
+      "slot": "mainHand",
+      "level": 1,
+      "grip": "one",
+      "mods": [
+        {
+          "stat": "weaponSpeed",
+          "kind": "base",
+          "value": "2.2",
+          "source": "equipment:mainHand"
+        },
+        {
+          "stat": "weaponDamageMin",
+          "kind": "base",
+          "value": "11",
+          "source": "equipment:mainHand"
+        },
+        {
+          "stat": "weaponDamageMax",
+          "kind": "base",
+          "value": "22",
+          "source": "equipment:mainHand"
+        },
+        {
+          "stat": "strength",
+          "kind": "flat",
+          "value": "7",
+          "source": "equipment:mainHand"
+        }
+      ]
+    },
+    "offHand": null,
+    "head": null,
+    "chest": null,
+    "hands": null,
+    "legs": null,
+    "trinket": null
+  },
+  "currentZoneId": "shepherds-meadow",
+  "lastSurvivedZoneId": null,
+  "dungeonRun": null,
+  "dungeonsCleared": {},
+  "unlockedZoneIds": {},
+  "questProgress": {
+    "done": {},
+    "counter": 0
+  },
+  "gcdMsLeft": 0,
+  "abilityCooldownsMs": {},
+  "regenDelayMsLeft": 0,
+  "restHpThreshold": 0.6,
+  "holdManaForHeal": true,
+  "resourceFloor": 0,
+  "upgradePriority": "balance",
+  "purchasedUpgradeIds": [],
+  "lootPolicy": "keep",
+  "abilitySlots": [
+    "brand",
+    "rending-wound",
+    "stance",
+    "bulwark"
+  ],
+  "abilitySettings": {
+    "quick-strike": {
+      "autocast": true,
+      "reserve": 0
+    },
+    "rending-wound": {
+      "autocast": true,
+      "reserve": 0
+    },
+    "mend-wounds": {
+      "autocast": true,
+      "reserve": 0
+    },
+    "shield-shove": {
+      "autocast": true,
+      "reserve": 0
+    },
+    "shattering-blow": {
+      "autocast": true,
+      "reserve": 0
+    },
+    "rupture": {
+      "autocast": true,
+      "reserve": 0
+    },
+    "bulwark": {
+      "autocast": true,
+      "reserve": 0
+    },
+    "mercy": {
+      "autocast": true,
+      "reserve": 0
+    },
+    "brand": {
+      "autocast": true,
+      "reserve": 0
+    },
+    "focus": {
+      "autocast": true,
+      "reserve": 0
+    },
+    "stance": {
+      "autocast": true,
+      "reserve": 0
+    }
+  },
+  "itemSeq": 32,
+  "gold": "12000",
+  "level": "32",
+  "currentXp": "3993",
+  "currentHp": "267",
+  "currentMana": "205",
+  "heroState": "alive",
+  "reviveMsLeft": 0,
+  "talents": {},
+  "treeRevision": 1,
+  "talentResets": 0,
+  "totalTicks": "0",
+  "playtimeMs": "0",
+  "abilityCasts": "0",
+  "hounds": []
+}

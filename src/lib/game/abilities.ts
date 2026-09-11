@@ -570,7 +570,11 @@ export function strikeWithAbility(
   if (ability.weaken) {
     after = {
       ...after,
-      monsterWeaken: { damageShare: ability.weaken.damageShare, hitsLeft: ability.weaken.hits },
+      monsterWeaken: {
+        source: { kind: 'ability', id: ability.id },
+        damageShare: ability.weaken.damageShare,
+        hitsLeft: ability.weaken.hits,
+      },
     }
   }
   // КЛЕЙМО. Повторное наложение обновляет метку, а не копит вторую.
@@ -578,6 +582,7 @@ export function strikeWithAbility(
     after = {
       ...after,
       monsterBrand: {
+        source: { kind: 'ability', id: ability.id },
         damageShare: ability.brand.damageShare,
         msLeft: ability.brand.durationSec * 1000,
       },
@@ -617,7 +622,11 @@ function applySelfFlags(state: GameState, ability: AbilityDef): GameState {
       ...next,
       houndMarks: {
         ...next.houndMarks,
-        haste: { share: ability.houndHaste.share, msLeft: ability.houndHaste.durationSec * 1000 },
+        haste: {
+          source: { kind: 'ability', id: ability.id },
+          share: ability.houndHaste.share,
+          msLeft: ability.houndHaste.durationSec * 1000,
+        },
       },
     }
   }
@@ -627,7 +636,11 @@ function applySelfFlags(state: GameState, ability: AbilityDef): GameState {
       ...next,
       houndMarks: {
         ...next.houndMarks,
-        recall: { share: ability.recall.healShare / seconds, msLeft: ability.recall.durationSec * 1000 },
+        recall: {
+          source: { kind: 'ability', id: ability.id },
+          share: ability.recall.healShare / seconds,
+          msLeft: ability.recall.durationSec * 1000,
+        },
       },
     }
   }
@@ -636,7 +649,11 @@ function applySelfFlags(state: GameState, ability: AbilityDef): GameState {
       ...next,
       houndMarks: {
         ...next.houndMarks,
-        grip: { share: ability.grip.slowShare, msLeft: ability.grip.durationSec * 1000 },
+        grip: {
+          source: { kind: 'ability', id: ability.id },
+          share: ability.grip.slowShare,
+          msLeft: ability.grip.durationSec * 1000,
+        },
       },
     }
   }
@@ -645,7 +662,11 @@ function applySelfFlags(state: GameState, ability: AbilityDef): GameState {
       ...next,
       houndMarks: {
         ...next.houndMarks,
-        skulk: { share: ability.skulk.redirectBonus, msLeft: ability.skulk.durationSec * 1000 },
+        skulk: {
+          source: { kind: 'ability', id: ability.id },
+          share: ability.skulk.redirectBonus,
+          msLeft: ability.skulk.durationSec * 1000,
+        },
       },
     }
   }
@@ -653,6 +674,7 @@ function applySelfFlags(state: GameState, ability: AbilityDef): GameState {
     next = {
       ...next,
       stance: {
+        source: { kind: 'ability', id: ability.id },
         damageShare: ability.stance.damageShare,
         mitigationShare: ability.stance.mitigationShare,
         msLeft: ability.stance.durationSec * 1000,
@@ -672,6 +694,7 @@ function applySelfFlags(state: GameState, ability: AbilityDef): GameState {
     next = {
       ...next,
       resolve: {
+        source: { kind: 'ability', id: ability.id },
         share: 0,
         perHitTaken: ability.resolve.perHitTaken,
         maxShare: ability.resolve.maxShare,
@@ -685,6 +708,7 @@ function applySelfFlags(state: GameState, ability: AbilityDef): GameState {
     next = {
       ...next,
       ramp: {
+        source: { kind: 'ability', id: ability.id },
         share: 0,
         perSwing: ability.ramp.perSwing,
         maxShare: ability.ramp.maxShare,
@@ -698,6 +722,7 @@ function applySelfFlags(state: GameState, ability: AbilityDef): GameState {
     next = {
       ...next,
       edge: {
+        source: { kind: 'ability', id: ability.id },
         resourceAbove: ability.edge.resourceAbove,
         damagePerShare: ability.edge.damagePerShare,
         msLeft: ability.edge.durationSec * 1000,
@@ -951,7 +976,11 @@ function absorbWithAbility(state: GameState, ability: AbilityDef): GameState {
     ...state,
     // Повторное применение ЗАМЕНЯЕТ щит, а не копит второй: иначе умение с
     // коротким откатом складывалось бы само с собой.
-    absorb: { left: pool, msLeft: ability.absorb!.durationSec * 1000 },
+    absorb: {
+      source: { kind: 'ability', id: ability.id },
+      left: pool,
+      msLeft: ability.absorb!.durationSec * 1000,
+    },
     combatLog: pushEvent(state.combatLog, {
       type: 'ability',
       abilityId: ability.id,
