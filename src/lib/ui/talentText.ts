@@ -15,6 +15,7 @@ import {
   type TalentFlag,
   type TalentModifier,
   type HoundTuneField,
+  type ProcTrigger,
 } from '../data/talents'
 import { ABILITY_BY_ID } from '../data/abilities'
 import { flatText } from './statText'
@@ -116,6 +117,16 @@ const HOUND_FIELD_NAME: Record<HoundTuneField, string> = {
 const pct = (share: number) => `${(share * 100).toFixed(0)}%`
 
 /**
+ * СОБЫТИЯ ПРОКОВ СЛОВАМИ. Запись закрыта по `ProcTrigger`: новое событие не
+ * пройдёт проверку типов, пока про него не решат, как оно читается игроку.
+ */
+const PROC_TRIGGER_TEXT: Record<ProcTrigger, string> = {
+  crit: 'крит',
+  hit: 'попадание',
+}
+
+
+/**
  * Текст флага собирается из ПЕЙЛОАДА таланта: число живёт в данных, а не в
  * подписи. Ветвления по id таланта здесь нет и быть не должно — таблица
  * закрыта по `TalentFlag`, и новый флаг не пройдёт проверку типов без строки.
@@ -143,6 +154,19 @@ export function flagText(effect: FlagEffect, resource: ResourceWords, perRank = 
       `Привал короче на ${'durationMultiplier' in e ? pct(1 - e.durationMultiplier) : '0%'}`,
     'faster-revive': (e) =>
       `Воскрешение быстрее на ${'reviveMultiplier' in e ? pct(1 - e.reviveMultiplier) : '0%'}`,
+    // ПРОК читается ОДНОЙ строкой: событие, заряды, прибавка и чем меряется
+    // окно. Числа — из payload, названия характеристик — из общего реестра.
+    proc: (e) => {
+      if (!('trigger' in e) || !('effect' in e)) return 'Событие боя даёт прибавку'
+      const every = e.everyNth && e.everyNth > 1 ? `Каждый ${e.everyNth}-й ` : ''
+      const when = PROC_TRIGGER_TEXT[e.trigger]
+      const what = statNames(resource)[e.effect.stat]
+      const window =
+        e.effect.kind === 'stat'
+          ? `на ${e.effect.durationSec} с`
+          : `на ${e.effect.swings} ${pluralRu(e.effect.swings, 'замах', 'замаха', 'замахов')}`
+      return `${every}${when}: +${pct(e.effect.value)} ${what} ${window}${perRank ? ' за ранг' : ''}`
+    },
     // Команды псу талантом: поле спутника названо словом, число — из payload.
     'hound-tune': (e) => {
       if (!('field' in e) || !('op' in e)) return 'Пёс становится сильнее'

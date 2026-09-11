@@ -1040,6 +1040,9 @@ export function stateFromPayload(p: SavePayloadV21): GameState {
     monsterWeaken: null,
     monsterBrand: null,
     stance: null,
+    // Окна проков в сейв не пишутся: после загрузки нет ни того боя, ни той
+    // секунды — как стойка, щит и метки на мобе.
+    talentProcs: [],
     freeCastsLeft: 0,
     absorb: null,
     autocastReadyMs: {},

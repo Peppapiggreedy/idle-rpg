@@ -237,8 +237,23 @@ export function advancePotions(state: GameState, dtMs: number, log = true): Game
  */
 const POTION_FREE_STATS = new WeakMap<StatBlock, StatBlock>()
 
-function potionFreeModifiers(state: GameState) {
+export function potionFreeModifiers(state: GameState) {
   return collectModifiers(state).filter((m) => !m.source.startsWith(POTION_SOURCE_PREFIX))
+}
+
+/**
+ * Модификаторы модели РУЧНОЙ игры: без выпитого сейчас, но с планируемым
+ * зельем. Тот же список, из которого собирается `statsWithPotionPlan`, —
+ * наружу он нужен модели, которой поверх него надо заменить окна проков их
+ * средней долей.
+ */
+export function potionPlanModifiers(state: GameState) {
+  const recipe = plannedPotion(state)
+  if (!recipe) return potionFreeModifiers(state)
+  return [
+    ...potionFreeModifiers(state),
+    ...potionModifiers([{ recipeId: recipe.id }], POTION_TARGET_UPTIME),
+  ]
 }
 
 /**
@@ -284,10 +299,7 @@ export function plannedPotion(state: GameState): PotionRecipe | null {
 export function statsWithPotionPlan(state: GameState): StatBlock {
   const recipe = plannedPotion(state)
   if (!recipe) return statsWithoutPotions(state)
-  return applyModifiers([
-    ...potionFreeModifiers(state),
-    ...potionModifiers([{ recipeId: recipe.id }], POTION_TARGET_UPTIME),
-  ])
+  return applyModifiers(potionPlanModifiers(state))
 }
 
 // ---------------------------------------------------------------------------

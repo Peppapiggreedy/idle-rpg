@@ -32,6 +32,7 @@ import { talentModifiers } from '../data/talents'
 import { potionModifiers } from '../data/recipes'
 import { enchantModifiers } from '../data/enchants'
 import { classById } from '../data/classes'
+import { procModifiers } from './talentProcs'
 
 // Модифицируемые статы. swingTime сюда НЕ входит намеренно: это производная
 // величина, её нельзя модифицировать напрямую — только через weaponSpeed/haste.
@@ -293,6 +294,11 @@ export function collectModifiers(state: GameState): StatModifier[] {
   mods.push(...potionModifiers(state.activePotions ?? []))
   // Разворот атрибутов — ПОСЛЕДНИМ: он читает всё собранное выше.
   mods.push(...attributeModifiers(mods))
+  // ПРОКИ — ОБЫЧНЫЕ МОДИФИКАТОРЫ, пока их окно открыто. Через конвейер их
+  // видят все разом: тик, модель, оффлайн, обе оси и раскладка статов; мимо
+  // конвейера прок был бы виден только тику, и оффлайн врал бы на его
+  // величину. Источник называет талант — игрок читает, откуда число.
+  for (const mod of procModifiers(state)) mods.push(mod)
   return mods
 }
 

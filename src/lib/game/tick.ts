@@ -31,6 +31,8 @@ import {
   rollSwing,
 } from './combat'
 import type { Rng } from './rng'
+import { advanceProcs, fireProcs, spendProcSwing, takenProcs } from './talentProcs'
+import type { ProcTrigger as TalentProcTrigger } from '../data/talents'
 import { pushEvent, spawnMonster, type ActiveEffect, type GameState } from './state'
 import { ensureStats } from './stats'
 import { emit as busEmit } from './events'
@@ -154,6 +156,15 @@ interface TickContext {
   hitsTaken: number
   /** Голова лога на входе в тик: по ней считается, что нового объявлено. */
   logHead: CombatEvent | null
+  /**
+   * СОБЫТИЯ, НА КОТОРЫЕ ОТКЛИКАЮТСЯ ТАЛАНТЫ-ПРОКИ, за этот тик.
+   *
+   * Копятся списком, а не применяются на месте, и это ОДНА точка вместо
+   * восьми: крит бывает у обеих рук и у каждого умения, полученный удар — у
+   * каждого замаха моба. Разложи применение по местам — и девятое место
+   * когда-нибудь забудут, а заметить это можно будет только замером.
+   */
+  procEvents: TalentProcTrigger[]
 }
 
 type TickStep = (state: GameState, ctx: TickContext) => GameState
@@ -1175,6 +1186,33 @@ const applyLethalCheck: TickStep = (s, ctx) =>
  */
 const applyHerbGather: TickStep = (s, ctx) => gatherHerbs(s, ctx.dtMs)
 
+/**
+ * ТАЛАНТЫ-ПРОКИ: окна по времени тикают, окна по замахам тратятся, события
+ * тика открывают новые.
+ *
+ * ПОРЯДОК ВНУТРИ ШАГА ВАЖЕН. Сперва тикают старые окна, потом тратятся
+ * замахи, и только потом открываются новые: иначе окно, открытое критом
+ * ЭТОГО тика, тут же потеряло бы замах, которым оно и было открыто.
+ *
+ * СОБЫТИЙ ДВА — крит и попадание, — и отбирала их МОДЕЛЬ, а не тик. Тик умеет
+ * поднять и «получил удар», и «заблокировал», и «убил»; модель не умеет
+ * посчитать долю времени такого окна из одних статов, а прок, невидимый
+ * модели, ломал бы правило «оффлайн ≤ автокаст» молча. Причина записана
+ * рядом со списком — `ProcTrigger` в `data/talents.ts`.
+ */
+const applyTalentProcs: TickStep = (s, ctx) => {
+  const taken = takenProcs(s.talents)
+  let procs = advanceProcs(s.talentProcs, ctx.dtMs)
+  if (taken.length > 0) {
+    for (let i = 0; i < ctx.swingsDealt; i += 1) procs = spendProcSwing(procs)
+    for (const trigger of ctx.procEvents) procs = fireProcs(procs, taken, trigger)
+  }
+  if (procs === s.talentProcs) return s
+  // Окно открылось или закрылось — статы пересчитываются: прибавка прока
+  // идёт ОБЫЧНЫМ модификатором конвейера, и другого пути у неё нет.
+  return { ...s, talentProcs: procs, statsDirty: true }
+}
+
 const PIPELINE: TickStep[] = [
   applyRevive,
   applyRest,
@@ -1192,6 +1230,9 @@ const PIPELINE: TickStep[] = [
   // героя (ctx.swingsDealt), а укус ударом героя не считается.
   applyHoundCombat,
   applyProcs,
+  // Таланты-проки — ПОСЛЕ всех ударов тика и ДО эффектов: к этому месту
+  // известны и замахи героя, и убийство.
+  applyTalentProcs,
   applyEffects,
   applyKillRewards,
   applyLevelUps,
@@ -1229,6 +1270,16 @@ export function tick(
     dtMs,
     rng,
     emitAttack: (event) => {
+      // СОБЫТИЯ ПРОКОВ СНИМАЮТСЯ С ТОЙ ЖЕ ШИНЫ, что кормит цифры на экране:
+      // отдельного счётчика ради талантов в тик не добавлено. Укусы пса и
+      // тики урона по времени ударами героя не считаются — ни для ресурса,
+      // ни для проков.
+      const heroSwing =
+        event.sourceId === 'hero' && !event.overTime && !event.procId && !event.companion
+      if (heroSwing) {
+        ctx.procEvents.push('hit')
+        if (event.isCrit) ctx.procEvents.push('crit')
+      }
       // Удар по псу — не удар по герою: доля запаса за него не капает.
       if (event.targetId === 'hero') ctx.hitsTaken += 1
       // Тики урона по времени и удары ПРОКОВ ударами не считаются: ресурс
@@ -1244,6 +1295,7 @@ export function tick(
     swingsDealt: 0,
     logHead: state.combatLog[0] ?? null,
     hitsTaken: 0,
+    procEvents: [],
   }
   // Кеш статов: пересчёт только если источники менялись с прошлого тика.
   let s: GameState = {

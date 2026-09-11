@@ -36,6 +36,17 @@ import type {
 // Сколько последних событий боя храним для лога на экране.
 export const COMBAT_LOG_SIZE = 8
 
+/** Окно одного прока: время, замахи и набранные заряды. */
+export interface TalentProcState {
+  talentId: string
+  /** Миллисекунд окна; ноль — окно по времени закрыто. */
+  msLeft: number
+  /** Замахов окна; ноль — окно по замахам закрыто. */
+  swingsLeft: number
+  /** Набрано зарядов к следующему срабатыванию. */
+  charges: number
+}
+
 export interface GameState {
   /** Класс героя. Выбирается при новой игре и не меняется никогда. */
   classId: string
@@ -125,6 +136,15 @@ export interface GameState {
    * БЕСПЛАТНЫЕ ПРИМЕНЕНИЯ: сколько ближайших умений не стоят ресурса.
    * Обычный счётчик, а не Decimal: это штуки, и их единицы.
    */
+  /**
+   * ОКНА ПРОКОВ. По записи на взятый талант-прок: сколько миллисекунд или
+   * замахов окно ещё держится и сколько зарядов набрано.
+   *
+   * В СЕЙВ НЕ ПИШЕТСЯ — как стойка, щит и метки на мобе: после загрузки нет
+   * ни того боя, ни той секунды. Пустой список у героя без проков — и ни
+   * одного лишнего действия в тике.
+   */
+  talentProcs: TalentProcState[]
   freeCastsLeft: number
   /**
    * ОКНО БЕСПЛАТНЫХ УМЕНИЙ: сколько миллисекунд умения не стоят ничего.
@@ -736,6 +756,7 @@ export function createInitialState(
     monsterWeaken: null,
     monsterBrand: null,
     stance: null,
+    talentProcs: [],
     freeCastsLeft: 0,
     freeCastsMsLeft: 0,
     resolve: null,

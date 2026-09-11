@@ -49,7 +49,13 @@ import {
   packTacticsShare,
   houndAvenge,
 } from './talents'
-import { statsWithPotionPlan, statsWithoutPotions } from './potions'
+import {
+  potionFreeModifiers,
+  potionPlanModifiers,
+  statsWithPotionPlan,
+  statsWithoutPotions,
+} from './potions'
+import { statsForModel } from './talentProcs'
 import { PROC_BY_ID, type ProcDef } from '../data/procs'
 import { SLOT_IDS } from '../data/slots'
 import { NO_HOUND_TUNE, houndModel, isHoundCommand, upHounds, type HoundModel, type HoundTune } from './hound'
@@ -1199,7 +1205,14 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
   // 'autocastByHand' они ВЫЧИЩАЮТСЯ, даже если склянка выпита прямо сейчас, —
   // иначе прибавка уехала бы в оффлайн (он считается по 'auto') и правило
   // «оффлайн <= автокаст <= ручная игра» сломалось бы молча.
-  const modelled = plan.potions ? statsWithPotionPlan(state) : statsWithoutPotions(state)
+  // ОКНА ПРОКОВ МОДЕЛЬ ЗАМЕНЯЕТ ИХ СРЕДНЕЙ ДОЛЕЙ. Без подмены оценка зависела
+  // бы от того, в какую миллисекунду её позвали: прогноз зоны прыгал бы в
+  // бою, а сравнение предметов меняло бы ответ между двумя ударами. У героя
+  // без проков возвращается ТОТ ЖЕ объект статов, бит в бит.
+  const withPotions = plan.potions ? statsWithPotionPlan(state) : statsWithoutPotions(state)
+  const modelled = statsForModel(state, withPotions, () =>
+    plan.potions ? potionPlanModifiers(state) : potionFreeModifiers(state),
+  )
   // Подменяем статы В КОПИИ состояния: всё, что ниже (resourceIncome,
   // resourcePause, damagePerKill), читает их оттуда, и второго пути нет.
   const s: GameState = modelled === state.stats ? state : { ...state, stats: modelled }

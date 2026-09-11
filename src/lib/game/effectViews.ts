@@ -34,6 +34,8 @@ export type EffectKind =
   | 'hound-grip'
   | 'hound-skulk'
   | 'hound-avenge'
+  // Окно таланта-прока: открыто событием боя, держится временем или замахами.
+  | 'proc'
 
 /** На ком висит метка. Берётся из ПОЛЯ состояния, а не из самой записи. */
 export type EffectTarget = 'hero' | 'monster'
@@ -68,6 +70,20 @@ export function effectViews(state: GameState): EffectView[] {
   const out: EffectView[] = []
   const hero = (v: Omit<EffectView, 'target'>) => out.push({ ...v, target: 'hero' })
   const monster = (v: Omit<EffectView, 'target'>) => out.push({ ...v, target: 'monster' })
+
+  // ПРОКИ ТАЛАНТОВ — тоже метки героя, и стоят первыми: они открываются чаще
+  // всех остального и в бою читаются как «сейчас идёт». Источник — ТАЛАНТ:
+  // своего умения у прока нет, и значок с именем берутся у него.
+  for (const proc of state.talentProcs) {
+    if (proc.msLeft <= 0 && proc.swingsLeft <= 0) continue
+    hero({
+      kind: 'proc',
+      source: { kind: 'talent', id: proc.talentId },
+      // Ровно одно из двух: окно по времени читается секундами, окно по
+      // замахам — счётчиком. Показать оба значило бы обещать, что кончатся оба.
+      ...(proc.msLeft > 0 ? { msLeft: proc.msLeft } : { charges: proc.swingsLeft }),
+    })
+  }
 
   // ГЕРОЙ: щит, стойка, упор, разгон, грань, бесплатные применения.
   if (state.absorb && state.absorb.left.gt(0)) {

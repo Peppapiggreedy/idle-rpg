@@ -4458,6 +4458,75 @@ function checkTalentTuneDuplicates(content: Content, report: Report): void {
   }
 }
 
+/**
+ * ПРОК ХОДИТ ЧЕРЕЗ ТОТ ЖЕ КОНВЕЙЕР, ЗНАЧИТ ПОДЧИНЯЕТСЯ ТЕМ ЖЕ ПРАВИЛАМ.
+ *
+ * Прибавка прока — обычный модификатор конвейера статов с `kind: 'flat'`,
+ * просто включённый на несколько секунд или замахов. Значит `TALENT_STAT_RULE`
+ * обязано действовать и на неё: иначе прок был бы ЛАЗЕЙКОЙ ВОКРУГ ПРАВИЛА —
+ * «+5 силы на восемь секунд» проходило бы там, где «+5 силы» запрещено, и
+ * запрет держался бы только на форме записи.
+ *
+ * ТРИ ПРОВЕРКИ, И ВСЕ ТРИ О ТОМ ЖЕ:
+ *  1. базовая характеристика проку закрыта, как и модификатору;
+ *  2. плоская прибавка к растущему стату закрыта, как и модификатору
+ *     (у прока `kind` только `flat` — процента у него нет вовсе);
+ *  3. настройка игрока закрыта совсем: порог привала, сдвинутый на восемь
+ *     секунд, читался бы как поломка ползунка.
+ *
+ * ЧЕТВЁРТАЯ — ПРО ВЕЛИЧИНУ: окно нулевой длины и прибавка в ноль. Прок,
+ * который ничего не делает, тише мёртвого таланта: он ЕСТЬ на экране, ранг у
+ * него растёт, а в конвейер уходит ноль.
+ */
+function checkProcTalents(content: Content, report: Report): void {
+  for (const talent of content.talents) {
+    const effect = talent.effect
+    if (effect.kind !== 'flag' || effect.flag !== 'proc') continue
+    const where = `талант ${talent.id}`
+    const rule = talentRule(effect.effect.stat)
+    if (rule === 'attribute') {
+      report.add(
+        where,
+        `прок даёт «${effect.effect.stat}» — одну из четырёх БАЗОВЫХ ` +
+          'характеристик: проку они закрыты ровно так же, как модификатору, ' +
+          'иначе временная прибавка была бы лазейкой вокруг правила ' +
+          '(TALENT_STAT_RULE в data/talents.ts)',
+      )
+    }
+    if (rule === 'setting') {
+      report.add(
+        where,
+        `прок двигает «${effect.effect.stat}» — это НАСТРОЙКА ИГРОКА, а не ` +
+          'характеристика: игрок поставил её ползунком и ждёт, что игра ей ' +
+          'следует (TALENT_STAT_RULE в data/talents.ts)',
+      )
+    }
+    if (rule === 'scaling') {
+      report.add(
+        where,
+        `прок даёт ПЛОСКУЮ прибавку к «${effect.effect.stat}» — стат растёт от ` +
+          'уровня и снаряжения, и плоское число к сотому уровню становится шумом; ' +
+          'у прока процента нет вовсе, значит такой стат ему закрыт ' +
+          '(TALENT_STAT_RULE в data/talents.ts)',
+      )
+    }
+    const window =
+      effect.effect.kind === 'stat-swings' ? effect.effect.swings : effect.effect.durationSec
+    report.need(
+      effect.effect.value > 0 && window > 0,
+      where,
+      'прок с нулевой прибавкой или нулевым окном не делает НИЧЕГО, а ранг у ' +
+        'него растёт и очки за него берут (data/talents.ts)',
+    )
+    report.need(
+      (effect.everyNth ?? 1) >= 1 && Number.isInteger(effect.everyNth ?? 1),
+      where,
+      `«everyNth» = ${effect.everyNth}: заряды считаются штуками, и меньше ` +
+        'одного их не бывает (data/talents.ts)',
+    )
+  }
+}
+
 function checkTalentOwnership(content: Content, report: Report): void {
   for (const talent of content.talents) {
     const abilityId = tunedAbilityId(talent)
@@ -4606,6 +4675,7 @@ export function checkContent(content: Content): ContentIssue[] {
   checkTalentTunes(content, report)
   checkTalentOwnership(content, report)
   checkTalentTuneDuplicates(content, report)
+  checkProcTalents(content, report)
   checkTalentArrows(content, report)
   checkBranchCapstones(content, report)
   checkTuneFloors(content, report)

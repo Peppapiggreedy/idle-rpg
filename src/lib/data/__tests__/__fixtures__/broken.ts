@@ -53,6 +53,36 @@ function withoutCapstone(real: Content) {
  * Пути ПЕРВОЙ ветки без венца в порядке покупки: сам талант на месте, но
  * очередь до него не доходит. Ломается ровно то, что проверка и стережёт.
  */
+/** Первый талант-прок дерева: на нём и проверяются правила проков. */
+function procTalent(real: Content) {
+  const found = real.talents.find((t) => t.effect.kind === 'flag' && t.effect.flag === 'proc')
+  if (!found) throw new Error('в дереве нет ни одного прока — образцы поломок мерить не на чем')
+  return found
+}
+
+function procTalentId(real: Content) {
+  return procTalent(real).id
+}
+
+/**
+ * Тот же прок с подменёнными полями прибавки. Подменяются ИМЕНОВАННО, а не
+ * целым объектом: образец обязан отличаться от настоящего дерева ровно одним
+ * полем, иначе непонятно, на что сработала проверка.
+ */
+function procTalentWith(
+  real: Content,
+  fields: { stat?: string; durationSec?: number; swings?: number },
+): TalentDef[] {
+  const talent = procTalent(real)
+  const effect = talent.effect as { kind: 'flag'; flag: 'proc'; effect: Record<string, unknown> }
+  return patch(real.talents, talent.id, {
+    effect: {
+      ...effect,
+      effect: { ...effect.effect, ...fields },
+    },
+  } as unknown as Partial<TalentDef>)
+}
+
 function pathsWithoutCapstone(real: Content) {
   const branchId = real.branches[0].id
   const rows = real.talents.filter((t) => t.branch === branchId).map((t) => t.row)
@@ -1955,6 +1985,38 @@ export function brokenCases(): BrokenCase[] {
         } as Partial<TalentDef>),
       },
       expect: [foreignTunedTalent(real).talent.id, 'не делает НИЧЕГО'],
+    },
+    {
+      // Прок раздаёт СИЛУ. Модификатору это запрещено прямо, а проку — только
+      // если правило додумали до конца: прибавка прока идёт тем же плоским
+      // модификатором конвейера, просто на восемь секунд. Не проверь это — и
+      // «+5 силы на окно» проходило бы там, где «+5 силы» не проходит.
+      title: 'прок даёт базовую характеристику',
+      content: { ...real, talents: procTalentWith(real, { stat: 'strength' }) },
+      expect: [procTalentId(real), 'БАЗОВЫХ'],
+    },
+    {
+      // Прок двигает ПОРОГ ПРИВАЛА: на экране у игрока 60 %, а герой уходит
+      // отдыхать на 72 % — восемь секунд из каждых двадцати. Ползунок в этот
+      // момент читается как поломка.
+      title: 'прок двигает настройку игрока',
+      content: { ...real, talents: procTalentWith(real, { stat: 'restThreshold' }) },
+      expect: [procTalentId(real), 'НАСТРОЙКА ИГРОКА'],
+    },
+    {
+      // Прок даёт плоскую силу атаки: к сотому уровню прибавка становится
+      // шумом, а очко стоит столько же. Процента у прока нет вовсе, значит
+      // такой стат ему закрыт целиком.
+      title: 'прок даёт плоскую прибавку к растущему стату',
+      content: { ...real, talents: procTalentWith(real, { stat: 'attackPower' }) },
+      expect: [procTalentId(real), 'ПЛОСКУЮ'],
+    },
+    {
+      // Окно нулевой длины: талант есть, ранг растёт, очки берутся, а в
+      // конвейер уходит ноль. Тише мёртвого таланта — тот хотя бы виден.
+      title: 'у прока нулевое окно',
+      content: { ...real, talents: procTalentWith(real, { durationSec: 0, swings: 0 }) },
+      expect: [procTalentId(real), 'не делает НИЧЕГО'],
     },
     {
       // Из ПОРЯДКА ПОКУПКИ убран венец: талант на месте, ветка цела, а путь
