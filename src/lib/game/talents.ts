@@ -29,6 +29,8 @@ import {
   type TalentDef,
   type TalentEffect,
   type TalentFlag,
+  flagsInTree,
+  talentsWithFlag,
 } from '../data/talents'
 import {
   TALENT_FIRST_LEVEL,
@@ -309,9 +311,13 @@ export function resetTalents(state: GameState): GameState {
 /** Поднятые флаги: талант-флаг включается с первого же ранга. */
 export function talentFlags(ranks: TalentRanks): Set<TalentFlag> {
   const flags = new Set<TalentFlag>()
-  for (const talent of TALENTS) {
-    if (talent.effect.kind !== 'flag') continue
-    if (rankOf(ranks, talent.id) > 0) flags.add(talent.effect.flag)
+  for (const flag of flagsInTree()) {
+    for (const talent of talentsWithFlag(flag)) {
+      if (rankOf(ranks, talent.id) > 0) {
+        flags.add(flag)
+        break
+      }
+    }
   }
   return flags
 }
@@ -332,7 +338,10 @@ export function flagPayload<F extends TalentFlag>(
   ranks: TalentRanks,
   flag: F,
 ): Extract<TalentEffect, { kind: 'flag'; flag: F }> | null {
-  for (const talent of TALENTS) {
+  // Индекс по флагу, а не обход дерева: это САМЫЙ ЧАСТЫЙ вопрос логики к
+  // дереву — его задают привал, реген, ускорение, крит, пёс и десяток других
+  // мест, и задают на каждом тике (см. `talentsWithFlag`).
+  for (const talent of talentsWithFlag(flag)) {
     const effect = talent.effect
     if (effect.kind !== 'flag' || effect.flag !== flag) continue
     if (rankOf(ranks, talent.id) <= 0) continue
@@ -442,7 +451,9 @@ export function reviveMultiplier(state: Pick<GameState, 'talents' | 'stats'>): n
  */
 export function carryShares(ranks: TalentRanks): Partial<Record<CarryMark, number>> {
   const out: Partial<Record<CarryMark, number>> = {}
-  for (const talent of TALENTS) {
+  // Индекс по флагу, а не обход дерева: зовётся на каждый тик и на каждый
+  // расчёт модели (см. `talentsWithFlag`).
+  for (const talent of talentsWithFlag('carry-over')) {
     const effect = talent.effect
     if (effect.kind !== 'flag' || effect.flag !== 'carry-over') continue
     const rank = rankOf(ranks, talent.id)

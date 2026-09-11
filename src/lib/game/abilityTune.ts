@@ -27,7 +27,7 @@ import {
   type AbilityTune,
   type AbilityTuneField,
 } from '../data/abilities'
-import { TALENTS, rankOf } from '../data/talents'
+import { TALENTS, rankOf, talentsWithFlag} from '../data/talents'
 import { boonTunes } from '../data/boons'
 import { talentAbilityEffect, type TalentRanks } from './talents'
 
@@ -53,7 +53,9 @@ const EMPTY: Accum = { points: 0, percent: 0, multiplier: 1, set: null }
  * работает как работал.
  */
 function replacementFor(def: AbilityDef, ranks: TalentRanks): AbilityDef {
-  for (const talent of TALENTS) {
+  // Спрашивается это на КАЖДОЕ умение КАЖДОГО тика, поэтому берётся индекс по
+  // флагу, а не обход дерева: см. `talentsWithFlag`.
+  for (const talent of talentsWithFlag('replace-ability')) {
     const effect = talent.effect
     if (effect.kind !== 'flag' || effect.flag !== 'replace-ability') continue
     if (effect.from !== def.id) continue

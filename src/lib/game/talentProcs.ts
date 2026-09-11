@@ -13,7 +13,7 @@
 // ОКНО ПРОКА В СЕЙВ НЕ ПИШЕТСЯ — как стойка, щит и метки на мобе: после
 // загрузки нет ни того боя, ни той секунды.
 import { Decimal } from './numbers'
-import { TALENTS, rankOf, type ProcBonus, type ProcCondition, type ProcTrigger } from '../data/talents'
+import { TALENTS, rankOf, type ProcBonus, type ProcCondition, type ProcTrigger, talentsWithFlag} from '../data/talents'
 import { applyModifiers, type StatBlock, type StatModifier } from './stats'
 import type { GameState, TalentProcState } from './state'
 
@@ -68,7 +68,9 @@ function conditionShare(when: ProcCondition | undefined): number {
  */
 export function takenProcs(ranks: Readonly<Record<string, number>>): TakenProc[] {
   const out: TakenProc[] = []
-  for (const talent of TALENTS) {
+  // Индекс по флагу, а не обход дерева: зовётся на каждый тик и из конвейера
+  // статов (см. `talentsWithFlag`).
+  for (const talent of talentsWithFlag('proc')) {
     const effect = talent.effect
     if (effect.kind !== 'flag' || effect.flag !== 'proc') continue
     const rank = rankOf(ranks, talent.id)

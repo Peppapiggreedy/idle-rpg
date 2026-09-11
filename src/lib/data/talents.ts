@@ -3644,6 +3644,57 @@ export function talentsInBranch(branchId: BranchId): TalentDef[] {
   return TALENTS.filter((t) => t.branch === branchId).sort((a, b) => a.row - b.row)
 }
 
+/**
+ * ТАЛАНТЫ С ДАННЫМ ФЛАГОМ — ОДНИМ ИНДЕКСОМ, А НЕ ОБХОДОМ ДЕРЕВА КАЖДЫЙ РАЗ.
+ *
+ * Логика спрашивает «у кого флаг X» в горячем пути: замена умения решается на
+ * КАЖДОЕ умение КАЖДОГО тика, проки и перенос метки — на каждый тик. Обходом
+ * это двести пятьдесят с лишним талантов на вызов, и платит его даже герой без
+ * единого очка: ранг проверяется последним, а цикл идёт целиком. Замер — тик
+ * подорожал в 1.40 раза (2999 -> 4209 мс на получасе игрового времени), и
+ * четыре теста оффлайна перестали укладываться в срок на CI.
+ *
+ * Индекс строится по СТАТИЧЕСКИМ ДАННЫМ и потому считается один раз. Ранги
+ * героя в него не входят вовсе — они проверяются у тех немногих талантов,
+ * которые флаг несут.
+ *
+ * ПЕРЕСТРАИВАЕТСЯ ОН ПО ДЛИНЕ `TALENTS`, и это не перестраховка: наборы
+ * поломанных данных дописывают в дерево свои таланты прямо в прогоне
+ * (`talents.test.ts`, `abilityTune.test.ts`), и индекс, построенный один раз
+ * навсегда, отдавал бы им дерево без их же таланта. Кеш, который не умеет
+ * протухать, — это второй источник правды рядом с данными.
+ */
+const FLAG_INDEX = new Map<TalentFlag, TalentDef[]>()
+let flagIndexSize = -1
+const NO_TALENTS: readonly TalentDef[] = []
+
+function flagIndex(): ReadonlyMap<TalentFlag, TalentDef[]> {
+  if (flagIndexSize !== TALENTS.length) {
+    FLAG_INDEX.clear()
+    for (const talent of TALENTS) {
+      if (talent.effect.kind !== 'flag') continue
+      const list = FLAG_INDEX.get(talent.effect.flag)
+      if (list) list.push(talent)
+      else FLAG_INDEX.set(talent.effect.flag, [talent])
+    }
+    flagIndexSize = TALENTS.length
+  }
+  return FLAG_INDEX
+}
+
+export function talentsWithFlag(flag: TalentFlag): readonly TalentDef[] {
+  return flagIndex().get(flag) ?? NO_TALENTS
+}
+
+/**
+ * Флаги, которые В ДЕРЕВЕ ВООБЩЕ ЕСТЬ, — для тех, кто спрашивает «а какие
+ * подняты». Список берётся из самого дерева, а не пишется рядом вторым
+ * перечнем: второй перечень разъехался бы с данными на первом новом флаге.
+ */
+export function flagsInTree(): Iterable<TalentFlag> {
+  return flagIndex().keys()
+}
+
 /** Ветки класса в порядке колонок на экране. */
 export function branchesOfClass(classId: string): BranchDef[] {
   return BRANCHES.filter((b) => b.classId === classId)
