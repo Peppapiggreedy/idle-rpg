@@ -221,6 +221,24 @@ for (const width of SECTION_WIDTHS) {
   })
 }
 
+// РЯД МЕТОК ПОД СЦЕНОЙ — СВОЙ ПРЕСЕТ И СВОИ ДВА СНИМКА. Метки в сейв не
+// пишутся: они висят секунду боя. Поэтому «пресет с эффектами» — это пресет,
+// у которого в ряду стоят одни меточные умения, а состояние берётся после
+// `SCREENSHOT_TICKS` тиков с фиксированным сидом. Доля запаса под это
+// подобрана прогоном (см. `presets/build.ts`): на 0.50 висит и на герое, и
+// на цели, на 0.55 — только на герое.
+for (const width of SECTION_WIDTHS) {
+  test(`метки на герое и на цели @ ${width}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 })
+    await openPreset(page, 'marks', true)
+    // Обе группы на месте: без них снимок был бы про пустую полосу.
+    await expect(page.locator('[data-effects-hero] .mark').first()).toBeVisible()
+    await expect(page.locator('[data-effects-target] .mark').first()).toBeVisible()
+    const name = `effects-${width}`
+    expect(await capture(page, name)).toMatchSnapshot(`${name}.png`)
+  })
+}
+
 test('кукла с подсвеченным слотом во время выбора', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 })
   await openPreset(page, 'rich', true)
