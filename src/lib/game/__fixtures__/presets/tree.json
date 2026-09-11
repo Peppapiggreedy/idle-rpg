@@ -137,7 +137,11 @@
   "talents": {
     "wrath-honed-edge": 5,
     "wrath-deep-cut": 3,
-    "wrath-savage-blows": 5
+    "wrath-savage-blows": 5,
+    "wrath-keen-eye": 5,
+    "wrath-open-vein": 2,
+    "wrath-frenzy": 2,
+    "wrath-rupture": 1
   },
   "treeRevision": 2,
   "talentResets": 0,
