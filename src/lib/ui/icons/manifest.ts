@@ -272,6 +272,18 @@ export const ICONS = {
   'stat-manaRegen': { file: 'delapouite/star-formation.svg', author: 'Delapouite' },
   'stat-damageReduction': { file: 'lorc/bordered-shield.svg', author: 'Lorc' },
   'stat-armor': { file: 'delapouite/abdominal-armor.svg', author: 'Delapouite' },
+  // Одиннадцать характеристик, заведённых вместе с машинерией дерева.
+  'stat-doubleStrike': { file: 'lorc/double-shot.svg', author: 'Lorc' },
+  'stat-dodge': { file: 'lorc/dodging.svg', author: 'Lorc' },
+  'stat-reviveSpeed': { file: 'lorc/wingfoot.svg', author: 'Lorc' },
+  'stat-houndMaxHp': { file: 'lorc/heart-bottle.svg', author: 'Lorc' },
+  'stat-houndHpRegen': { file: 'delapouite/healing.svg', author: 'Delapouite' },
+  'stat-houndAttackPower': { file: 'lorc/bestial-fangs.svg', author: 'Lorc' },
+  'stat-houndCritChance': { file: 'lorc/pretty-fangs.svg', author: 'Lorc' },
+  'stat-houndArmor': { file: 'lorc/leather-vest.svg', author: 'Lorc' },
+  'stat-houndDodge': { file: 'lorc/tread.svg', author: 'Lorc' },
+  'stat-houndReviveSpeed': { file: 'lorc/wolf-howl.svg', author: 'Lorc' },
+  'stat-redirectShare': { file: 'lorc/interleaved-arrows.svg', author: 'Lorc' },
   'stat-swingTime': { file: 'lorc/hourglass.svg', author: 'Lorc' },
   // Левая рука и щит. Своя иконка у КАЖДОГО стата: в панели статов они стоят
   // рядом со статами правой руки, и повтор картинки читался бы как ошибка.

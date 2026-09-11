@@ -65,6 +65,17 @@ export function statNames(resource: ResourceWords): Record<StatId, string> {
     hpRegenOutOfCombat: 'восстановления здоровья вне боя',
     manaRegen: `восстановления ${resource.genitive}`,
     damageReduction: 'снижения урона',
+    doubleStrike: 'шанса двойного удара',
+    dodge: 'уворота',
+    reviveSpeed: 'скорости подъёма',
+    houndMaxHp: 'запаса пса',
+    houndHpRegen: 'восстановления пса',
+    houndAttackPower: 'силы укуса',
+    houndCritChance: 'шанса крита пса',
+    houndArmor: 'брони пса',
+    houndDodge: 'уворота пса',
+    houndReviveSpeed: 'скорости возврата пса',
+    redirectShare: 'доли пса во входящем',
   }
 }
 

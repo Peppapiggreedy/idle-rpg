@@ -424,6 +424,22 @@ export const TALENT_STAT_RULE: Record<StatId, TalentStatRule> = {
   hpRegenOutOfCombat: 'scaling',
   manaRegen: 'scaling',
   armor: 'scaling',
+  // ОДИННАДЦАТЬ НОВЫХ — ВСЕ `share`, И ЭТО РЕШЕНИЕ, А НЕ УМОЛЧАНИЕ. Род
+  // `scaling` означает «растёт от снаряжения и уровня, поэтому плоская
+  // прибавка отстаёт»; у этих одиннадцати расти нечему — они САМИ прибавки,
+  // с базой ноль. Процент от нуля дал бы ноль, а плоская прибавка к доле и
+  // ЕСТЬ процент: «+3 % шанса» стоит одинаково на двадцатом уровне и на сотом.
+  doubleStrike: 'share',
+  dodge: 'share',
+  reviveSpeed: 'share',
+  houndMaxHp: 'share',
+  houndHpRegen: 'share',
+  houndAttackPower: 'share',
+  houndCritChance: 'share',
+  houndArmor: 'share',
+  houndDodge: 'share',
+  houndReviveSpeed: 'share',
+  redirectShare: 'share',
 }
 
 /**
@@ -706,13 +722,26 @@ const WARDEN_WRATH = branch('warden-wrath', [
       effect: mods(m('attackPower', 'percent', 0.007728)),
     },
     {
-      // 0.0078167 = 0.00469 × 5 / 3.
-      id: 'wrath-light-blade',
-      name: 'Лёгкость клинка',
-      icon: 'talent-frenzy',
+      // ЗДЕСЬ ДОЛЖЕН БЫЛ СТОЯТЬ «ПРОБОЙНИК» — ПРОБИВАНИЕ БРОНИ, И ЕГО НЕТ.
+      //
+      // У мобов брони нет вовсе: `MonsterRole` — это hpMult, damageMult,
+      // goldMult, xpMult и swingTime, а исходящий урон героя не смягчается
+      // ничем (`rollSwing` кладётся в полоску как есть). Пробивать нечего, и
+      // характеристика была бы мёртвой — тем самым узлом, который проходит
+      // все проверки и не делает ничего. Завести её можно только вместе с
+      // бронёй у мобов, а это правка МИРА, которую ночь про одну ветку
+      // делать не должна.
+      //
+      // Место занял «Частый росчерк» — вторая автоатака ДОЛЕЙ. Он же
+      // показывает, зачем характеристика нужна рядом с флагом: на этом же
+      // этаже стоит «Двойной росчерк», и оба складываются в одном месте
+      // (`doubleStrikeChance`), а не считаются дважды.
+      id: 'wrath-quick-flourish',
+      name: 'Частый росчерк',
+      icon: 'talent-double-strike',
       maxRank: 3,
       col: 2,
-      effect: mods(m('haste', 'flat', 0.0078167)),
+      effect: mods(m('doubleStrike', 'flat', 0.01)),
     },
     {
       id: 'wrath-cold-blood',
@@ -3518,7 +3547,7 @@ const BRANCH_PATHS: Partial<Record<BranchId, TalentPath[]>> = {
         'wrath-firm-grip',
         'wrath-precision',
         'wrath-open-vein',
-        'wrath-light-blade',
+        'wrath-quick-flourish',
         'wrath-heavy-swing',
         'wrath-true-aim',
         'wrath-cold-blood',
@@ -3556,7 +3585,7 @@ const BRANCH_PATHS: Partial<Record<BranchId, TalentPath[]>> = {
         'wrath-cold-blood',
         'wrath-frenzy',
         'wrath-momentum',
-        'wrath-light-blade',
+        'wrath-quick-flourish',
         'wrath-deep-brand',
         'wrath-long-focus',
         'wrath-firm-hand',

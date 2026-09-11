@@ -82,7 +82,7 @@ import {
  */
 function heroDies(state: GameState, rng: Rng): GameState {
   // Талант «Скорое возвращение» режет простой; множитель живёт в данных.
-  const reviveMs = REVIVE_DELAY_MS * reviveMultiplier(state.talents)
+  const reviveMs = REVIVE_DELAY_MS * reviveMultiplier(state)
   const dead: GameState = {
     ...state,
     heroState: 'dead',
@@ -366,7 +366,7 @@ const applyCombat: TickStep = (s, ctx) => {
     // сделать состояние класса свойством связки оружия.
     swung = { ...swung, ramp: grownRamp(swung) }
     for (
-      let i = extraSwings(doubleStrikeChance(swung.talents), ctx.rng);
+      let i = extraSwings(doubleStrikeChance(swung), ctx.rng);
       i > 0 && ctx.killedMonster === null;
       i -= 1
     ) {
@@ -677,7 +677,7 @@ const applyOffhandCombat: TickStep = (s, ctx) => {
     })
     if (hpLeft.lte(0)) ctx.killedMonster = monster
     for (
-      let i = extraSwings(doubleStrikeChance(s.talents), ctx.rng);
+      let i = extraSwings(doubleStrikeChance(s), ctx.rng);
       i > 0 && ctx.killedMonster === null;
       i -= 1
     ) {
@@ -891,7 +891,7 @@ const applyMonsterAttack: TickStep = (s, ctx) => {
     // адресата. Сумма частей равна удару. Пёс, у которого здоровье кончилось,
     // ложится на свой таймер — и журнал говорит об этом отдельной строкой.
     if (companion) {
-      const split = redirectToHounds(hounds, amount, companion)
+      const split = redirectToHounds(hounds, amount, companion, s.stats, ctx.rng)
       if (split.index !== -1) {
         hounds = split.hounds
         amount = split.heroPart
@@ -991,7 +991,7 @@ const applyMonsterAttack: TickStep = (s, ctx) => {
   if (!died) return next
   // Смерть героя: 30 игровых секунд простоя, награды не капают.
   // Талант «Скорое возвращение» режет простой; множитель живёт в данных.
-  const reviveMs = REVIVE_DELAY_MS * reviveMultiplier(next.talents)
+  const reviveMs = REVIVE_DELAY_MS * reviveMultiplier(next)
   const dead: GameState = {
     ...next,
     heroState: 'dead',

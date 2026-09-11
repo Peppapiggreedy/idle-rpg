@@ -249,6 +249,21 @@ export const ITEM_STAT_GRAIN: Record<StatId, 'whole' | 'fraction'> = {
   hpRegenOutOfCombat: 'fraction',
   manaRegen: 'fraction',
   damageReduction: 'fraction',
+  // ОДИННАДЦАТЬ ДОЛЕЙ — все дробные: шанс, доля и «насколько быстрее» штуками
+  // не считаются. Ни одна из них сегодня не выпадает на вещах, но запись
+  // закрыта по StatId, и решить про зерно надо всё равно — иначе новая
+  // характеристика прошла бы мимо правила молча.
+  doubleStrike: 'fraction',
+  dodge: 'fraction',
+  reviveSpeed: 'fraction',
+  houndMaxHp: 'fraction',
+  houndHpRegen: 'fraction',
+  houndAttackPower: 'fraction',
+  houndCritChance: 'fraction',
+  houndArmor: 'fraction',
+  houndDodge: 'fraction',
+  houndReviveSpeed: 'fraction',
+  redirectShare: 'fraction',
 }
 
 /**

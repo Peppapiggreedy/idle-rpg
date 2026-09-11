@@ -224,6 +224,11 @@ export function rollMonsterDamage(
   rng: Rng,
   damageMultiplier = 1,
 ): Decimal {
+  // УВОРОТ ПЕРВЫМ, И ЭТО НЕ ПОРЯДОК РАДИ ПОРЯДКА. Уворот — не смягчение:
+  // удар не проходит ВОВСЕ, и смягчать после него нечего. Бросок делается
+  // только когда уворот есть: лишний вызов rng сдвинул бы поток у всех, у
+  // кого этой характеристики нет, то есть у всей сегодняшней игры.
+  if (stats.dodge > 0 && rng() < stats.dodge) return new Decimal(0)
   const raw = randRange(rng, monster.damageMin, monster.damageMax)
   return raw
     .times(damageMultiplier)
@@ -249,11 +254,16 @@ export function expectedMonsterDamage(
   stats: StatBlock,
   heroLevel: number,
 ): Decimal {
+  // УВОРОТ — ДОЛЯ УДАРОВ, КОТОРЫХ НЕ БЫЛО. В матожидании это множитель
+  // (1 − dodge) на самый верх: пропущенный удар не смягчается и не блокируется,
+  // его просто нет. В тике это бросок, здесь — его среднее, и другого способа
+  // свести одно с другим нет.
   const incoming = monster.damageMin
     .plus(monster.damageMax)
     .div(2)
     .times(levelGapDamageMult(heroLevel, monster.level))
     .times(1 - mitigationShare(stats, heroLevel))
+    .times(1 - Math.min(1, Math.max(0, stats.dodge)))
   if (stats.blockChance <= 0 || stats.blockValue.lte(0)) return incoming
   return incoming.minus(Decimal.min(stats.blockValue, incoming).times(stats.blockChance))
 }
@@ -1239,7 +1249,7 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
   // умений герой ни жал, «столько бьёт этот меч» не меняется. Этим числом
   // сравниваются предметы, и на нём держится инвариант нормализации скорости.
   // Автоатака — это ОБЕ руки: у каждой свой таймер и свой урон за удар.
-  const doubleChance = doubleStrikeChance(s.talents)
+  const doubleChance = doubleStrikeChance(s)
   const procs = equippedProcs(s)
   const autoDps = autoDamagePerSecond(stats, doubleChance)
   const avgIncoming = expectedMonsterDamage(s.monster, stats, s.level.toNumber())

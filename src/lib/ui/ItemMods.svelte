@@ -46,6 +46,17 @@
     hpRegenOutOfCombat: 'восст. здоровья (отдых)',
     manaRegen: `восст. ${resource.genitive}`,
     damageReduction: 'снижение урона',
+    doubleStrike: 'двойной удар',
+    dodge: 'уворот',
+    reviveSpeed: 'скорость подъёма',
+    houndMaxHp: 'запас пса',
+    houndHpRegen: 'восст. пса',
+    houndAttackPower: 'сила укуса',
+    houndCritChance: 'крит пса',
+    houndArmor: 'броня пса',
+    houndDodge: 'уворот пса',
+    houndReviveSpeed: 'возврат пса',
+    redirectShare: 'доля пса во входящем',
   })
   function line(mod: StatModifier): string {
     const name = NAMES[mod.stat]

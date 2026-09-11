@@ -367,9 +367,25 @@ export function talentExtraCharges(ranks: TalentRanks, abilityId: string): numbe
   return extra
 }
 
-/** Шанс, что автоатака бьёт дважды. 0 — таланта нет, бросок не делается вовсе. */
-export function doubleStrikeChance(ranks: TalentRanks): number {
-  return flagPayload(ranks, 'double-strike')?.chance ?? 0
+/**
+ * ШАНС ВТОРОЙ АВТОАТАКИ — ОДНО ЧИСЛО ИЗ ДВУХ ИСТОЧНИКОВ, И СКЛАДЫВАЮТСЯ ОНИ
+ * ЗДЕСЬ, В ЕДИНСТВЕННОМ МЕСТЕ.
+ *
+ * Механизма два: старый флаг `double-strike` (талант-переключатель, ранга у
+ * него нет — взят или нет) и новая характеристика `doubleStrike` (доля,
+ * проходит конвейер статов, значит может прийти и с вещи, и с зачарования, и
+ * с зелья). Заменить флаг статом было бы чище, но флаг висит на КЛЮЧЕВОМ
+ * таланте, а ключевому модификаторы конвейера запрещены схемой — правило
+ * «на ключевом этаже поведение, а не число» пришлось бы ломать ради чистоты.
+ *
+ * Поэтому они СЛАГАЕМЫЕ, и сложение живёт в одной функции: ни тик, ни модель
+ * к флагу и стату по отдельности не обращаются. Доля зажата единицей —
+ * «двести процентов второй атаки» это третья атака, а её механизма нет.
+ * Ноль — бросок не делается вовсе.
+ */
+export function doubleStrikeChance(state: Pick<GameState, 'talents' | 'stats'>): number {
+  const fromFlag = flagPayload(state.talents, 'double-strike')?.chance ?? 0
+  return Math.min(1, Math.max(0, fromFlag + state.stats.doubleStrike))
 }
 
 /** Какая доля ПОГЛОЩЁННОГО щитом урона уходит обратно в атакующего. */
@@ -397,9 +413,19 @@ export function restDurationMultiplier(ranks: TalentRanks): number {
   return flagPayload(ranks, 'shorter-rest')?.durationMultiplier ?? 1
 }
 
-/** Множитель времени воскрешения от талантов (1 — без изменений). */
-export function reviveMultiplier(ranks: TalentRanks): number {
-  return flagPayload(ranks, 'faster-revive')?.reviveMultiplier ?? 1
+/**
+ * МНОЖИТЕЛЬ ВРЕМЕНИ ПОДЪЁМА — тоже одно число из двух источников, и по той же
+ * причине, что у второй атаки: флаг `faster-revive` висит на ключевом
+ * таланте Оплота, а `reviveSpeed` — обычная доля конвейера.
+ *
+ * Складываются они МУЛЬТИПЛИКАТИВНО, а не сложением: «вдвое быстрее» и «ещё
+ * на треть быстрее» — это две трети от половины, а не ноль. Сложением два
+ * источника легко увели бы время подъёма в ноль, то есть смерть перестала бы
+ * стоить чего бы то ни было.
+ */
+export function reviveMultiplier(state: Pick<GameState, 'talents' | 'stats'>): number {
+  const fromFlag = flagPayload(state.talents, 'faster-revive')?.reviveMultiplier ?? 1
+  return Math.max(0, fromFlag * (1 - Math.min(1, Math.max(0, state.stats.reviveSpeed))))
 }
 
 /** Стая: на сколько выше урон героя, пока пёс на ногах. 0 — таланта нет. */

@@ -639,9 +639,9 @@ describe('эффекты талантов', () => {
 
   it('второй поворот ветки живучести сокращает простой после смерти', () => {
     const s = hero(LEVEL_CAP)
-    expect(reviveMultiplier(s.talents)).toBe(1)
+    expect(reviveMultiplier(s)).toBe(1)
     const swift = reachTalent(s, talentsInBranch(BULWARK).find((t) => t.row === keyRowsOf(BULWARK)[1])!.id)
-    expect(reviveMultiplier(swift.talents)).toBeLessThan(1)
+    expect(reviveMultiplier(swift)).toBeLessThan(1)
 
     // Проверяем на живом тике: герой с нулевым HP уходит в простой.
     // Порог привала снят намеренно — тест про воскрешение, а с порогом герой
@@ -659,7 +659,7 @@ describe('эффекты талантов', () => {
       dead = tick(dead, STEP_MS, () => 1, () => {})
     }
     expect(dead.heroState).toBe('dead')
-    const expected = REVIVE_DELAY_MS * reviveMultiplier(swift.talents)
+    const expected = REVIVE_DELAY_MS * reviveMultiplier(swift)
     expect(dead.reviveMsLeft).toBeLessThanOrEqual(expected)
     expect(dead.reviveMsLeft).toBeGreaterThan(expected * 0.8)
     // Лог называет УРЕЗАННЫЙ срок, а не константу: иначе талант куплен,

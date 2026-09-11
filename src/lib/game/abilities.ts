@@ -243,7 +243,7 @@ export function commandsHound(ability: AbilityDef): boolean {
  * кнопку — лишний пёс уходит (тик подрезает список до ёмкости).
  */
 export function houndCapacity(
-  state: Pick<GameState, 'classId' | 'abilitySlots' | 'level' | 'talents' | 'equipment'>,
+  state: Pick<GameState, 'classId' | 'abilitySlots' | 'level' | 'talents' | 'equipment' | 'stats'>,
 ): number {
   const def = companionOf(state)
   if (!def) return 0
