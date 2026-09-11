@@ -61,6 +61,7 @@ import {
   advanceHounds,
   companionOf,
   freshHounds,
+  houndMaxHp,
   isHoundUp,
   redirectToHounds,
   rollHoundBite,
@@ -715,10 +716,29 @@ const applyHoundTimers: TickStep = (s, ctx) => {
   // проверка здесь вместо правки каждого места, где моб умирает или выходит.
   const grip =
     s.houndMarks.grip && (s.respawnMsLeft > 0 || s.monster.currentHp.lte(0)) ? null : s.houndMarks.grip
-  // СВОРА НЕ БОЛЬШЕ ЁМКОСТИ РЯДА: снял кнопку зова — лишний пёс уходит.
+  // СВОРА РАВНА ЁМКОСТИ РЯДА — В ОБЕ СТОРОНЫ. Снял кнопку зова, и лишний
+  // пёс уходит; поставил — недостающий приходит целым, сам, следующим тиком.
+  //
+  // ВТОРАЯ ПОЛОВИНА ЭТОГО ПРАВИЛА ПОЯВИЛАСЬ ВМЕСТЕ С ПАССИВНОЙ «СВОРОЙ».
+  // Раньше ёмкость давал ряд, а пса приводило НАЖАТИЕ: подрезка работала, а
+  // пополнение — нет, и после смерти героя (свежий комплект — это `count`
+  // класса, а не ёмкость) пса приходилось звать заново. Умение, которое
+  // «работает, пока стоит в ряду», обязано работать и после смерти.
   const capacity = houndCapacity(s)
   const advanced = advanceHounds(s, ctx.dtMs, inCombat)
-  const hounds = advanced.hounds.length > capacity ? advanced.hounds.slice(0, capacity) : advanced.hounds
+  const hounds =
+    advanced.hounds.length > capacity
+      ? advanced.hounds.slice(0, capacity)
+      : advanced.hounds.length < capacity
+        ? [
+            ...advanced.hounds,
+            ...Array.from({ length: capacity - advanced.hounds.length }, () => ({
+              hp: houndMaxHp(s),
+              swing: 0,
+              downMsLeft: 0,
+            })),
+          ]
+        : advanced.hounds
   if (hounds === s.hounds && grip === s.houndMarks.grip) return s
   let combatLog = s.combatLog
   for (let i = 0; i < advanced.returned; i += 1) combatLog = pushEvent(combatLog, { type: 'hound-return' })

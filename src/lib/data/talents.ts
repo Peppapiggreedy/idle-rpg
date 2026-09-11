@@ -3225,12 +3225,25 @@ const HOUNDMASTER_TRAIL = branch('houndmaster-trail', [
       effect: mods(m('restDuration', 'percent', -0.04)),
     },
     {
-      id: 'trail-cheap-pack',
-      name: 'Лёгкий зов',
+      // БЫЛ «ЛЁГКИЙ ЗОВ» — СКИДКА НА «СВОРУ», И ОН УМЕР ВМЕСТЕ С ЕЁ ЦЕНОЙ.
+      // «Свора» стала пассивной, её цена — ноль, а процент от нуля есть ноль:
+      // талант проходил бы все ссылочные проверки и не делал РОВНО НИЧЕГО.
+      // Ловит это `checkTalentTunes` (TUNE_NEEDS.manaCost требует цены), и
+      // поймал он это сразу — то есть правило работает ровно так, как
+      // задумано: тихая поломка дерева стала громкой.
+      //
+      // НА ЕГО МЕСТЕ — СКИДКА НА ПОДСЕЧКУ, единственное умение класса, цены
+      // которого «Тропа» ещё не касалась (откат ей режет «Частая подсечка»
+      // этажом выше). Ставка ВТРОЕ МЕНЬШЕ соседей по ветке (-0.03 против
+      // -0.06…-0.10) нарочно: те режут цену умений с откатом в 14–45 секунд,
+      // а подсечка жмётся раз в две секунды — та же доля стоила бы на порядок
+      // дороже в энергии за минуту.
+      id: 'trail-cheap-undercut',
+      name: 'Лёгкая подсечка',
       icon: 'talent-unbroken-focus',
       maxRank: 5,
       col: 3,
-      effect: tunes('pack', { field: 'manaCost', kind: 'percent', value: -0.08 }),
+      effect: tunes('undercut', { field: 'manaCost', kind: 'percent', value: -0.03 }),
     },
   ],
   [
@@ -4082,7 +4095,7 @@ const BRANCH_PATHS: Partial<Record<BranchId, TalentPath[]>> = {
         'trail-cheap-flurry',
         'trail-cheap-unleash',
         'trail-cheap-skulk',
-        'trail-cheap-pack',
+        'trail-cheap-undercut',
       ],
     },
     {
@@ -4117,7 +4130,7 @@ const BRANCH_PATHS: Partial<Record<BranchId, TalentPath[]>> = {
         'trail-cheap-rally',
         'trail-short-halt',
         'trail-cheap-skulk',
-        'trail-cheap-pack',
+        'trail-cheap-undercut',
       ],
     },
   ],

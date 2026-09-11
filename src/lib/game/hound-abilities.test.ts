@@ -18,7 +18,7 @@ import {
   useAbility,
 } from './abilities'
 import { estimateCombatRate } from './combat'
-import { activeCompanion, companionOf, houndMaxHp, isHoundUp, upHounds } from './hound'
+import { activeCompanion, companionOf, freshHounds, houndMaxHp, isHoundUp, upHounds } from './hound'
 import { averageGear } from './simulate'
 import { payloadFromState, stateFromPayload } from './save'
 import { ABILITY_BY_ID } from '../data/abilities'
@@ -262,27 +262,41 @@ describe('оклик', () => {
 })
 
 describe('свора', () => {
-  it('второй пёс, пока кнопка в ряду; зов при полной своре — отказ; снял кнопку — пёс ушёл', () => {
+  // «СВОРА» ПАССИВНА: её не нажимают, и пёс приходит ТИКОМ до ёмкости ряда.
+  // Проверяется это в обе стороны — поставил кнопку, пёс пришёл; снял, ушёл.
+  it('второй пёс приходит сам, пока кнопка в ряду; снял кнопку — пёс ушёл', () => {
     const without = hero(['undercut'])
     expect(houndCapacity(without)).toBe(1)
-    expect(abilityStatus({ ...without, abilitySlots: ['pack', null, null, null] }, ABILITY_BY_ID.pack).usable).toBe(true)
     const s = hero(['pack'])
     expect(houndCapacity(s)).toBe(2)
-    const called = useAbility(s, 'pack', NO_LUCK, () => {})
+    // Нажатие не нужно и не проходит: отказ отдельным кодом, а не «откат».
+    expect(abilityStatus(s, ABILITY_BY_ID.pack).usable).toBe(false)
+    expect(abilityStatus(s, ABILITY_BY_ID.pack).reason).toBe('passive')
+    expect(useAbility(s, 'pack', NO_LUCK, () => {})).toBe(s)
+    // Пёс приходит сам, первым же тиком, и приходит целым.
+    const called = tick(s, STEP_MS, NO_LUCK, () => {})
     expect(called.hounds).toHaveLength(2)
     expect(upHounds(called)).toHaveLength(2)
-    // Откат снят нарочно: проверяется отказ по своре, а не по откату.
-    const ready = { ...called, abilityCooldownsMs: {}, abilityCharges: {}, gcdMsLeft: 0 }
-    expect(abilityStatus(ready, ABILITY_BY_ID.pack).reason).toBe('pack-full')
-    // Автокаст зовёт ОДИН раз: при полной своре умение не кандидат.
-    expect(autocastCandidates(s).map((a) => a.id)).toContain('pack')
-    expect(autocastCandidates(ready).map((a) => a.id)).not.toContain('pack')
+    // Пассивное умение автокаст не жмёт — ни пустой сворой, ни полной.
+    expect(autocastCandidates(s).map((a) => a.id)).not.toContain('pack')
+    expect(autocastCandidates(called).map((a) => a.id)).not.toContain('pack')
     const unslotted = tick({ ...called, abilitySlots: [null, null, null, null] }, STEP_MS, NO_LUCK, () => {})
     expect(unslotted.hounds).toHaveLength(1)
   })
 
+  it('пассивная свора возвращает пса и после смерти героя', () => {
+    // Свежий комплект после смерти — это `count` КЛАССА, а не ёмкость ряда:
+    // без пополнения тиком второго пса приходилось бы звать заново, то есть
+    // «работает, пока стоит в ряду» переставало быть правдой ровно один раз
+    // за жизнь и навсегда.
+    const s = hero(['pack'])
+    const revived = { ...s, hounds: freshHounds(s) }
+    expect(revived.hounds).toHaveLength(1)
+    expect(tick(revived, STEP_MS, NO_LUCK, () => {}).hounds).toHaveLength(2)
+  })
+
   it('свора переживает сейв', () => {
-    const called = useAbility(hero(['pack']), 'pack', NO_LUCK, () => {})
+    const called = tick(hero(['pack']), STEP_MS, NO_LUCK, () => {})
     const loaded = stateFromPayload(payloadFromState(called, 0))
     expect(loaded.hounds).toHaveLength(2)
   })

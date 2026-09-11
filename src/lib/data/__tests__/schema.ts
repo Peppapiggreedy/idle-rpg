@@ -248,6 +248,17 @@ export interface NumberRule<T> {
   /** Строгое сравнение с min: значение обязано быть БОЛЬШЕ него. */
   exclusiveMin?: boolean
   integer?: boolean
+  /**
+   * Запись, к которой диапазон НЕ ПРИМЕНЯЕТСЯ ВОВСЕ, — и это не поблажка, а
+   * другой вид сущности. Сейчас такая одна: у ПАССИВНОГО умения нулевой откат
+   * не «умение без ограничений», а определение пассивности; свои четыре нуля
+   * оно проходит отдельной проверкой, где ноль ТРЕБУЕТСЯ.
+   *
+   * Исключение обязано быть выражено этим полем, а не мягким диапазоном:
+   * опустив `exclusiveMin` ради одной записи, мы разрешили бы нулевой откат
+   * ВСЕМ, и бесплатное умение с нулевым откатом проехало бы молча.
+   */
+  skip?: (entity: T) => boolean
   /** Почему такой диапазон — уходит в текст замечания. */
   why?: string
 }
@@ -375,6 +386,7 @@ function checkNumber<T>(
 ): void {
   const raw = rule.get(entity)
   const value = toNumber(raw)
+  if (rule.skip?.(entity)) return
   // Каждое замечание заканчивается адресом: почему так и где чинить.
   // Без файла в тексте починка превращается в поиск по репозиторию.
   const tail = `${rule.why ? ` (${rule.why})` : ''} — ${file}`
@@ -407,6 +419,16 @@ function checkNumber<T>(
 const idsOf = <T>(list: readonly T[], id: (e: T) => string | undefined): Set<string> =>
   new Set(list.map(id).filter((v): v is string => typeof v === 'string'))
 
+/**
+ * ЧЕМ ПАССИВНОЕ УМЕНИЕ РАБОТАЕТ. Список ЗАКРЫТ и назван поимённо: пассивность
+ * — это флаг, который читают ПО РЯДУ, а не по нажатию. Сейчас такой ровно
+ * один: `pack` — ёмкость своры считает `houndCapacity` по слотам.
+ *
+ * Новый пассивный флаг обязан появиться здесь, иначе умение с четырьмя нулями
+ * пройдёт проверку молча и займёт один из четырёх слотов, не делая ничего.
+ */
+const PASSIVE_FLAGS = ['pack'] as const satisfies readonly (keyof AbilityDef)[]
+
 /** Команда псу без удара героя: поддержка, которой можно бить нулём. */
 function houndSupport(a: AbilityDef): boolean {
   return Boolean(a.recall || a.houndHeal || a.unleash || a.skulk || a.rally || a.pack)
@@ -433,6 +455,9 @@ export const ABILITY_SCHEMA: EntitySchema<AbilityDef> = {
       get: (a) => a.cooldownSec,
       min: 0,
       exclusiveMin: true,
+      // ПАССИВНОЕ НЕ НАЖИМАЮТ — ограничивать нечего. Ноль у него не дырка, а
+      // требование: его проверяет свой блок ниже, в обе стороны.
+      skip: (a) => a.type === 'passive',
       why: 'нулевой кулдаун означал бы умение без ограничений',
     },
     {
@@ -451,10 +476,43 @@ export const ABILITY_SCHEMA: EntitySchema<AbilityDef> = {
   ],
   extra: (ability, _content, report) => {
     const where = `умение ${ability.id}`
-    // ЛЕЧЕНИЕ — флаг с payload'ом: бьёт нулём, лечит долей запаса, только
-    // мгновенное (в очередь на замах лечение не встаёт), порог автокаста —
-    // доля запаса. Боевое умение без флага обязано бить.
-    if (ability.heal) {
+    // ТРЕТИЙ СЛУЧАЙ ПРАВИЛА «БОЕВОЕ ОБЯЗАНО БИТЬ» — ПАССИВНОЕ, И ОНО НЕ БЬЁТ
+    // НИКОГДА. Пассивность — это форма ЦЕЛИКОМ, а не одно поле `type`:
+    // четыре нуля обязаны стоять вместе. Умение, у которого есть цена, откат
+    // или общая задержка, НАЖИМАЮТ — и обещание «работает само, пока стоит
+    // в ряду» становится неправдой ровно в том месте, где игрок ему поверил.
+    //
+    // Пятое требование — чтобы пассивное вообще ЧТО-ТО делало: пассивность
+    // работает флагом, читаемым по ряду, и список таких флагов назван
+    // ПОИМЁННО (`PASSIVE_FLAGS`). Умение без такого флага — четыре нуля и
+    // ничего больше, то есть пустая кнопка в ряду из четырёх мест.
+    if (ability.type === 'passive') {
+      report.need(
+        toNumber(ability.manaCost) === 0,
+        where,
+        'пассивное умение не стоит ресурса: manaCost обязан быть нулём (data/abilities.ts)',
+      )
+      report.need(
+        ability.cooldownSec === 0,
+        where,
+        'пассивное умение не нажимают — откату неоткуда взяться: cooldownSec обязан быть нулём (data/abilities.ts)',
+      )
+      report.need(
+        toNumber(ability.weaponDamagePercent) === 0,
+        where,
+        'пассивное умение не бьёт: weaponDamagePercent обязан быть нулём (data/abilities.ts)',
+      )
+      report.need(
+        ability.triggersGcd === false,
+        where,
+        'пассивное умение не тратит общую задержку: triggersGcd обязан быть false (data/abilities.ts)',
+      )
+      report.need(
+        PASSIVE_FLAGS.some((flag) => ability[flag] !== undefined),
+        where,
+        `пассивное умение обязано что-то делать флагом, читаемым по ряду (${PASSIVE_FLAGS.join(', ')}) — иначе это пустая кнопка (data/abilities.ts)`,
+      )
+    } else if (ability.heal) {
       report.need(
         ability.type === 'instant',
         where,

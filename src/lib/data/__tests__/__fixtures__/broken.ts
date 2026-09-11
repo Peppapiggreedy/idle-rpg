@@ -266,6 +266,41 @@ export function brokenCases(): BrokenCase[] {
       },
       expect: ['mend-wounds', 'мгновенным'],
     },
+    // ПАССИВНОЕ — ЧЕТЫРЕ НУЛЯ ВМЕСТЕ, и каждый из них проверен своим
+    // образцом: правило, у которого проверена только одна половина, молча
+    // пропускает вторую.
+    {
+      title: 'пассивное умение стоит ресурса',
+      content: {
+        ...real,
+        abilities: patch(real.abilities, 'pack', { manaCost: new Decimal(50) }),
+      },
+      expect: ['pack', 'manaCost'],
+    },
+    {
+      title: 'пассивное умение с откатом',
+      content: { ...real, abilities: patch(real.abilities, 'pack', { cooldownSec: 30 }) },
+      expect: ['pack', 'cooldownSec'],
+    },
+    {
+      title: 'пассивное умение бьёт',
+      content: {
+        ...real,
+        abilities: patch(real.abilities, 'pack', { weaponDamagePercent: new Decimal(1.2) }),
+      },
+      expect: ['pack', 'weaponDamagePercent'],
+    },
+    {
+      title: 'пассивное умение тратит общую задержку',
+      content: { ...real, abilities: patch(real.abilities, 'pack', { triggersGcd: true }) },
+      expect: ['pack', 'triggersGcd'],
+    },
+    {
+      // ПУСТАЯ КНОПКА: четыре нуля есть, а делать нечего.
+      title: 'пассивное умение без пассивного флага',
+      content: { ...real, abilities: patch(real.abilities, 'pack', { pack: undefined }) },
+      expect: ['pack', 'флагом'],
+    },
     {
       // СТОЙКА НАОБОРОТ — законна, а стойка «в обе стороны хорошо» — нет.
       title: 'стойка усиливает и урон, и защиту разом',

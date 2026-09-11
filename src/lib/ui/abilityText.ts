@@ -33,7 +33,9 @@ export function abilityReasonText(
     // его падения или снятия кнопки зова.
     'no-hound': 'Пёс не на ногах — командовать некому',
     'no-fallen-hound': 'Все псы на ногах — окликать некого',
-    'pack-full': 'Свора полна: больше псов ряд не держит',
+    // ПАССИВНОЕ НЕ «НЕЛЬЗЯ», А «НЕ НУЖНО»: оно уже работает тем, что стоит
+    // в ряду, и ждать игроку нечего.
+    passive: 'Работает само, пока стоит в ряду — нажимать не нужно',
   }
   if (reason === 'locked') return `Откроется на ${unlockLevel} уровне`
   // ВОРОТА ПО ПОЛОСКЕ. Оба отказа НАЗЫВАЮТ РЕСУРС ПО ИМЕНИ КЛАССА и говорят,
@@ -172,11 +174,20 @@ function plural(n: number, one: string, few: string, many: string): string {
 export function abilityLines(ability: AbilityDef, ctx: AbilityTextContext): string[] {
   const lines: string[] = []
 
+  // 0. ПАССИВНОЕ ГОВОРИТ ЭТО ПЕРВЫМ СЛОВОМ, и дальше у него нет ни цены, ни
+  //    отката, ни строки «бьёт сразу»: всех трёх у него нет по определению.
+  //    Строка «0 энергии · откат 0 с» формально была бы правдой и при этом
+  //    враньём по смыслу — она описывает кнопку, которую жмут.
+  const passive = ability.type === 'passive'
+  if (passive) lines.push('Работает само, пока стоит в ряду действий — нажимать не нужно')
+
   // 1. ЦЕНА И ОТКАТ — всегда первыми: по ним умение и выбирают в ротацию.
-  const cost = ability.manaCost.lte(0)
-    ? 'Ничего не стоит'
-    : `${formatNumber(ability.manaCost)} ${ctx.resource.genitive}`
-  lines.push(`${cost} · откат ${sec(ability.cooldownSec)}`)
+  if (!passive) {
+    const cost = ability.manaCost.lte(0)
+      ? 'Ничего не стоит'
+      : `${formatNumber(ability.manaCost)} ${ctx.resource.genitive}`
+    lines.push(`${cost} · откат ${sec(ability.cooldownSec)}`)
+  }
 
   // 2. ЧТО ДЕЛАЕТ. Лечащее умение бьёт нулём — про урон ему писать нечего.
   if (ability.heal) {
@@ -197,13 +208,15 @@ export function abilityLines(ability: AbilityDef, ctx: AbilityTextContext): stri
   //    Общую задержку тратит не «мгновенное», а `triggersGcd`: у базовых
   //    умений это одно и то же, но талант, сделавший умение мгновенным,
   //    задержку ему не вешает — и книга не должна обещать цену, которой нет.
-  lines.push(
-    ability.type === 'onNextSwing'
-      ? `Заменяет следующую автоатаку; ${ctx.resource.genitive} спишется в момент удара`
-      : ability.triggersGcd
-        ? 'Бьёт сразу, тратит общую задержку'
-        : 'Бьёт сразу, общей задержки не тратит',
-  )
+  if (!passive) {
+    lines.push(
+      ability.type === 'onNextSwing'
+        ? `Заменяет следующую автоатаку; ${ctx.resource.genitive} спишется в момент удара`
+        : ability.triggersGcd
+          ? 'Бьёт сразу, тратит общую задержку'
+          : 'Бьёт сразу, общей задержки не тратит',
+    )
+  }
 
   // 4. ЭФФЕКТЫ ПО ФЛАГАМ. Каждый флаг описывает СВОЙ payload — ни одно число
   //    не вписано в текст руками.
@@ -386,9 +399,7 @@ export function abilityLines(ability: AbilityDef, ctx: AbilityTextContext): stri
   }
   if (ability.pack) {
     const n = Math.max(0, Math.round(ability.pack.extraHounds))
-    lines.push(
-      n === 1 ? 'Зовёт ещё одного пса, пока кнопка в ряду' : `Зовёт ещё ${n} псов, пока кнопка в ряду`,
-    )
+    lines.push(n === 1 ? 'С тобой ещё один пёс' : `С тобой ещё ${n} псов`)
   }
   if (ability.autocast?.houndHpBelow !== undefined) {
     lines.push(`Автокаст жмёт, пока пёс ниже ${pct(ability.autocast.houndHpBelow)} здоровья`)

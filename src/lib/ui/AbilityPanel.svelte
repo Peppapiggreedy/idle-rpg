@@ -72,8 +72,16 @@
         <div class="head">
           <span class="order">{i + 1}.</span>
           <span class="name">{ability.name}</span>
-          <Tag tone="xp" label="{formatNumber(ability.manaCost)} {resource.genitive}" />
-          <Tag label="кулдаун {ability.cooldownSec}с" />
+          <!-- ПАССИВНОМУ ЗДЕСЬ НЕЧЕГО ПОКАЗЫВАТЬ: ни цены, ни отката у него
+               нет, а «0 энергии · кулдаун 0с» описывало бы кнопку, которую
+               жмут. Вместо двух ярлыков — один, называющий вещь своим
+               именем. -->
+          {#if ability.type === 'passive'}
+            <Tag label="пассивное" />
+          {:else}
+            <Tag tone="xp" label="{formatNumber(ability.manaCost)} {resource.genitive}" />
+            <Tag label="кулдаун {ability.cooldownSec}с" />
+          {/if}
           <span class="arrows">
             <Button
               size="sm"
@@ -96,14 +104,21 @@
         <!-- ОПИСАНИЕ — ОБЩЕЙ СБОРКОЙ. Здесь была одна из трёх независимых
              формулировок, и знала она четыре поля из шестнадцати. -->
         <p class="effect">{describe(ability).join(' · ')}</p>
-        <label class="auto">
-          <input
-            type="checkbox"
-            checked={$gameState.abilitySettings[ability.id]?.autocast ?? false}
-            onchange={(e) => setAbilityAutocast(ability.id, e.currentTarget.checked)}
-          />
-          Использовать автоматически
-        </label>
+        <!-- ГАЛКИ АВТОКАСТА У ПАССИВНОГО НЕТ, И ЭТО НЕ УПРОЩЕНИЕ. Галка
+             отвечает на вопрос «жать ли это самому», а пассивное не жмут ни
+             сам, ни игрок. Стой она здесь — она бы ещё и ВРАЛА: снятая, она
+             читалась бы как «выключено», а второй пёс приходил бы всё равно
+             (ёмкость своры считается по ряду, а не по галке). -->
+        {#if ability.type !== 'passive'}
+          <label class="auto">
+            <input
+              type="checkbox"
+              checked={$gameState.abilitySettings[ability.id]?.autocast ?? false}
+              onchange={(e) => setAbilityAutocast(ability.id, e.currentTarget.checked)}
+            />
+            Использовать автоматически
+          </label>
+        {/if}
         {#if ability.manaCost.gt(0)}
           {@const reserve = $gameState.abilitySettings[ability.id]?.reserve ?? 0}
           <div class="reserve">
@@ -119,7 +134,10 @@
             {/each}
           </div>
         {/if}
-        {#if status.reason}
+        <!-- «СЕЙЧАС НЕДОСТУПНО» — ПРО ОЖИДАНИЕ, и пассивному оно не подходит:
+             ждать нечего, умение работает. Свою строку оно уже сказало первой
+             в описании (`abilityLines`). -->
+        {#if status.reason && ability.type !== 'passive'}
           <p class="reason">
             Сейчас недоступно: {abilityReasonText(status.reason, resource, ability.unlockLevel)}
           </p>

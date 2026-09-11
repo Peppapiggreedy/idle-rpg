@@ -99,16 +99,23 @@ describe('данные умений', () => {
       // «Сосредоточение» не платит за собственную скидку, генератор ресурса —
       // за собственную прибавку, плата здоровьем платит ЗДОРОВЬЕМ, а умение
       // с `spendAll` тратит ВЕСЬ запас — своя цена у него была бы второй.
+      // ПЯТЫЙ РОД БЕСПЛАТНОГО — ПАССИВНОЕ, и оно же единственное без отката.
+      // Оба нуля у него не поблажка, а определение: умение, которое не
+      // нажимают, нечем ограничивать и не за что платить. Проверяется это
+      // В ОБЕ СТОРОНЫ схемой (`content:check`): там ноль ТРЕБУЕТСЯ.
+      const passive = a.type === 'passive'
       expect(a.manaCost.gt(0), a.id).toBe(
-        !a.freeCasts && !a.generate && !a.bloodPrice && !a.spendAll,
+        !passive && !a.freeCasts && !a.generate && !a.bloodPrice && !a.spendAll,
       )
-      expect(a.cooldownSec).toBeGreaterThan(0)
+      expect(a.cooldownSec > 0, a.id).toBe(!passive)
       // ПОДДЕРЖКА БЬЁТ НУЛЁМ, БОЕВОЕ УМЕНИЕ — положительной долей удара.
       // Поддержка: лечение, поглощение, ПОРОГ (`edge` — умение, вся работа
       // которого в том, чтобы включить состояние) и КОМАНДЫ ПСУ без удара
       // героя (бьёт пёс или никто); список назван поимённо, чтобы новый флаг
       // с нулевым уроном не проехал молча.
       const houndSupport = Boolean(a.recall || a.houndHeal || a.unleash || a.skulk || a.rally || a.pack)
+      // Пассивное не бьёт по определению — оно и не нажимается.
+      if (passive) expect(a.weaponDamagePercent.toNumber(), a.id).toBe(0)
       expect(a.weaponDamagePercent.gt(0), a.id).toBe(!a.heal && !a.absorb && !a.edge && !houndSupport)
     }
   })

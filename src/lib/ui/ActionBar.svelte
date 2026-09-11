@@ -222,7 +222,8 @@
         type="button"
         class="slot"
         class:queued={status.queued}
-        class:blocked={!status.usable}
+        class:passive={ability.type === 'passive'}
+        class:blocked={!status.usable && ability.type !== 'passive'}
         class:target={dropTo(i).fits}
         class:refused={dropTo(i).fits && !dropTo(i).allowed}
         aria-disabled={!status.usable}
@@ -243,6 +244,11 @@
         }}
         ondragend={() => releaseAbility()}
       >
+        <!-- ПАССИВНОЕ НЕ ТУШИТСЯ, А ОТМЕЧАЕТСЯ. `blocked` читается как «сейчас
+             нельзя, подожди» — ровно то, чего у пассивного не бывает: оно
+             работает, и притушенная кнопка врала бы про это каждым кадром.
+             Ни заливки отката, ни полоски общей задержки у него тоже нет —
+             обоих чисел у пассивного не существует. -->
         <span class="fill" style="height: {Math.min(100, status.cooldownFraction * 100)}%"></span>
         {#if ability.triggersGcd && gcdFraction > 0 && status.cooldownMsLeft <= 0}
           <span class="gcd" style="height: {Math.min(100, gcdFraction * 100)}%"></span>
@@ -331,6 +337,13 @@
   }
   .slot.blocked {
     opacity: 0.55;
+  }
+  /* ПАССИВНОЕ ОТМЕЧЕНО, А НЕ ПРИТУШЕНО: рамка цветом взаимодействия говорит
+     «эта кнопка при деле», и отличает её от блокированной, которая тусклая.
+     Цвет взят из токенов, как и всё остальное в игре. */
+  .slot.passive {
+    border-color: var(--c-accent);
+    cursor: default;
   }
   /* Пустой слот: то же место, тот же размер, но пунктиром и без содержимого.
      Нажимать в нём нечего — это `div`, а не кнопка. */
