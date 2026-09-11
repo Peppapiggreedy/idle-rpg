@@ -22,20 +22,54 @@ const tip = (page: Page) => page.locator('[data-talent-tip]')
 /** Цена сброса — по ней и видно, тронут ли счётчик платных сбросов. */
 const resetButton = (page: Page) => page.locator('button', { hasText: 'Сбросить таланты' })
 
+/**
+ * ФОРМА ВЕТКИ — ДАННЫЕ, И ЧИСЛАМ ЕЙ В ТЕСТЕ НЕ МЕСТО. Здесь стояло «13
+ * этажей», «6 ключевых узлов» и ранг «0/6» — и все три были верны ровно до
+ * первой ветки другой формы. Гнев переехал на семь этажей по десять очков,
+ * остальные восемь остались тринадцатью по пять, и СМЕШАННОЕ СОСТОЯНИЕ
+ * ЗАКОННО: тест обязан проверять СВОЙСТВА раскладки, а не сегодняшнюю форму
+ * первой ветки.
+ *
+ * Ожидания читаются С САМОЙ СТРАНИЦЫ, а не импортом из `src/lib/data`:
+ * проект тестов собирается с `moduleResolution: nodenext`, и импорт данных
+ * потянул бы за собой требование расширений во всём их графе. Потолок ранга
+ * берётся из узла, шаг этажей — из подписей порогов.
+ */
+async function maxRankOf(node: ReturnType<typeof talents>): Promise<string> {
+  const text = (await node.locator('[data-rank]').innerText()).trim()
+  const max = text.split('/')[1]
+  expect(max, `ранг узла читается как «есть/потолок», а пришло «${text}»`).toMatch(/^\d+$/)
+  return max
+}
+
 test('ветка разложена по этажам, и порог подписан ОДИН РАЗ НА РЯД', async ({ page }) => {
   await openTree(page)
   const rows = await floors(page).count()
-  expect(rows).toBe(13)
+  // Этажей у ветки может быть семь, может тринадцать — но их всегда больше
+  // одного, иначе «лестница» не лестница.
+  expect(rows).toBeGreaterThan(1)
 
+  const gates: number[] = []
   for (let i = 0; i < rows; i += 1) {
     const floor = floors(page).nth(i)
     // Ровно один порог на этаж: два значило бы, что этаж не этаж.
     await expect(floor.locator('.gate')).toHaveCount(1)
     // ПУСТЫХ МЕСТ В РЯДУ НЕТ: этаж без таланта — дырка в дереве.
     expect(await floor.locator('[data-talent]').count()).toBeGreaterThanOrEqual(1)
-    // Порог этажа — шаг ветки, умноженный на номер этажа сверху.
-    await expect(floor.locator('.gate')).toHaveText(String(i * 5))
+    // ЧИТАЕТСЯ `.gate-points`, А НЕ `.gate`: в подписи порога ДВА числа —
+    // очки и уровень героя, — и `innerText` всего блока даёт «0\nс ур. 10».
+    // Прежняя строка сравнивала весь блок с голым числом и не падала только
+    // потому, что до неё не доходило: тест обрывался на счёте этажей выше.
+    gates.push(Number((await floor.locator('.gate-points').innerText()).trim()))
   }
+
+  // ПОРОГИ — РОВНАЯ ЛЕСТНИЦА ОТ НУЛЯ ОДНИМ ШАГОМ. Это и есть свойство: первый
+  // этаж бесплатен, шаг постоянный и положительный, а его величину задаёт
+  // ветка. Число «5» тут стояло в тексте и врало про Гнев, у которого шаг 10.
+  expect(gates[0]).toBe(0)
+  const step = gates[1]
+  expect(step).toBeGreaterThan(0)
+  for (let i = 0; i < rows; i += 1) expect(gates[i], `этаж ${i + 1}`).toBe(i * step)
 })
 
 test('узел — квадрат в палец: ранг на нём, описания нет', async ({ page }) => {
@@ -64,8 +98,20 @@ test('ключевые узлы крупнее обычных', async ({ page })
   const key = await page.locator('[data-talent][data-key]').first().boundingBox()
   const plain = await page.locator('[data-talent]:not([data-key])').first().boundingBox()
   expect(key!.width).toBeGreaterThan(plain!.width)
-  // Ключевых этажей три, на каждом два таланта — шесть ключевых узлов.
-  await expect(page.locator('[data-talent][data-key]')).toHaveCount(6)
+
+  // КЛЮЧЕВОЙ УЗЕЛ НИКОГДА НЕ ОДИН НА ЭТАЖЕ — иначе это не выбор, а ступенька,
+  // и крупный значок обещает решение, которого нет. Считать их общее число
+  // нельзя: оно зависит от формы ветки (у Гнева три ключевых этажа и восемь
+  // узлов, у лестницы — три и шесть).
+  const rows = await floors(page).count()
+  let keyRows = 0
+  for (let i = 0; i < rows; i += 1) {
+    const onFloor = await floors(page).nth(i).locator('[data-talent][data-key]').count()
+    if (onFloor === 0) continue
+    keyRows += 1
+    expect(onFloor, `этаж ${i + 1}: ключевой узел один`).toBeGreaterThanOrEqual(2)
+  }
+  expect(keyRows, 'ни одного ключевого этажа').toBeGreaterThan(0)
 })
 
 test('подсказка открывается наведением и НАЗЫВАЕТ причину отказа', async ({ page }) => {
@@ -137,15 +183,16 @@ test('ЛКМ вкладывает, ПКМ снимает вложенное В �
   await openTree(page, 'mid')
   const priceBefore = await resetButton(page).innerText()
   const first = talents(page).first()
-  await expect(first.locator('[data-rank]')).toHaveText('0/6')
+  const max = await maxRankOf(first)
+  await expect(first.locator('[data-rank]')).toHaveText(`0/${max}`)
 
   await first.click()
-  await expect(first.locator('[data-rank]')).toHaveText('1/6')
+  await expect(first.locator('[data-rank]')).toHaveText(`1/${max}`)
   // НАЖАТИЕ ГАСИТ ПОДСКАЗКУ: она не прилипает к узлу, который только что нажали.
   await expect(tip(page)).toHaveCount(0)
 
   await first.click({ button: 'right' })
-  await expect(first.locator('[data-rank]')).toHaveText('0/6')
+  await expect(first.locator('[data-rank]')).toHaveText(`0/${max}`)
   // СЧЁТЧИК ПЛАТНЫХ СБРОСОВ НЕ ТРОНУТ: цена следующего сброса та же.
   expect(await resetButton(page).innerText()).toBe(priceBefore)
   await expect(page.locator('text=свободных очков')).toHaveCount(1)
@@ -156,14 +203,15 @@ test('закрыл экран — ПКМ больше не снимает', asyn
   // обесценить и сам сброс, и решение, которое игрок уже принял.
   await openTree(page, 'mid')
   const first = talents(page).first()
+  const max = await maxRankOf(first)
   await first.click()
-  await expect(first.locator('[data-rank]')).toHaveText('1/6')
+  await expect(first.locator('[data-rank]')).toHaveText(`1/${max}`)
 
   await page.keyboard.press('Escape')
   await openMenu(page, 'Таланты')
   const again = talents(page).first()
   await again.click({ button: 'right' })
-  await expect(again.locator('[data-rank]')).toHaveText('1/6')
+  await expect(again.locator('[data-rank]')).toHaveText(`1/${max}`)
   // Нажатие погасило подсказку; курсор всё ещё над узлом, поэтому сперва
   // уводим его — иначе наведения не случится.
   await page.mouse.move(5, 5)
@@ -172,7 +220,9 @@ test('закрыл экран — ПКМ больше не снимает', asyn
 })
 
 test('запертый выбором узел назван и заперт', async ({ page }) => {
-  // Пресет «дерево»: ключевой пятого этажа взят, значит сосед заперт выбором.
+  // Пресет «дерево» собран так, что на ключевом этаже взят один узел из
+  // группы — значит сосед по ней заперт выбором. Какой это этаж, решает
+  // форма ветки; `presets.test.ts` держит само наличие взятой группы.
   await openTree(page, 'tree')
   const barred = page.locator('[data-talent][data-group-locked]')
   expect(await barred.count()).toBeGreaterThan(0)
@@ -186,12 +236,13 @@ test.describe('тач-экран', () => {
   test('первое нажатие показывает подсказку, второе — вкладывает', async ({ page }) => {
     await openTree(page, 'mid')
     const first = talents(page).first()
-    await expect(first.locator('[data-rank]')).toHaveText('0/6')
+    const max = await maxRankOf(first)
+    await expect(first.locator('[data-rank]')).toHaveText(`0/${max}`)
     await first.tap()
     await expect(tip(page)).toHaveCount(1)
-    await expect(first.locator('[data-rank]')).toHaveText('0/6')
+    await expect(first.locator('[data-rank]')).toHaveText(`0/${max}`)
     await first.tap()
-    await expect(first.locator('[data-rank]')).toHaveText('1/6')
+    await expect(first.locator('[data-rank]')).toHaveText(`1/${max}`)
     await expect(tip(page)).toHaveCount(0)
   })
 })
