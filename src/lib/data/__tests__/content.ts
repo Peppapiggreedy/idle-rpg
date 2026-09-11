@@ -54,8 +54,8 @@ import { GOLD_UPGRADES } from '../upgrades'
 import { PROGRESSION } from '../progression'
 import { PROFESSIONS, PROFESSION_UNLOCK_LEVEL, RECIPES } from '../recipes'
 import { SLOT_DEFENSE, SLOT_DROP_WEIGHTS, SLOT_ICONS, SLOT_IDS, SLOT_NAMES } from '../slots'
-import { BRANCHES, TALENTS } from '../talents'
-import { TUNABLE_FIELDS, tuneAllowed } from '../../game/abilityTune'
+import { BRANCHES, TALENTS, pathsOf } from '../talents'
+import { TUNABLE_FIELDS, tuneAbility, tuneAllowed } from '../../game/abilityTune'
 import { ZONES } from '../zones'
 import { STAT_IDS } from '../../game/stats'
 import { ICON_NAMES } from '../../ui/icons/manifest'
@@ -100,6 +100,8 @@ export function realContent(): Content {
     talents: TALENTS,
     abilityTunable: TUNABLE_FIELDS,
     tuneAllowed: (tune) => tuneAllowed(tune as never),
+    tuneAbility,
+    pathsOf: (branchId) => pathsOf(branchId as never),
     zones: ZONES,
     // Обе лестницы: героика — тот же шаблон, и её реагенты, лут и уровни
     // проверяются теми же схемами, а не отдельным списком.

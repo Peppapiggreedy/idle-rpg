@@ -19,8 +19,6 @@ import {
   currentCell,
   pacingTable,
   referenceBuild,
-  branchPoints,
-  pureBranchTalents,
   simulate,
   spreadOf,
   styleBuild,
@@ -45,6 +43,7 @@ import {
   TTK_HARD_FLOOR,
   TTK_TARGET_MAX,
   TTK_TARGET_MIN,
+  REFERENCE_BUILD,
 } from '../../data/balance'
 import {
   averageMonsterLevel,
@@ -56,15 +55,20 @@ import {
 } from '../../data/zones'
 import { ONE_HANDED, WEAPONS } from '../../data/items'
 import { DROP_CHANCE, averageItemSellPrice } from '../../data/loot'
-import { BRANCHES, type BranchDef, type BranchStyle } from '../../data/talents'
 import { DEFAULT_CLASS, classById } from '../../data/classes'
 import { classIt, contractClasses } from './class-set'
 import { dump } from './dump'
 import { ABILITIES, ABILITY_BY_ID } from '../../data/abilities'
 import { monsterFromTemplate, type GameState } from '../state'
 
-/** Сид контракта цены боя: контракт обязан быть воспроизводимым до числа. */
-export const CONTRACT_SEED = 4242
+/**
+ * Сид контракта: контракт обязан быть воспроизводимым до числа. Само число
+ * живёт в ЗАПИСИ ЭТАЛОННОЙ СБОРКИ (`REFERENCE_BUILD` в data/balance.ts), а
+ * не здесь: сид — часть определения эталонного героя, а не настройка
+ * раннера, и держать его в тестовой прелюдии значит разрешить каждому
+ * контракту завести свой.
+ */
+export const CONTRACT_SEED = REFERENCE_BUILD.seed
 
 /**
  * БЫСТРЫЙ РЕЖИМ ПРОГОНА: `BALANCE_SAMPLE=1`.

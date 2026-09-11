@@ -9,6 +9,9 @@
 //   node scripts/balance-diff.mjs --write          записать эталон из дампа
 //   node scripts/balance-diff.mjs --allow-subset   для прогона выборкой:
 //       ключей меньше — это охват, а не потеря; лишних быть по-прежнему нельзя
+//   node scripts/balance-diff.mjs --only-class <id>
+//       правка ТАЛАНТОВ одного класса: расхождения в ключах этого класса
+//       законны, а в ключах мира и чужих классов — нет
 //   node scripts/balance-diff.mjs --dir <каталог> --baseline <файл>
 import { readdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
@@ -82,16 +85,111 @@ for (const [key, val] of Object.entries(base)) {
 }
 for (const key of fresh.keys()) if (!(key in base)) extra.push(key)
 
+// ---------------------------------------------------------------------------
+// ЧЕЙ КЛЮЧ: МИРА ИЛИ КЛАССА
+// ---------------------------------------------------------------------------
+//
+// Отпечаток целиком — это «изменилось хоть что-то», и на правку одного
+// таланта он отвечает так же, как на правку урона мобов: красным списком.
+// Читать его при этом приходится глазами, а решать — «это законно или нет».
+//
+// Разделение делает ответ проверяемым. Правка дерева ОДНОГО класса обязана
+// двигать ключи ТОЛЬКО этого класса: мир (мобы, зоны, золото, разрыв
+// уровней) талантом не меряется вовсе — он считается на эталонной сборке без
+// единого очка (`REFERENCE_BUILD`), — а чужой класс дерева не читает.
+//
+// СПИСОК КЛАССОВ БЕРЁТСЯ ИЗ САМОГО ОТПЕЧАТКА, а не переписывается сюда:
+// ключи вида `.../class-<id>/...` его и объявляют. Второй список классов в
+// скрипте разъехался бы с data/classes.ts на первом же новом классе.
+const classIds = new Set()
+for (const key of [...Object.keys(base), ...fresh.keys()]) {
+  for (const seg of key.split('/')) {
+    const m = /^class-(.+)$/.exec(seg)
+    if (m) classIds.add(m[1])
+  }
+}
+
+/**
+ * Класс ключа или null, если ключ про мир.
+ *
+ * СРАВНИВАЮТСЯ СЛОВА, А НЕ НАЧАЛА СТРОК. Имя класса появляется в ключе
+ * четырьмя способами — `warden`, `class-warden`, `warden-bulwark` (ветка) и
+ * `branch-houndmaster-chase`, — и правило «сегмент начинается с имени»
+ * последний вид пропускало: три ключа Псаря читались как ключи мира. Разбор
+ * по обоим разделителям ловит все четыре и не может ошибиться в другую
+ * сторону: `wormwood-rise` не содержит слова `warden`.
+ */
+const classOf = (key) => {
+  const words = new Set(key.split(/[/-]/))
+  for (const id of classIds) if (words.has(id)) return id
+  return null
+}
+
+const groupName = (id) => (id === null ? 'МИР' : `КЛАСС ${id}`)
+const groupsOf = (keys) => {
+  const out = new Map()
+  for (const key of keys) {
+    const id = classOf(key)
+    out.set(id, [...(out.get(id) ?? []), key])
+  }
+  return out
+}
+
 const report = (title, list, render) => {
   if (list.length === 0) return
-  console.error(`\n${title} (${list.length}):`)
-  for (const item of list.slice(0, 60)) console.error(`  ${render(item)}`)
+  const keyOf = (item) => (typeof item === 'string' ? item : item.key)
+  const groups = groupsOf(list.map(keyOf))
+  const summary = [...groups.entries()]
+    .sort((a, b) => b[1].length - a[1].length)
+    .map(([id, keys]) => `${groupName(id)}: ${keys.length}`)
+    .join(', ')
+  console.error(`\n${title} (${list.length}) — ${summary}:`)
+  const ordered = [...list].sort((a, b) => {
+    const ga = classOf(keyOf(a)) ?? ''
+    const gb = classOf(keyOf(b)) ?? ''
+    return ga < gb ? -1 : ga > gb ? 1 : keyOf(a) < keyOf(b) ? -1 : 1
+  })
+  let shown = null
+  for (const item of ordered.slice(0, 60)) {
+    const id = classOf(keyOf(item))
+    if (id !== shown) {
+      console.error(`  — ${groupName(id)} —`)
+      shown = id
+    }
+    console.error(`  ${render(item)}`)
+  }
   if (list.length > 60) console.error(`  … и ещё ${list.length - 60}`)
 }
 
 report('РАСХОЖДЕНИЯ', changed, (c) => `${c.key}: было ${c.was}, стало ${c.now}`)
 report('ПОТЕРЯНЫ (есть в эталоне, нет в дампе)', missing, (k) => k)
 report('ЛИШНИЕ (нет в эталоне)', extra, (k) => k)
+
+// ПРАВИЛО ПРАВКИ ДЕРЕВА. Без флага разделение — справка; с флагом это
+// проверка: тронул таланты класса — и всё, что уехало, обязано быть его.
+const onlyClass = value('--only-class', null)
+if (onlyClass) {
+  if (!classIds.has(onlyClass)) {
+    console.error(`\nВ отпечатке нет класса «${onlyClass}». Есть: ${[...classIds].join(', ')}.`)
+    process.exit(2)
+  }
+  const touched = [...changed.map((c) => c.key), ...missing, ...extra]
+  const foreign = touched.filter((k) => classOf(k) !== onlyClass)
+  if (foreign.length > 0) {
+    console.error(
+      `\nПРАВКА ТАЛАНТОВ «${onlyClass}» СДВИНУЛА ЧУЖИЕ КЛЮЧИ (${foreign.length}). ` +
+        'Мир меряется на сборке без очков, а чужой класс дерева не читает — ' +
+        'значит уехало что-то ещё:',
+    )
+    for (const key of foreign.slice(0, 40)) console.error(`  ${groupName(classOf(key))}  ${key}`)
+    if (foreign.length > 40) console.error(`  … и ещё ${foreign.length - 40}`)
+    process.exit(1)
+  }
+  console.log(
+    `\nПРАВКА ТАЛАНТОВ «${onlyClass}»: сдвинулись только его ключи (${touched.length}).`,
+  )
+  process.exit(0)
+}
 
 const subsetOk = flag('--allow-subset') && missing.length > 0 && changed.length === 0 && extra.length === 0
 if (changed.length === 0 && extra.length === 0 && (missing.length === 0 || flag('--allow-subset'))) {

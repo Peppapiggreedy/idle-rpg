@@ -103,12 +103,6 @@ describe('бюджет силы Стража на потолке', () => {
       to: () => rate(geared),
     },
     {
-      id: 'talents' as const,
-      name: `таланты (${points} очков, ${talented.id})`,
-      from: () => rate(geared),
-      to: () => rate(talented.state),
-    },
-    {
       id: 'enchants' as const,
       name: 'зачарования на всех слотах',
       from: () => rate(talented.state),

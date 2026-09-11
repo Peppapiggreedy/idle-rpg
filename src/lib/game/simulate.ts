@@ -41,7 +41,12 @@ import {
   zoneStanding,
   type ZoneStanding,
 } from './zones'
-import { LEVEL_CAP, xpGapShare, RUN_PLAYER_DEATH_TOLERANCE_PER_HOUR } from '../data/balance'
+import {
+  LEVEL_CAP,
+  REFERENCE_BUILD,
+  xpGapShare,
+  RUN_PLAYER_DEATH_TOLERANCE_PER_HOUR,
+} from '../data/balance'
 import { inventorySize } from './upgrades'
 import { ABILITIES, ABILITY_BY_ID } from '../data/abilities'
 import { RARITY_BY_ID, TYPICAL_RARITY } from '../data/rarity'
@@ -319,6 +324,26 @@ export const BALANCE_PRESET = {
   // полную ветку, а зона — актуальная для этого уровня.
   branchLevel: 31,
   branchHours: 4,
+  /**
+   * ПРИБОР ВЕТОК (`branches.test.ts`) — свои три числа, и они про ПРИБОР,
+   * а не про игру: сами ленты лежат в `BRANCH_BANDS` (data/balance.ts).
+   *
+   * Уровень 70, а не 100 и не 31. Шестьдесят одно очко (`branchPoints(70)`)
+   * — это ровно «вся ветка вниз, включая венец»: порог венца 60, и при
+   * шестидесяти очках цикл `pathRanks` выходит РОВНО в момент набора порога,
+   * так и не купив венец. На 31 уровне очков 22, то есть пятая часть ветки и
+   * ни одного ключевого этажа выше пятого — мерить «ветку целиком» на этом
+   * нельзя.
+   *
+   * Горизонт пятнадцать минут и медиана трёх сидов — решение замера стадии 1
+   * (docs/CHECKS.md): часовой прогон стоит 6.58 с при σ 1.7 %,
+   * пятнадцатиминутный — 1.56 с при σ 4.3 %, а медиана троек сбивает σ до
+   * 2.7 %. Сорок точек часом — 4.4 минуты, медианой троек по четверти часа —
+   * около двух.
+   */
+  branchDownLevel: 70,
+  branchProbeHours: 0.25,
+  branchProbeSeeds: [4242, 7, 1234],
   /** Потолок расхождения итога между тремя чистыми билдами. */
   branchSpreadLimit: 0.25,
   /** Доля времени на привалах, выше которой зона считается неподъёмной. */
@@ -452,7 +477,19 @@ export function referenceBuild(level: number, classId: string = DEFAULT_CLASS.id
     pacingCache.set(classId, rows)
   }
   const row = rows.find((r) => r.level === level) ?? rows[rows.length - 1]
-  return { classId, level, gearLevel: row.gearLevel, gear: row.gear }
+  // РОТАЦИЯ И ТАЛАНТЫ — ИЗ ЗАПИСИ, А НЕ ИЗ УМОЛЧАНИЙ. Поведение то же самое
+  // (пустые таланты и четвёрка по умолчанию — это и есть дефолты
+  // `buildSimState`), но теперь оно ЗАПИСАНО: контракт мира меряется на
+  // сборке, про которую можно спросить «сколько в ней очков талантов» и
+  // получить ответ, а не «поле не задано».
+  return {
+    classId,
+    level,
+    gearLevel: row.gearLevel,
+    gear: row.gear,
+    talents: { ...REFERENCE_BUILD.talents },
+    autocast: REFERENCE_BUILD.autocast,
+  }
 }
 
 /**

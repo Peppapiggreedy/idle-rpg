@@ -59,7 +59,9 @@ import type { SlotId } from '../slots'
 import {
   CONCEPT_ROWS,
   TALENT_STAT_RULE,
-  pathsOf,
+  BRANCH_ROWS,
+  pathRanks,
+  type TalentPath,
   type BranchDef,
   type TalentDef,
   type TalentStatRule, TREE_COLUMNS,
@@ -96,6 +98,19 @@ export interface Content {
   abilityTunable: readonly string[]
   /** Годится ли операция для поля: реализация живёт в game/abilityTune.ts. */
   tuneAllowed: (tune: { field: string; kind: string }) => boolean
+  /**
+   * ПРАВКИ УМЕНИЯ ПРИМЕНЯЕТ ЕГО ЖЕ КОНВЕЙЕР, А НЕ ЕГО КОПИЯ. Тот же приём,
+   * что у `tuneAllowed`: вторая реализация «как таланты складываются на
+   * умении» разъехалась бы с первой на первой правке, и проверка стерегла бы
+   * несуществующую игру.
+   */
+  tuneAbility: (ability: AbilityDef, ranks: Record<string, number>) => AbilityDef
+  /**
+   * Пути ветки — тоже входом, а не прямым импортом: иначе «путь не доходит до
+   * венца» нельзя показать на битом образце, а проверка, которая ни разу не
+   * срабатывала, не отличима от сломанной.
+   */
+  pathsOf: (branchId: string) => readonly TalentPath[]
   zones: readonly Zone[]
   dungeons: readonly DungeonDef[]
   weapons: readonly WeaponTemplate[]
@@ -3725,7 +3740,7 @@ function checkReachable(content: Content, report: Report): void {
     // прогона; талант, не попавший НИ В ОДИН путь своей ветки, не мерится
     // ничем и не сравнивается ни с чем. Он не «слабый» — он невидимый, и
     // узнать об этом можно только прочитав данные.
-    const inPaths = new Set(pathsOf(branch.id).flatMap((path) => path.order))
+    const inPaths = new Set(content.pathsOf(branch.id).flatMap((path) => path.order))
     for (const talent of inBranch) {
       report.need(
         inPaths.has(talent.id),
@@ -4239,6 +4254,131 @@ function checkTalentTunes(content: Content, report: Report): void {
   }
 }
 
+/** Умение принадлежит классу через `abilityIds` класса, а не полем у себя. */
+function classOfAbility(content: Content, abilityId: string) {
+  return content.classes.find((c) => c.abilityIds.includes(abilityId))
+}
+
+/** Умение, которое называет талант: и правкой (`ability`), и флагом. */
+function tunedAbilityId(talent: TalentDef): string | undefined {
+  if (talent.effect.kind === 'ability') return talent.effect.abilityId
+  if (talent.effect.kind === 'flag' && 'abilityId' in talent.effect) {
+    return (talent.effect as { abilityId?: string }).abilityId
+  }
+  return undefined
+}
+
+/**
+ * ТАЛАНТ ПРАВИТ УМЕНИЕ СВОЕГО КЛАССА. Существование умения ловит ссылочное
+ * правило схемы, а ПРИНАДЛЕЖНОСТЬ не ловил никто: талант Стража, назвавший
+ * умение Псаря, проходил все проверки и не делал при этом ничего — чужое
+ * умение не попадает ни в ряд действий, ни в модель боя. Тихо это ровно так
+ * же, как правка несуществующего поля (`checkTalentTunes`): имя настоящее,
+ * ссылка целая, эффекта нет.
+ */
+function checkTalentOwnership(content: Content, report: Report): void {
+  for (const talent of content.talents) {
+    const abilityId = tunedAbilityId(talent)
+    if (!abilityId) continue
+    const branch = content.branches.find((b) => b.id === talent.branch)
+    const owner = classOfAbility(content, abilityId)
+    // Обе дырки уже под присмотром: ветку ловит ссылка на BRANCHES, умение —
+    // ссылка на ABILITIES. Второе замечание о том же было бы шумом.
+    if (!branch || !owner) continue
+    report.need(
+      owner.id === branch.classId,
+      `талант ${talent.id}`,
+      `ветка «${branch.id}» принадлежит классу ${branch.classId}, а умение ` +
+        `«${abilityId}» — классу ${owner.id}: чужое умение не попадает ни в ряд ` +
+        'действий, ни в модель боя, и талант не делает НИЧЕГО ' +
+        '(data/talents.ts против data/classes.ts)',
+    )
+  }
+}
+
+/**
+ * КАЖДЫЙ ПУТЬ ДОХОДИТ ДО ВЕНЦА. Путь — это заявленный порядок покупки, по
+ * которому прогон и прибор веток строят «ветку целиком»; венец — то, ради
+ * чего ветку берут (`CONCEPT_ROWS`, последний этаж).
+ *
+ * ПОЧЕМУ ЭТО НЕ ОЧЕВИДНО. Порог венца — 60 очков, а всего очков за игру
+ * больше; казалось бы, дойдёт сам. Но заливка идёт ПО ПОРЯДКУ ПУТИ и после
+ * каждой покупки начинает с головы списка, поэтому венец достаётся только
+ * тогда, когда до него доходит очередь. Замер ночи: на 61 очке венец берёт
+ * ОДИН путь из восемнадцати, на 65 — все. Прибор веток при этом мерил
+ * «ветку до венца» на 61 очке и вообще этого не видел.
+ */
+function checkBranchCapstones(content: Content, report: Report): void {
+  const total = content.balance.levelCap - content.mechanicLevels.talents + 1
+  for (const branch of content.branches) {
+    const capstones = content.talents.filter((t) => t.branch === branch.id && t.row === BRANCH_ROWS)
+    report.need(
+      capstones.length > 0,
+      `ветка ${branch.id}`,
+      `на последнем этаже ${BRANCH_ROWS} нет ни одного таланта: венца у ветки нет, ` +
+        'и брать её незачем (data/talents.ts)',
+    )
+    for (const path of content.pathsOf(branch.id)) {
+      const ranks = pathRanks(path, total)
+      report.need(
+        capstones.some((c) => (ranks[c.id] ?? 0) > 0),
+        `ветка ${branch.id}`,
+        `путь «${path.name}» не берёт венец даже на всех ${total} очках игры: ` +
+          'порядок покупки тратит их раньше, чем доходит очередь. Такой путь ' +
+          'меряет ветку БЕЗ того, ради чего её берут (data/talents.ts, BRANCH_PATHS)',
+      )
+    }
+  }
+}
+
+/**
+ * НАКОПЛЕННЫЕ ПРАВКИ НЕ ПРОБИВАЮТ ПОЛ ПОЛЯ. Одно и то же поле умения правят
+ * несколько талантов — это НОРМА, а не поломка: в дереве таких пар два
+ * десятка, и складываются они нарочно. Опасно другое: сложившись, они могут
+ * увести откат в ноль, а цену — в минус, и тогда умение жмётся каждый тик
+ * бесплатно. Проверка берёт худший случай — ВСЕ таланты класса на потолке
+ * рангов — и применяет их настоящим конвейером `tuneAbility`.
+ *
+ * Худший случай игроку недоступен (очков меньше, чем ёмкость трёх веток), и
+ * это нарочно: проверка — ГРАНИЦА. Прошла граница — пройдёт и любая сборка.
+ */
+function checkTuneFloors(content: Content, report: Report): void {
+  for (const cls of content.classes) {
+    const ranks: Record<string, number> = {}
+    for (const talent of content.talents) {
+      const branch = content.branches.find((b) => b.id === talent.branch)
+      if (branch?.classId === cls.id) ranks[talent.id] = talent.maxRank
+    }
+    for (const abilityId of cls.abilityIds) {
+      const ability = content.abilities.find((a) => a.id === abilityId)
+      if (!ability) continue
+      const tuned = content.tuneAbility(ability, ranks)
+      const where = `умение ${ability.id}`
+      report.need(
+        ability.cooldownSec <= 0 || tuned.cooldownSec > 0,
+        where,
+        `таланты класса ${cls.id} на потолке рангов уводят откат ` +
+          `${ability.cooldownSec} → ${tuned.cooldownSec}: умение стало бы бесплатным ` +
+          'каждый тик (data/talents.ts против data/abilities.ts)',
+      )
+      report.need(
+        !tuned.manaCost.lt(0),
+        where,
+        `таланты класса ${cls.id} на потолке рангов уводят цену ` +
+          `${ability.manaCost.toString()} → ${tuned.manaCost.toString()}: ` +
+          'отрицательная цена НАЛИВАЕТ ресурс за применение (data/talents.ts)',
+      )
+      report.need(
+        tuned.weaponDamagePercent.gte(0),
+        where,
+        `таланты класса ${cls.id} на потолке рангов уводят урон ` +
+          `${ability.weaponDamagePercent.toString()} → ${tuned.weaponDamagePercent.toString()}: ` +
+          'отрицательный урон лечил бы цель (data/talents.ts)',
+      )
+    }
+  }
+}
+
 export function checkContent(content: Content): ContentIssue[] {
   const report = new Report()
   for (const schema of SCHEMAS) runSchema(schema, content, report)
@@ -4248,6 +4388,9 @@ export function checkContent(content: Content): ContentIssue[] {
   checkArmorPoints(content, report)
   checkCraftCategories(content, report)
   checkTalentTunes(content, report)
+  checkTalentOwnership(content, report)
+  checkBranchCapstones(content, report)
+  checkTuneFloors(content, report)
   checkProgressionLevels(content, report)
   checkUnlockLevels(content, report)
   checkScene(content, report)
