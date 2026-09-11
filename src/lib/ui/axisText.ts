@@ -9,7 +9,7 @@
 // Знак у обеих осей значит одно и то же: плюс — лучше, и переворачивать
 // внутри больше нечего — обе оси абсолютные и обе растут: урон в секунду по
 // эталонному противнику и живучесть (сколько урона герой держит за схватку).
-import { UPGRADE_AXES, type UpgradeAxis } from '../data/upgrade'
+import { UPGRADE_AXES, type UpgradeAxis } from '../data/upgradeAxes'
 
 export const AXIS_NAME: Record<UpgradeAxis, string> = {
   damage: 'Урон',

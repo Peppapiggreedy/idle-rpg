@@ -18,7 +18,7 @@ import { GOLD_UPGRADES } from '../data/upgrades'
 import { INVENTORY_SIZE } from '../data/balance'
 import { zoneForMonsterLevel, representativeMonster } from '../data/zones'
 import { averageGear, unlockedByLevel } from './simulate'
-import { UPGRADE_PRIORITIES, DEFAULT_UPGRADE_PRIORITY } from '../data/upgrade'
+import { UPGRADE_PRIORITIES, DEFAULT_UPGRADE_PRIORITY } from '../data/upgradeAxes'
 import type { Item } from '../types'
 import type { StatId } from './stats'
 

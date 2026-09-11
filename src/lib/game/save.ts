@@ -86,7 +86,7 @@ import {
   DEFAULT_UPGRADE_PRIORITY,
   UPGRADE_PRIORITIES,
   type UpgradePriority,
-} from '../data/upgrade'
+} from '../data/upgradeAxes'
 import {
   DEFAULT_LOOT_POLICY,
   GOLD_UPGRADE_BY_ID,

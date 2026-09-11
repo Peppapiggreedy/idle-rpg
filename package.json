@@ -16,6 +16,7 @@
     "test:visual": "playwright test",
     "test:all": "npm run test && npm run test:balance && npm run test:visual",
     "content:check": "vitest run src/lib/data/__tests__/integrity.test.ts",
+    "docs:check": "vitest run src/lib/data/__tests__/docs.test.ts",
     "balance:dump": "rm -rf .balance-dump && BALANCE_DUMP=.balance-dump npm run test:balance",
     "balance:diff": "npm run balance:dump && node scripts/balance-diff.mjs",
     "balance:baseline": "node scripts/balance-diff.mjs --write",

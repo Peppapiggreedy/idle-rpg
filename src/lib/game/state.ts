@@ -1,7 +1,7 @@
 // Игровое состояние и его создание. Отдельный модуль, чтобы tick, loot и save
 // зависели от него, а не друг от друга.
 import { Decimal } from './numbers'
-import { DEFAULT_UPGRADE_PRIORITY, type UpgradePriority } from '../data/upgrade'
+import { DEFAULT_UPGRADE_PRIORITY, type UpgradePriority } from '../data/upgradeAxes'
 import { DEFAULT_LOOT_POLICY, type LootPolicy } from '../data/upgrades'
 import { xpToNextLevel } from './formulas'
 import { randomSeed } from './rng'
