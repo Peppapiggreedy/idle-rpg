@@ -429,6 +429,30 @@ export function brokenCases(): BrokenCase[] {
       expect: [first(real.branches).id, 'невозможно войти'],
     },
     {
+      // ДВЕ СТРЕЛКИ ИЗ ОДНОГО УЗЛА — ДВЕ ЛИНИИ В ОДНОМ СТОЛБЦЕ, НАЛОЖЕННЫЕ
+      // ДРУГ НА ДРУГА. Именно это и читалось как «стрелка тянется не от
+      // предыдущего таланта», и именно на этом образце проверено, что
+      // проверка срабатывает.
+      title: 'из одного таланта выходят две стрелки',
+      content: {
+        ...real,
+        talents: (() => {
+          const branch = first(real.branches).id
+          const inBranch = real.talents
+            .filter((t) => t.branch === branch)
+            .sort((a, b) => a.row - b.row)
+          const anchor = inBranch[0]
+          const dependents = inBranch.filter((t) => t.row > anchor.row).slice(0, 2)
+          return real.talents.map((t) =>
+            dependents.some((x) => x.id === t.id)
+              ? { ...t, col: anchor.col, requires: { talentId: anchor.id, minRank: 1 } }
+              : t,
+          )
+        })(),
+      },
+      expect: ['выходит 2', 'стрелки'],
+    },
+    {
       title: 'этажи ветки идут с дыркой — на панели останется пустая строка',
       content: {
         ...real,

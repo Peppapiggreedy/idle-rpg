@@ -4355,6 +4355,40 @@ function checkTalentOwnership(content: Content, report: Report): void {
 }
 
 /**
+ * ИЗ ОДНОГО ТАЛАНТА ВЫХОДИТ НЕ БОЛЬШЕ ОДНОЙ СТРЕЛКИ.
+ *
+ * Стрелка рисуется прямой вертикальной линией в столбце ЗАВИСИМОГО, от ряда
+ * опоры до ряда зависимого. Две стрелки из одного узла — это две линии в
+ * одном столбце, наложенные друг на друга: нижняя накрывает верхнюю целиком,
+ * и наконечник на промежуточном этаже читается как конец ДРУГОЙ линии. Ровно
+ * это и было жалобой «стрелка тянется не от предыдущего таланта»: из «Долгой
+ * стены» (этаж 2) выходили две — на «Частую стену» (этаж 9) и на «Широкую
+ * стену» (этаж 10), — и снаружи разобрать, какая откуда, нельзя было никак.
+ *
+ * ПРАВИЛО СФОРМУЛИРОВАНО ПО ЗАМЕРУ, А НЕ ПО ВКУСУ. На двадцати шести стрелках
+ * дерева нарушение было ровно одно — эта пара. Всё остальное, чем стрелка
+ * может быть плоха, замерено и НЕ запрещено: числа и причина — в
+ * `docs/FOUND8.md`, стадия 6.
+ */
+function checkTalentArrows(content: Content, report: Report): void {
+  const outgoing = new Map<string, string[]>()
+  for (const talent of content.talents) {
+    const id = talent.requires?.talentId
+    if (!id) continue
+    outgoing.set(id, [...(outgoing.get(id) ?? []), talent.id])
+  }
+  for (const [anchorId, dependents] of outgoing) {
+    report.need(
+      dependents.length <= 1,
+      `талант ${anchorId}`,
+      `из него выходит ${dependents.length} стрелки (${dependents.join(', ')}): ` +
+        'линии рисуются в одном столбце и накладываются друг на друга — ' +
+        'разобрать, какая откуда, нельзя (data/talents.ts)',
+    )
+  }
+}
+
+/**
  * КАЖДЫЙ ПУТЬ ДОХОДИТ ДО ВЕНЦА. Путь — это заявленный порядок покупки, по
  * которому прогон и прибор веток строят «ветку целиком»; венец — то, ради
  * чего ветку берут (`CONCEPT_ROWS`, последний этаж).
@@ -4447,6 +4481,7 @@ export function checkContent(content: Content): ContentIssue[] {
   checkCraftCategories(content, report)
   checkTalentTunes(content, report)
   checkTalentOwnership(content, report)
+  checkTalentArrows(content, report)
   checkBranchCapstones(content, report)
   checkTuneFloors(content, report)
   checkProgressionLevels(content, report)

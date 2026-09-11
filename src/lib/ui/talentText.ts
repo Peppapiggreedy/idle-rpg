@@ -109,7 +109,7 @@ const pct = (share: number) => `${(share * 100).toFixed(0)}%`
  * подписи. Ветвления по id таланта здесь нет и быть не должно — таблица
  * закрыта по `TalentFlag`, и новый флаг не пройдёт проверку типов без строки.
  */
-export function flagText(effect: FlagEffect, resource: ResourceWords): string {
+export function flagText(effect: FlagEffect, resource: ResourceWords, perRank = true): string {
   const table: Record<TalentFlag, (e: FlagEffect) => string> = {
     'ability-learns-effect': (e) =>
       'abilityId' in e && 'effect' in e
@@ -138,7 +138,7 @@ export function flagText(effect: FlagEffect, resource: ResourceWords): string {
       const what = HOUND_FIELD_NAME[e.field] ?? e.field
       const sign = e.value > 0 ? '+' : '−'
       const amount = e.op === 'percent' ? pct(Math.abs(e.value)) : `${(Math.abs(e.value) * 100).toFixed(0)} п.`
-      return `${what}: ${sign}${amount} за ранг`
+      return `${what}: ${sign}${amount}${perRank ? ' за ранг' : ''}`
     },
     'pack-tactics': (e) =>
       `Пока пёс на ногах, урон героя выше на ${'bonusShare' in e ? pct(e.bonusShare) : '0%'}`,
@@ -150,15 +150,26 @@ export function flagText(effect: FlagEffect, resource: ResourceWords): string {
   return table[effect.flag](effect)
 }
 
-/** Что делает талант — за один ранг. */
+/**
+ * Что делает талант — за один ранг.
+ *
+ * «ЗА РАНГ» ПИШЕТСЯ ТОЛЬКО ТАМ, ГДЕ РАНГ БОЛЬШЕ ОДНОГО. У одноранговых
+ * талантов — а это все венцы и все ключевые — копить нечего, и приписка
+ * обещала лестницу, которой нет: «+8 % урона за ранг» у таланта с
+ * `maxRank: 1` читается как «дальше будет ещё», и игрок ищет, куда вложить
+ * второе очко. Условие стоит ЗДЕСЬ, в одном месте на все три вида эффекта,
+ * а не тремя копиями по веткам ниже.
+ */
 export function effectText(talent: TalentDef, resource: ResourceWords): string {
   const effect = talent.effect
-  if (effect.kind === 'flag') return flagText(effect, resource)
+  const perRank = talent.maxRank > 1
+  if (effect.kind === 'flag') return flagText(effect, resource, perRank)
   // ТАЛАНТ, ПРАВЯЩИЙ УМЕНИЕ, ПОКАЗЫВАЕТ, ЧЕМ УМЕНИЕ СТАНЕТ. Строка собирается
   // из тех же полей, что и описание самого умения: второй формулировки на
   // игру быть не должно.
-  if (effect.kind === 'ability') return abilityTuneText(effect)
-  return `${effect.mods.map((m) => modText(m, resource)).join(', ')} за ранг`
+  if (effect.kind === 'ability') return abilityTuneText(effect, perRank)
+  const mods = effect.mods.map((m) => modText(m, resource)).join(', ')
+  return perRank ? `${mods} за ранг` : mods
 }
 
 /**

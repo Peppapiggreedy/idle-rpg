@@ -507,10 +507,18 @@ const TUNE_LABEL: Record<string, string> = {
 
 const signed = (value: number): string => `${value > 0 ? '+' : '−'}${Math.abs(value)}`
 
-export function abilityTuneText(effect: {
-  abilityId: string
-  tune: readonly AbilityTune[]
-}): string {
+export function abilityTuneText(
+  effect: {
+    abilityId: string
+    tune: readonly AbilityTune[]
+  },
+  /**
+   * Писать ли «за ранг». Решает ВЫЗЫВАЮЩИЙ, потому что это свойство ТАЛАНТА
+   * (`maxRank`), а не самой правки: одна и та же правка бывает и одноранговой,
+   * и лестницей на пять рангов.
+   */
+  perRankAllowed = true,
+): string {
   const name = ABILITY_BY_ID[effect.abilityId]?.name ?? effect.abilityId
   const parts = effect.tune.map((tune) => {
     const label = TUNE_LABEL[tune.field] ?? tune.field
@@ -526,7 +534,9 @@ export function abilityTuneText(effect: {
     const share = tune.kind === 'percent' ? tune.value : tune.value - 1
     return `${label} ${signed(Math.round(share * 100))} %`
   })
-  // «За ранг» — только там, где есть что копить: у правки одним `set` ранг один.
-  const perRank = effect.tune.some((tune) => tune.kind !== 'set') ? ' за ранг' : ''
+  // «За ранг» — только там, где есть что копить: у правки одним `set` ранг
+  // один, и у одноранговых талантов копить тоже нечего.
+  const perRank =
+    perRankAllowed && effect.tune.some((tune) => tune.kind !== 'set') ? ' за ранг' : ''
   return `${name}: ${parts.join(', ')}${perRank}`
 }
