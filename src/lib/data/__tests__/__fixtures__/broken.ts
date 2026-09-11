@@ -751,7 +751,7 @@ export function brokenCases(): BrokenCase[] {
       content: {
         ...real,
         talents: real.talents.map((t) =>
-          t.id === 'wrath-second-swing' ? { ...t, exclusiveGroup: 'одинокая' } : t,
+          t.id === 'wrath-echo' ? { ...t, exclusiveGroup: 'одинокая' } : t,
         ),
       },
       expect: ['одинокая', 'из одного члена'],
@@ -762,7 +762,7 @@ export function brokenCases(): BrokenCase[] {
       content: {
         ...real,
         talents: real.talents.map((t) =>
-          t.id === 'wrath-second-swing' || t.id === 'wrath-rupture'
+          t.id === 'wrath-echo' || t.id === 'wrath-rupture'
             ? { ...t, exclusiveGroup: 'через-этажи' }
             : t,
         ),
@@ -775,7 +775,7 @@ export function brokenCases(): BrokenCase[] {
       content: {
         ...real,
         talents: real.talents.map((t) =>
-          t.id === 'wrath-second-swing' || t.id === 'bulwark-mirror-shield'
+          t.id === 'wrath-echo' || t.id === 'bulwark-mirror-shield'
             ? { ...t, exclusiveGroup: 'через-ветки' }
             : t,
         ),

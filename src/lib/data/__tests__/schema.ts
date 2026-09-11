@@ -427,7 +427,7 @@ const idsOf = <T>(list: readonly T[], id: (e: T) => string | undefined): Set<str
  * Новый пассивный флаг обязан появиться здесь, иначе умение с четырьмя нулями
  * пройдёт проверку молча и займёт один из четырёх слотов, не делая ничего.
  */
-const PASSIVE_FLAGS = ['pack'] as const satisfies readonly (keyof AbilityDef)[]
+const PASSIVE_FLAGS = ['pack', 'echo'] as const satisfies readonly (keyof AbilityDef)[]
 
 /** Команда псу без удара героя: поддержка, которой можно бить нулём. */
 function houndSupport(a: AbilityDef): boolean {
@@ -4611,7 +4611,14 @@ function checkCarryTalents(content: Content, report: Report): void {
 function checkAbilityReplacements(content: Content, report: Report): void {
   const inSomeBook = new Set(content.classes.flatMap((c) => c.abilityIds))
   const replaced = new Set<string>()
-  const substitutes = new Set<string>()
+  // ДО УМЕНИЯ ВЕДУТ ДВЕ ДОРОГИ, И ОБЕ СЧИТАЮТСЯ ЗДЕСЬ: замена подставляет его
+  // вместо другого, выдача кладёт его в книгу героя. Считай только первую — и
+  // каждое умение от таланта читалось бы как мёртвые данные.
+  const substitutes = new Set<string>(
+    content.talents.flatMap((t) =>
+      t.effect.kind === 'flag' && t.effect.flag === 'grant-ability' ? [t.effect.abilityId] : [],
+    ),
+  )
   for (const talent of content.talents) {
     const effect = talent.effect
     if (effect.kind !== 'flag' || effect.flag !== 'replace-ability') continue
@@ -4655,9 +4662,9 @@ function checkAbilityReplacements(content: Content, report: Report): void {
     report.need(
       substitutes.has(ability.id),
       `умение ${ability.id}`,
-      'не лежит ни в одной книге класса и не подставляется ни одним талантом ' +
-        'замены: добраться до него нельзя ничем (data/abilities.ts против ' +
-        'data/talents.ts)',
+      'не лежит ни в одной книге класса и не выдаётся ни одним талантом — ни ' +
+        'заменой, ни выдачей: добраться до него нельзя ничем (data/abilities.ts ' +
+        'против data/talents.ts)',
     )
   }
 }

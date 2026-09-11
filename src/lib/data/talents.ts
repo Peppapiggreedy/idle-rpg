@@ -117,6 +117,25 @@ export const BRANCHES: BranchDef[] = [
   { id: 'houndmaster-trail', name: 'Тропа', classId: 'houndmaster', style: 'autonomy', ...LADDER },
 ]
 
+/**
+ * УМЕНИЯ, ВЫДАННЫЕ ТАЛАНТАМИ. Пустой список — обычный случай, и тогда книга
+ * героя это ровно книга его класса.
+ *
+ * ОТЗЫВ ЗДЕСЬ БЕСПЛАТЕН: список ВЫВОДИТСЯ из рангов, поэтому снятое очко
+ * убирает умение само собой. Второго следа — поля в состоянии или строки в
+ * сбросе — заводить нельзя: он разъехался бы с рангами на первой же правке.
+ */
+export function grantedAbilityIds(ranks: Readonly<Record<string, number>>): string[] {
+  const out: string[] = []
+  for (const talent of TALENTS) {
+    const effect = talent.effect
+    if (effect.kind !== 'flag' || effect.flag !== 'grant-ability') continue
+    if (rankOf(ranks, talent.id) <= 0) continue
+    if (!out.includes(effect.abilityId)) out.push(effect.abilityId)
+  }
+  return out
+}
+
 export const BRANCH_BY_ID: Record<string, BranchDef> = Object.fromEntries(
   BRANCHES.map((b) => [b.id, b]),
 )
@@ -201,6 +220,9 @@ export type TalentFlag =
   | 'carry-over'
   // УМЕНИЕ ПОДМЕНЯЕТСЯ ЦЕЛИКОМ: кнопка на месте, за ней другое умение.
   | 'replace-ability'
+  // УМЕНИЕ ВЫДАЁТСЯ ТАЛАНТОМ: его нет в книге класса, и появляется оно
+  // только вместе с очком — ЗАНИМАЯ СЛОТ, как любое другое.
+  | 'grant-ability'
 
 /**
  * ПРОК — ЭТО ТРИГГЕР ПЛЮС ВРЕМЕННЫЙ ЭФФЕКТ, И ОБА ИЗ ЗАКРЫТЫХ СПИСКОВ.
@@ -374,6 +396,22 @@ export type TalentEffect =
    * очка и потерянную галку автокаста. Меняется умение, а не его место.
    */
   | { kind: 'flag'; flag: 'replace-ability'; from: string; to: string }
+  /**
+   * УМЕНИЕ ОТ ТАЛАНТА. Названное умение появляется в книге героя и может быть
+   * положено в ряд — как любое умение класса, и СЛОТ ОНО ЗАНИМАЕТ ТАК ЖЕ.
+   *
+   * ПОЧЕМУ НЕ «ДВЕНАДЦАТОЕ УМЕНИЕ КЛАССА». У класса сетка открытий без дыр:
+   * первый уровень плюс каждый второй до двадцатого, по одному умению на
+   * ступень. Двенадцатое умение эту сетку ломает, кому бы оно ни досталось.
+   * Умение от таланта в сетке не стоит вовсе: его открывает не уровень, а
+   * ОЧКО, и стоит оно места в ряду и всей ветки под собой.
+   *
+   * ОТЗЫВ БЕСПЛАТЕН И АВТОМАТИЧЕН: книга героя ВЫВОДИТСЯ из рангов, поэтому
+   * сброс дерева убирает умение сам, без единой строки в самом сбросе. Слот,
+   * в котором оно лежало, ведёт себя как пустой — ровно как слот с умением,
+   * до уровня которого герой не дорос.
+   */
+  | { kind: 'flag'; flag: 'grant-ability'; abilityId: string }
 
 /**
  * ЧТО У СПУТНИКА МОЖНО ПРАВИТЬ ТАЛАНТОМ. Список закрыт: поле спутника, которого
@@ -1047,11 +1085,19 @@ const WARDEN_WRATH = branch('warden-wrath', [
       effect: { kind: 'flag', flag: 'replace-ability', from: 'shattering-blow', to: 'breach' },
     },
     {
+      // ВТОРОЙ ЗАМАХ — самый скромный из четырёх венцов и единственный, кто
+      // ничего не меняет в четвёрке: «Сокрушение» и так стоит в ряду, просто
+      // теперь оно бьёт дважды подряд.
+      //
+      // ОН ЖЕ — ЕДИНСТВЕННЫЙ ИСТОЧНИК ФЛАГА `ability-extra-charge` У СТРАЖА, и
+      // это не мелочь: правило «ни один класс не заводит своего флага»
+      // меряется ГОТОВЫМ классом, а заряды есть у обоих превью-классов. Убери
+      // его — и машинерия зарядов станет «своей» у Изувера и Псаря.
       id: 'wrath-second-swing',
       name: 'Второй замах',
       icon: 'talent-second-charge',
       maxRank: 1,
-      col: 4,
+      col: 2,
       exclusiveGroup: 'wrath-key-7',
       effect: {
         kind: 'flag',
@@ -1061,13 +1107,27 @@ const WARDEN_WRATH = branch('warden-wrath', [
       },
     },
     {
-      id: 'wrath-open-wound',
-      name: 'Незаживающая рана',
-      icon: 'talent-open-wound',
+      // РАЗРЫВ ЖИЛ — НОВОЕ УМЕНИЕ, А НЕ ПРАВКА СТАРОГО. Оно появляется в книге
+      // героя вместе с очком и ЗАНИМАЕТ СЛОТ, как любое другое: венец стоит
+      // не только шестидесяти очков, но и места в четвёрке.
+      id: 'wrath-sever',
+      name: 'Разрыв жил',
+      icon: 'ability-sever',
+      maxRank: 1,
+      col: 4,
+      exclusiveGroup: 'wrath-key-7',
+      effect: { kind: 'flag', flag: 'grant-ability', abilityId: 'sever' },
+    },
+    {
+      // ОТГОЛОСОК — тоже умение от таланта, но ПАССИВНОЕ: не нажимается и
+      // работает, пока занимает слот. Цена та же — место в четвёрке.
+      id: 'wrath-echo',
+      name: 'Отголосок',
+      icon: 'ability-echo',
       maxRank: 1,
       col: 5,
       exclusiveGroup: 'wrath-key-7',
-      effect: tunes('rending-wound', { field: 'type', kind: 'set', value: 'instant' }),
+      effect: { kind: 'flag', flag: 'grant-ability', abilityId: 'echo' },
     },
   ],
 ])
@@ -3771,7 +3831,7 @@ const BRANCH_PATHS: Partial<Record<BranchId, TalentPath[]>> = {
         // прежнюю калибровку, а не игры.
         'wrath-rupture',
         'wrath-bleeding-edge',
-        'wrath-open-wound',
+        'wrath-second-swing',
         'wrath-frequent-wound',
         'wrath-heavy-shatter',
         'wrath-swift-shatter',
@@ -3793,12 +3853,14 @@ const BRANCH_PATHS: Partial<Record<BranchId, TalentPath[]>> = {
       // кнопку, а венец даёт второй заряд.
       id: 'wrath-burst',
       name: 'Взрыв',
-      abilities: ['shattering-blow', 'mercy', 'quick-strike', 'mend-wounds'],
+      // ЧЕТВЁРКА НЕСЁТ ВЕНЕЦ. «Отголосок» — умение, и слот он занимает как
+      // любое другое: место «Скорого выпада» в этой сборке и есть цена венца.
+      abilities: ['shattering-blow', 'mercy', 'echo', 'mend-wounds'],
       order: [
         'wrath-heavy-shatter',
         'wrath-swift-shatter',
         'wrath-headlong',
-        'wrath-second-swing',
+        'wrath-echo',
         'wrath-honed-edge',
         'wrath-savage-blows',
         'wrath-keen-eye',
@@ -3823,21 +3885,56 @@ const BRANCH_PATHS: Partial<Record<BranchId, TalentPath[]>> = {
       ],
     },
     {
-      // ПРОЛОМ. Третий путь ветки, и он существует потому, что существует
-      // третий венец: «Пролом» заменяет «Сокрушение» целиком, то есть меняет
-      // РИТМ — вместо одного огромного удара раз в двенадцать секунд идёт
-      // вдвое более частый мгновенный с клеймом. Прибор шести путей мерит
-      // именно это: два пути одной ветки обязаны различаться четвёркой либо
-      // профилем, а не суммой урона.
-      //
-      // КЛЕЙМО ЗДЕСЬ РАБОТАЕТ, и потому «Память клинка» стоит в голове пути,
-      // а не в хвосте: у двух других путей Гнева клейма в четвёрке нет вовсе,
-      // и перенос им нечего переносить.
+      // ПРОЛОМ. Четвёртая сборка, и четвёрка у неё та же, что у «Крови», —
+      // различаются они ПРОФИЛЕМ, а не составом: «Пролом» подменяет
+      // «Сокрушение» умением другой формы (мгновенное вместо замаха, вдвое
+      // чаще, вдвое слабее, с клеймом). Ровно этим замена и отличается от
+      // прочих венцов: она ничего не отнимает у ряда и всё меняет внутри него.
       id: 'wrath-breach-path',
       name: 'Пролом',
-      abilities: ['shattering-blow', 'quick-strike', 'rending-wound', 'mend-wounds'],
+      abilities: ['quick-strike', 'rending-wound', 'mend-wounds', 'shattering-blow'],
       order: [
         'wrath-breach',
+        'wrath-heavy-shatter',
+        'wrath-swift-shatter',
+        'wrath-blade-memory',
+        'wrath-precise-brand',
+        'wrath-deep-cut',
+        'wrath-open-vein',
+        'wrath-honed-edge',
+        'wrath-savage-blows',
+        'wrath-keen-eye',
+        'wrath-momentum',
+        'wrath-frenzy',
+        'wrath-rupture',
+        'wrath-bleeding-edge',
+        'wrath-firm-hand',
+        'wrath-quick-flourish',
+        'wrath-frequent-wound',
+        'wrath-precision',
+        'wrath-long-brand',
+        'wrath-deep-brand',
+        'wrath-mean-shove',
+        'wrath-wide-mercy',
+        'wrath-open-artery',
+        'wrath-blood-science',
+        'wrath-finishing-flourish',
+      ],
+    },
+    {
+      // ЖИЛА. Третий путь ветки, и он существует потому, что существует
+      // третий венец: «Разрыв жил» — НОВОЕ УМЕНИЕ, а не правка старого, и
+      // слот оно занимает как любое другое. Отсюда и четвёрка: вторая рана
+      // встаёт РЯДОМ с «Рваной раной», а не вместо неё, — вся сборка про то,
+      // сколько кровотечения висит на цели одновременно.
+      //
+      // ВЕНЕЦ ТУТ РЕШАЕТ ЧЕТВЁРКУ, и это ровно то, ради чего механизм
+      // «умение от таланта» и заведён: очко покупает не число, а кнопку.
+      id: 'wrath-sever-path',
+      name: 'Жила',
+      abilities: ['sever', 'rending-wound', 'quick-strike', 'mend-wounds'],
+      order: [
+        'wrath-sever',
         'wrath-heavy-shatter',
         'wrath-swift-shatter',
         'wrath-blade-memory',

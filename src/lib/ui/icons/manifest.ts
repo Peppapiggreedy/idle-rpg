@@ -24,6 +24,10 @@ export const ICONS = {
   // «Пролом» — умение, которого нет ни в одной книге класса: его кладёт в
   // ряд талант замены (`replace-ability`), вместо «Сокрушения».
   'ability-breach': { file: 'lorc/groundbreaker.svg', author: 'Lorc' },
+  // Два венца Гнева — умения, выданные ТАЛАНТОМ (`grant-ability`). В книге
+  // класса их нет: их открывает не уровень, а очко.
+  'ability-sever': { file: 'lorc/tearing.svg', author: 'Lorc' },
+  'ability-echo': { file: 'lorc/echo-ripples.svg', author: 'Lorc' },
   'ability-mend-wounds': { file: 'delapouite/first-aid-kit.svg', author: 'Delapouite' },
   'ability-shield-shove': { file: 'delapouite/shield-bash.svg', author: 'Delapouite' },
   'ability-rupture': { file: 'lorc/tearing.svg', author: 'Lorc' },

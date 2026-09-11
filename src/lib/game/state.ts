@@ -9,6 +9,7 @@ import { buildMonster } from '../data/monsters'
 import { SAFE_ZONE, spawnLevelWeights, type Zone } from '../data/zones'
 import { ABILITY_BY_ID, type AbilityDef } from '../data/abilities'
 import { CLASS_BY_ID, DEFAULT_CLASS, classById, type ClassDef } from '../data/classes'
+import { grantedAbilityIds } from '../data/talents'
 import { RARITY_BY_ID } from '../data/rarity'
 import { ARMOR_NOUNS, SHIELD_BY_ID, WEAPON_BY_ID } from '../data/items'
 import { armorMods, shieldMods, weaponMods } from './loot'
@@ -512,11 +513,42 @@ export interface Rotation {
 
 export const rotationOf = (state: GameState): Rotation => ({
   slots: state.abilitySlots,
-  settings: state.abilitySettings,
+  settings: heroSettings(state),
   talents: state.talents,
   boons: equippedBoons(state.equipment),
   resourceFloor: state.resourceFloor,
 })
+
+/**
+ * НАСТРОЙКИ ВСЕХ УМЕНИЙ, ДОСТУПНЫХ ЭТОМУ ГЕРОЮ: сохранённые плюс умолчания
+ * для тех, что ВЫДАЛ ТАЛАНТ.
+ *
+ * Наличие настройки и есть признак доступности — по нему фильтруют и ряд, и
+ * модель, и автокаст (`abilitiesByPriority`). Умение от таланта в сейве
+ * настройки не имеет и иметь не должно: она появилась бы вместе с очком и
+ * пережила бы сброс дерева, то есть разъехалась бы с рангами. Вывод из рангов
+ * делает отзыв бесплатным — снял очко, и умение пропало отовсюду разом.
+ *
+ * У героя без таких талантов возвращается ТОТ ЖЕ объект, бит в бит.
+ */
+export function heroSettings(state: Pick<GameState, 'talents' | 'abilitySettings'>): AbilitySettings {
+  const granted = grantedAbilityIds(state.talents)
+  if (granted.length === 0) return state.abilitySettings
+  const out: AbilitySettings = { ...state.abilitySettings }
+  for (const id of granted) {
+    if (out[id] === undefined) out[id] = { autocast: true, reserve: 0 }
+  }
+  return out
+}
+
+/** Умения, доступные ЭТОМУ герою: книга класса плюс выданные талантами. */
+export function heroAbilityDefs(state: Pick<GameState, 'classId' | 'talents'>): AbilityDef[] {
+  const own = abilitiesOf(state.classId)
+  const granted = grantedAbilityIds(state.talents)
+  if (granted.length === 0) return own
+  const extra = granted.map((id) => ABILITY_BY_ID[id]).filter((a): a is AbilityDef => !!a)
+  return [...own, ...extra]
+}
 
 /**
  * Свойства всех надетых вещей. Порядок — порядок слотов: два свойства на

@@ -193,6 +193,12 @@ export function flagText(effect: FlagEffect, resource: ResourceWords, perRank = 
         ? `«${ABILITY_BY_ID[e.from]?.name ?? e.from}» заменяется на ` +
           `«${ABILITY_BY_ID[e.to]?.name ?? e.to}»`
         : 'Умение заменяется другим',
+    // УМЕНИЕ ОТ ТАЛАНТА: имя берётся из реестра, а не пишется здесь.
+    'grant-ability': (e) =>
+      'abilityId' in e
+        ? `Открывает умение «${ABILITY_BY_ID[e.abilityId]?.name ?? e.abilityId}»: ` +
+          'его нет в книге класса, и слот оно занимает как любое другое'
+        : 'Открывает новое умение',
     // ПЕРЕНОС МЕТКИ: доля оставшегося времени, переживающая смерть цели.
     'carry-over': (e) => {
       if (!('mark' in e) || !('share' in e)) return 'Метка переходит на следующую цель'

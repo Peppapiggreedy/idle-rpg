@@ -38,7 +38,9 @@ import {
 } from './rotation'
 import type { Monster } from '../types'
 import { SAFE_ZONE, ZONE_BY_ID, zoneSpawnVariants, type Zone } from '../data/zones'
-import { equippedBoons, monsterFromTemplate, type AbilitySettings, type Rotation } from './state'
+import { equippedBoons, monsterFromTemplate, type AbilitySettings, type Rotation,
+  heroSettings,
+} from './state'
 import { ABILITY_BY_ID, MODEL_RESOURCE_FILL, type AbilityDef } from '../data/abilities'
 import { classById } from '../data/classes'
 import {
@@ -1193,7 +1195,9 @@ function reflectPerSecond(state: GameState, incoming: Decimal): Decimal {
  */
 function unlockedSettings(state: GameState): AbilitySettings {
   const settings: AbilitySettings = {}
-  for (const [id, value] of Object.entries(state.abilitySettings)) {
+  // `heroSettings`, а не сырые настройки сейва: умение от таланта настройки в
+  // сейве не имеет, и без этой строки модель его не видела бы вовсе.
+  for (const [id, value] of Object.entries(heroSettings(state))) {
     const ability = ABILITY_BY_ID[id]
     if (ability && state.level.gte(ability.unlockLevel)) settings[id] = value
   }
@@ -1313,9 +1317,11 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
     for (const cast of rot.casts) {
       const a = cast.ability
       if (a.type !== 'passive') continue
-      // СВОРА: псы, которых на поле ещё нет. Единственный пассивный флаг;
-      // новый обязан появиться здесь, а не в цикле по темпу.
+      // СВОРА: псы, которых на поле ещё нет.
       if (a.pack) hound.extraHounds += Math.max(0, Math.round(a.pack.extraHounds))
+      // ОТГОЛОСОК: доля урона УМЕНИЙ приходит следом. Автоатаки эха не дают,
+      // поэтому множится именно `rot.damagePerSecond`, а не весь поток.
+      if (a.echo) extraDps = extraDps.plus(rot.damagePerSecond.times(a.echo.share))
     }
     for (const cast of rot.casts) {
       const a = cast.ability

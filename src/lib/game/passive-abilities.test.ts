@@ -23,6 +23,13 @@ import { rotationOf, type GameState } from './state'
 const HOUND = CLASS_BY_ID.houndmaster
 const NO_LUCK = () => 1
 const PASSIVE = ABILITIES.filter((a) => a.type === 'passive')
+/**
+ * ПАССИВНЫЕ УМЕНИЯ ЭТОГО КЛАССА. Пассивных в игре больше, чем у одного
+ * героя: «Отголосок» Стража выдаётся ТАЛАНТОМ и в книге класса не лежит —
+ * положить его в ряд Псарю нельзя, и брать первое попавшееся из реестра
+ * значило бы мерить умение, которого у героя нет.
+ */
+const PASSIVE_OWN = PASSIVE.filter((a) => HOUND.abilityIds.includes(a.id))
 
 function hero(slots: (string | null)[]): GameState {
   const base = ensureStats({
@@ -67,36 +74,36 @@ describe('пассивное умение', () => {
   })
 
   it('автокаст его не видит, а соседнее активное — видит', () => {
-    const s = hero(['undercut', PASSIVE[0].id])
+    const s = hero(['undercut', PASSIVE_OWN[0].id])
     const ids = autocastCandidates(s).map((x) => x.id)
     expect(ids).toContain('undercut')
-    expect(ids).not.toContain(PASSIVE[0].id)
+    expect(ids).not.toContain(PASSIVE_OWN[0].id)
   })
 
   it('в модели боя стоит кастом с НУЛЕВЫМ темпом, а активное — с положительным', () => {
-    const s = hero(['undercut', PASSIVE[0].id])
+    const s = hero(['undercut', PASSIVE_OWN[0].id])
     const rate = rotationRate(s.stats, rotationOf(s), { onlyAutocast: true, delayed: true, potions: false })
     const byId = new Map(rate.casts.map((c) => [c.ability.id, c.castsPerSecond]))
-    expect(byId.get(PASSIVE[0].id), 'пассивное обязано быть в ротации').toBe(0)
+    expect(byId.get(PASSIVE_OWN[0].id), 'пассивное обязано быть в ротации').toBe(0)
     expect(byId.get('undercut') ?? 0).toBeGreaterThan(0)
   })
 
   it('в ротацию попадает и БЕЗ галки автокаста: галка про нажатия, а его не нажимают', () => {
-    const s = hero(['undercut', PASSIVE[0].id])
+    const s = hero(['undercut', PASSIVE_OWN[0].id])
     const settings = Object.fromEntries(
       Object.entries(s.abilitySettings).map(([id, v]) => [id, { ...v, autocast: false }]),
     )
     const off: GameState = { ...s, abilitySettings: settings }
     const rate = rotationRate(off.stats, rotationOf(off), { onlyAutocast: true, delayed: true, potions: false })
-    expect(rate.casts.map((c) => c.ability.id)).toContain(PASSIVE[0].id)
+    expect(rate.casts.map((c) => c.ability.id)).toContain(PASSIVE_OWN[0].id)
   })
 
   it('не тратит ресурс тиком: полоска на месте через пять секунд', () => {
-    let s = hero([PASSIVE[0].id])
+    let s = hero([PASSIVE_OWN[0].id])
     const before = s.currentMana
     for (let t = 0; t < 5000; t += STEP_MS) s = tick(s, STEP_MS, NO_LUCK, () => {})
     expect(s.currentMana.gte(before)).toBe(true)
-    expect(s.abilityCooldownsMs[PASSIVE[0].id] ?? 0).toBe(0)
+    expect(s.abilityCooldownsMs[PASSIVE_OWN[0].id] ?? 0).toBe(0)
   })
 
   it('активное по-прежнему нажимается — обратная сторона правила', () => {
