@@ -1,7 +1,8 @@
 // Шаблоны оружия и брони. Все названия оригинальные, существительные мужского
 // рода — чтобы прилагательные из loot.ts согласовывались без склонений.
 import { Decimal } from '../game/numbers'
-import type { SlotId } from './slots'
+import type { IconName } from '../ui/icons/manifest'
+import { SLOT_ICONS, type SlotId } from './slots'
 import type { StatId, StatModifier } from '../game/stats'
 
 /**
@@ -16,6 +17,34 @@ import type { StatId, StatModifier } from '../game/stats'
  * который «одновременно и оружие», выразить нечем.
  */
 export type Grip = 'one' | 'two' | 'shield'
+
+/**
+ * ЗНАЧОК ВЕЩИ В РУКЕ — ПО ХВАТУ, потому что хват и есть то, чем эти вещи
+ * различаются в руках: одноручное берётся в любую, двуручное занимает обе,
+ * щит не оружие вовсе.
+ *
+ * Раньше значок брался у СЛОТА, и оттуда обе жалобы разом: одноручный клинок
+ * в левой руке рисовался щитом (значок `offHand` — щит), а двуручный
+ * «Дробитель» — тем же широким мечом, что и одноручный «Бастард». Слот
+ * говорит, КУДА вещь надета, и про саму вещь не знает ничего.
+ */
+export const GRIP_ICONS: Record<Grip, IconName> = {
+  one: 'item-one-handed',
+  two: 'item-two-handed',
+  shield: 'item-shield',
+}
+
+/**
+ * Значок ВЕЩИ. Хват есть только у того, что идёт в руки; у брони и талисмана
+ * его нет, и там значок слота — это и есть значок вещи: все наручи выглядят
+ * наручами, и второго ответа на вопрос «что это» не существует.
+ *
+ * ЗНАЧОК СЛОТА ОСТАЁТСЯ, НО ТОЛЬКО ДЛЯ ПУСТОГО МЕСТА: пустая ячейка говорит,
+ * что в неё кладут, занятая — что в ней лежит.
+ */
+export function itemIcon(item: { slot: SlotId; grip?: Grip }): IconName {
+  return item.grip ? GRIP_ICONS[item.grip] : SLOT_ICONS[item.slot]
+}
 
 /** Хваты, которые бывают у оружия. Щит оружием не бывает. */
 export type WeaponGrip = Extract<Grip, 'one' | 'two'>

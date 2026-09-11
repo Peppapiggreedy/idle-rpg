@@ -18,7 +18,7 @@
   import { emptyRevealQueue, enqueueReveals, showNext } from './lootReveal'
   import { rarityName, rarityStyle } from './kit'
   import { Icon } from './icons'
-  import { SLOT_ICONS } from '../data/slots'
+  import { itemIcon } from '../data/items'
   import type { CombatEvent } from '../types'
 
   // Сколько вспышка висит. Не «успей посмотреть»: за это время её видно, а
@@ -66,7 +66,7 @@
 {#if queue.current}
   {#key queue.current.key}
     <div class="reveal" style={rarityStyle(queue.current.item.rarity)} aria-live="polite">
-      <Icon name={SLOT_ICONS[queue.current.item.slot]} size="lg" />
+      <Icon name={itemIcon(queue.current.item)} size="lg" />
       <div class="text">
         <span class="tier">{rarityName(queue.current.item.rarity)}</span>
         <span class="name">{queue.current.item.name}</span>

@@ -241,6 +241,10 @@ export const ICONS = {
   'recipe-jerky': { file: 'lorc/mushroom.svg', author: 'Lorc' },
 
   // --- Слоты экипировки ---
+  // Значки ВЕЩЕЙ в руках — по хвату, а не по слоту (data/items.ts, GRIP_ICONS).
+  'item-one-handed': { file: 'skoll/gladius.svg', author: 'Skoll' },
+  'item-two-handed': { file: 'delapouite/two-handed-sword.svg', author: 'Delapouite' },
+  'item-shield': { file: 'delapouite/roman-shield.svg', author: 'Delapouite' },
   'slot-weapon': { file: 'lorc/broadsword.svg', author: 'Lorc' },
   'slot-offhand': { file: 'sbed/shield.svg', author: 'Sbed' },
   'slot-head': { file: 'lorc/crested-helmet.svg', author: 'Lorc' },

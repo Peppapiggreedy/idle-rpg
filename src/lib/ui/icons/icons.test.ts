@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { ABILITIES } from '../../data/abilities'
 import { DUNGEONS } from '../../data/dungeons'
 import { SLOT_ICONS, SLOT_IDS } from '../../data/slots'
+import { GRIP_ICONS } from '../../data/items'
 import { STAT_ICONS } from '../../data/stats'
 import { TALENTS } from '../../data/talents'
 import { CLASSES } from '../../data/classes'
@@ -28,6 +29,8 @@ const used: IconName[] = [
   ...ZONES.map((z) => z.icon),
   ...DUNGEONS.map((d) => d.icon),
   ...SLOT_IDS.map((s) => SLOT_ICONS[s]),
+  // Значки вещей в руках: по хвату, а не по слоту (data/items.ts).
+  ...Object.values(GRIP_ICONS),
   ...Object.values(STAT_ICONS),
   ...CLASSES.map((c) => c.icon),
   ...REAGENTS.map((r) => r.icon),
