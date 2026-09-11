@@ -488,10 +488,11 @@
   "reviveMsLeft": 0,
   "talents": {
     "wrath-honed-edge": 5,
-    "wrath-deep-cut": 5,
-    "wrath-heavy-shatter": 5,
+    "wrath-deep-cut": 3,
+    "wrath-heavy-shatter": 3,
     "wrath-savage-blows": 5,
-    "wrath-keen-eye": 3
+    "wrath-keen-eye": 5,
+    "wrath-open-vein": 2
   },
   "treeRevision": 2,
   "talentResets": 2,

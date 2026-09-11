@@ -4368,6 +4368,96 @@ function tunedAbilityId(talent: TalentDef): string | undefined {
  * же, как правка несуществующего поля (`checkTalentTunes`): имя настоящее,
  * ссылка целая, эффекта нет.
  */
+/**
+ * ОДНУ И ТУ ЖЕ ПАРУ «УМЕНИЕ + ПОЛЕ» ВЕТКА ПРАВИТ ОДИН РАЗ.
+ *
+ * Два таланта, растящие один и тот же урон одного и того же умения, — это не
+ * выбор и не глубина, а ОДИН талант, разрезанный надвое. Игрок читает их как
+ * разные («Глубокий надрез» и «Кровоточащая кромка» звучат по-разному), берёт
+ * оба и получает то же самое дважды; автор ветки при этом думает, что
+ * наполнил этаж. Самое неприятное — что заметить это можно только сверив
+ * ПОЛЯ, а не имена.
+ *
+ * Проверяется ВНУТРИ ВЕТКИ: две ветки одного класса, правящие одно поле, —
+ * законный случай, это и есть разные стили роста одного умения.
+ *
+ * ТИП СЮДА НЕ ВХОДИТ (`field: 'type'`): «перестаёт ждать замаха» это не
+ * величина, а замена, и второй такой талант в ветке всё равно невозможен —
+ * `set` последнего выигрывает, и проверка на повтор ничего бы не добавила.
+ */
+/**
+ * ВЕТКИ, КОТОРЫЕ ЕЩЁ НЕ ПЕРЕЕХАЛИ, И ИХ ПОВТОРЫ — ПОИМЁННО.
+ *
+ * Правило поймало ШЕСТНАДЦАТЬ повторов в шести ветках, и ни одного в той,
+ * которую ночь переделывала. Это и есть цена того, что правило не было
+ * записано раньше: «Долгое клеймо» и «Нескончаемое клеймо» в Бдении растят
+ * одно и то же поле одного и того же умения, и отличить их можно только
+ * сверив данные.
+ *
+ * Чинить их этой ночью нельзя: переделка ветки Изувера или Псаря сдвинет их
+ * ключи в отпечатке, а ночь обещала этого не делать. Поэтому список ИМЕНАМИ,
+ * с причиной и со сроком: вторая ночь переносит остальные восемь веток, и
+ * тогда он обязан опуститься до пустого.
+ *
+ * СПИСОК НЕ ДОЛЖЕН ГНИТЬ. Ниже проверяется и обратное: имя, переставшее быть
+ * повтором, из списка убирается — иначе исключение переживёт свою причину и
+ * тихо разрешит новый повтор.
+ */
+const TUNE_DUPLICATE_LEGACY: readonly string[] = [
+  'vigil-lasting-brand',
+  'vigil-endless-mind',
+  'sinew-swift-dig',
+  'sinew-lasting-dig',
+  'sinew-unbroken',
+  'instinct-endless-letting',
+  'instinct-restless',
+  'instinct-endless-roar',
+  'chase-twin-fang',
+  'leash-deep-skulk',
+  'leash-tireless-rally',
+  'leash-shadow-hound',
+  'trail-cheap-undercut',
+  'trail-tireless-flurry',
+  'trail-hunting-breath',
+]
+
+function checkTalentTuneDuplicates(content: Content, report: Report): void {
+  const stillDuplicate = new Set<string>()
+  for (const branch of content.branches) {
+    const seen = new Map<string, string>()
+    for (const talent of content.talents) {
+      if (talent.branch !== branch.id) continue
+      if (talent.effect.kind !== 'ability') continue
+      for (const tune of talent.effect.tune) {
+        if (tune.field === 'type') continue
+        const key = `${talent.effect.abilityId}.${tune.field}`
+        const first = seen.get(key)
+        if (first === undefined) {
+          seen.set(key, talent.id)
+          continue
+        }
+        stillDuplicate.add(talent.id)
+        report.need(
+          TUNE_DUPLICATE_LEGACY.includes(talent.id),
+          `талант ${talent.id}`,
+          `правит «${key}» вторым после «${first}» в той же ветке — один талант, ` +
+            'разрезанный надвое: игрок берёт оба и получает то же самое дважды ' +
+            '(data/talents.ts)',
+        )
+      }
+    }
+  }
+  for (const id of TUNE_DUPLICATE_LEGACY) {
+    report.need(
+      stillDuplicate.has(id),
+      `талант ${id}`,
+      'числится в списке старых повторов, а повтором уже не является — ' +
+        'исключение пережило свою причину и тихо разрешает новый повтор ' +
+        '(TUNE_DUPLICATE_LEGACY в data/__tests__/schema.ts)',
+    )
+  }
+}
+
 function checkTalentOwnership(content: Content, report: Report): void {
   for (const talent of content.talents) {
     const abilityId = tunedAbilityId(talent)
@@ -4515,6 +4605,7 @@ export function checkContent(content: Content): ContentIssue[] {
   checkCraftCategories(content, report)
   checkTalentTunes(content, report)
   checkTalentOwnership(content, report)
+  checkTalentTuneDuplicates(content, report)
   checkTalentArrows(content, report)
   checkBranchCapstones(content, report)
   checkTuneFloors(content, report)

@@ -576,12 +576,40 @@ export function brokenCases(): BrokenCase[] {
       content: {
         ...real,
         talents: real.talents.map((t) =>
-          t.id === 'wrath-open-wound'
+          t.id === 'wrath-open-vein'
             ? { ...t, col: t.col === 1 ? (2 as const) : (1 as const) }
             : t,
         ),
       },
-      expect: ['wrath-open-wound', 'гнётся'],
+      expect: ['wrath-open-vein', 'гнётся'],
+    },
+    {
+      // ДВА ТАЛАНТА НА ОДНО ПОЛЕ ОДНОГО УМЕНИЯ — это один талант, разрезанный
+      // надвое: имена разные, действие одно, и заметить это можно только сверив
+      // данные.
+      title: 'два таланта ветки правят одно и то же поле умения',
+      content: {
+        ...real,
+        talents: real.talents.map((t) =>
+          t.id === 'wrath-open-vein'
+            ? {
+                ...t,
+                effect: {
+                  kind: 'ability' as const,
+                  abilityId: 'rending-wound',
+                  tune: [
+                    {
+                      field: 'effectWeaponDamagePercent' as const,
+                      kind: 'percent' as const,
+                      value: 0.1,
+                    },
+                  ],
+                },
+              }
+            : t,
+        ),
+      },
+      expect: ['wrath-open-vein', 'разрезанный надвое'],
     },
     {
       // Этаж с выбором обязан быть расставлен весь.

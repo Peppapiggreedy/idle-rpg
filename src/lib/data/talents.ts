@@ -494,36 +494,36 @@ const BLEED: AbilityEffect = {
 // ГНЕВ: СЕМЬ ЭТАЖЕЙ ПО ДЕСЯТЬ ОЧКОВ.
 //
 // Ветка переехала с тринадцати этажей по пять очков на семь по десять.
-// Глубина та же — шестьдесят очков до венца, — а вот РИТМ другой, и в этом
-// весь смысл переезда. На тринадцати этажах порог следующего отставал от
-// прокачки на пять очков: он открывался сам собой, по дороге, и «этаж» был
-// просто местом, куда очередное очко ляжет. На семи этажах порог стоит
-// десяти очков и открывается РЕДКО — раз в десять уровней, — а в ряду ждут
-// четыре-пять узлов, из которых возьмёшь не все. Этаж стал местом ВЫБОРА.
+// Глубина та же — шестьдесят очков до венца, — а вот РИТМ другой. На
+// тринадцати этажах порог следующего отставал от прокачки на пять очков: он
+// открывался сам собой, по дороге, и «этаж» был просто местом, куда очередное
+// очко ляжет. На семи порог стоит десяти очков и открывается РЕДКО — раз в
+// десять уровней, — а в ряду ждут четыре-пять узлов, из которых возьмёшь не
+// все. Этаж стал местом ВЫБОРА.
 //
 // ПОРОГИ 0, 10, 20 … 60 — ЭТО УРОВНИ ГЕРОЯ 10, 20 … 70 при вложении в одну
 // ветку: очко даётся за уровень с десятого. Три майлстоуна прокачки (30, 50,
 // 70) падают на этажи 3, 5 и 7 сами собой — туда, где стоят пары выбора.
 //
-// ЭТО ПЕРВАЯ СТАДИЯ ПЕРЕЕЗДА, И ТАЛАНТЫ ЗДЕСЬ ПРЕЖНИЕ. Ночь строит МАШИНЕРИЮ
-// и переносит на неё ветку; задуманные таланты приходят стадиями следом,
-// заменяя эти по одному. Поэтому за Гнев можно играть после КАЖДОЙ стадии:
-// ветка целая всегда, просто пока менее интересная.
+// ВЕТКА РАЗРЫВА. Всё, что висит на цели, однажды взрывается — вопрос только
+// в том, сколько успеешь навесить и чем подорвёшь. Отсюда и раскладка
+// настроек: кровотечение «Рваной раны», клеймо, детонация «Разрыва» и
+// добивание «Милостью» — четыре полосы, каждая со своим столбцом.
 //
-// РАНГИ ПРИВЕДЕНЫ К СЛОВАРЮ 5/3/1, А СИЛА ВЕТКИ НЕ ТРОНУТА. Ранги были 6, 7,
-// 5, 3 и 1 вперемешку — числа, за которыми не стояло ничего, кроме подгонки
-// ёмкости. Теперь ранг ЗНАЧИТ: 5 — фон и постепенная настройка, 3 — крупная
-// настройка, 1 — переключатель. Ёмкость от этого упала со 115 до 103 (окно
-// 94–104), и чтобы падение не оказалось молчаливым ослаблением, у каждого
-// перенумерованного таланта величина за ранг умножена на отношение рангов:
-// шесть по 0.01582 и пять по 0.018984 — это одни и те же 9.5 %. Совпадение
-// держится до седьмого знака и проверено тестом.
-//
-// СТОЛБЕЦ — ЭТО ПОЛОСА. Узел стоит в столбце по тому, ЧЕГО он касается:
-// первый — фон (характеристики), второй — «Рваная рана», третий —
-// «Сокрушение», четвёртый и пятый — «Клеймо», «Разрыв» и пары выбора. Так
+// СТОЛБЕЦ — ЭТО ПОЛОСА. Узел стоит в столбце по тому, ЧЕГО он касается, и
 // стрелка-предпосылка идёт прямой линией вниз по своей полосе, а не наискось
-// через чужие узлы.
+// через чужие узлы. Полосы не закреплены за столбцами навечно — закреплена
+// ПРЯМИЗНА: опора и зависимый стоят в одном столбце, и это держит
+// content:check.
+//
+// РАНГ ЗНАЧИТ: 5 — фон и постепенная настройка, 3 — крупная настройка,
+// 1 — переключатель, 2 — редкое исключение. Ёмкость 101 при глубине 60:
+// взять ветку целиком нельзя, и это и есть цена выбора.
+//
+// ЧТО ЗДЕСЬ ЕЩЁ НЕ ЗАДУМАННОЕ. Четыре узла стоят ВРЕМЕННО и уедут вместе со
+// своими стадиями: «Разгон» (станет проком), «Точность удара» (станет вторым
+// проком), «Кровоточащая кромка» и оба венца. Ветка при этом целая: за неё
+// можно играть после каждой стадии, просто она пока менее интересная.
 const WARDEN_WRATH = branch('warden-wrath', [
   // --- ЭТАЖ 1 · порог 0 · с уровня 10 -------------------------------------
   [
@@ -541,12 +541,12 @@ const WARDEN_WRATH = branch('warden-wrath', [
       id: 'wrath-deep-cut',
       name: 'Глубокий надрез',
       icon: 'talent-deep-cut',
-      maxRank: 5,
+      maxRank: 3,
       col: 2,
       effect: tunes('rending-wound', {
         field: 'effectWeaponDamagePercent',
         kind: 'percent',
-        value: 0.08,
+        value: 0.1,
       }),
     },
     {
@@ -557,12 +557,12 @@ const WARDEN_WRATH = branch('warden-wrath', [
       id: 'wrath-heavy-shatter',
       name: 'Тяжёлое сокрушение',
       icon: 'talent-heavy-shatter',
-      maxRank: 5,
+      maxRank: 3,
       col: 3,
       effect: tunes('shattering-blow', {
         field: 'weaponDamagePercent',
         kind: 'percent',
-        value: 0.06,
+        value: 0.1,
       }),
     },
     {
@@ -590,10 +590,10 @@ const WARDEN_WRATH = branch('warden-wrath', [
       id: 'wrath-open-vein',
       name: 'Вскрытая жила',
       icon: 'talent-open-vein',
-      maxRank: 3,
+      maxRank: 5,
       col: 2,
       requires: { talentId: 'wrath-deep-cut', minRank: 3 },
-      effect: tunes('rending-wound', { field: 'effectTicks', kind: 'percent', value: 0.12 }),
+      effect: tunes('rending-wound', { field: 'effectTicks', kind: 'percent', value: 0.1 }),
     },
     {
       id: 'wrath-swift-shatter',
@@ -602,9 +602,12 @@ const WARDEN_WRATH = branch('warden-wrath', [
       maxRank: 5,
       col: 3,
       requires: { talentId: 'wrath-heavy-shatter', minRank: 3 },
-      effect: tunes('shattering-blow', { field: 'cooldownSec', kind: 'percent', value: -0.06 }),
+      effect: tunes('shattering-blow', { field: 'cooldownSec', kind: 'percent', value: -0.05 }),
     },
     {
+      // ВРЕМЕННО ФОН. Здесь задуман ПРОК: крит даёт скорость на три следующих
+      // замаха. Пока механизма прока нет, место занимает ускорение числом —
+      // чтобы этаж не пустовал и за ветку можно было играть.
       // 0.006566 = 0.00469 × 7 / 5.
       id: 'wrath-momentum',
       name: 'Разгон',
@@ -626,12 +629,12 @@ const WARDEN_WRATH = branch('warden-wrath', [
       effect: mods(m('haste', 'flat', 0.008436)),
     },
     {
-      id: 'wrath-relentless',
-      name: 'Неотступность',
+      id: 'wrath-blood-science',
+      name: 'Кровавая наука',
       icon: 'talent-relentless',
       maxRank: 5,
       col: 2,
-      effect: tunes('rupture', { field: 'cooldownSec', kind: 'percent', value: -0.08 }),
+      effect: tunes('rupture', { field: 'detonateMultiplier', kind: 'percent', value: 0.1 }),
     },
     {
       id: 'wrath-deep-brand',
@@ -639,7 +642,7 @@ const WARDEN_WRATH = branch('warden-wrath', [
       icon: 'talent-deep-brand',
       maxRank: 5,
       col: 3,
-      effect: tunes('brand', { field: 'brandDamageShare', kind: 'percent', value: 0.12 }),
+      effect: tunes('brand', { field: 'brandDamageShare', kind: 'percent', value: 0.1 }),
     },
     {
       id: 'wrath-rupture',
@@ -668,13 +671,52 @@ const WARDEN_WRATH = branch('warden-wrath', [
   // --- ЭТАЖ 4 · порог 30 · с уровня 40 ------------------------------------
   [
     {
-      // 0.005628 = 0.00469 × 6 / 5.
-      id: 'wrath-true-aim',
-      name: 'Верный глазомер',
-      icon: 'talent-keen-eye',
+      id: 'wrath-wide-mercy',
+      name: 'Широкая милость',
+      icon: 'talent-wide-mercy',
       maxRank: 5,
       col: 1,
-      effect: mods(m('critChance', 'flat', 0.005628)),
+      effect: tunes('mercy', { field: 'executeBelowHpShare', kind: 'points', value: 0.03 }),
+    },
+    {
+      id: 'wrath-open-artery',
+      name: 'Открытая жила',
+      icon: 'talent-rupture',
+      maxRank: 5,
+      col: 2,
+      requires: { talentId: 'wrath-blood-science', minRank: 3 },
+      effect: tunes('rupture', { field: 'weaponDamagePercent', kind: 'percent', value: 0.1 }),
+    },
+    {
+      id: 'wrath-long-brand',
+      name: 'Долгое клеймо',
+      icon: 'talent-deep-brand',
+      maxRank: 3,
+      col: 3,
+      requires: { talentId: 'wrath-deep-brand', minRank: 3 },
+      effect: tunes('brand', { field: 'brandDurationSec', kind: 'percent', value: 0.15 }),
+    },
+    {
+      // ВРЕМЕННО ФОН. Здесь задуман второй ПРОК — заряды от крита по цели с
+      // раной. 0.0585833 = 0.03515 × 5 / 3.
+      id: 'wrath-precision',
+      name: 'Точность удара',
+      icon: 'talent-savage-blows',
+      maxRank: 3,
+      col: 4,
+      effect: mods(m('critMultiplier', 'flat', 0.0585833)),
+    },
+  ],
+  // --- ЭТАЖ 5 · порог 40 · с уровня 50 · ВТОРАЯ ПАРА ВЫБОРА ---------------
+  [
+    {
+      id: 'wrath-finishing-flourish',
+      name: 'Добивающий росчерк',
+      icon: 'talent-wide-mercy',
+      maxRank: 5,
+      col: 1,
+      requires: { talentId: 'wrath-wide-mercy', minRank: 3 },
+      effect: tunes('mercy', { field: 'weaponDamagePercent', kind: 'percent', value: 0.15 }),
     },
     {
       id: 'wrath-firm-hand',
@@ -682,55 +724,15 @@ const WARDEN_WRATH = branch('warden-wrath', [
       icon: 'talent-firm-hand',
       maxRank: 5,
       col: 2,
-      effect: tunes('quick-strike', { field: 'weaponDamagePercent', kind: 'percent', value: 0.04 }),
-    },
-    {
-      id: 'wrath-spare-edge',
-      name: 'Скупая кромка',
-      icon: 'talent-spare-edge',
-      maxRank: 5,
-      col: 3,
-      effect: tunes('quick-strike', { field: 'manaCost', kind: 'percent', value: -0.08 }),
-    },
-    {
-      id: 'wrath-wide-mercy',
-      name: 'Широкая милость',
-      icon: 'talent-wide-mercy',
-      maxRank: 5,
-      col: 4,
-      effect: tunes('mercy', { field: 'executeBelowHpShare', kind: 'points', value: 0.03 }),
-    },
-    {
-      // 0.0585833 = 0.03515 × 5 / 3.
-      id: 'wrath-precision',
-      name: 'Точность удара',
-      icon: 'talent-savage-blows',
-      maxRank: 3,
-      col: 5,
-      effect: mods(m('critMultiplier', 'flat', 0.0585833)),
-    },
-  ],
-  // --- ЭТАЖ 5 · порог 40 · с уровня 50 · ВТОРАЯ ПАРА ВЫБОРА ---------------
-  [
-    {
-      // 0.007728 = 0.00644 × 6 / 5.
-      id: 'wrath-firm-grip',
-      name: 'Крепкая хватка',
-      icon: 'talent-strength',
-      maxRank: 5,
-      col: 1,
-      effect: mods(m('attackPower', 'percent', 0.007728)),
+      effect: tunes('quick-strike', { field: 'weaponDamagePercent', kind: 'percent', value: 0.1 }),
     },
     {
       // ЗДЕСЬ ДОЛЖЕН БЫЛ СТОЯТЬ «ПРОБОЙНИК» — ПРОБИВАНИЕ БРОНИ, И ЕГО НЕТ.
       //
       // У мобов брони нет вовсе: `MonsterRole` — это hpMult, damageMult,
       // goldMult, xpMult и swingTime, а исходящий урон героя не смягчается
-      // ничем (`rollSwing` кладётся в полоску как есть). Пробивать нечего, и
-      // характеристика была бы мёртвой — тем самым узлом, который проходит
-      // все проверки и не делает ничего. Завести её можно только вместе с
-      // бронёй у мобов, а это правка МИРА, которую ночь про одну ветку
-      // делать не должна.
+      // ничем. Пробивать нечего, и характеристика была бы мёртвой — тем самым
+      // узлом, который проходит все проверки и не делает ничего.
       //
       // Место занял «Частый росчерк» — вторая автоатака ДОЛЕЙ. Он же
       // показывает, зачем характеристика нужна рядом с флагом: на этом же
@@ -740,16 +742,8 @@ const WARDEN_WRATH = branch('warden-wrath', [
       name: 'Частый росчерк',
       icon: 'talent-double-strike',
       maxRank: 3,
-      col: 2,
-      effect: mods(m('doubleStrike', 'flat', 0.01)),
-    },
-    {
-      id: 'wrath-cold-blood',
-      name: 'Хладнокровие',
-      icon: 'talent-cold-blood',
-      maxRank: 5,
       col: 3,
-      effect: mods(m('critChance', 'flat', 0.00586)),
+      effect: mods(m('doubleStrike', 'flat', 0.01)),
     },
     {
       id: 'wrath-double-flourish',
@@ -761,36 +755,50 @@ const WARDEN_WRATH = branch('warden-wrath', [
       effect: { kind: 'flag', flag: 'double-strike', chance: 0.2 },
     },
     {
+      // ВРЕМЕННО. Здесь задуман «Добой» — условный триггер на криты двух
+      // названных умений. Пока его механизма нет, ключ правит САМ УДАР
+      // «Рваной раны»: поле `weaponDamagePercent` в ветке больше никем не
+      // занято, и правило «пара умение + поле не повторяется» держится.
+      // Прежняя редакция ключа правила тики и урон кровотечения — те же поля,
+      // что у «Вскрытой жилы» и «Глубокого надреза» этажами выше.
       id: 'wrath-bleeding-edge',
       name: 'Кровоточащая кромка',
       icon: 'talent-bleed-deep',
       maxRank: 1,
       col: 5,
       exclusiveGroup: 'wrath-key-5',
-      effect: tunes(
-        'rending-wound',
-        { field: 'effectTicks', kind: 'percent', value: 0.34 },
-        { field: 'effectWeaponDamagePercent', kind: 'percent', value: 0.1 },
-      ),
+      effect: tunes('rending-wound', {
+        field: 'weaponDamagePercent',
+        kind: 'percent',
+        value: 0.15,
+      }),
     },
   ],
   // --- ЭТАЖ 6 · порог 50 · с уровня 60 ------------------------------------
   [
     {
-      id: 'wrath-heavy-swing',
-      name: 'Мощь замаха',
-      icon: 'talent-honed-edge',
+      id: 'wrath-mean-shove',
+      name: 'Злой толчок',
+      icon: 'talent-firm-hand',
       maxRank: 5,
       col: 1,
-      effect: mods(m('attackPower', 'percent', 0.01582)),
+      effect: tunes('shield-shove', { field: 'weaponDamagePercent', kind: 'percent', value: 0.15 }),
     },
     {
-      id: 'wrath-long-focus',
-      name: 'Долгое сосредоточение',
-      icon: 'talent-long-focus',
-      maxRank: 3,
+      id: 'wrath-frequent-wound',
+      name: 'Частая рана',
+      icon: 'talent-open-vein',
+      maxRank: 5,
       col: 2,
-      effect: tunes('focus', { field: 'freeCastsCasts', kind: 'percent', value: 0.34 }),
+      effect: tunes('rending-wound', { field: 'cooldownSec', kind: 'percent', value: -0.05 }),
+    },
+    {
+      id: 'wrath-precise-brand',
+      name: 'Точное клеймо',
+      icon: 'talent-long-focus',
+      maxRank: 5,
+      col: 3,
+      effect: tunes('brand', { field: 'cooldownSec', kind: 'percent', value: -0.05 }),
     },
   ],
   // --- ЭТАЖ 7 · порог 60 · с уровня 70 · ВЕНЕЦ ----------------------------
@@ -816,7 +824,6 @@ const WARDEN_WRATH = branch('warden-wrath', [
       maxRank: 1,
       col: 5,
       exclusiveGroup: 'wrath-key-7',
-      requires: { talentId: 'wrath-bleeding-edge' },
       effect: tunes('rending-wound', { field: 'type', kind: 'set', value: 'instant' }),
     },
   ],
@@ -3486,117 +3493,88 @@ export interface TalentPath {
 const BRANCH_PATHS: Partial<Record<BranchId, TalentPath[]>> = {
   'warden-wrath': [
     {
-      // КРОВЬ. Урон по времени: дешёвое умение учится кровить, кровотечение
-      // «Рваной раны» удваивается и перестаёт ждать замаха. Урон идёт РОВНО,
-      // а не всплесками.
+      // КРОВЬ. Всё, что висит на цели: «Скорый выпад» учится кровить,
+      // кровотечение «Рваной раны» течёт дольше и чаще, а к венцу рана
+      // перестаёт ждать замаха. Урон идёт РОВНО, а не всплесками.
       //
       // ЭТОТ ПУТЬ СТОИТ ПЕРВЫМ, И ЭТО РЕШЕНИЕ, А НЕ ПОРЯДОК НАБОРА. Первый
       // путь — тот, по которому ветку считает ПРОГОН, и он обязан быть тем,
       // что герой играет БЕЗ подсказок: его четвёрка и есть четвёрка по
-      // умолчанию. Поставь первым «Взрыв» — прибор мерил бы героя, треть
-      // очков которого уходит в умения, которых у него в ряду нет.
-      //
-      // ОБЩЕЕ ЯДРО ИДЁТ ПЕРВЫМ, А ЛИЦО ВЕТКИ — ПОСЛЕ, и это не размывает
-      // путь. Опорные таланты кровотечения стоят на девятом и тринадцатом
-      // этажах, то есть требуют сорока и шестидесяти очков в ветке: до них
-      // герой сорокового уровня не дотягивается никак, и «сперва проценты»
-      // — не выбор автора, а форма ветки.
+      // умолчанию.
       id: 'wrath-bleed',
       name: 'Кровь',
-      // ЧЕТВЁРКА ПУТИ — ТА ЖЕ, ЧТО У ГЕРОЯ ПО УМОЛЧАНИЮ, и это решение, а не
-      // совпадение: первый путь мерит того, кто НИЧЕГО не менял, и контракты
-      // цены схватки не должны ехать от того, какой набор сегодня кажется
-      // авторам правильным. Порядок здесь — приоритет автокаста.
       abilities: ['quick-strike', 'rending-wound', 'mend-wounds', 'shattering-blow'],
       order: [
-        // КЛЮЧЕВЫЕ И ИХ ОПОРЫ — В ГОЛОВЕ ПУТИ. Путь — список приоритетов, и
-        // ключевые этажи это то, ради чего сборка существует: стоя в хвосте,
-        // они не покупались вовсе — очки кончались раньше.
+        // Своя полоса — первой: надрез, жила, частота.
         'wrath-deep-cut',
+        'wrath-open-vein',
+        'wrath-honed-edge',
+        'wrath-savage-blows',
+        'wrath-keen-eye',
+        'wrath-momentum',
+        'wrath-frenzy',
+        'wrath-blood-science',
+        'wrath-deep-brand',
+        // ИСКЛЮЧЕНИЕ — «РВАНЫЙ ВЫПАД», И ОНО ЗАПИСАНО ДВАЖДЫ, ПОТОМУ ЧТО
+        // ВОЗВРАЩАЛОСЬ ДВАЖДЫ. Ключ стоит не в голове пути, а за настройками
+        // верхних этажей. Причина — контракт цены схватки с боссом: числа
+        // боссов калибровались под героя, у которого «Рваного выпада» на
+        // тридцати очках ещё не было. Купи его раньше — и первый босс
+        // третьего тира стоит 54–58 % запаса при поле коридора 60.
+        //
+        // Порядок пути — это ПРИОРИТЕТ, а покупается на каждом шаге первое
+        // ДОСТУПНОЕ по списку, поэтому перед ключом стоят таланты ВЕРХНИХ
+        // этажей, доступные на этом отрезке заведомо. Это правка ПРИБОРА под
+        // прежнюю калибровку, а не игры.
+        'wrath-rupture',
         'wrath-bleeding-edge',
         'wrath-open-wound',
-        'wrath-honed-edge',
-        'wrath-keen-eye',
-        'wrath-savage-blows',
-        'wrath-frenzy',
-        'wrath-firm-hand',
-        'wrath-spare-edge',
-        // ИСКЛЮЧЕНИЕ — «РВАНЫЙ ВЫПАД», И ОНО ЗАПИСАНО ДВАЖДЫ, ПОТОМУ ЧТО
-        // ВОЗВРАЩАЛОСЬ ДВАЖДЫ. Ключ стоит не в голове пути, а за процентами
-        // верхних этажей, и берётся около СОРОКОВОГО очка ветки. Причина —
-        // контракт цены схватки с боссом: числа боссов калибровались под
-        // героя, у которого «Рваного выпада» на тридцати очках ещё не было.
-        // Купи его раньше — и первый босс третьего тира стоит 54–58 % запаса
-        // при поле коридора 60: герой первого пути оказывается сильнее того,
-        // под кого босса считали.
-        //
-        // ПЕРЕЕЗД НА СЕМЬ ЭТАЖЕЙ ВЕРНУЛ ЭТО САМО СОБОЙ, и вот как. Порядок
-        // пути — это ПРИОРИТЕТ, а покупается на каждом шаге первое ДОСТУПНОЕ
-        // по списку. «Твёрдая рука» и «Скупая кромка» стояли перед ключом и
-        // жили на первом этаже, то есть были доступны всегда и оттягивали
-        // очки на себя; в новой форме они переехали на четвёртый этаж (порог
-        // 30) и на двадцать шестом очке недоступны — очередь доходила до
-        // ключа. Замер: боссы «Кипящих штолен» подешевели до 58 %.
-        // Поэтому перед ключом теперь стоят таланты ВЕРХНИХ этажей, которые
-        // на этом отрезке доступны заведомо. Это правка ПРИБОРА под прежнюю
-        // калибровку, а не игры: ни урон босса, ни талант не тронуты.
-        'wrath-momentum',
-        'wrath-relentless',
-        'wrath-deep-brand',
-        'wrath-rupture',
-        'wrath-firm-grip',
-        'wrath-precision',
-        'wrath-open-vein',
-        'wrath-quick-flourish',
-        'wrath-heavy-swing',
-        'wrath-true-aim',
-        'wrath-cold-blood',
-        'wrath-double-flourish',
-        'wrath-swift-shatter',
+        'wrath-frequent-wound',
         'wrath-heavy-shatter',
+        'wrath-swift-shatter',
+        'wrath-firm-hand',
+        'wrath-quick-flourish',
         'wrath-wide-mercy',
-        'wrath-long-focus',
-        'wrath-headlong',
-        'wrath-second-swing',
+        'wrath-open-artery',
+        'wrath-long-brand',
+        'wrath-precision',
+        'wrath-finishing-flourish',
+        'wrath-mean-shove',
+        'wrath-precise-brand',
       ],
     },
     {
-      // ВЗРЫВ. Два крупных удара: «Сокрушение» бьёт чаще и тяжелее, «Милость»
-      // из окна в конце боя превращается в постоянную кнопку.
+      // ВЗРЫВ. Два крупных удара: «Сокрушение» бьёт чаще, тяжелее и без
+      // замаха, «Милость» из окна в конце боя превращается в постоянную
+      // кнопку, а венец даёт второй заряд.
       id: 'wrath-burst',
       name: 'Взрыв',
       abilities: ['shattering-blow', 'mercy', 'quick-strike', 'mend-wounds'],
       order: [
-        // КЛЮЧЕВЫЕ И ИХ ОПОРЫ — В ГОЛОВЕ ПУТИ. Путь — список приоритетов, и
-        // ключевые этажи это то, ради чего сборка существует: стоя в хвосте,
-        // они не покупались вовсе — очки кончались раньше.
+        'wrath-heavy-shatter',
+        'wrath-swift-shatter',
         'wrath-headlong',
-        'wrath-double-flourish',
         'wrath-second-swing',
         'wrath-honed-edge',
         'wrath-savage-blows',
-        'wrath-swift-shatter',
-        'wrath-precision',
         'wrath-keen-eye',
-        'wrath-wide-mercy',
-        'wrath-heavy-swing',
-        'wrath-heavy-shatter',
-        'wrath-true-aim',
-        'wrath-cold-blood',
-        'wrath-frenzy',
         'wrath-momentum',
+        'wrath-frenzy',
+        'wrath-wide-mercy',
+        'wrath-finishing-flourish',
+        'wrath-precision',
         'wrath-quick-flourish',
-        'wrath-deep-brand',
-        'wrath-long-focus',
+        'wrath-double-flourish',
         'wrath-firm-hand',
-        'wrath-spare-edge',
-        'wrath-firm-grip',
-        'wrath-relentless',
-        'wrath-rupture',
+        'wrath-mean-shove',
+        'wrath-deep-brand',
+        'wrath-long-brand',
+        'wrath-precise-brand',
+        'wrath-blood-science',
+        'wrath-open-artery',
         'wrath-deep-cut',
-        'wrath-bleeding-edge',
         'wrath-open-vein',
-        'wrath-open-wound',
+        'wrath-frequent-wound',
       ],
     },
   ],
