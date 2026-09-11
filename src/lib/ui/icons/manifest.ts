@@ -21,6 +21,9 @@ export const ICONS = {
   'ability-quick-strike': { file: 'delapouite/sword-brandish.svg', author: 'Delapouite' },
   'ability-rending-wound': { file: 'lorc/bleeding-wound.svg', author: 'Lorc' },
   'ability-shattering-blow': { file: 'lorc/hammer-drop.svg', author: 'Lorc' },
+  // «Пролом» — умение, которого нет ни в одной книге класса: его кладёт в
+  // ряд талант замены (`replace-ability`), вместо «Сокрушения».
+  'ability-breach': { file: 'lorc/groundbreaker.svg', author: 'Lorc' },
   'ability-mend-wounds': { file: 'delapouite/first-aid-kit.svg', author: 'Delapouite' },
   'ability-shield-shove': { file: 'delapouite/shield-bash.svg', author: 'Delapouite' },
   'ability-rupture': { file: 'lorc/tearing.svg', author: 'Lorc' },

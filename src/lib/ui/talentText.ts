@@ -187,6 +187,12 @@ export function flagText(effect: FlagEffect, resource: ResourceWords, perRank = 
         `${perRank ? ' за ранг' : ''}`
       )
     },
+    // ЗАМЕНА УМЕНИЯ: оба имени берутся из реестра, а не пишутся здесь.
+    'replace-ability': (e) =>
+      'from' in e && 'to' in e
+        ? `«${ABILITY_BY_ID[e.from]?.name ?? e.from}» заменяется на ` +
+          `«${ABILITY_BY_ID[e.to]?.name ?? e.to}»`
+        : 'Умение заменяется другим',
     // ПЕРЕНОС МЕТКИ: доля оставшегося времени, переживающая смерть цели.
     'carry-over': (e) => {
       if (!('mark' in e) || !('share' in e)) return 'Метка переходит на следующую цель'

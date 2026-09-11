@@ -53,6 +53,50 @@ function withoutCapstone(real: Content) {
  * Пути ПЕРВОЙ ветки без венца в порядке покупки: сам талант на месте, но
  * очередь до него не доходит. Ломается ровно то, что проверка и стережёт.
  */
+/** Талант замены умения. */
+function swapTalent(real: Content) {
+  const found = real.talents.find(
+    (t) => t.effect.kind === 'flag' && t.effect.flag === 'replace-ability',
+  )
+  if (!found) throw new Error('в дереве нет замены умения — образец мерить не на чем')
+  return found
+}
+
+function swapTalentId(real: Content) {
+  return swapTalent(real).id
+}
+
+function swapFrom(real: Content) {
+  return (swapTalent(real).effect as { from: string }).from
+}
+
+/** Любое умение, которое У КЛАССА ЭТОЙ ВЕТКИ есть и которое не заменяется. */
+function ownedAbilityId(real: Content) {
+  const talent = swapTalent(real)
+  const branch = real.branches.find((b) => b.id === talent.branch)!
+  const owner = real.classes.find((c) => c.id === branch.classId)!
+  const from = swapFrom(real)
+  const found = owner.abilityIds.find((id) => id !== from)
+  if (!found) throw new Error('у класса одно умение — подменить нечем')
+  return found
+}
+
+function swapTalentWith(real: Content, fields: { to?: string }): TalentDef[] {
+  const talent = swapTalent(real)
+  return patch(real.talents, talent.id, {
+    effect: { ...(talent.effect as object), ...fields },
+  } as unknown as Partial<TalentDef>)
+}
+
+/**
+ * Дерево БЕЗ таланта замены: подставляемое умение остаётся в реестре и
+ * становится недостижимым — до него не добраться ни книгой, ни талантом.
+ */
+function withoutSwapTalent(real: Content): TalentDef[] {
+  const id = swapTalentId(real)
+  return real.talents.filter((t) => t.id !== id)
+}
+
 /** Прок С УСЛОВИЕМ — на нём проверяются правила условий. */
 function conditionalProc(real: Content) {
   const found = real.talents.find(
@@ -2089,6 +2133,29 @@ export function brokenCases(): BrokenCase[] {
       title: 'перенос метки, которую класс не вешает',
       content: { ...real, talents: carryTalentInForeignBranch(real) },
       expect: ['нет ни одного', 'умения, которое её вешает'],
+    },
+    {
+      // Замена подставляет умение, лежащее в книге класса: игрок мог
+      // поставить его сам, и в ряду оказались бы два экземпляра одного
+      // умения с одним откатом — id-то остаётся от заменяемого.
+      title: 'замена подставляет умение из книги класса',
+      content: { ...real, talents: swapTalentWith(real, { to: ownedAbilityId(real) }) },
+      expect: [swapTalentId(real), 'лежит в книге класса'],
+    },
+    {
+      // Замена умения на себя же: талант есть, ранг растёт, очко берут, а не
+      // меняется ничего.
+      title: 'замена умения на себя же',
+      content: { ...real, talents: swapTalentWith(real, { to: swapFrom(real) }) },
+      expect: [swapTalentId(real), 'ничего не меняет'],
+    },
+    {
+      // Умение вне всех книг, которое не подставляет ни один талант: оно есть
+      // в реестре, проходит схему, весит иконку — и добраться до него нельзя
+      // ничем.
+      title: 'умение-сирота: ни в книге, ни в замене',
+      content: { ...real, talents: withoutSwapTalent(real) },
+      expect: ['не лежит ни в одной книге класса'],
     },
     {
       // Из ПОРЯДКА ПОКУПКИ убран венец: талант на месте, ветка цела, а путь

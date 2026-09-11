@@ -42,6 +42,30 @@ interface Accum {
 const EMPTY: Accum = { points: 0, percent: 0, multiplier: 1, set: null }
 
 /**
+ * Умение, которое играется ВМЕСТО названного, если талант замены взят.
+ *
+ * Возвращается подменённое определение ПОД ИДЕНТИФИКАТОРОМ ЗАМЕНЯЕМОГО:
+ * снаружи это по-прежнему тот же слот, тот же откат и та же галка — просто
+ * за ними другое умение. Ни одного `if (умение === ...)`: пара `from`/`to`
+ * лежит в payload'е флага.
+ *
+ * Замены нет — возвращается тот же объект, бит в бит, и весь конвейер ниже
+ * работает как работал.
+ */
+function replacementFor(def: AbilityDef, ranks: TalentRanks): AbilityDef {
+  for (const talent of TALENTS) {
+    const effect = talent.effect
+    if (effect.kind !== 'flag' || effect.flag !== 'replace-ability') continue
+    if (effect.from !== def.id) continue
+    if (rankOf(ranks, talent.id) <= 0) continue
+    const to = ABILITY_BY_ID[effect.to]
+    if (!to) continue
+    return { ...to, id: def.id }
+  }
+  return def
+}
+
+/**
  * Собрать правки всех взятых талантов по одному умению.
  *
  * Поиск идёт по `abilityId` в эффекте таланта, а не по имени таланта: два
@@ -109,10 +133,18 @@ const applyD = (base: Decimal, slot: Accum | undefined): Decimal =>
  * быть базовым БИТ В БИТ, иначе golden поедет от одной только правки формы.
  */
 export function tuneAbility(
-  def: AbilityDef,
+  base: AbilityDef,
   ranks: TalentRanks,
   boons: readonly string[] = [],
 ): AbilityDef {
+  // ЗАМЕНА — ПЕРВЫМ ДЕЛОМ, И ПОД ПРЕЖНИМ ИМЕНЕМ. Талант-замена подставляет
+  // ДРУГОЕ умение туда, где стоит названное; всё остальное ниже считается уже
+  // по нему, включая его собственные правки от других талантов.
+  //
+  // `id` остаётся ПРЕЖНИМ, и это несущая часть решения: откаты, галки
+  // автокаста, слоты ряда и сейв — ключи по id. Смени ключ вложением очка —
+  // и откат сбросится, а галка потеряется. Меняется умение, а не его место.
+  const def = replacementFor(base, ranks)
   const acc = tunesFor(ranks, def.id, boons)
   // ВЫУЧЕННЫЙ ЭФФЕКТ — ЧАСТЬ ЭФФЕКТИВНОГО УМЕНИЯ. Флаг `ability-learns-effect`
   // («Рваный выпад» учит Скорый выпад кровить) подшивается ЗДЕСЬ, а не только

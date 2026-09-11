@@ -4589,6 +4589,79 @@ function checkCarryTalents(content: Content, report: Report): void {
   }
 }
 
+/**
+ * ЗАМЕНА УМЕНИЯ — ТРИ ПРАВИЛА, И ВСЕ ТРИ ПРО ТИХИЕ ПОЛОМКИ.
+ *
+ *  1. **`from` принадлежит классу ветки.** Талант Стража, заменяющий умение
+ *     Псаря, проходит все ссылочные проверки и не делает НИЧЕГО: чужое умение
+ *     не попадает ни в ряд, ни в модель. То же правило, что у `checkTalentOwnership`,
+ *     только здесь оно про другое поле.
+ *  2. **`to` НЕ ЛЕЖИТ НИ В ОДНОЙ книге класса.** Иначе замена положила бы в
+ *     ряд второй экземпляр того, что игрок уже мог поставить сам, и две
+ *     кнопки делили бы один откат — id-то остаётся от `from`.
+ *  3. **`to` не заменяется сам и не равен `from`.** Замена умения на себя —
+ *     талант, который ничего не меняет; цепочка замен — порядок, которого в
+ *     данных не выразить.
+ *
+ * ЧЕТВЁРТОЕ ПРАВИЛО — ОБРАТНОЕ, И ОНО ЗДЕСЬ ВАЖНЕЕ ТРЁХ ПЕРВЫХ. Умение,
+ * которого нет ни в одной книге и которое не названо НИ ОДНИМ талантом
+ * замены, — мёртвые данные: оно есть в реестре, проходит схему, весит
+ * иконку, и добраться до него нельзя ничем.
+ */
+function checkAbilityReplacements(content: Content, report: Report): void {
+  const inSomeBook = new Set(content.classes.flatMap((c) => c.abilityIds))
+  const replaced = new Set<string>()
+  const substitutes = new Set<string>()
+  for (const talent of content.talents) {
+    const effect = talent.effect
+    if (effect.kind !== 'flag' || effect.flag !== 'replace-ability') continue
+    const where = `талант ${talent.id}`
+    replaced.add(effect.from)
+    substitutes.add(effect.to)
+    const branch = content.branches.find((b) => b.id === talent.branch)
+    const owner = branch ? content.classes.find((c) => c.id === branch.classId) : undefined
+    if (owner) {
+      report.need(
+        owner.abilityIds.includes(effect.from),
+        where,
+        `заменяет «${effect.from}», а у класса ${owner.id} такого умения нет: чужое ` +
+          'умение не попадает ни в ряд действий, ни в модель боя, и талант не ' +
+          'делает НИЧЕГО (data/talents.ts против data/classes.ts)',
+      )
+    }
+    report.need(
+      !inSomeBook.has(effect.to),
+      where,
+      `подставляет «${effect.to}», а оно лежит в книге класса: игрок мог поставить ` +
+        'его сам, и тогда в ряду оказались бы два экземпляра одного умения с одним ' +
+        'откатом — id остаётся от заменяемого (data/talents.ts)',
+    )
+    report.need(
+      effect.to !== effect.from,
+      where,
+      'заменяет умение на себя же — талант, который ничего не меняет (data/talents.ts)',
+    )
+  }
+  for (const to of substitutes) {
+    report.need(
+      !replaced.has(to),
+      `умение ${to}`,
+      'и подставляется заменой, и заменяется само: цепочка замен порядка не имеет, ' +
+        'и какая из них сработает — вопрос порядка талантов в файле (data/talents.ts)',
+    )
+  }
+  for (const ability of content.abilities) {
+    if (inSomeBook.has(ability.id)) continue
+    report.need(
+      substitutes.has(ability.id),
+      `умение ${ability.id}`,
+      'не лежит ни в одной книге класса и не подставляется ни одним талантом ' +
+        'замены: добраться до него нельзя ничем (data/abilities.ts против ' +
+        'data/talents.ts)',
+    )
+  }
+}
+
 function checkTalentOwnership(content: Content, report: Report): void {
   for (const talent of content.talents) {
     const abilityId = tunedAbilityId(talent)
@@ -4739,6 +4812,7 @@ export function checkContent(content: Content): ContentIssue[] {
   checkTalentTuneDuplicates(content, report)
   checkProcTalents(content, report)
   checkCarryTalents(content, report)
+  checkAbilityReplacements(content, report)
   checkTalentArrows(content, report)
   checkBranchCapstones(content, report)
   checkTuneFloors(content, report)

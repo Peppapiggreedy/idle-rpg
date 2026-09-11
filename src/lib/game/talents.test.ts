@@ -52,6 +52,7 @@ import {
   talentsInBranch,
   type BranchId,
   COMPANION_FLAGS,
+  TREE_MAX_COLUMNS,
 } from '../data/talents'
 import {
   LEVEL_CAP,
@@ -340,7 +341,7 @@ describe('данные дерева', () => {
     }
   })
 
-  it('в Гневе на каждом этаже ЕСТЬ ВЫБОР, а на венце — два капстоуна', () => {
+  it('в Гневе на каждом этаже ЕСТЬ ВЫБОР, а венец — это выбор из трёх', () => {
     // Первая переделанная ветка. Требование, ради которого затевалась ночь:
     // на этаже стоит больше одного таланта — иначе это лестница.
     const floors = new Map<number, number>()
@@ -352,7 +353,11 @@ describe('данные дерева', () => {
       expect(count, `Гнев, этаж ${row}`).toBeGreaterThanOrEqual(2)
       expect(count, `Гнев, этаж ${row}`).toBeLessThanOrEqual(shape.cols)
     }
-    expect(floors.get(shape.rows)).toBe(2)
+    // ТРИ, А НЕ ДВА, И ЭТО РЕШЕНИЕ. «Второй замах» и «Незаживающая рана» оба
+    // ускоряют ротацию, которая уже есть; «Пролом» её МЕНЯЕТ — заменяет
+    // «Сокрушение» умением другой формы. Правило венца — «взять можно ОДИН»,
+    // и держит его группа, а не число клеток.
+    expect(floors.get(shape.rows)).toBe(3)
   })
 
   it('в Гневе больше половины талантов правят УМЕНИЯ', () => {
@@ -802,19 +807,31 @@ describe('пути внутри ветки — сборка для прогон�
     }
   })
 
-  it('у переделанной ветки путей ДВА, и они берут разное', () => {
+  it('у переделанной ветки путей ТРИ, и каждая пара берёт разное', () => {
     // Два жизнеспособных пути внутри ветки — то, ради чего на этажах и
     // появились альтернативы. Если оба пути покупают одно и то же, выбора
     // нет, сколько бы клеток ни стояло в ряду.
+    //
+    // ТРЕТИЙ ПУТЬ ПРИШЁЛ ВМЕСТЕ С ТРЕТЬИМ ВЕНЦОМ, и иначе быть не могло:
+    // талант, не попавший ни в один путь, не измерен ничем (это держит
+    // `content:check`). Проверяется КАЖДАЯ ПАРА, а не только первая: путь,
+    // повторяющий соседа, — не выбор, в каком бы месте списка он ни стоял.
     const paths = pathsOf(WRATH)
-    expect(paths.length).toBe(2)
+    expect(paths.length).toBe(3)
     const points = earnedPoints(new Decimal(LEVEL_CAP))
-    const [first, second] = paths.map((p) => pathRanks(p, points))
-    const differing = new Set([...Object.keys(first), ...Object.keys(second)]).size
-    expect(differing).toBeGreaterThan(Object.keys(first).length)
-    // И хотя бы один талант, взятый одним путём, вторым не берётся вовсе.
-    expect(Object.keys(first).some((id) => !(id in second))).toBe(true)
-    expect(Object.keys(second).some((id) => !(id in first))).toBe(true)
+    const ranks = paths.map((p) => pathRanks(p, points))
+    for (let i = 0; i < ranks.length; i += 1) {
+      for (let j = i + 1; j < ranks.length; j += 1) {
+        const where = `${paths[i].id} против ${paths[j].id}`
+        const first = ranks[i]
+        const second = ranks[j]
+        const differing = new Set([...Object.keys(first), ...Object.keys(second)]).size
+        expect(differing, where).toBeGreaterThan(Object.keys(first).length)
+        // И хотя бы один талант, взятый одним путём, вторым не берётся вовсе.
+        expect(Object.keys(first).some((id) => !(id in second)), where).toBe(true)
+        expect(Object.keys(second).some((id) => !(id in first)), where).toBe(true)
+      }
+    }
   })
 })
 
@@ -1277,15 +1294,24 @@ describe('взаимоисключающие группы', () => {
 describe('ключевые этажи Стража — взаимоисключающие пары', () => {
   const own = BRANCHES.filter((b) => b.classId === WARDEN.id)
 
-  it('на этажах 5, 9 и 13 каждой ветки РОВНО одна группа из двух', () => {
+  it('на ключевом этаже каждой ветки РОВНО одна группа, и в ней не меньше двух', () => {
     for (const branch of own) {
       for (const row of keyRowsOf(branch.id)) {
-        // РЯДОМ С ПАРОЙ СТОЯТ ОБЫЧНЫЕ УЗЛЫ, и это законно: в ветке из семи
-        // широких этажей пара занимает две клетки из пяти. Считаем ЧЛЕНОВ
-        // ГРУППЫ, а не весь ряд.
+        // РЯДОМ С ГРУППОЙ СТОЯТ ОБЫЧНЫЕ УЗЛЫ, и это законно: в ветке из семи
+        // широких этажей группа занимает две-три клетки из пяти. Считаем
+        // ЧЛЕНОВ ГРУППЫ, а не весь ряд.
+        //
+        // ГРУППА ОДНА, А ЧЛЕНОВ В НЕЙ ДВА ИЛИ ТРИ. Здесь стояло «ровно два», и
+        // это было верно ровно пока выбор был из двух. Правило, которое
+        // держит смысл ключевого этажа, — «взять можно ОДИН», и держит его
+        // ГРУППА; число клеток в ней ограничено сверху шириной ряда, а снизу
+        // двойкой (`content:check`). Венец Гнева из трёх появился потому, что
+        // два первых были про одно и то же — оба ускоряли ротацию, которая
+        // уже есть, — а «Пролом» её меняет.
         const onRow = talentsInBranch(branch.id).filter((t) => t.row === row && t.exclusiveGroup)
         const groups = new Set(onRow.map((t) => t.exclusiveGroup))
-        expect(onRow, `${branch.id} этаж ${row}`).toHaveLength(2)
+        expect(onRow.length, `${branch.id} этаж ${row}`).toBeGreaterThanOrEqual(2)
+        expect(onRow.length, `${branch.id} этаж ${row}`).toBeLessThanOrEqual((BRANCH_BY_ID[branch.id]?.cols ?? TREE_MAX_COLUMNS))
         expect(groups.size, `${branch.id} этаж ${row}: групп ${[...groups].join(', ')}`).toBe(1)
         expect([...groups][0], `${branch.id} этаж ${row}: группа не названа`).toBeTruthy()
       }
