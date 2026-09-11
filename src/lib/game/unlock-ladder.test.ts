@@ -10,6 +10,7 @@ import { createInitialState, type GameState } from './state'
 import { ensureStats } from './stats'
 import { craft, recipeStatus } from './crafting'
 import { gatherHerbs, potionSlots } from './potions'
+import { POTION_RECIPES } from '../data/recipes'
 import { RECIPES, RECIPE_BY_ID, PROFESSION_UNLOCK_LEVEL, professionUnlocked } from '../data/recipes'
 import { HERBS } from '../data/herbs'
 import { ZONES, ZONE_BY_ID } from '../data/zones'
@@ -122,9 +123,24 @@ describe('травничество закрыто целиком', () => {
     expect((after.materials[HERBS[0].id] ?? new Decimal(0)).gt(0)).toBe(true)
   })
 
-  it('до сорокового в ряду действий нет ни одной склянки', () => {
+  // РЯД ДЕЙСТВИЙ ПОКАЗЫВАЕТ ТО, ЧТО ЕСТЬ В МЕШКЕ, А НЕ ТО, ЧТО ОТКРЫЛОСЬ.
+  // Прежде правило было «открылись зелья — показываем все девять», и ряд
+  // распухал на сороковом уровне восемью кнопками, которых игрок ни разу не
+  // варил. Порог механики держит ВАРКУ, и этого довольно: склянки берутся
+  // только ей.
+  it('в ряду действий нет склянок, пока их нет в мешке', () => {
     expect(potionSlots(hero(POTION_UNLOCK_LEVEL - 1))).toHaveLength(0)
-    expect(potionSlots(hero(POTION_UNLOCK_LEVEL)).length).toBeGreaterThan(0)
+    expect(potionSlots(hero(POTION_UNLOCK_LEVEL))).toHaveLength(0)
+  })
+
+  it('склянка в мешке — склянка в ряду', () => {
+    const potion = POTION_RECIPES[0]
+    const withOne = hero(POTION_UNLOCK_LEVEL, {
+      materials: { [potion.output.id]: new Decimal(1) },
+    })
+    const shown = potionSlots(withOne)
+    expect(shown).toHaveLength(1)
+    expect(shown[0].recipe.id).toBe(potion.id)
   })
 
   it('травы растут ТОЛЬКО в зонах не ниже своего порога', () => {
