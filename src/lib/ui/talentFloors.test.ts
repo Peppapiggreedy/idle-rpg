@@ -9,11 +9,13 @@ import { describe, expect, it } from 'vitest'
 import { groupFloors, floorsOf } from './talentFloors'
 import {
   BRANCHES,
-  BRANCH_ROW_STEP,
   TALENTS,
   talentsInBranch,
   type TalentDef,
 } from '../data/talents'
+
+/** Шаг выдуманной ветки: важна арифметика порога, а не чья-то форма. */
+const STEP = 5
 
 /** Талант-заглушка: важны только этаж, порог и порядок. */
 function fake(id: string, row: number): TalentDef {
@@ -24,7 +26,7 @@ function fake(id: string, row: number): TalentDef {
     branch: 'warden-wrath',
     row,
     maxRank: 3,
-    requiredPointsInBranch: (row - 1) * BRANCH_ROW_STEP,
+    requiredPointsInBranch: (row - 1) * STEP,
     effect: { kind: 'modifiers', mods: [] },
   }
 }
@@ -58,7 +60,7 @@ describe('ветка раскладывается по этажам', () => {
 
   it('порог у ряда ОДИН — это и есть определение этажа', () => {
     const floors = groupFloors([fake('а', 4), fake('б', 4)])
-    expect(floors[0].required).toBe(3 * BRANCH_ROW_STEP)
+    expect(floors[0].required).toBe(3 * STEP)
     // Второй порог рядом не хранится: у ряда он единственный по построению,
     // а расхождение ловит content:check ещё в данных.
     expect(Object.keys(floors[0])).toEqual(['row', 'required', 'talents'])

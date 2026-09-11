@@ -26,6 +26,7 @@ import {
   rotationOf,
   type ActiveEffect,
   type GameState,
+  heroAbilityDefs,
 } from './state'
 import type { Rng } from './rng'
 import type { AttackEvent, CombatEvent } from '../types'
@@ -41,10 +42,15 @@ export function abilityOf(state: GameState, abilityId: string): AbilityDef | und
   return tunedById(abilityId, state.talents, equippedBoons(state.equipment))
 }
 
-/** Умения класса, подкрученные талантами героя. Их и показывает книга. */
+/**
+ * Умения ГЕРОЯ, подкрученные его талантами. Их и показывает книга.
+ *
+ * Книга класса плюс выданные талантами: умение от таланта обязано быть видно
+ * там же, где и остальные, — иначе положить его в ряд не из чего.
+ */
 export function heroAbilities(state: GameState): AbilityDef[] {
   const boons = equippedBoons(state.equipment)
-  return abilitiesOf(state.classId).map((a) => tuneAbility(a, state.talents, boons))
+  return heroAbilityDefs(state).map((a) => tuneAbility(a, state.talents, boons))
 }
 // Запас щита считает combat.ts — он нижний слой и знает про статы; здесь
 // имя переэкспортировано, чтобы вызывающим не приходилось знать, где оно.
@@ -243,7 +249,7 @@ export function commandsHound(ability: AbilityDef): boolean {
  * кнопку — лишний пёс уходит (тик подрезает список до ёмкости).
  */
 export function houndCapacity(
-  state: Pick<GameState, 'classId' | 'abilitySlots' | 'level' | 'talents' | 'equipment'>,
+  state: Pick<GameState, 'classId' | 'abilitySlots' | 'level' | 'talents' | 'equipment' | 'stats'>,
 ): number {
   const def = companionOf(state)
   if (!def) return 0
@@ -488,6 +494,30 @@ function effectFrom(ability: AbilityDef, swingDamage: Decimal): ActiveEffect | n
  * Смерть моба здесь НЕ оформляется: её подхватит конвейер тика, чтобы награды,
  * лут и респаун шли одним путём.
  */
+/** Источник эха на шине ударов: по нему его и отличают от замаха героя. */
+export const ECHO_SOURCE = 'echo'
+
+/**
+ * ДОЛЯ ЭХА ПО РЯДУ, а не по нажатому умению: «Отголосок» пассивен и работает,
+ * пока занимает слот. Читается ровно как ёмкость своры — по слотам, с
+ * правками талантов, с проверкой уровня открытия.
+ *
+ * Ноль — обычный случай, и тогда ни одна строка ниже ничего не делает.
+ */
+export function echoShare(
+  state: Pick<GameState, 'classId' | 'abilitySlots' | 'level' | 'talents' | 'equipment'>,
+): number {
+  let share = 0
+  for (const id of state.abilitySlots) {
+    if (id === null) continue
+    const base = ABILITY_BY_ID[id]
+    if (!base || state.level.lt(base.unlockLevel)) continue
+    const ability = tuneAbility(base, state.talents, equippedBoons(state.equipment))
+    if (ability.echo) share += ability.echo.share
+  }
+  return share
+}
+
 export function strikeWithAbility(
   state: GameState,
   ability: AbilityDef,
@@ -532,6 +562,25 @@ export function strikeWithAbility(
     abilityId: ability.id,
     timestamp: state.playtimeMs.toNumber(),
   })
+  // ОТГОЛОСОК: доля урона удара приходит СЛЕДОМ, отдельным событием шины.
+  // Помечен `procId`, и это не хак, а тот же признак, которым помечены удары
+  // реликвий: «сработало само» — не замах героя, и ни ресурс, ни проки, ни
+  // счётчик замахов от него не капают. Автоатаки эха не дают вовсе: венец
+  // ветки умений обязан платить за умения.
+  const echo = echoShare(state)
+  const echoed = echo > 0 ? amount.times(echo) : new Decimal(0)
+  if (echoed.gt(0)) {
+    monster.currentHp = Decimal.max(monster.currentHp.minus(echoed), new Decimal(0))
+    emitAttack({
+      sourceId: 'hero',
+      targetId: monster.id,
+      amount: echoed,
+      isCrit: false,
+      abilityId: ability.id,
+      procId: ECHO_SOURCE,
+      timestamp: state.playtimeMs.toNumber(),
+    })
+  }
   const effect = effectFrom(ability, amount)
   // ВАМПИРИЗМ: доля НАНЕСЁННОГО урона возвращается здоровьем. Считается от
   // `amount`, то есть уже с критом и метками: лечение тем больше, чем лучше

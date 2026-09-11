@@ -57,14 +57,14 @@ import {
 } from '../balance'
 import type { SlotId } from '../slots'
 import {
-  CONCEPT_ROWS,
   TALENT_STAT_RULE,
-  BRANCH_ROWS,
   pathRanks,
+  rowRequirement,
   type TalentPath,
   type BranchDef,
   type TalentDef,
-  type TalentStatRule, TREE_COLUMNS,
+  type TalentStatRule,
+  type CarryMark,
   HOUND_TUNE_FIELDS,
   COMPANION_FLAGS,
 } from '../talents'
@@ -427,7 +427,7 @@ const idsOf = <T>(list: readonly T[], id: (e: T) => string | undefined): Set<str
  * Новый пассивный флаг обязан появиться здесь, иначе умение с четырьмя нулями
  * пройдёт проверку молча и займёт один из четырёх слотов, не делая ничего.
  */
-const PASSIVE_FLAGS = ['pack'] as const satisfies readonly (keyof AbilityDef)[]
+const PASSIVE_FLAGS = ['pack', 'echo'] as const satisfies readonly (keyof AbilityDef)[]
 
 /** Команда псу без удара героя: поддержка, которой можно бить нулём. */
 function houndSupport(a: AbilityDef): boolean {
@@ -1141,9 +1141,6 @@ const FLAG_PAYLOADS: Record<
  * (data/talents.ts) отвечает на оба вопроса разом и закрыта по `StatId`:
  * новая характеристика не пройдёт проверку типов, пока про неё не решат.
  */
-/** Сколько талантов помещается в один ряд на экране. */
-const FLOOR_MAX_TALENTS = 3
-
 const talentRule = (stat: string): TalentStatRule | undefined =>
   TALENT_STAT_RULE[stat as keyof typeof TALENT_STAT_RULE]
 
@@ -1186,18 +1183,20 @@ export const TALENT_SCHEMA: EntitySchema<TalentDef> = {
   ],
   extra: (talent, content, report) => {
     const where = `талант ${talent.id}`
-    // КЛЮЧЕВОЙ ЭТАЖ — ПОВЕДЕНИЕ, А НЕ ЧИСЛО. Этажи 5, 9 и 13 приходятся на
-    // 30-й, 50-й и 70-й уровень при вложении в одну ветку, и это три
-    // майлстоуна всей прокачки. Процент к криту майлстоуном не является:
-    // талант на ключевом этаже обязан менять УМЕНИЕ (род 'ability') или
-    // включать поведение (флаг). Модификаторы конвейера здесь запрещены.
-    if (CONCEPT_ROWS.includes(talent.row)) {
+    // КЛЮЧЕВОЙ ВЫБОР — ПОВЕДЕНИЕ, А НЕ ЧИСЛО. Признак ключевого — САМА ГРУППА
+    // выбора, а не номер этажа: здесь стоял общий список `CONCEPT_ROWS`
+    // [5, 9, 13], одинаковый на все девять веток, и он запрещал модификаторы
+    // ВСЕМУ этажу — то есть и обычным соседям пары. В ветке из семи широких
+    // этажей это неверно вдвойне: рядом с парой законно стоят фоновые узлы.
+    // Требование осталось прежним и адресным: тот, КТО В ПАРЕ, обязан менять
+    // УМЕНИЕ (род 'ability') или включать поведение (флаг).
+    if (talent.exclusiveGroup) {
       report.need(
         talent.effect.kind !== 'modifiers',
         where,
-        `стоит на ключевом этаже ${talent.row}, а даёт модификаторы конвейера — ` +
-          'ключевой талант меняет поведение (умение или флаг), а не число ' +
-          '(data/talents.ts)',
+        `стоит во взаимоисключающей группе «${talent.exclusiveGroup}», а даёт ` +
+          'модификаторы конвейера — ключевой талант меняет поведение (умение или ' +
+          'флаг), а не число (data/talents.ts)',
       )
     }
     // СТОЛБЕЦ В СЕТКЕ. Дерево рисуется четырьмя столбцами, и место узла —
@@ -1206,11 +1205,14 @@ export const TALENT_SCHEMA: EntitySchema<TalentDef> = {
     // опора и зависимый стоят в одном столбце. Лестница из одного таланта на
     // этаж столбцов не задаёт и центрируется сама.
     const onRow = content.talents.filter((t) => t.branch === talent.branch && t.row === talent.row)
+    // ШИРИНА СЕТКИ — У ВЕТКИ. Столбцов у разных веток разное число: лестница
+    // из тринадцати этажей живёт в четырёх, семиэтажная сетка — в пяти.
+    const cols = content.branches.find((b) => b.id === talent.branch)?.cols ?? 0
     if (talent.col !== undefined) {
       report.need(
-        Number.isInteger(talent.col) && talent.col >= 1 && talent.col <= TREE_COLUMNS,
+        Number.isInteger(talent.col) && talent.col >= 1 && talent.col <= cols,
         where,
-        `столбец ${talent.col} вне сетки 1..${TREE_COLUMNS} (data/talents.ts)`,
+        `столбец ${talent.col} вне сетки 1..${cols} ветки ${talent.branch} (data/talents.ts)`,
       )
       for (const mate of onRow) {
         report.need(
@@ -3807,18 +3809,51 @@ function checkReachable(content: Content, report: Report): void {
           'то есть он не измерен ничем (BRANCH_PATHS в data/talents.ts)',
       )
     }
-    // ЭТАЖ — РЯД ИЗ ОДНОГО, ДВУХ ИЛИ ТРЁХ. Раньше здесь стоял запрет на
-    // двух талантов в одном ряду — ровно та лестница, из которой дерево и
-    // делали. Осталась ВЕРХНЯЯ граница: четвёртая клетка в ряду не
-    // помещается ни на телефон, ни в ширину меню.
+    // ЭТАЖ ШИРИНОЙ В СВОЮ ВЕТКУ. Здесь стоял общий потолок в три таланта на
+    // ряд — «четвёртая клетка не помещается ни на телефон, ни в ширину меню».
+    // Верхняя граница осталась, но она у каждой ветки СВОЯ (`cols`), а не
+    // одна на все: ветка из семи этажей шире по построению — этажей вдвое
+    // меньше, значит талантов в ряду вдвое больше. Помещаются они потому, что
+    // клетка ужимается до ключевого узла (см. `.tree` в TalentPanel), и это
+    // проверено снимком на 390 пикселях, а не обещано.
     const perRow = new Map<number, number>()
     for (const talent of inBranch) perRow.set(talent.row, (perRow.get(talent.row) ?? 0) + 1)
     for (const [row, count] of perRow) {
       report.need(
-        count <= FLOOR_MAX_TALENTS,
+        count <= branch.cols,
         `ветка ${branch.id}`,
-        `на этаже ${row} ${count} талантов — больше ${FLOOR_MAX_TALENTS} в ряд не ` +
-          'помещается ни на телефон, ни в ширину меню (data/talents.ts)',
+        `на этаже ${row} ${count} талантов при ширине ветки ${branch.cols} — ` +
+          'лишняя клетка в ряд не помещается (data/talents.ts)',
+      )
+    }
+    // ЭТАЖЕЙ РОВНО СТОЛЬКО, СКОЛЬКО ОБЪЯВЛЕНО ФОРМОЙ, И БЕЗ ДЫР. Форма ветки
+    // — данные, и данные обязаны ей отвечать: пустой этаж посреди ветки это
+    // порог, за который нечего вложить, а этаж сверх формы не нарисуется
+    // вовсе. Пороги тоже сверяются с формой: `requiredPointsInBranch` обязан
+    // быть `step·(row−1)`, иначе сетка и арифметика разъедутся молча.
+    for (let row = 1; row <= branch.rows; row += 1) {
+      report.need(
+        (perRow.get(row) ?? 0) > 0,
+        `ветка ${branch.id}`,
+        `этаж ${row} пуст, а форма ветки обещает ${branch.rows} этажей — ` +
+          'порог без единого таланта за ним (data/talents.ts)',
+      )
+    }
+    for (const [row] of perRow) {
+      report.need(
+        row <= branch.rows,
+        `ветка ${branch.id}`,
+        `этаж ${row} выше формы ветки (${branch.rows} этажей) — он не нарисуется ` +
+          '(data/talents.ts)',
+      )
+    }
+    for (const talent of inBranch) {
+      report.need(
+        talent.requiredPointsInBranch === rowRequirement(branch.id, talent.row),
+        `талант ${talent.id}`,
+        `порог ${talent.requiredPointsInBranch} не отвечает форме ветки: этаж ` +
+          `${talent.row} при шаге ${branch.step} требует ` +
+          `${rowRequirement(branch.id, talent.row)} (data/talents.ts)`,
       )
     }
   }
@@ -4334,6 +4369,333 @@ function tunedAbilityId(talent: TalentDef): string | undefined {
  * же, как правка несуществующего поля (`checkTalentTunes`): имя настоящее,
  * ссылка целая, эффекта нет.
  */
+/**
+ * ОДНУ И ТУ ЖЕ ПАРУ «УМЕНИЕ + ПОЛЕ» ВЕТКА ПРАВИТ ОДИН РАЗ.
+ *
+ * Два таланта, растящие один и тот же урон одного и того же умения, — это не
+ * выбор и не глубина, а ОДИН талант, разрезанный надвое. Игрок читает их как
+ * разные («Глубокий надрез» и «Кровоточащая кромка» звучат по-разному), берёт
+ * оба и получает то же самое дважды; автор ветки при этом думает, что
+ * наполнил этаж. Самое неприятное — что заметить это можно только сверив
+ * ПОЛЯ, а не имена.
+ *
+ * Проверяется ВНУТРИ ВЕТКИ: две ветки одного класса, правящие одно поле, —
+ * законный случай, это и есть разные стили роста одного умения.
+ *
+ * ТИП СЮДА НЕ ВХОДИТ (`field: 'type'`): «перестаёт ждать замаха» это не
+ * величина, а замена, и второй такой талант в ветке всё равно невозможен —
+ * `set` последнего выигрывает, и проверка на повтор ничего бы не добавила.
+ */
+/**
+ * ВЕТКИ, КОТОРЫЕ ЕЩЁ НЕ ПЕРЕЕХАЛИ, И ИХ ПОВТОРЫ — ПОИМЁННО.
+ *
+ * Правило поймало ШЕСТНАДЦАТЬ повторов в шести ветках, и ни одного в той,
+ * которую ночь переделывала. Это и есть цена того, что правило не было
+ * записано раньше: «Долгое клеймо» и «Нескончаемое клеймо» в Бдении растят
+ * одно и то же поле одного и того же умения, и отличить их можно только
+ * сверив данные.
+ *
+ * Чинить их этой ночью нельзя: переделка ветки Изувера или Псаря сдвинет их
+ * ключи в отпечатке, а ночь обещала этого не делать. Поэтому список ИМЕНАМИ,
+ * с причиной и со сроком: вторая ночь переносит остальные восемь веток, и
+ * тогда он обязан опуститься до пустого.
+ *
+ * СПИСОК НЕ ДОЛЖЕН ГНИТЬ. Ниже проверяется и обратное: имя, переставшее быть
+ * повтором, из списка убирается — иначе исключение переживёт свою причину и
+ * тихо разрешит новый повтор.
+ */
+const TUNE_DUPLICATE_LEGACY: readonly string[] = [
+  'vigil-lasting-brand',
+  'vigil-endless-mind',
+  'sinew-swift-dig',
+  'sinew-lasting-dig',
+  'sinew-unbroken',
+  'instinct-endless-letting',
+  'instinct-restless',
+  'instinct-endless-roar',
+  'chase-twin-fang',
+  'leash-deep-skulk',
+  'leash-tireless-rally',
+  'leash-shadow-hound',
+  'trail-cheap-undercut',
+  'trail-tireless-flurry',
+  'trail-hunting-breath',
+]
+
+function checkTalentTuneDuplicates(content: Content, report: Report): void {
+  const stillDuplicate = new Set<string>()
+  for (const branch of content.branches) {
+    const seen = new Map<string, string>()
+    for (const talent of content.talents) {
+      if (talent.branch !== branch.id) continue
+      if (talent.effect.kind !== 'ability') continue
+      for (const tune of talent.effect.tune) {
+        if (tune.field === 'type') continue
+        const key = `${talent.effect.abilityId}.${tune.field}`
+        const first = seen.get(key)
+        if (first === undefined) {
+          seen.set(key, talent.id)
+          continue
+        }
+        stillDuplicate.add(talent.id)
+        report.need(
+          TUNE_DUPLICATE_LEGACY.includes(talent.id),
+          `талант ${talent.id}`,
+          `правит «${key}» вторым после «${first}» в той же ветке — один талант, ` +
+            'разрезанный надвое: игрок берёт оба и получает то же самое дважды ' +
+            '(data/talents.ts)',
+        )
+      }
+    }
+  }
+  for (const id of TUNE_DUPLICATE_LEGACY) {
+    report.need(
+      stillDuplicate.has(id),
+      `талант ${id}`,
+      'числится в списке старых повторов, а повтором уже не является — ' +
+        'исключение пережило свою причину и тихо разрешает новый повтор ' +
+        '(TUNE_DUPLICATE_LEGACY в data/__tests__/schema.ts)',
+    )
+  }
+}
+
+/**
+ * ПРОК ХОДИТ ЧЕРЕЗ ТОТ ЖЕ КОНВЕЙЕР, ЗНАЧИТ ПОДЧИНЯЕТСЯ ТЕМ ЖЕ ПРАВИЛАМ.
+ *
+ * Прибавка прока — обычный модификатор конвейера статов с `kind: 'flat'`,
+ * просто включённый на несколько секунд или замахов. Значит `TALENT_STAT_RULE`
+ * обязано действовать и на неё: иначе прок был бы ЛАЗЕЙКОЙ ВОКРУГ ПРАВИЛА —
+ * «+5 силы на восемь секунд» проходило бы там, где «+5 силы» запрещено, и
+ * запрет держался бы только на форме записи.
+ *
+ * ТРИ ПРОВЕРКИ, И ВСЕ ТРИ О ТОМ ЖЕ:
+ *  1. базовая характеристика проку закрыта, как и модификатору;
+ *  2. плоская прибавка к растущему стату закрыта, как и модификатору
+ *     (у прока `kind` только `flat` — процента у него нет вовсе);
+ *  3. настройка игрока закрыта совсем: порог привала, сдвинутый на восемь
+ *     секунд, читался бы как поломка ползунка.
+ *
+ * ЧЕТВЁРТАЯ — ПРО ВЕЛИЧИНУ: окно нулевой длины и прибавка в ноль. Прок,
+ * который ничего не делает, тише мёртвого таланта: он ЕСТЬ на экране, ранг у
+ * него растёт, а в конвейер уходит ноль.
+ */
+function checkProcTalents(content: Content, report: Report): void {
+  for (const talent of content.talents) {
+    const effect = talent.effect
+    if (effect.kind !== 'flag' || effect.flag !== 'proc') continue
+    const where = `талант ${talent.id}`
+    const rule = talentRule(effect.effect.stat)
+    if (rule === 'attribute') {
+      report.add(
+        where,
+        `прок даёт «${effect.effect.stat}» — одну из четырёх БАЗОВЫХ ` +
+          'характеристик: проку они закрыты ровно так же, как модификатору, ' +
+          'иначе временная прибавка была бы лазейкой вокруг правила ' +
+          '(TALENT_STAT_RULE в data/talents.ts)',
+      )
+    }
+    if (rule === 'setting') {
+      report.add(
+        where,
+        `прок двигает «${effect.effect.stat}» — это НАСТРОЙКА ИГРОКА, а не ` +
+          'характеристика: игрок поставил её ползунком и ждёт, что игра ей ' +
+          'следует (TALENT_STAT_RULE в data/talents.ts)',
+      )
+    }
+    if (rule === 'scaling') {
+      report.add(
+        where,
+        `прок даёт ПЛОСКУЮ прибавку к «${effect.effect.stat}» — стат растёт от ` +
+          'уровня и снаряжения, и плоское число к сотому уровню становится шумом; ' +
+          'у прока процента нет вовсе, значит такой стат ему закрыт ' +
+          '(TALENT_STAT_RULE в data/talents.ts)',
+      )
+    }
+    // УСЛОВИЕ — ДОЛЯ, И ДОЛЯ ОСМЫСЛЕННАЯ. Нулевая отметка значит «никогда»:
+    // прок есть, очко за него берут, а окно не открывается ни разу. Единица
+    // значит «всегда» — условие в записи есть, а не ограничивает ничего, и
+    // игрок читает в подсказке ограничение, которого нет.
+    if (effect.when) {
+      report.need(
+        effect.when.share > 0 && effect.when.share < 1,
+        where,
+        `условие «${effect.when.kind}» с долей ${effect.when.share}: ноль значит ` +
+          '«никогда», единица — «всегда», и в обоих случаях условие не условие ' +
+          '(data/talents.ts)',
+      )
+    }
+    const window =
+      effect.effect.kind === 'stat-swings' ? effect.effect.swings : effect.effect.durationSec
+    report.need(
+      effect.effect.value > 0 && window > 0,
+      where,
+      'прок с нулевой прибавкой или нулевым окном не делает НИЧЕГО, а ранг у ' +
+        'него растёт и очки за него берут (data/talents.ts)',
+    )
+    report.need(
+      (effect.everyNth ?? 1) >= 1 && Number.isInteger(effect.everyNth ?? 1),
+      where,
+      `«everyNth» = ${effect.everyNth}: заряды считаются штуками, и меньше ` +
+        'одного их не бывает (data/talents.ts)',
+    )
+  }
+}
+
+/**
+ * ПЕРЕНОС МЕТКИ — ИСКЛЮЧЕНИЕ ИЗ ПРАВИЛА, И ИСКЛЮЧЕНИЕ ОБЯЗАНО БЫТЬ ПОЛЕЗНЫМ.
+ *
+ * Метки живут на конкретном мобе — это умолчание всей игры. Талант переноса
+ * его отменяет, и потому за ним смотрят отдельно:
+ *
+ *  1. **доля не ноль и не больше единицы за ранг.** Ноль — талант, который не
+ *     делает ничего; больше единицы — «переносится больше, чем было», то есть
+ *     метка отрастает от смены цели;
+ *  2. **у КЛАССА ВЕТКИ есть умение, которое эту метку вешает.** Перенос метки,
+ *     которую классу нечем поставить, — мёртвый талант того же рода, что
+ *     флаг спутника у класса без пса: имена настоящие, ссылки целые, эффекта
+ *     нет. Заметить это чтением нельзя.
+ */
+function checkCarryTalents(content: Content, report: Report): void {
+  // КАКОЕ ПОЛЕ УМЕНИЯ СТАВИТ КАКУЮ МЕТКУ. Запись закрыта по `CarryMark`:
+  // новая переносимая метка не пройдёт проверку типов без строки здесь.
+  const SETTER: Record<CarryMark, (a: AbilityDef) => boolean> = {
+    monsterBrand: (a) => a.brand !== undefined,
+  }
+  for (const talent of content.talents) {
+    const effect = talent.effect
+    if (effect.kind !== 'flag' || effect.flag !== 'carry-over') continue
+    const where = `талант ${talent.id}`
+    report.need(
+      effect.share > 0 && effect.share * talent.maxRank <= 1,
+      where,
+      `переносит ${effect.share} метки за ранг при ${talent.maxRank} рангах: ноль ` +
+        'не делает ничего, а больше единицы значит «переносится больше, чем ' +
+        'было» — метка отрастала бы от смены цели (data/talents.ts)',
+    )
+    const branch = content.branches.find((b) => b.id === talent.branch)
+    if (!branch) continue
+    const owner = content.classes.find((c) => c.id === branch.classId)
+    if (!owner) continue
+    const setters = content.abilities.filter(
+      (a) => owner.abilityIds.includes(a.id) && SETTER[effect.mark](a),
+    )
+    report.need(
+      setters.length > 0,
+      where,
+      `переносит метку «${effect.mark}», а у класса ${owner.id} нет ни одного ` +
+        'умения, которое её вешает: талант мёртв, и заметить это чтением нельзя ' +
+        '(data/talents.ts против data/abilities.ts)',
+    )
+  }
+}
+
+/**
+ * ЗАМЕНА УМЕНИЯ — ТРИ ПРАВИЛА, И ВСЕ ТРИ ПРО ТИХИЕ ПОЛОМКИ.
+ *
+ *  1. **`from` принадлежит классу ветки.** Талант Стража, заменяющий умение
+ *     Псаря, проходит все ссылочные проверки и не делает НИЧЕГО: чужое умение
+ *     не попадает ни в ряд, ни в модель. То же правило, что у `checkTalentOwnership`,
+ *     только здесь оно про другое поле.
+ *  2. **`to` НЕ ЛЕЖИТ НИ В ОДНОЙ книге класса.** Иначе замена положила бы в
+ *     ряд второй экземпляр того, что игрок уже мог поставить сам, и две
+ *     кнопки делили бы один откат — id-то остаётся от `from`.
+ *  3. **`to` не заменяется сам и не равен `from`.** Замена умения на себя —
+ *     талант, который ничего не меняет; цепочка замен — порядок, которого в
+ *     данных не выразить.
+ *
+ * ЧЕТВЁРТОЕ ПРАВИЛО — ОБРАТНОЕ, И ОНО ЗДЕСЬ ВАЖНЕЕ ТРЁХ ПЕРВЫХ. Умение,
+ * которого нет ни в одной книге и которое не названо НИ ОДНИМ талантом
+ * замены, — мёртвые данные: оно есть в реестре, проходит схему, весит
+ * иконку, и добраться до него нельзя ничем.
+ */
+function checkAbilityReplacements(content: Content, report: Report): void {
+  const inSomeBook = new Set(content.classes.flatMap((c) => c.abilityIds))
+  const replaced = new Set<string>()
+  // ДО УМЕНИЯ ВЕДУТ ДВЕ ДОРОГИ, И ОБЕ СЧИТАЮТСЯ ЗДЕСЬ: замена подставляет его
+  // вместо другого, выдача кладёт его в книгу героя. Считай только первую — и
+  // каждое умение от таланта читалось бы как мёртвые данные.
+  const substitutes = new Set<string>(
+    content.talents.flatMap((t) =>
+      t.effect.kind === 'flag' && t.effect.flag === 'grant-ability' ? [t.effect.abilityId] : [],
+    ),
+  )
+  for (const talent of content.talents) {
+    const effect = talent.effect
+    if (effect.kind !== 'flag' || effect.flag !== 'replace-ability') continue
+    const where = `талант ${talent.id}`
+    replaced.add(effect.from)
+    substitutes.add(effect.to)
+    const branch = content.branches.find((b) => b.id === talent.branch)
+    const owner = branch ? content.classes.find((c) => c.id === branch.classId) : undefined
+    if (owner) {
+      report.need(
+        owner.abilityIds.includes(effect.from),
+        where,
+        `заменяет «${effect.from}», а у класса ${owner.id} такого умения нет: чужое ` +
+          'умение не попадает ни в ряд действий, ни в модель боя, и талант не ' +
+          'делает НИЧЕГО (data/talents.ts против data/classes.ts)',
+      )
+    }
+    report.need(
+      !inSomeBook.has(effect.to),
+      where,
+      `подставляет «${effect.to}», а оно лежит в книге класса: игрок мог поставить ` +
+        'его сам, и тогда в ряду оказались бы два экземпляра одного умения с одним ' +
+        'откатом — id остаётся от заменяемого (data/talents.ts)',
+    )
+    report.need(
+      effect.to !== effect.from,
+      where,
+      'заменяет умение на себя же — талант, который ничего не меняет (data/talents.ts)',
+    )
+  }
+  // ВЫДАЧА — ВТОРАЯ ДОРОГА, И ПРАВИЛА У НЕЁ СВОИ.
+  for (const talent of content.talents) {
+    const effect = talent.effect
+    if (effect.kind !== 'flag' || effect.flag !== 'grant-ability') continue
+    const where = `талант ${talent.id}`
+    const ability = content.abilities.find((a) => a.id === effect.abilityId)
+    report.need(
+      !inSomeBook.has(effect.abilityId),
+      where,
+      `выдаёт «${effect.abilityId}», а оно лежит в книге класса: своему классу ` +
+        'талант выдал бы то, что и так открыто уровнем, чужому — умение чужого ' +
+        'класса (data/talents.ts против data/classes.ts)',
+    )
+    // УРОВЕНЬ ОТКРЫТИЯ У ВЫДАННОГО — ПЕРВЫЙ, и это не формальность: его
+    // воротами служит ОЧКО, а вторые ворота по уровню сделали бы кнопку,
+    // которую герой видит и нажать не может. Сетка открытий класса такое
+    // умение не считает вовсе — значит и уровню его сторожить нечем.
+    if (ability) {
+      report.need(
+        ability.unlockLevel <= 1,
+        where,
+        `выдаёт «${ability.id}» с уровнем открытия ${ability.unlockLevel}: у умения ` +
+          'от таланта воротами служит ОЧКО, и вторые ворота по уровню — это ' +
+          'кнопка, которую видно и нельзя нажать (data/abilities.ts)',
+      )
+    }
+  }
+  for (const to of substitutes) {
+    report.need(
+      !replaced.has(to),
+      `умение ${to}`,
+      'и подставляется заменой, и заменяется само: цепочка замен порядка не имеет, ' +
+        'и какая из них сработает — вопрос порядка талантов в файле (data/talents.ts)',
+    )
+  }
+  for (const ability of content.abilities) {
+    if (inSomeBook.has(ability.id)) continue
+    report.need(
+      substitutes.has(ability.id),
+      `умение ${ability.id}`,
+      'не лежит ни в одной книге класса и не выдаётся ни одним талантом — ни ' +
+        'заменой, ни выдачей: добраться до него нельзя ничем (data/abilities.ts ' +
+        'против data/talents.ts)',
+    )
+  }
+}
+
 function checkTalentOwnership(content: Content, report: Report): void {
   for (const talent of content.talents) {
     const abilityId = tunedAbilityId(talent)
@@ -4403,11 +4765,11 @@ function checkTalentArrows(content: Content, report: Report): void {
 function checkBranchCapstones(content: Content, report: Report): void {
   const total = content.balance.levelCap - content.mechanicLevels.talents + 1
   for (const branch of content.branches) {
-    const capstones = content.talents.filter((t) => t.branch === branch.id && t.row === BRANCH_ROWS)
+    const capstones = content.talents.filter((t) => t.branch === branch.id && t.row === branch.rows)
     report.need(
       capstones.length > 0,
       `ветка ${branch.id}`,
-      `на последнем этаже ${BRANCH_ROWS} нет ни одного таланта: венца у ветки нет, ` +
+      `на последнем этаже ${branch.rows} нет ни одного таланта: венца у ветки нет, ` +
         'и брать её незачем (data/talents.ts)',
     )
     for (const path of content.pathsOf(branch.id)) {
@@ -4481,6 +4843,10 @@ export function checkContent(content: Content): ContentIssue[] {
   checkCraftCategories(content, report)
   checkTalentTunes(content, report)
   checkTalentOwnership(content, report)
+  checkTalentTuneDuplicates(content, report)
+  checkProcTalents(content, report)
+  checkCarryTalents(content, report)
+  checkAbilityReplacements(content, report)
   checkTalentArrows(content, report)
   checkBranchCapstones(content, report)
   checkTuneFloors(content, report)

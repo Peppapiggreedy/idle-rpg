@@ -9,6 +9,7 @@
 // (game/stats.ts). Здесь только то, как показать каждую, и `Record<StatId, …>`
 // заставляет компилятор потребовать строку для новой характеристики сразу.
 import { Decimal, STAT_IDS, type StatId } from '../game'
+import { classById } from '../data/classes'
 import { resourceWords } from './resource'
 
 /**
@@ -25,7 +26,34 @@ import { resourceWords } from './resource'
  */
 export const SETTING_STATS: StatId[] = ['restThreshold']
 
+/**
+ * ХАРАКТЕРИСТИКИ СПУТНИКА ПОКАЗЫВАЮТСЯ ТОЛЬКО ТОМУ, У КОГО СПУТНИК ЕСТЬ.
+ *
+ * «Запас пса» в карточке Стража — не мелочь: восемь строк про то, чего у
+ * героя нет и быть не может, читаются как поломка, а список статов и так
+ * длиннее двенадцати. Признак берётся из ДАННЫХ класса (`companion`), а не
+ * по id: класс со спутником, которого заведут потом, получит их сам.
+ */
+const COMPANION_STATS: StatId[] = [
+  'houndMaxHp',
+  'houndHpRegen',
+  'houndAttackPower',
+  'houndCritChance',
+  'houndArmor',
+  'houndDodge',
+  'houndReviveSpeed',
+  'redirectShare',
+]
+
 /** Характеристики, которые показывают игроку списком. */
+export function shownStatIds(classId: string | undefined | null): StatId[] {
+  const hasCompanion = Boolean(classId && classById(classId).companion)
+  return STAT_IDS.filter(
+    (id) => !SETTING_STATS.includes(id) && (hasCompanion || !COMPANION_STATS.includes(id)),
+  )
+}
+
+/** Весь список без оглядки на класс — для проверок и обходов реестра. */
 export const SHOWN_STAT_IDS: StatId[] = STAT_IDS.filter((id) => !SETTING_STATS.includes(id))
 
 /** Проценты и секунды читаются иначе, чем растущие величины. */
@@ -36,6 +64,18 @@ export const PERCENT_STATS: StatId[] = [
   'blockChance',
   'offhandPenalty',
   'restThreshold',
+  // Одиннадцать долей с базой ноль: все читаются процентом и никак иначе.
+  'doubleStrike',
+  'dodge',
+  'reviveSpeed',
+  'houndMaxHp',
+  'houndHpRegen',
+  'houndAttackPower',
+  'houndCritChance',
+  'houndArmor',
+  'houndDodge',
+  'houndReviveSpeed',
+  'redirectShare',
 ]
 export const SECONDS_STATS: StatId[] = [
   'weaponSpeed',
@@ -78,6 +118,17 @@ export function statNames(classId: string | undefined | null): Record<StatId, st
     manaRegen: `Восст. ${resource.genitive}`,
     armor: 'Броня',
     damageReduction: 'Снижение урона',
+    doubleStrike: 'Двойной удар',
+    dodge: 'Уворот',
+    reviveSpeed: 'Скорость подъёма',
+    houndMaxHp: 'Запас пса',
+    houndHpRegen: 'Восст. пса',
+    houndAttackPower: 'Сила укуса',
+    houndCritChance: 'Крит пса',
+    houndArmor: 'Броня пса',
+    houndDodge: 'Уворот пса',
+    houndReviveSpeed: 'Возврат пса',
+    redirectShare: 'Доля пса во входящем',
   }
 }
 

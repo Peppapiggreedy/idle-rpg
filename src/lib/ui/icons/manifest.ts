@@ -21,6 +21,13 @@ export const ICONS = {
   'ability-quick-strike': { file: 'delapouite/sword-brandish.svg', author: 'Delapouite' },
   'ability-rending-wound': { file: 'lorc/bleeding-wound.svg', author: 'Lorc' },
   'ability-shattering-blow': { file: 'lorc/hammer-drop.svg', author: 'Lorc' },
+  // «Пролом» — умение, которого нет ни в одной книге класса: его кладёт в
+  // ряд талант замены (`replace-ability`), вместо «Сокрушения».
+  'ability-breach': { file: 'lorc/groundbreaker.svg', author: 'Lorc' },
+  // Два венца Гнева — умения, выданные ТАЛАНТОМ (`grant-ability`). В книге
+  // класса их нет: их открывает не уровень, а очко.
+  'ability-sever': { file: 'lorc/tearing.svg', author: 'Lorc' },
+  'ability-echo': { file: 'lorc/echo-ripples.svg', author: 'Lorc' },
   'ability-mend-wounds': { file: 'delapouite/first-aid-kit.svg', author: 'Delapouite' },
   'ability-shield-shove': { file: 'delapouite/shield-bash.svg', author: 'Delapouite' },
   'ability-rupture': { file: 'lorc/tearing.svg', author: 'Lorc' },
@@ -272,6 +279,18 @@ export const ICONS = {
   'stat-manaRegen': { file: 'delapouite/star-formation.svg', author: 'Delapouite' },
   'stat-damageReduction': { file: 'lorc/bordered-shield.svg', author: 'Lorc' },
   'stat-armor': { file: 'delapouite/abdominal-armor.svg', author: 'Delapouite' },
+  // Одиннадцать характеристик, заведённых вместе с машинерией дерева.
+  'stat-doubleStrike': { file: 'lorc/double-shot.svg', author: 'Lorc' },
+  'stat-dodge': { file: 'lorc/dodging.svg', author: 'Lorc' },
+  'stat-reviveSpeed': { file: 'lorc/wingfoot.svg', author: 'Lorc' },
+  'stat-houndMaxHp': { file: 'lorc/heart-bottle.svg', author: 'Lorc' },
+  'stat-houndHpRegen': { file: 'delapouite/healing.svg', author: 'Delapouite' },
+  'stat-houndAttackPower': { file: 'lorc/bestial-fangs.svg', author: 'Lorc' },
+  'stat-houndCritChance': { file: 'lorc/pretty-fangs.svg', author: 'Lorc' },
+  'stat-houndArmor': { file: 'lorc/leather-vest.svg', author: 'Lorc' },
+  'stat-houndDodge': { file: 'lorc/tread.svg', author: 'Lorc' },
+  'stat-houndReviveSpeed': { file: 'lorc/wolf-howl.svg', author: 'Lorc' },
+  'stat-redirectShare': { file: 'lorc/interleaved-arrows.svg', author: 'Lorc' },
   'stat-swingTime': { file: 'lorc/hourglass.svg', author: 'Lorc' },
   // Левая рука и щит. Своя иконка у КАЖДОГО стата: в панели статов они стоят
   // рядом со статами правой руки, и повтор картинки читался бы как ошибка.

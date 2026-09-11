@@ -9,6 +9,7 @@ import { buildMonster } from '../data/monsters'
 import { SAFE_ZONE, spawnLevelWeights, type Zone } from '../data/zones'
 import { ABILITY_BY_ID, type AbilityDef } from '../data/abilities'
 import { CLASS_BY_ID, DEFAULT_CLASS, classById, type ClassDef } from '../data/classes'
+import { grantedAbilityIds } from '../data/talents'
 import { RARITY_BY_ID } from '../data/rarity'
 import { ARMOR_NOUNS, SHIELD_BY_ID, WEAPON_BY_ID } from '../data/items'
 import { armorMods, shieldMods, weaponMods } from './loot'
@@ -35,6 +36,17 @@ import type {
 
 // Сколько последних событий боя храним для лога на экране.
 export const COMBAT_LOG_SIZE = 8
+
+/** Окно одного прока: время, замахи и набранные заряды. */
+export interface TalentProcState {
+  talentId: string
+  /** Миллисекунд окна; ноль — окно по времени закрыто. */
+  msLeft: number
+  /** Замахов окна; ноль — окно по замахам закрыто. */
+  swingsLeft: number
+  /** Набрано зарядов к следующему срабатыванию. */
+  charges: number
+}
 
 export interface GameState {
   /** Класс героя. Выбирается при новой игре и не меняется никогда. */
@@ -125,6 +137,15 @@ export interface GameState {
    * БЕСПЛАТНЫЕ ПРИМЕНЕНИЯ: сколько ближайших умений не стоят ресурса.
    * Обычный счётчик, а не Decimal: это штуки, и их единицы.
    */
+  /**
+   * ОКНА ПРОКОВ. По записи на взятый талант-прок: сколько миллисекунд или
+   * замахов окно ещё держится и сколько зарядов набрано.
+   *
+   * В СЕЙВ НЕ ПИШЕТСЯ — как стойка, щит и метки на мобе: после загрузки нет
+   * ни того боя, ни той секунды. Пустой список у героя без проков — и ни
+   * одного лишнего действия в тике.
+   */
+  talentProcs: TalentProcState[]
   freeCastsLeft: number
   /**
    * ОКНО БЕСПЛАТНЫХ УМЕНИЙ: сколько миллисекунд умения не стоят ничего.
@@ -492,11 +513,38 @@ export interface Rotation {
 
 export const rotationOf = (state: GameState): Rotation => ({
   slots: state.abilitySlots,
-  settings: state.abilitySettings,
+  settings: heroSettings(state),
   talents: state.talents,
   boons: equippedBoons(state.equipment),
   resourceFloor: state.resourceFloor,
 })
+
+/**
+ * НАСТРОЙКИ ВСЕХ УМЕНИЙ, ДОСТУПНЫХ ЭТОМУ ГЕРОЮ: сохранённые плюс умолчания
+ * для тех, что ВЫДАЛ ТАЛАНТ.
+ *
+ * Наличие настройки и есть признак доступности — по нему фильтруют и ряд, и
+ * модель, и автокаст (`abilitiesByPriority`). Умение от таланта в сейве
+ * настройки не имеет и иметь не должно: она появилась бы вместе с очком и
+ * пережила бы сброс дерева, то есть разъехалась бы с рангами. Вывод из рангов
+ * делает отзыв бесплатным — снял очко, и умение пропало отовсюду разом.
+ *
+ * У героя без таких талантов возвращается ТОТ ЖЕ объект, бит в бит.
+ */
+export function heroSettings(state: Pick<GameState, 'talents' | 'abilitySettings'>): AbilitySettings {
+  const granted = grantedAbilityIds(state.talents)
+  if (granted.length === 0) return state.abilitySettings
+  const out: AbilitySettings = { ...state.abilitySettings }
+  for (const id of granted) {
+    if (out[id] === undefined) out[id] = { autocast: true, reserve: 0 }
+  }
+  return out
+}
+
+/** Умения, доступные ЭТОМУ герою: книга класса плюс выданные талантами. */
+export function heroAbilityDefs(state: Pick<GameState, 'classId' | 'talents'>): AbilityDef[] {
+  return availableAbilities(state.classId, state.talents)
+}
 
 /**
  * Свойства всех надетых вещей. Порядок — порядок слотов: два свойства на
@@ -520,10 +568,32 @@ export function abilitiesOf(classId: string): AbilityDef[] {
   return hero.abilityIds.map((id) => ABILITY_BY_ID[id]).filter((a): a is AbilityDef => !!a)
 }
 
-export function defaultAbilitySettings(classId: string = DEFAULT_CLASS.id): AbilitySettings {
+export function defaultAbilitySettings(
+  classId: string = DEFAULT_CLASS.id,
+  talents: Readonly<Record<string, number>> = {},
+): AbilitySettings {
   return Object.fromEntries(
-    abilitiesOf(classId).map((a) => [a.id, { autocast: true, reserve: 0 }]),
+    availableAbilities(classId, talents).map((a) => [a.id, { autocast: true, reserve: 0 }]),
   )
+}
+
+/**
+ * УМЕНИЯ, ДОСТУПНЫЕ ГЕРОЮ ЭТОГО КЛАССА С ЭТИМИ ТАЛАНТАМИ: книга класса плюс
+ * выданные талантами. ОДНА функция на все три места, где список «своих»
+ * умений решает исход: настройки, ряд действий и чистка ряда.
+ *
+ * Без неё выданное умение чистилось бы из ряда как «чужое имя» при первой же
+ * загрузке сейва — то есть венец пропадал бы у игрока молча.
+ */
+function availableAbilities(
+  classId: string,
+  talents: Readonly<Record<string, number>>,
+): AbilityDef[] {
+  const own = abilitiesOf(classId)
+  const granted = grantedAbilityIds(talents)
+  if (granted.length === 0) return own
+  const extra = granted.map((id) => ABILITY_BY_ID[id]).filter((a): a is AbilityDef => !!a)
+  return [...own, ...extra]
 }
 
 /**
@@ -552,13 +622,14 @@ export function defaultAbilitySlots(classId: string = DEFAULT_CLASS.id): Ability
 export function fillAbilitySlots(
   slots: readonly (string | null)[],
   classId: string,
+  talents: Readonly<Record<string, number>> = {},
 ): AbilitySlots {
   const next: AbilitySlots = [...slots]
   // Длина ряда — свойство игры, а не сейва: короткий массив дополняем,
   // длинный (ряд когда-то ужали) обрезаем.
   while (next.length < ABILITY_SLOTS) next.push(null)
   next.length = ABILITY_SLOTS
-  const own = new Set(abilitiesOf(classId).map((a) => a.id))
+  const own = new Set(availableAbilities(classId, talents).map((a) => a.id))
   // Чужое или неизвестное имя в слоте — не «пустой слот», а мусор: чистим,
   // иначе оно займёт место и ряд молча станет короче.
   for (let i = 0; i < next.length; i += 1) {
@@ -576,9 +647,12 @@ export function fillAbilitySlots(
 }
 
 /** Все галки автокаста сняты — герой бьёт только автоатакой. */
-export function manualOnlySettings(classId: string = DEFAULT_CLASS.id): AbilitySettings {
+export function manualOnlySettings(
+  classId: string = DEFAULT_CLASS.id,
+  talents: Readonly<Record<string, number>> = {},
+): AbilitySettings {
   return Object.fromEntries(
-    abilitiesOf(classId).map((a) => [a.id, { autocast: false, reserve: 0 }]),
+    availableAbilities(classId, talents).map((a) => [a.id, { autocast: false, reserve: 0 }]),
   )
 }
 
@@ -736,6 +810,7 @@ export function createInitialState(
     monsterWeaken: null,
     monsterBrand: null,
     stance: null,
+    talentProcs: [],
     freeCastsLeft: 0,
     freeCastsMsLeft: 0,
     resolve: null,

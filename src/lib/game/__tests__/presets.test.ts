@@ -5,6 +5,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { migrateSave, stateFromPayload } from '../save'
 import { PRESET_NAMES, presetPayload, type PresetName } from '../__fixtures__/presets/build'
+import { TALENTS } from '../../data/talents'
 
 const DIR = new URL('../__fixtures__/presets/', import.meta.url)
 const fileFor = (name: PresetName) => new URL(`${name}.json`, DIR)
@@ -52,5 +53,38 @@ describe('пресеты для скриншотов', () => {
     // Богатый герой обязан показывать то, чего нет у остальных.
     expect(Object.keys(rich.dungeonsCleared).length).toBeGreaterThan(0)
     expect(Object.keys(rich.talents).length).toBeGreaterThan(Object.keys(mid.talents).length)
+  })
+
+  /**
+   * ПРЕСЕТ `tree` СНИМАЕТСЯ РАДИ ОДНОЙ КАРТИНКИ — взятый ключевой узел и
+   * запертый им сосед, — и без этой проверки он тихо перестал ею быть.
+   * `investTalent` на непройденный порог отвечает ОТКАЗОМ, генератор отказ
+   * глотает, json собирается наполовину пустым, а снимок при этом обновляется
+   * как «уехала вёрстка». Ровно это и случилось, когда Гнев переехал с
+   * тринадцати этажей на семь: порог ключевого сдвинулся с 20 на 20 ДРУГОГО
+   * этажа, половина порядка не прошла, и на дереве не осталось ни одного
+   * ключевого ранга.
+   *
+   * ПРОВЕРКА СТРУКТУРНАЯ, БЕЗ ЕДИНОГО id: следующая пересборка дерева
+   * переживёт её, а тихо пустой пресет — нет.
+   */
+  it('tree: ключевой узел взят, а сосед по группе заперт — иначе снимок дерева пуст', () => {
+    const state = stateFromPayload(migrateSave(
+      JSON.parse(readFileSync(fileFor('tree'), 'utf8')),
+    )!)
+    const groups = new Map<string, string[]>()
+    for (const talent of TALENTS) {
+      if (!talent.exclusiveGroup) continue
+      groups.set(talent.exclusiveGroup, [...(groups.get(talent.exclusiveGroup) ?? []), talent.id])
+    }
+    const taken = [...groups].filter(([, ids]) => ids.some((id) => (state.talents[id] ?? 0) > 0))
+    expect(taken.length, 'ни одной взятой взаимоисключающей группы').toBeGreaterThan(0)
+    // И в КАЖДОЙ взятой группе ровно один с рангом: остальные заперты — это и
+    // есть то, что показывает снимок.
+    for (const [group, ids] of taken) {
+      const withRanks = ids.filter((id) => (state.talents[id] ?? 0) > 0)
+      expect(withRanks.length, group).toBe(1)
+      expect(ids.length, `${group}: запирать нечего`).toBeGreaterThan(1)
+    }
   })
 })

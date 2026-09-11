@@ -38,18 +38,27 @@ import {
 } from './rotation'
 import type { Monster } from '../types'
 import { SAFE_ZONE, ZONE_BY_ID, zoneSpawnVariants, type Zone } from '../data/zones'
-import { equippedBoons, monsterFromTemplate, type AbilitySettings, type Rotation } from './state'
+import { equippedBoons, monsterFromTemplate, type AbilitySettings, type Rotation,
+  heroSettings,
+} from './state'
 import { ABILITY_BY_ID, MODEL_RESOURCE_FILL, type AbilityDef } from '../data/abilities'
 import { classById } from '../data/classes'
 import {
   blockReflectShare,
   blockResourceShare,
+  carryShares,
   doubleStrikeChance,
   restDurationMultiplier,
   packTacticsShare,
   houndAvenge,
 } from './talents'
-import { statsWithPotionPlan, statsWithoutPotions } from './potions'
+import {
+  potionFreeModifiers,
+  potionPlanModifiers,
+  statsWithPotionPlan,
+  statsWithoutPotions,
+} from './potions'
+import { statsForModel } from './talentProcs'
 import { PROC_BY_ID, type ProcDef } from '../data/procs'
 import { SLOT_IDS } from '../data/slots'
 import { NO_HOUND_TUNE, houndModel, isHoundCommand, upHounds, type HoundModel, type HoundTune } from './hound'
@@ -224,6 +233,11 @@ export function rollMonsterDamage(
   rng: Rng,
   damageMultiplier = 1,
 ): Decimal {
+  // УВОРОТ ПЕРВЫМ, И ЭТО НЕ ПОРЯДОК РАДИ ПОРЯДКА. Уворот — не смягчение:
+  // удар не проходит ВОВСЕ, и смягчать после него нечего. Бросок делается
+  // только когда уворот есть: лишний вызов rng сдвинул бы поток у всех, у
+  // кого этой характеристики нет, то есть у всей сегодняшней игры.
+  if (stats.dodge > 0 && rng() < stats.dodge) return new Decimal(0)
   const raw = randRange(rng, monster.damageMin, monster.damageMax)
   return raw
     .times(damageMultiplier)
@@ -249,11 +263,16 @@ export function expectedMonsterDamage(
   stats: StatBlock,
   heroLevel: number,
 ): Decimal {
+  // УВОРОТ — ДОЛЯ УДАРОВ, КОТОРЫХ НЕ БЫЛО. В матожидании это множитель
+  // (1 − dodge) на самый верх: пропущенный удар не смягчается и не блокируется,
+  // его просто нет. В тике это бросок, здесь — его среднее, и другого способа
+  // свести одно с другим нет.
   const incoming = monster.damageMin
     .plus(monster.damageMax)
     .div(2)
     .times(levelGapDamageMult(heroLevel, monster.level))
     .times(1 - mitigationShare(stats, heroLevel))
+    .times(1 - Math.min(1, Math.max(0, stats.dodge)))
   if (stats.blockChance <= 0 || stats.blockValue.lte(0)) return incoming
   return incoming.minus(Decimal.min(stats.blockValue, incoming).times(stats.blockChance))
 }
@@ -1176,7 +1195,9 @@ function reflectPerSecond(state: GameState, incoming: Decimal): Decimal {
  */
 function unlockedSettings(state: GameState): AbilitySettings {
   const settings: AbilitySettings = {}
-  for (const [id, value] of Object.entries(state.abilitySettings)) {
+  // `heroSettings`, а не сырые настройки сейва: умение от таланта настройки в
+  // сейве не имеет, и без этой строки модель его не видела бы вовсе.
+  for (const [id, value] of Object.entries(heroSettings(state))) {
     const ability = ABILITY_BY_ID[id]
     if (ability && state.level.gte(ability.unlockLevel)) settings[id] = value
   }
@@ -1189,7 +1210,14 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
   // 'autocastByHand' они ВЫЧИЩАЮТСЯ, даже если склянка выпита прямо сейчас, —
   // иначе прибавка уехала бы в оффлайн (он считается по 'auto') и правило
   // «оффлайн <= автокаст <= ручная игра» сломалось бы молча.
-  const modelled = plan.potions ? statsWithPotionPlan(state) : statsWithoutPotions(state)
+  // ОКНА ПРОКОВ МОДЕЛЬ ЗАМЕНЯЕТ ИХ СРЕДНЕЙ ДОЛЕЙ. Без подмены оценка зависела
+  // бы от того, в какую миллисекунду её позвали: прогноз зоны прыгал бы в
+  // бою, а сравнение предметов меняло бы ответ между двумя ударами. У героя
+  // без проков возвращается ТОТ ЖЕ объект статов, бит в бит.
+  const withPotions = plan.potions ? statsWithPotionPlan(state) : statsWithoutPotions(state)
+  const modelled = statsForModel(state, withPotions, () =>
+    plan.potions ? potionPlanModifiers(state) : potionFreeModifiers(state),
+  )
   // Подменяем статы В КОПИИ состояния: всё, что ниже (resourceIncome,
   // resourcePause, damagePerKill), читает их оттуда, и второго пути нет.
   const s: GameState = modelled === state.stats ? state : { ...state, stats: modelled }
@@ -1239,7 +1267,7 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
   // умений герой ни жал, «столько бьёт этот меч» не меняется. Этим числом
   // сравниваются предметы, и на нём держится инвариант нормализации скорости.
   // Автоатака — это ОБЕ руки: у каждой свой таймер и свой урон за удар.
-  const doubleChance = doubleStrikeChance(s.talents)
+  const doubleChance = doubleStrikeChance(s)
   const procs = equippedProcs(s)
   const autoDps = autoDamagePerSecond(stats, doubleChance)
   const avgIncoming = expectedMonsterDamage(s.monster, stats, s.level.toNumber())
@@ -1259,6 +1287,9 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
    * `fightSec` приходит из ПРЕДЫДУЩЕГО прохода — тем же приёмом, что и
    * лечение: длина боя зависит от урона, урон от меток, метки от длины боя.
    */
+  // ПЕРЕНОС МЕТКИ — ИЗ ТАЛАНТОВ, ОДИН РАЗ НА ВЫЗОВ. Ветки по id таланта нет:
+  // доля приходит записью по меткам, а имя метки лежит в payload'е флага.
+  const brandCarry = carryShares(s.talents).monsterBrand ?? 0
   const abilityMods = (rot: RotationRate, fightSec: number) => {
     let outgoing = new Decimal(1)
     let incoming = 1
@@ -1286,9 +1317,11 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
     for (const cast of rot.casts) {
       const a = cast.ability
       if (a.type !== 'passive') continue
-      // СВОРА: псы, которых на поле ещё нет. Единственный пассивный флаг;
-      // новый обязан появиться здесь, а не в цикле по темпу.
+      // СВОРА: псы, которых на поле ещё нет.
       if (a.pack) hound.extraHounds += Math.max(0, Math.round(a.pack.extraHounds))
+      // ОТГОЛОСОК: доля урона УМЕНИЙ приходит следом. Автоатаки эха не дают,
+      // поэтому множится именно `rot.damagePerSecond`, а не весь поток.
+      if (a.echo) extraDps = extraDps.plus(rot.damagePerSecond.times(a.echo.share))
     }
     for (const cast of rot.casts) {
       const a = cast.ability
@@ -1297,8 +1330,17 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
       // КЛЕЙМО живёт на МОБЕ и умирает вместе с ним: дольше боя оно не висит,
       // сколько бы секунд ни было в данных. Ровно поэтому оно окупается на
       // боссе и едва окупается на рядовом мобе — модель обязана это видеть.
+      //
+      // ПЕРЕНОС ОТОДВИГАЕТ ЭТОТ ПОТОЛОК, и ровно этим модель видит «Память
+      // клинка». Метку обрывает КОНЕЦ схватки, но при переносе гибнет только
+      // доля `1 − share` оставшегося времени, поэтому горизонт, на котором
+      // она может жить, растягивается в `1 / (1 − share)` раз. На нуле это
+      // сегодняшний `fightSec`, на единице — бесконечность, то есть метку
+      // держит только её собственная длительность. Первый порядок, как и всё
+      // остальное в этой функции.
       if (a.brand) {
-        const uptime = Math.min(1, rate * Math.min(a.brand.durationSec, fightSec))
+        const horizon = brandCarry >= 1 ? Number.POSITIVE_INFINITY : fightSec / (1 - brandCarry)
+        const uptime = Math.min(1, rate * Math.min(a.brand.durationSec, horizon))
         outgoing = outgoing.times(1 + a.brand.damageShare * uptime)
       }
       // СТОЙКА живёт на ГЕРОЕ и боем не ограничена: её аптайм — это отношение

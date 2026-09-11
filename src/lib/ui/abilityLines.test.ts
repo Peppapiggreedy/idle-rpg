@@ -172,6 +172,7 @@ describe('описание умения собирается из данных',
     { field: 'skulk', over: { skulk: { redirectBonus: 0.3, durationSec: 10 } }, must: 'на 30% больше входящего' },
     { field: 'rally', over: { rally: { hpShare: 0.5 } }, must: 'встаёт с 50% запаса' },
     { field: 'pack', over: { pack: { extraHounds: 1 } }, must: 'ещё один пёс' },
+    { field: 'echo', over: { echo: { share: 0.8 } }, must: 'отзывается эхом на 80%' },
   ]
 
   it.each(FIELDS)('поле $field описывает себя само', ({ over, must }) => {

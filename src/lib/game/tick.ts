@@ -31,6 +31,14 @@ import {
   rollSwing,
 } from './combat'
 import type { Rng } from './rng'
+import {
+  advanceProcs,
+  fireProcs,
+  spendProcSwing,
+  takenProcs,
+  type ProcSituation,
+} from './talentProcs'
+import type { ProcTrigger as TalentProcTrigger } from '../data/talents'
 import { pushEvent, spawnMonster, type ActiveEffect, type GameState } from './state'
 import { ensureStats } from './stats'
 import { emit as busEmit } from './events'
@@ -69,6 +77,7 @@ import {
 import {
   blockReflectShare,
   blockResourceShare,
+  carryShares,
   doubleStrikeChance,
   killCooldownMultiplier,
   reviveMultiplier,
@@ -80,9 +89,15 @@ import {
  * теперь герой может упасть и не от удара моба (героическая отдача списывает
  * HP в момент траты ресурса), и оформлять смерть двумя способами нельзя.
  */
+/** Доля здоровья цели: 1 — целая, 0 — мертва. Её и читают условия проков. */
+function hpShareOf(monster: GameState['monster']): number {
+  if (monster.maxHp.lte(0)) return 0
+  return Math.min(1, Math.max(0, monster.currentHp.div(monster.maxHp).toNumber()))
+}
+
 function heroDies(state: GameState, rng: Rng): GameState {
   // Талант «Скорое возвращение» режет простой; множитель живёт в данных.
-  const reviveMs = REVIVE_DELAY_MS * reviveMultiplier(state.talents)
+  const reviveMs = REVIVE_DELAY_MS * reviveMultiplier(state)
   const dead: GameState = {
     ...state,
     heroState: 'dead',
@@ -154,6 +169,23 @@ interface TickContext {
   hitsTaken: number
   /** Голова лога на входе в тик: по ней считается, что нового объявлено. */
   logHead: CombatEvent | null
+  /**
+   * СОБЫТИЯ, НА КОТОРЫЕ ОТКЛИКАЮТСЯ ТАЛАНТЫ-ПРОКИ, за этот тик.
+   *
+   * Копятся списком, а не применяются на месте, и это ОДНА точка вместо
+   * восьми: крит бывает у обеих рук и у каждого умения, полученный удар — у
+   * каждого замаха моба. Разложи применение по местам — и девятое место
+   * когда-нибудь забудут, а заметить это можно будет только замером.
+   */
+  procEvents: TalentProcTrigger[]
+  /**
+   * ПОЛОЖЕНИЕ ДЕЛ НА ПОЛЕ БОЯ для условных проков, снятое В НАЧАЛЕ ТИКА.
+   *
+   * Именно в начале, а не после ударов: «Добой» спрашивает, была ли цель уже
+   * добиваема В МОМЕНТ КРИТА, и крит, который сам увёл моба под отметку, под
+   * условие попасть не должен — на замахе цель была цела.
+   */
+  procSituation: ProcSituation
 }
 
 type TickStep = (state: GameState, ctx: TickContext) => GameState
@@ -366,7 +398,7 @@ const applyCombat: TickStep = (s, ctx) => {
     // сделать состояние класса свойством связки оружия.
     swung = { ...swung, ramp: grownRamp(swung) }
     for (
-      let i = extraSwings(doubleStrikeChance(swung.talents), ctx.rng);
+      let i = extraSwings(doubleStrikeChance(swung), ctx.rng);
       i > 0 && ctx.killedMonster === null;
       i -= 1
     ) {
@@ -677,7 +709,7 @@ const applyOffhandCombat: TickStep = (s, ctx) => {
     })
     if (hpLeft.lte(0)) ctx.killedMonster = monster
     for (
-      let i = extraSwings(doubleStrikeChance(s.talents), ctx.rng);
+      let i = extraSwings(doubleStrikeChance(s), ctx.rng);
       i > 0 && ctx.killedMonster === null;
       i -= 1
     ) {
@@ -891,7 +923,7 @@ const applyMonsterAttack: TickStep = (s, ctx) => {
     // адресата. Сумма частей равна удару. Пёс, у которого здоровье кончилось,
     // ложится на свой таймер — и журнал говорит об этом отдельной строкой.
     if (companion) {
-      const split = redirectToHounds(hounds, amount, companion)
+      const split = redirectToHounds(hounds, amount, companion, s.stats, ctx.rng)
       if (split.index !== -1) {
         hounds = split.hounds
         amount = split.heroPart
@@ -991,7 +1023,7 @@ const applyMonsterAttack: TickStep = (s, ctx) => {
   if (!died) return next
   // Смерть героя: 30 игровых секунд простоя, награды не капают.
   // Талант «Скорое возвращение» режет простой; множитель живёт в данных.
-  const reviveMs = REVIVE_DELAY_MS * reviveMultiplier(next.talents)
+  const reviveMs = REVIVE_DELAY_MS * reviveMultiplier(next)
   const dead: GameState = {
     ...next,
     heroState: 'dead',
@@ -1119,9 +1151,26 @@ const applyRespawn: TickStep = (s, ctx) => {
     monster,
     activeEffects: [], // эффекты были на прежнем мобе
     monsterWeaken: null,
-    monsterBrand: null,
+    // МЕТКА ПЕРЕЖИВАЕТ ЦЕЛЬ — ЕДИНСТВЕННОЕ ИСКЛЮЧЕНИЕ, И ОНО ФЛАГОМ ИЗ ДАННЫХ.
+    // Без такого таланта `carried` отдаёт null, и строка значит ровно то же,
+    // что значила: «метки живут на конкретном мобе».
+    monsterBrand: carriedBrand(s),
     combatLog: pushEvent(s.combatLog, { type: 'spawn', monsterName: monster.name }),
   }
+}
+
+/**
+ * Клеймо, перенесённое на нового моба: доля оставшегося времени по таланту.
+ * Ветки по id таланта здесь нет — доля приходит из `carryShares`, а имя метки
+ * лежит в payload'е флага.
+ */
+function carriedBrand(s: GameState): GameState['monsterBrand'] {
+  const brand = s.monsterBrand
+  if (!brand) return null
+  const share = carryShares(s.talents).monsterBrand ?? 0
+  if (share <= 0) return null
+  const msLeft = Math.round(brand.msLeft * share)
+  return msLeft > 0 ? { ...brand, msLeft } : null
 }
 
 const applyAutosaveCounter: TickStep = (s, ctx) => {
@@ -1175,6 +1224,35 @@ const applyLethalCheck: TickStep = (s, ctx) =>
  */
 const applyHerbGather: TickStep = (s, ctx) => gatherHerbs(s, ctx.dtMs)
 
+/**
+ * ТАЛАНТЫ-ПРОКИ: окна по времени тикают, окна по замахам тратятся, события
+ * тика открывают новые.
+ *
+ * ПОРЯДОК ВНУТРИ ШАГА ВАЖЕН. Сперва тикают старые окна, потом тратятся
+ * замахи, и только потом открываются новые: иначе окно, открытое критом
+ * ЭТОГО тика, тут же потеряло бы замах, которым оно и было открыто.
+ *
+ * СОБЫТИЙ ДВА — крит и попадание, — и отбирала их МОДЕЛЬ, а не тик. Тик умеет
+ * поднять и «получил удар», и «заблокировал», и «убил»; модель не умеет
+ * посчитать долю времени такого окна из одних статов, а прок, невидимый
+ * модели, ломал бы правило «оффлайн ≤ автокаст» молча. Причина записана
+ * рядом со списком — `ProcTrigger` в `data/talents.ts`.
+ */
+const applyTalentProcs: TickStep = (s, ctx) => {
+  const taken = takenProcs(s.talents)
+  let procs = advanceProcs(s.talentProcs, ctx.dtMs)
+  if (taken.length > 0) {
+    for (let i = 0; i < ctx.swingsDealt; i += 1) procs = spendProcSwing(procs)
+    for (const trigger of ctx.procEvents) {
+      procs = fireProcs(procs, taken, trigger, ctx.procSituation)
+    }
+  }
+  if (procs === s.talentProcs) return s
+  // Окно открылось или закрылось — статы пересчитываются: прибавка прока
+  // идёт ОБЫЧНЫМ модификатором конвейера, и другого пути у неё нет.
+  return { ...s, talentProcs: procs, statsDirty: true }
+}
+
 const PIPELINE: TickStep[] = [
   applyRevive,
   applyRest,
@@ -1192,6 +1270,9 @@ const PIPELINE: TickStep[] = [
   // героя (ctx.swingsDealt), а укус ударом героя не считается.
   applyHoundCombat,
   applyProcs,
+  // Таланты-проки — ПОСЛЕ всех ударов тика и ДО эффектов: к этому месту
+  // известны и замахи героя, и убийство.
+  applyTalentProcs,
   applyEffects,
   applyKillRewards,
   applyLevelUps,
@@ -1229,6 +1310,16 @@ export function tick(
     dtMs,
     rng,
     emitAttack: (event) => {
+      // СОБЫТИЯ ПРОКОВ СНИМАЮТСЯ С ТОЙ ЖЕ ШИНЫ, что кормит цифры на экране:
+      // отдельного счётчика ради талантов в тик не добавлено. Укусы пса и
+      // тики урона по времени ударами героя не считаются — ни для ресурса,
+      // ни для проков.
+      const heroSwing =
+        event.sourceId === 'hero' && !event.overTime && !event.procId && !event.companion
+      if (heroSwing) {
+        ctx.procEvents.push('hit')
+        if (event.isCrit) ctx.procEvents.push('crit')
+      }
       // Удар по псу — не удар по герою: доля запаса за него не капает.
       if (event.targetId === 'hero') ctx.hitsTaken += 1
       // Тики урона по времени и удары ПРОКОВ ударами не считаются: ресурс
@@ -1244,6 +1335,8 @@ export function tick(
     swingsDealt: 0,
     logHead: state.combatLog[0] ?? null,
     hitsTaken: 0,
+    procEvents: [],
+    procSituation: { targetHpShare: hpShareOf(state.monster) },
   }
   // Кеш статов: пересчёт только если источники менялись с прошлого тика.
   let s: GameState = {

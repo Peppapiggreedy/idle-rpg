@@ -12,7 +12,7 @@
   import { axisRows } from './axisText'
   import { placeTip } from './tipPlace'
   import { gameState } from '../stores/game'
-  import { formatStatDelta, isImprovement, SHOWN_STAT_IDS, statNames } from './statFormat'
+  import { formatStatDelta, isImprovement, shownStatIds, statNames } from './statFormat'
   import { RARITY_BY_ID } from '../data/rarity'
   import { itemSlotLabel } from './itemText'
   import EnchantLine from './EnchantLine.svelte'
@@ -41,7 +41,7 @@
    */
   const num = (v: Decimal | number): number => (typeof v === 'number' ? v : v.toNumber())
   const changed = $derived(
-    SHOWN_STAT_IDS.filter(
+    shownStatIds($gameState.classId).filter(
       (stat: StatId) => Math.abs(num(cmp.after[stat]) - num(cmp.before[stat])) > 1e-9,
     ).map((stat: StatId) => ({
       stat,

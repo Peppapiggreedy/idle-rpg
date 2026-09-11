@@ -28,11 +28,13 @@
     type ResetBlockReason,
   } from '../game'
   import {
-    BRANCH_ROW_STEP,
-    CONCEPT_ROWS,
+    BRANCH_BY_ID,
     TALENT_BY_ID,
     groupHolder,
+    keyRowsOf,
     rankOf,
+    rowHeroLevel,
+    rowRequirement,
     talentsInBranch,
     type BranchId,
     type TalentDef,
@@ -72,8 +74,10 @@
   // ДО СЛЕДУЮЩЕГО КЛЮЧЕВОГО — ЧИСЛОМ. Ключевые этажи — то, ради чего ветку
   // берут; расстояние до ближайшего стоит в шапке ветки, а не вычисляется
   // игроком по порогам слева.
-  function nextKeyText(spent: number): string {
-    const next = CONCEPT_ROWS.map((row) => (row - 1) * BRANCH_ROW_STEP).find((req) => req > spent)
+  function nextKeyText(branch: BranchId, spent: number): string {
+    const next = keyRowsOf(branch)
+      .map((row) => rowRequirement(branch, row))
+      .find((req) => req > spent)
     if (next === undefined) return 'все ключевые этажи открыты'
     const left = next - spent
     return `до следующего ключевого — ${left} ${pluralRu(left, 'очко', 'очка', 'очков')}`
@@ -96,7 +100,9 @@
     })
   }
 
-  const isKey = (talent: TalentDef): boolean => CONCEPT_ROWS.includes(talent.row)
+  // КЛЮЧЕВОЙ УЗЕЛ — ТОТ, ЧТО В ГРУППЕ ВЫБОРА. Номер этажа этого больше не
+  // решает: у веток разная форма, а выбор описан у самого таланта.
+  const isKey = (talent: TalentDef): boolean => talent.exclusiveGroup !== undefined
 
   /** Столбец сетки: первый занят порогом этажа, узлы идут со второго. */
   function cellOf(talent: TalentDef, floor: TalentFloor): string {
@@ -269,19 +275,27 @@
       <div class="branch-head" data-next-key>
         <span class="branch-name">{branch.name}</span>
         <span class="branch-spent">вложено {spent}</span>
-        <span class="branch-next">{nextKeyText(spent)}</span>
+        <span class="branch-next">{nextKeyText(branch.id, spent)}</span>
       </div>
-      <!-- ПРОКРУТКА — СВОЯ. Дерево в тринадцать этажей длиннее телефона, и
-           листать его надо внутри панели, а не вместе со сценой. -->
+      <!-- ПРОКРУТКА — СВОЯ. Дерево длиннее телефона, и листать его надо
+           внутри панели, а не вместе со сценой. -->
       <div class="scroll">
-        <div class="tree">
+        <!-- ШИРИНА СЕТКИ — ИЗ ДАННЫХ ВЕТКИ. Ветки разной формы: у одной
+             четыре столбца, у другой пять, и знать это должен `cols`, а не
+             число в стилях. -->
+        <div class="tree" style="--cols: {branch.cols}">
           {#each floorsOf(branch.id) as floor (floor.row)}
             <!-- ЭТАЖ — РЯД С ОБЩИМ ПОРОГОМ, подписан один раз слева. Сам ряд в
                  потоке не участвует (display: contents): узлы стоят в общей
                  сетке по своим столбцам, а стрелки идут сквозь этажи. -->
             <div class="floor" data-floor={floor.row}>
+              <!-- ПОРОГ И УРОВЕНЬ — ОБА. Порог в очках говорит, сколько
+                   вложить, уровень — когда столько будет: очко даётся за
+                   уровень, и «десять очков» это «двадцатый уровень». Одно
+                   число без другого заставляет игрока считать в уме. -->
               <span class="gate" class:met={spent >= floor.required} style="grid-row: {floor.row}">
-                {floor.required}
+                <span class="gate-points">{floor.required}</span>
+                <span class="gate-level">с ур. {rowHeroLevel(branch.id, floor.row)}</span>
               </span>
               {#each floor.talents as talent (talent.id)}
                 {@const status = talentStatus($gameState, talent)}
@@ -432,12 +446,16 @@
     --cell: calc(var(--node-key) + var(--space-2));
     position: relative;
     display: grid;
-    grid-template-columns: auto repeat(4, var(--cell));
+    grid-template-columns: auto repeat(var(--cols, 4), minmax(var(--node-key), var(--cell)));
     grid-auto-rows: var(--cell);
     column-gap: var(--space-1);
     align-items: center;
     justify-items: center;
     width: max-content;
+    /* СЕТКА ШИРЕ ЭКРАНА НЕ ВЫЛЕЗАЕТ. Пять столбцов по полной клетке шире
+       телефона, поэтому клетка ужимается до ключевого узла (минимум колонки),
+       а не отправляет дерево в горизонтальную прокрутку. */
+    max-width: 100%;
     margin: 0 auto;
   }
   .floor {
@@ -445,16 +463,23 @@
   }
   .gate {
     grid-column: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
     justify-self: end;
     min-width: 2ch;
     padding-right: var(--space-1);
     font-size: var(--text-xs);
+    line-height: 1.15;
     color: var(--c-text-faint);
     text-align: right;
     font-variant-numeric: tabular-nums;
   }
-  .gate.met {
+  .gate.met .gate-points {
     color: var(--c-xp);
+  }
+  .gate-level {
+    white-space: nowrap;
   }
   /* УЗЕЛ — КВАДРАТ В ПАЛЕЦ. Пять состояний рамки, и различаются они рамкой
      и яркостью, а не текстом: текст живёт в подсказке. */

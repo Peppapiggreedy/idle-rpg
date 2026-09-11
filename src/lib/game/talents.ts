@@ -11,8 +11,8 @@
 import { Decimal } from './numbers'
 import {
   BRANCH_BY_ID,
-  BRANCH_ROW_STEP,
-  CONCEPT_ROWS,
+  keyRowsOf,
+  rowRequirement,
   TALENTS,
   TALENT_BY_ID,
   branchesOfClass,
@@ -25,9 +25,12 @@ import {
   groupHolder,
   type BranchDef,
   type BranchId,
+  type CarryMark,
   type TalentDef,
   type TalentEffect,
   type TalentFlag,
+  flagsInTree,
+  talentsWithFlag,
 } from '../data/talents'
 import {
   TALENT_FIRST_LEVEL,
@@ -156,15 +159,19 @@ export function investTalent(state: GameState, talentId: string): GameState {
   // порог, честно дадут объявить его снова — он и правда снова открылся.
   let log = state.combatLog
   const before = spentInBranch(state.talents, talent.branch)
-  for (const row of CONCEPT_ROWS) {
-    const required = (row - 1) * BRANCH_ROW_STEP
+  // КЛЮЧЕВЫЕ ЭТАЖИ БЕРУТСЯ У ВЕТКИ, А НЕ ИЗ ОБЩЕГО СПИСКА НОМЕРОВ: у ветки
+  // своя форма, и «пятый этаж» у одной — это «третий» у другой. Ключевой —
+  // тот, где стоит взаимоисключающая пара, и знают это сами таланты.
+  for (const row of keyRowsOf(talent.branch)) {
+    const required = rowRequirement(talent.branch, row)
     if (before < required && before + 1 >= required) {
       log = pushEvent(log, { type: 'talent-floor', branchId: talent.branch, row })
     }
   }
-  // ВЗЯТЫЙ КЛЮЧЕВОЙ — тоже строка: первый ранг на ключевом этаже запирает
-  // соседа, и журнал называет, что именно выбрано.
-  if (rank === 0 && CONCEPT_ROWS.includes(talent.row)) {
+  // ВЗЯТЫЙ КЛЮЧЕВОЙ — тоже строка: первый ранг в группе запирает соседа, и
+  // журнал называет, что именно выбрано. Признак — САМА ГРУППА, а не номер
+  // этажа: выбор это `exclusiveGroup`, и второго определения у него нет.
+  if (rank === 0 && talent.exclusiveGroup) {
     log = pushEvent(log, { type: 'talent-key', talentId })
   }
   return ensureStats({
@@ -304,9 +311,13 @@ export function resetTalents(state: GameState): GameState {
 /** Поднятые флаги: талант-флаг включается с первого же ранга. */
 export function talentFlags(ranks: TalentRanks): Set<TalentFlag> {
   const flags = new Set<TalentFlag>()
-  for (const talent of TALENTS) {
-    if (talent.effect.kind !== 'flag') continue
-    if (rankOf(ranks, talent.id) > 0) flags.add(talent.effect.flag)
+  for (const flag of flagsInTree()) {
+    for (const talent of talentsWithFlag(flag)) {
+      if (rankOf(ranks, talent.id) > 0) {
+        flags.add(flag)
+        break
+      }
+    }
   }
   return flags
 }
@@ -327,7 +338,10 @@ export function flagPayload<F extends TalentFlag>(
   ranks: TalentRanks,
   flag: F,
 ): Extract<TalentEffect, { kind: 'flag'; flag: F }> | null {
-  for (const talent of TALENTS) {
+  // Индекс по флагу, а не обход дерева: это САМЫЙ ЧАСТЫЙ вопрос логики к
+  // дереву — его задают привал, реген, ускорение, крит, пёс и десяток других
+  // мест, и задают на каждом тике (см. `talentsWithFlag`).
+  for (const talent of talentsWithFlag(flag)) {
     const effect = talent.effect
     if (effect.kind !== 'flag' || effect.flag !== flag) continue
     if (rankOf(ranks, talent.id) <= 0) continue
@@ -363,9 +377,25 @@ export function talentExtraCharges(ranks: TalentRanks, abilityId: string): numbe
   return extra
 }
 
-/** Шанс, что автоатака бьёт дважды. 0 — таланта нет, бросок не делается вовсе. */
-export function doubleStrikeChance(ranks: TalentRanks): number {
-  return flagPayload(ranks, 'double-strike')?.chance ?? 0
+/**
+ * ШАНС ВТОРОЙ АВТОАТАКИ — ОДНО ЧИСЛО ИЗ ДВУХ ИСТОЧНИКОВ, И СКЛАДЫВАЮТСЯ ОНИ
+ * ЗДЕСЬ, В ЕДИНСТВЕННОМ МЕСТЕ.
+ *
+ * Механизма два: старый флаг `double-strike` (талант-переключатель, ранга у
+ * него нет — взят или нет) и новая характеристика `doubleStrike` (доля,
+ * проходит конвейер статов, значит может прийти и с вещи, и с зачарования, и
+ * с зелья). Заменить флаг статом было бы чище, но флаг висит на КЛЮЧЕВОМ
+ * таланте, а ключевому модификаторы конвейера запрещены схемой — правило
+ * «на ключевом этаже поведение, а не число» пришлось бы ломать ради чистоты.
+ *
+ * Поэтому они СЛАГАЕМЫЕ, и сложение живёт в одной функции: ни тик, ни модель
+ * к флагу и стату по отдельности не обращаются. Доля зажата единицей —
+ * «двести процентов второй атаки» это третья атака, а её механизма нет.
+ * Ноль — бросок не делается вовсе.
+ */
+export function doubleStrikeChance(state: Pick<GameState, 'talents' | 'stats'>): number {
+  const fromFlag = flagPayload(state.talents, 'double-strike')?.chance ?? 0
+  return Math.min(1, Math.max(0, fromFlag + state.stats.doubleStrike))
 }
 
 /** Какая доля ПОГЛОЩЁННОГО щитом урона уходит обратно в атакующего. */
@@ -393,9 +423,45 @@ export function restDurationMultiplier(ranks: TalentRanks): number {
   return flagPayload(ranks, 'shorter-rest')?.durationMultiplier ?? 1
 }
 
-/** Множитель времени воскрешения от талантов (1 — без изменений). */
-export function reviveMultiplier(ranks: TalentRanks): number {
-  return flagPayload(ranks, 'faster-revive')?.reviveMultiplier ?? 1
+/**
+ * МНОЖИТЕЛЬ ВРЕМЕНИ ПОДЪЁМА — тоже одно число из двух источников, и по той же
+ * причине, что у второй атаки: флаг `faster-revive` висит на ключевом
+ * таланте Оплота, а `reviveSpeed` — обычная доля конвейера.
+ *
+ * Складываются они МУЛЬТИПЛИКАТИВНО, а не сложением: «вдвое быстрее» и «ещё
+ * на треть быстрее» — это две трети от половины, а не ноль. Сложением два
+ * источника легко увели бы время подъёма в ноль, то есть смерть перестала бы
+ * стоить чего бы то ни было.
+ */
+export function reviveMultiplier(state: Pick<GameState, 'talents' | 'stats'>): number {
+  const fromFlag = flagPayload(state.talents, 'faster-revive')?.reviveMultiplier ?? 1
+  return Math.max(0, fromFlag * (1 - Math.min(1, Math.max(0, state.stats.reviveSpeed))))
+}
+
+/**
+ * ПЕРЕНОС МЕТОК: какая доля оставшегося времени переживает смерть цели.
+ *
+ * Возвращается ЗАПИСЬ ПО МЕТКАМ, а не одно число: талантов переноса может
+ * оказаться несколько, и каждый называет свою метку. Доля множится на ранг и
+ * зажимается единицей — больше, чем было, перенести нельзя.
+ *
+ * Пустая запись значит «ни одного такого таланта», и тогда тик сносит метки
+ * ровно как сносил: правило «метка живёт на конкретном мобе» остаётся
+ * умолчанием, а талант — единственным исключением из него.
+ */
+export function carryShares(ranks: TalentRanks): Partial<Record<CarryMark, number>> {
+  const out: Partial<Record<CarryMark, number>> = {}
+  // Индекс по флагу, а не обход дерева: зовётся на каждый тик и на каждый
+  // расчёт модели (см. `talentsWithFlag`).
+  for (const talent of talentsWithFlag('carry-over')) {
+    const effect = talent.effect
+    if (effect.kind !== 'flag' || effect.flag !== 'carry-over') continue
+    const rank = rankOf(ranks, talent.id)
+    if (rank <= 0) continue
+    const share = Math.min(1, Math.max(0, effect.share * rank))
+    out[effect.mark] = Math.max(out[effect.mark] ?? 0, share)
+  }
+  return out
 }
 
 /** Стая: на сколько выше урон героя, пока пёс на ногах. 0 — таланта нет. */

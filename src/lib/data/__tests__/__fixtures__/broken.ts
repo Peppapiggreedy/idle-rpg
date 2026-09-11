@@ -13,6 +13,7 @@ import type { IconName } from '../../../ui/icons/manifest'
 import type { StatId } from '../../../game/stats'
 import type { SlotId } from '../../slots'
 import { CLASS_BY_ID, type ClassDef } from '../../classes'
+import type { AbilityDef } from '../../abilities'
 import type { ShieldTemplate, WeaponTemplate } from '../../items'
 import { masteryToKnow, type RecipeDef } from '../../recipes'
 import { realContent } from '../content'
@@ -53,6 +54,157 @@ function withoutCapstone(real: Content) {
  * Пути ПЕРВОЙ ветки без венца в порядке покупки: сам талант на месте, но
  * очередь до него не доходит. Ломается ровно то, что проверка и стережёт.
  */
+/** Талант выдачи умения. */
+function grantTalent(real: Content) {
+  const found = real.talents.find(
+    (t) => t.effect.kind === 'flag' && t.effect.flag === 'grant-ability',
+  )
+  if (!found) throw new Error('в дереве нет выдачи умения — образец мерить не на чем')
+  return found
+}
+
+function grantTalentId(real: Content) {
+  return grantTalent(real).id
+}
+
+function grantTalentWith(real: Content, abilityId: string): TalentDef[] {
+  const talent = grantTalent(real)
+  return patch(real.talents, talent.id, {
+    effect: { ...(talent.effect as object), abilityId },
+  } as unknown as Partial<TalentDef>)
+}
+
+/** Выданное умение с уровнем открытия выше первого. */
+function grantedWithUnlock(real: Content, unlockLevel: number): AbilityDef[] {
+  const id = (grantTalent(real).effect as { abilityId: string }).abilityId
+  return real.abilities.map((a) => (a.id === id ? { ...a, unlockLevel } : a))
+}
+
+/** Талант замены умения. */
+function swapTalent(real: Content) {
+  const found = real.talents.find(
+    (t) => t.effect.kind === 'flag' && t.effect.flag === 'replace-ability',
+  )
+  if (!found) throw new Error('в дереве нет замены умения — образец мерить не на чем')
+  return found
+}
+
+function swapTalentId(real: Content) {
+  return swapTalent(real).id
+}
+
+function swapFrom(real: Content) {
+  return (swapTalent(real).effect as { from: string }).from
+}
+
+/** Любое умение, которое У КЛАССА ЭТОЙ ВЕТКИ есть и которое не заменяется. */
+function ownedAbilityId(real: Content) {
+  const talent = swapTalent(real)
+  const branch = real.branches.find((b) => b.id === talent.branch)!
+  const owner = real.classes.find((c) => c.id === branch.classId)!
+  const from = swapFrom(real)
+  const found = owner.abilityIds.find((id) => id !== from)
+  if (!found) throw new Error('у класса одно умение — подменить нечем')
+  return found
+}
+
+function swapTalentWith(real: Content, fields: { to?: string }): TalentDef[] {
+  const talent = swapTalent(real)
+  return patch(real.talents, talent.id, {
+    effect: { ...(talent.effect as object), ...fields },
+  } as unknown as Partial<TalentDef>)
+}
+
+/**
+ * Дерево БЕЗ таланта замены: подставляемое умение остаётся в реестре и
+ * становится недостижимым — до него не добраться ни книгой, ни талантом.
+ */
+function withoutSwapTalent(real: Content): TalentDef[] {
+  const id = swapTalentId(real)
+  return real.talents.filter((t) => t.id !== id)
+}
+
+/** Прок С УСЛОВИЕМ — на нём проверяются правила условий. */
+function conditionalProc(real: Content) {
+  const found = real.talents.find(
+    (t) => t.effect.kind === 'flag' && t.effect.flag === 'proc' && t.effect.when,
+  )
+  if (!found) throw new Error('в дереве нет условного прока — образец мерить не на чем')
+  return found
+}
+
+function conditionalProcId(real: Content) {
+  return conditionalProc(real).id
+}
+
+/** Тот же условный прок с подменённой долей условия. */
+function procTalentWhen(real: Content, share: number): TalentDef[] {
+  const talent = conditionalProc(real)
+  const effect = talent.effect as { when: { kind: string; share: number } }
+  return patch(real.talents, talent.id, {
+    effect: { ...effect, when: { ...effect.when, share } },
+  } as unknown as Partial<TalentDef>)
+}
+
+/** Талант переноса метки. */
+function carryTalent(real: Content) {
+  const found = real.talents.find((t) => t.effect.kind === 'flag' && t.effect.flag === 'carry-over')
+  if (!found) throw new Error('в дереве нет переноса метки — образец мерить не на чем')
+  return found
+}
+
+function carryTalentId(real: Content) {
+  return carryTalent(real).id
+}
+
+function carryTalentWith(real: Content, fields: { share?: number }): TalentDef[] {
+  const talent = carryTalent(real)
+  return patch(real.talents, talent.id, {
+    effect: { ...(talent.effect as object), ...fields },
+  } as unknown as Partial<TalentDef>)
+}
+
+/**
+ * Тот же перенос, переехавший в ветку ЧУЖОГО класса: у того класса умения,
+ * вешающего эту метку, нет, и талант мёртв.
+ */
+function carryTalentInForeignBranch(real: Content): TalentDef[] {
+  const talent = carryTalent(real)
+  const own = real.branches.find((b) => b.id === talent.branch)!
+  const foreign = real.branches.find((b) => b.classId !== own.classId)!
+  return patch(real.talents, talent.id, { branch: foreign.id } as Partial<TalentDef>)
+}
+
+/** Первый талант-прок дерева: на нём и проверяются правила проков. */
+function procTalent(real: Content) {
+  const found = real.talents.find((t) => t.effect.kind === 'flag' && t.effect.flag === 'proc')
+  if (!found) throw new Error('в дереве нет ни одного прока — образцы поломок мерить не на чем')
+  return found
+}
+
+function procTalentId(real: Content) {
+  return procTalent(real).id
+}
+
+/**
+ * Тот же прок с подменёнными полями прибавки. Подменяются ИМЕНОВАННО, а не
+ * целым объектом: образец обязан отличаться от настоящего дерева ровно одним
+ * полем, иначе непонятно, на что сработала проверка.
+ */
+function procTalentWith(
+  real: Content,
+  fields: { stat?: string; durationSec?: number; swings?: number },
+): TalentDef[] {
+  const talent = procTalent(real)
+  const effect = talent.effect as { kind: 'flag'; flag: 'proc'; effect: Record<string, unknown> }
+  return patch(real.talents, talent.id, {
+    effect: {
+      ...effect,
+      effect: { ...effect.effect, ...fields },
+    },
+  } as unknown as Partial<TalentDef>)
+}
+
 function pathsWithoutCapstone(real: Content) {
   const branchId = real.branches[0].id
   const rows = real.talents.filter((t) => t.branch === branchId).map((t) => t.row)
@@ -576,12 +728,40 @@ export function brokenCases(): BrokenCase[] {
       content: {
         ...real,
         talents: real.talents.map((t) =>
-          t.id === 'wrath-open-wound'
+          t.id === 'wrath-open-vein'
             ? { ...t, col: t.col === 1 ? (2 as const) : (1 as const) }
             : t,
         ),
       },
-      expect: ['wrath-open-wound', 'гнётся'],
+      expect: ['wrath-open-vein', 'гнётся'],
+    },
+    {
+      // ДВА ТАЛАНТА НА ОДНО ПОЛЕ ОДНОГО УМЕНИЯ — это один талант, разрезанный
+      // надвое: имена разные, действие одно, и заметить это можно только сверив
+      // данные.
+      title: 'два таланта ветки правят одно и то же поле умения',
+      content: {
+        ...real,
+        talents: real.talents.map((t) =>
+          t.id === 'wrath-open-vein'
+            ? {
+                ...t,
+                effect: {
+                  kind: 'ability' as const,
+                  abilityId: 'rending-wound',
+                  tune: [
+                    {
+                      field: 'effectWeaponDamagePercent' as const,
+                      kind: 'percent' as const,
+                      value: 0.1,
+                    },
+                  ],
+                },
+              }
+            : t,
+        ),
+      },
+      expect: ['wrath-open-vein', 'разрезанный надвое'],
     },
     {
       // Этаж с выбором обязан быть расставлен весь.
@@ -598,7 +778,7 @@ export function brokenCases(): BrokenCase[] {
       content: {
         ...real,
         talents: real.talents.map((t) =>
-          t.id === 'wrath-second-swing' ? { ...t, exclusiveGroup: 'одинокая' } : t,
+          t.id === 'wrath-echo' ? { ...t, exclusiveGroup: 'одинокая' } : t,
         ),
       },
       expect: ['одинокая', 'из одного члена'],
@@ -609,7 +789,7 @@ export function brokenCases(): BrokenCase[] {
       content: {
         ...real,
         talents: real.talents.map((t) =>
-          t.id === 'wrath-second-swing' || t.id === 'wrath-rupture'
+          t.id === 'wrath-echo' || t.id === 'wrath-rupture'
             ? { ...t, exclusiveGroup: 'через-этажи' }
             : t,
         ),
@@ -622,7 +802,7 @@ export function brokenCases(): BrokenCase[] {
       content: {
         ...real,
         talents: real.talents.map((t) =>
-          t.id === 'wrath-second-swing' || t.id === 'bulwark-mirror-shield'
+          t.id === 'wrath-echo' || t.id === 'bulwark-mirror-shield'
             ? { ...t, exclusiveGroup: 'через-ветки' }
             : t,
         ),
@@ -646,7 +826,44 @@ export function brokenCases(): BrokenCase[] {
             : t,
         ),
       },
-      expect: ['ключевом этаже 5', 'модификаторы конвейера'],
+      expect: ['взаимоисключающей группе', 'модификаторы конвейера'],
+    },
+    {
+      // ФОРМА ВЕТКИ — ДАННЫЕ, И ДАННЫЕ ОБЯЗАНЫ ЕЙ ОТВЕЧАТЬ. Этаж без единого
+      // таланта — это порог, за которым ничего нет: очки вложены, а брать
+      // нечего. Заметить это чтением нельзя, а на экране получается дырка.
+      title: 'в ветке пустой этаж посреди формы',
+      content: {
+        ...real,
+        talents: real.talents.filter(
+          (t) => !(t.branch === 'warden-wrath' && t.row === 2),
+        ),
+      },
+      expect: ['этаж 2 пуст'],
+    },
+    {
+      // ПОРОГ СЧИТАЕТСЯ ИЗ ФОРМЫ. Написанный руками порог разъезжается с
+      // сеткой молча: узел стоит на третьем этаже, а открывается по пятому.
+      title: 'порог таланта не отвечает форме ветки',
+      content: {
+        ...real,
+        talents: real.talents.map((t) =>
+          t.id === 'wrath-deep-brand' ? { ...t, requiredPointsInBranch: 33 } : t,
+        ),
+      },
+      expect: ['не отвечает форме ветки'],
+    },
+    {
+      // РЯД ШИРИНОЙ В СВОЮ ВЕТКУ. Лишняя клетка в ряду не помещается на
+      // экран, и ширина у каждой ветки своя — общего потолка тут нет.
+      title: 'в ряду больше талантов, чем ветка широка',
+      content: {
+        ...real,
+        branches: real.branches.map((b) =>
+          b.id === 'warden-wrath' ? { ...b, cols: 3 as const } : b,
+        ),
+      },
+      expect: ['при ширине ветки 3'],
     },
     {
       // Стрелка вверх: до таланта не добраться никогда — очки в опорный
@@ -1890,6 +2107,96 @@ export function brokenCases(): BrokenCase[] {
         } as Partial<TalentDef>),
       },
       expect: [foreignTunedTalent(real).talent.id, 'не делает НИЧЕГО'],
+    },
+    {
+      // Прок раздаёт СИЛУ. Модификатору это запрещено прямо, а проку — только
+      // если правило додумали до конца: прибавка прока идёт тем же плоским
+      // модификатором конвейера, просто на восемь секунд. Не проверь это — и
+      // «+5 силы на окно» проходило бы там, где «+5 силы» не проходит.
+      title: 'прок даёт базовую характеристику',
+      content: { ...real, talents: procTalentWith(real, { stat: 'strength' }) },
+      expect: [procTalentId(real), 'БАЗОВЫХ'],
+    },
+    {
+      // Прок двигает ПОРОГ ПРИВАЛА: на экране у игрока 60 %, а герой уходит
+      // отдыхать на 72 % — восемь секунд из каждых двадцати. Ползунок в этот
+      // момент читается как поломка.
+      title: 'прок двигает настройку игрока',
+      content: { ...real, talents: procTalentWith(real, { stat: 'restThreshold' }) },
+      expect: [procTalentId(real), 'НАСТРОЙКА ИГРОКА'],
+    },
+    {
+      // Прок даёт плоскую силу атаки: к сотому уровню прибавка становится
+      // шумом, а очко стоит столько же. Процента у прока нет вовсе, значит
+      // такой стат ему закрыт целиком.
+      title: 'прок даёт плоскую прибавку к растущему стату',
+      content: { ...real, talents: procTalentWith(real, { stat: 'attackPower' }) },
+      expect: [procTalentId(real), 'ПЛОСКУЮ'],
+    },
+    {
+      // Окно нулевой длины: талант есть, ранг растёт, очки берутся, а в
+      // конвейер уходит ноль. Тише мёртвого таланта — тот хотя бы виден.
+      title: 'у прока нулевое окно',
+      content: { ...real, talents: procTalentWith(real, { durationSec: 0, swings: 0 }) },
+      expect: [procTalentId(real), 'не делает НИЧЕГО'],
+    },
+    {
+      // Условие «ниже ста процентов здоровья» верно ВСЕГДА: в записи
+      // ограничение есть, в игре его нет, а игрок читает его в подсказке.
+      title: 'условие прока верно всегда',
+      content: { ...real, talents: procTalentWhen(real, 1) },
+      expect: [conditionalProcId(real), 'условие не условие'],
+    },
+    {
+      // Клеймо переносится ЦЕЛИКОМ уже на первом ранге при пяти рангах: на
+      // потолке переносилось бы впятеро больше, чем было.
+      title: 'перенос метки отдаёт больше, чем было',
+      content: { ...real, talents: carryTalentWith(real, { share: 1 }) },
+      expect: [carryTalentId(real), 'больше, чем было'],
+    },
+    {
+      // Перенос метки, которую классу ветки нечем поставить: имена
+      // настоящие, ссылки целые, а талант не делает НИЧЕГО.
+      title: 'перенос метки, которую класс не вешает',
+      content: { ...real, talents: carryTalentInForeignBranch(real) },
+      expect: ['нет ни одного', 'умения, которое её вешает'],
+    },
+    {
+      // Замена подставляет умение, лежащее в книге класса: игрок мог
+      // поставить его сам, и в ряду оказались бы два экземпляра одного
+      // умения с одним откатом — id-то остаётся от заменяемого.
+      title: 'замена подставляет умение из книги класса',
+      content: { ...real, talents: swapTalentWith(real, { to: ownedAbilityId(real) }) },
+      expect: [swapTalentId(real), 'лежит в книге класса'],
+    },
+    {
+      // Замена умения на себя же: талант есть, ранг растёт, очко берут, а не
+      // меняется ничего.
+      title: 'замена умения на себя же',
+      content: { ...real, talents: swapTalentWith(real, { to: swapFrom(real) }) },
+      expect: [swapTalentId(real), 'ничего не меняет'],
+    },
+    {
+      // Умение вне всех книг, которое не подставляет ни один талант: оно есть
+      // в реестре, проходит схему, весит иконку — и добраться до него нельзя
+      // ничем.
+      title: 'умение-сирота: ни в книге, ни в замене',
+      content: { ...real, talents: withoutSwapTalent(real) },
+      expect: ['не лежит ни в одной книге класса'],
+    },
+    {
+      // Талант выдаёт умение, которое и так лежит в книге класса: очко
+      // покупает то, что открывается уровнем.
+      title: 'талант выдаёт умение из книги класса',
+      content: { ...real, talents: grantTalentWith(real, ownedAbilityId(real)) },
+      expect: [grantTalentId(real), 'лежит в книге класса'],
+    },
+    {
+      // У выданного умения уровень открытия выше первого: вторые ворота
+      // поверх очка — кнопка, которую видно и нельзя нажать.
+      title: 'у выданного талантом умения есть уровень открытия',
+      content: { ...real, abilities: grantedWithUnlock(real, 20) },
+      expect: [grantTalentId(real), 'вторые ворота по уровню'],
     },
     {
       // Из ПОРЯДКА ПОКУПКИ убран венец: талант на месте, ветка цела, а путь

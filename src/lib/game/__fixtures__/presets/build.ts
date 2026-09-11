@@ -200,16 +200,25 @@ function passedBandMaterials(level: number): Record<string, Decimal> {
 function tree(): GameState {
   let state = createInitialState(505, DEFAULT_CLASS.id, 505)
   state = atLevel(state, CRAFT_UNLOCK_LEVEL + 2)
-  // Двадцать очков в четыре верхних этажа Гнева, «Глубокий надрез» до
-  // третьего ранга — опоры «Кровоточащей кромки»; затем ключевой пятого
-  // этажа и остаток в третий.
+  // Двадцать три очка: тринадцать в первый этаж, семь во второй — ровно
+  // порог ключевого третьего, — ключевой узел и остаток рядом с ним.
+  // «Вскрытая жила» стоит за «Глубоким надрезом» на третьем ранге, поэтому
+  // на снимке видна и набранная стрелка.
+  //
+  // ПОРЯДОК СЧИТАЕТСЯ ОТ ПОРОГОВ ЭТАЖЕЙ, И ЭТО НЕ ПЕДАНТИЗМ: `investTalent`
+  // на непройденный порог отвечает ОТКАЗОМ, а генератор пресета отказ
+  // проглатывает молча. Пересобрали ветку — пересчитайте суммы, иначе json
+  // соберётся наполовину пустым и снимок дерева перестанет показывать то,
+  // ради чего он снимается. Держит это `presets.test.ts` — он требует у
+  // пресета взятый ключевой узел и запертого им соседа.
   const order: [string, number][] = [
-    ['wrath-honed-edge', 6],
-    ['wrath-firm-hand', 5],
-    ['wrath-keen-eye', 6],
+    ['wrath-honed-edge', 5],
     ['wrath-deep-cut', 3],
+    ['wrath-savage-blows', 5],
+    ['wrath-keen-eye', 5],
+    ['wrath-open-vein', 2],
     ['wrath-rupture', 1],
-    ['wrath-savage-blows', 6],
+    ['wrath-frenzy', 2],
   ]
   for (const [id, ranks] of order) {
     for (let rank = 0; rank < ranks; rank++) state = investTalent(state, id)

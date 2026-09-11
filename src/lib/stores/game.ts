@@ -2,7 +2,9 @@
 // и вызывают экшены, цикл и экшены пишут в состояние.
 import { get, readonly, writable } from 'svelte/store'
 import { createGameLoop, STEP_MS, type GameLoop, type LoopMetrics } from '../game/loop'
-import { createInitialState, pushEvent, spawnMonster, type GameState } from '../game/state'
+import { createInitialState, pushEvent, spawnMonster, type GameState,
+  heroSettings,
+} from '../game/state'
 import { finishRest, restProgress } from '../game/rest'
 import { tick } from '../game/tick'
 import { ensureStats } from '../game/stats'
@@ -625,7 +627,10 @@ export function setAbilitySlot(index: number, abilityId: string | null): void {
   recordDecision('autocast')
   state.update((s) => {
     if (index < 0 || index >= s.abilitySlots.length) return s
-    if (abilityId !== null && s.abilitySettings[abilityId] === undefined) return s
+    // ДОСТУПНОСТЬ — ПО `heroSettings`, а не по сырым настройкам сейва: умение
+    // от таланта настройки в сейве не имеет, и класть его в ряд было бы
+    // нельзя ровно до следующего сохранения.
+    if (abilityId !== null && heroSettings(s)[abilityId] === undefined) return s
     // Запертое уровнем в ряд не кладём: кнопка была бы, а нажать нечего.
     const ability = abilityId === null ? null : ABILITY_BY_ID[abilityId]
     if (ability && s.level.lt(ability.unlockLevel)) return s

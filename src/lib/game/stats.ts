@@ -32,6 +32,7 @@ import { talentModifiers } from '../data/talents'
 import { potionModifiers } from '../data/recipes'
 import { enchantModifiers } from '../data/enchants'
 import { classById } from '../data/classes'
+import { procModifiers } from './talentProcs'
 
 // Модифицируемые статы. swingTime сюда НЕ входит намеренно: это производная
 // величина, её нельзя модифицировать напрямую — только через weaponSpeed/haste.
@@ -78,6 +79,60 @@ export type StatId =
   // героя (см. armorReduction в combat.ts). Прямой процент здесь был бы
   // ошибкой — два источника легко перевалили бы за сто.
   | 'armor'
+  // -------------------------------------------------------------------------
+  // ОДИННАДЦАТЬ ХАРАКТЕРИСТИК, ЗАВЕДЁННЫХ ВМЕСТЕ С МАШИНЕРИЕЙ ДЕРЕВА
+  // -------------------------------------------------------------------------
+  //
+  // ВСЕ ОНИ — ДОЛИ С БАЗОЙ НОЛЬ, и это не случайность формы. Стат, который
+  // существует только как ПРИБАВКА («насколько больше», «насколько чаще»),
+  // не устаревает с уровнем: плоское «+3 к силе» к сотому уровню становится
+  // шумом, а «+3 % шанса» стоит одинаково всегда. Отсюда и род в
+  // TALENT_STAT_RULE — `share` у всех одиннадцати.
+  //
+  // НОЛЬ ПО УМОЛЧАНИЮ ЗНАЧИТ «ИГРА ТА ЖЕ». Ни одна из них не меняет ни одного
+  // числа, пока её никто не поднял: уворот не бросается, вторая атака не
+  // катится, пёс считается ровно как считался. Это и есть условие, при
+  // котором их можно завести все разом, не двигая баланс.
+
+  // Шанс, что автоатака бьёт дважды. Тот же механизм, что у флага
+  // `double-strike`, и сложение их обоих живёт в ОДНОМ месте — см.
+  // `doubleStrikeChance` в game/talents.ts.
+  | 'doubleStrike'
+  // Шанс увернуться от входящего удара ЦЕЛИКОМ. Не смягчение: удар не
+  // проходит вовсе, поэтому уворот стоит ПЕРВЫМ в порядке входящего — до
+  // брони, блока и стойки. Смягчать нечего, если не попали.
+  | 'dodge'
+  // Насколько короче подъём героя после смерти. Доля, а не секунды: время
+  // подъёма задаётся одной константой мира, и правка его долей — правка
+  // «насколько я быстрее», а не «на сколько секунд».
+  | 'reviveSpeed'
+
+  // ВОСЕМЬ ХАРАКТЕРИСТИК СПУТНИКА. Все числа пса выводятся из статов героя
+  // (запас — доля запаса героя, укус — доля его удара), поэтому и правки к
+  // ним — ДОЛИ СВЕРХ этой доли. Прямых чисел у пса нет и здесь: своей
+  // лестницы предметов у него не заведено.
+  //
+  // ОНИ НЕ ЗАМЕНЯЮТ ФЛАГ `hound-tune`, А СКЛАДЫВАЮТСЯ С НИМ, и складываются
+  // в одном месте — `companionOf` в game/hound.ts. Заменить было бы чище, но
+  // это значило бы переписать дерево Псаря и сдвинуть его ключи, а ночь
+  // обещала их не трогать. Флаг остаётся способом ТАЛАНТА править спутника,
+  // стат — способом это сделать предметом, зачарованием или зельем.
+  | 'houndMaxHp'
+  | 'houndHpRegen'
+  | 'houndAttackPower'
+  // Своя прибавка к шансу крита укуса: базовый шанс пёс берёт у героя.
+  | 'houndCritChance'
+  // Сколько пёс срезает со СВОЕЙ части удара. Доля, а не очки: у пса нет
+  // своей брони в очках и своей кривой к ней — заводить вторую значило бы
+  // держать две кривые, которые разъедутся на первой правке. Делёж удара
+  // это НЕ трогает: герою достаётся ровно столько же, сколько и раньше.
+  | 'houndArmor'
+  // Шанс, что пёс увернётся от своей части удара. Та же оговорка, что у
+  // брони пса: часть героя от этого не растёт.
+  | 'houndDodge'
+  | 'houndReviveSpeed'
+  // Сколько ЕЩЁ входящего уходит псу сверх доли из данных класса.
+  | 'redirectShare'
 
 export const STAT_IDS: StatId[] = [
   'strength',
@@ -107,6 +162,17 @@ export const STAT_IDS: StatId[] = [
   'manaRegen',
   'damageReduction',
   'armor',
+  'doubleStrike',
+  'dodge',
+  'reviveSpeed',
+  'houndMaxHp',
+  'houndHpRegen',
+  'houndAttackPower',
+  'houndCritChance',
+  'houndArmor',
+  'houndDodge',
+  'houndReviveSpeed',
+  'redirectShare',
 ]
 
 export type ModifierKind = 'base' | 'flat' | 'percent' | 'multiplier'
@@ -156,6 +222,20 @@ export interface StatBlock {
   manaRegen: Decimal
   damageReduction: number // доля 0..1
   armor: Decimal // очки брони; в долю их переводит armorReduction
+  // ОДИННАДЦАТЬ ДОЛЕЙ С БАЗОЙ НОЛЬ — числа, а не Decimal: доля 0..1 за
+  // пределы double не выходит ни при какой сборке, и Decimal здесь стоил бы
+  // арифметики в горячем цикле ради нуля.
+  doubleStrike: number
+  dodge: number
+  reviveSpeed: number
+  houndMaxHp: number
+  houndHpRegen: number
+  houndAttackPower: number
+  houndCritChance: number
+  houndArmor: number
+  houndDodge: number
+  houndReviveSpeed: number
+  redirectShare: number
 }
 
 // Все источники модификаторов персонажа. Новые системы (экипировка, таланты,
@@ -214,6 +294,11 @@ export function collectModifiers(state: GameState): StatModifier[] {
   mods.push(...potionModifiers(state.activePotions ?? []))
   // Разворот атрибутов — ПОСЛЕДНИМ: он читает всё собранное выше.
   mods.push(...attributeModifiers(mods))
+  // ПРОКИ — ОБЫЧНЫЕ МОДИФИКАТОРЫ, пока их окно открыто. Через конвейер их
+  // видят все разом: тик, модель, оффлайн, обе оси и раскладка статов; мимо
+  // конвейера прок был бы виден только тику, и оффлайн врал бы на его
+  // величину. Источник называет талант — игрок читает, откуда число.
+  for (const mod of procModifiers(state)) mods.push(mod)
   return mods
 }
 
@@ -316,7 +401,31 @@ export function applyModifiers(mods: StatModifier[]): StatBlock {
     hpRegenOutOfCombat: computeStat('hpRegenOutOfCombat', mods),
     manaRegen: computeStat('manaRegen', mods),
     damageReduction: computeStat('damageReduction', mods).toNumber(),
+    // ОДИННАДЦАТЬ ДОЛЕЙ. Считаются тем же `computeStat`, что и всё остальное:
+    // своего пути к значению у них нет, и появиться он не должен.
+    doubleStrike: share('doubleStrike', mods),
+    dodge: share('dodge', mods),
+    reviveSpeed: share('reviveSpeed', mods),
+    houndMaxHp: Math.max(0, computeStat('houndMaxHp', mods).toNumber()),
+    houndHpRegen: Math.max(0, computeStat('houndHpRegen', mods).toNumber()),
+    houndAttackPower: Math.max(0, computeStat('houndAttackPower', mods).toNumber()),
+    houndCritChance: share('houndCritChance', mods),
+    houndArmor: share('houndArmor', mods),
+    houndDodge: share('houndDodge', mods),
+    houndReviveSpeed: share('houndReviveSpeed', mods),
+    redirectShare: share('redirectShare', mods),
   }
+}
+
+/**
+ * ДОЛЯ ЗАЖАТА В 0..1, И ЭТО НЕ ПЕДАНТИЗМ. Шанс выше единицы означает бросок,
+ * который всегда удаётся, — уворот «в 120 %» неотличим от неуязвимости, а
+ * отрицательный шанс тихо переворачивал бы сравнение. Зажимается ЗДЕСЬ, в
+ * одной точке, а не у каждого места применения: иначе на первом же новом
+ * читателе доля уехала бы за край.
+ */
+function share(stat: StatId, mods: StatModifier[]): number {
+  return Math.min(1, Math.max(0, computeStat(stat, mods).toNumber()))
 }
 
 export function recomputeStats(state: GameState): StatBlock {

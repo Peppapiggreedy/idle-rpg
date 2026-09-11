@@ -713,7 +713,17 @@ function msFromSaved(raw: unknown, max: number): number {
  * при каком содержимом сейва: что бы ни лежало в поле, пустые слоты
  * дозаполняются открытыми умениями его класса (`fillAbilitySlots`).
  */
-function abilitySlotsFromSaved(raw: unknown, classId: string): AbilitySlots {
+/**
+ * ТАЛАНТЫ ЗДЕСЬ НУЖНЫ, и это не лишний параметр: умение, ВЫДАННОЕ ТАЛАНТОМ, в
+ * книге класса не лежит, и без рангов `fillAbilitySlots` вычистила бы его из
+ * слота как «чужое имя». Игрок взял венец, поставил умение в ряд, перезагрузил
+ * страницу — и кнопка пропала бы МОЛЧА.
+ */
+function abilitySlotsFromSaved(
+  raw: unknown,
+  classId: string,
+  talents: Readonly<Record<string, number>>,
+): AbilitySlots {
   const slots: AbilitySlots = Array.isArray(raw)
     ? raw.map((id) => (typeof id === 'string' ? id : null))
     : []
@@ -726,16 +736,21 @@ function abilitySlotsFromSaved(raw: unknown, classId: string): AbilitySlots {
     if (seen.has(id)) slots[i] = null
     else seen.add(id)
   }
-  return fillAbilitySlots(slots, classId)
+  return fillAbilitySlots(slots, classId, talents)
 }
 
-function abilitySettingsFromSaved(raw: unknown, classId: string): AbilitySettings {
-  // Настройки — ТОЛЬКО по умениям своего класса: чужие в сейве означают
-  // правку руками, и пускать их в ротацию нельзя.
-  const settings = defaultAbilitySettings(classId)
+function abilitySettingsFromSaved(
+  raw: unknown,
+  classId: string,
+  talents: Readonly<Record<string, number>>,
+): AbilitySettings {
+  // Настройки — ТОЛЬКО по умениям, доступным ЭТОМУ герою: книга класса плюс
+  // выданные талантами. Чужие в сейве означают правку руками, и пускать их в
+  // ротацию нельзя.
+  const settings = defaultAbilitySettings(classId, talents)
   if (typeof raw !== 'object' || raw === null) return settings
   const saved = raw as Record<string, unknown>
-  for (const ability of abilitiesOf(classId)) {
+  for (const ability of Object.keys(settings).map((id) => ({ id }))) {
     const entry = saved[ability.id]
     if (typeof entry !== 'object' || entry === null) continue
     const { autocast, reserve } = entry as Record<string, unknown>
@@ -1030,8 +1045,12 @@ export function stateFromPayload(p: SavePayloadV21): GameState {
     // мана «недокапала», прогрессом не считаются.
     regenTickMsLeft: REGEN_TICK_S * 1000,
     abilityCooldownsMs: cooldownsFromSaved(p.abilityCooldownsMs),
-    abilitySlots: abilitySlotsFromSaved(p.abilitySlots, hero.id),
-    abilitySettings: abilitySettingsFromSaved(p.abilitySettings, hero.id),
+    abilitySlots: abilitySlotsFromSaved(p.abilitySlots, hero.id, talentsOfCurrentTree(p, hero.id)),
+    abilitySettings: abilitySettingsFromSaved(
+      p.abilitySettings,
+      hero.id,
+      talentsOfCurrentTree(p, hero.id),
+    ),
     // Очередь и эффекты были на прежнем мобе — при загрузке начинаем чисто.
     queuedAbilityId: null,
     activeEffects: [],
@@ -1040,6 +1059,9 @@ export function stateFromPayload(p: SavePayloadV21): GameState {
     monsterWeaken: null,
     monsterBrand: null,
     stance: null,
+    // Окна проков в сейв не пишутся: после загрузки нет ни того боя, ни той
+    // секунды — как стойка, щит и метки на мобе.
+    talentProcs: [],
     freeCastsLeft: 0,
     absorb: null,
     autocastReadyMs: {},

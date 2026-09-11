@@ -59,6 +59,10 @@ export const ABILITY_ROLE: Record<string, string> = {
   'rending-wound': 'Кровотечение: бьёт сразу и добавляет урон следом.',
   'mend-wounds': 'Лечение: возвращает долю запаса и спасает цикл от привала.',
   'shattering-blow': 'Козырь урона: дорогой и редкий удар, зато самый крупный.',
+  breach: 'Размен козыря на ритм: бьёт вдвое чаще и слабее, зато клеймит цель.',
+  sever: 'Вторая рана: сам удар слаб, а кровит вдвое дольше «Рваной раны».'
+  ,
+  echo: 'Пассивный венец: каждый удар умения отзывается эхом, автоатаки — нет.',
   'shield-shove': 'Дешёвая защита: бьёт слабо, но следующий удар врага мягче.',
   mercy: 'Добивание: доступно на израненной цели, зато бьёт втрое сильнее.',
   brand: 'Клеймо: цель двадцать секунд получает больше урона. Для боссов.',
@@ -400,6 +404,9 @@ export function abilityLines(ability: AbilityDef, ctx: AbilityTextContext): stri
   if (ability.pack) {
     const n = Math.max(0, Math.round(ability.pack.extraHounds))
     lines.push(n === 1 ? 'С тобой ещё один пёс' : `С тобой ещё ${n} псов`)
+  }
+  if (ability.echo) {
+    lines.push(`Каждый удар умения отзывается эхом на ${pct(ability.echo.share)} урона`)
   }
   if (ability.autocast?.houndHpBelow !== undefined) {
     lines.push(`Автокаст жмёт, пока пёс ниже ${pct(ability.autocast.houndHpBelow)} здоровья`)

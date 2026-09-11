@@ -21,7 +21,7 @@ import {
   UNIQUE_RECIPE_LEVEL,
 } from '../data/balance'
 import { PROGRESSION } from '../data/progression'
-import { BRANCH_DEPTH, TALENTS, TALENT_BY_ID, branchCapacity } from '../data/talents'
+import { TALENTS, TALENT_BY_ID, branchCapacity, branchDepth } from '../data/talents'
 import {
   MAX_REST_THRESHOLD,
   MIN_REST_DURATION_S,
@@ -325,7 +325,7 @@ describe('порог привала ползунком', () => {
       expect(branch.reduce((sum, t) => sum + t.maxRank, 0), branchId).toBe(
         branchCapacity(branchId),
       )
-      expect(branchCapacity(branchId), branchId).toBeGreaterThanOrEqual(BRANCH_DEPTH)
+      expect(branchCapacity(branchId), branchId).toBeGreaterThanOrEqual(branchDepth(branchId))
     }
     // ТРЕТИЙ ID СМЕНИЛСЯ ВМЕСТЕ С ДЕРЕВОМ. Ночь ярости пересобрала ветки
     // Изувера целиком, и «Неугомонный» переехал на ключевой этаж; место

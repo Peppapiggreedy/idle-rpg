@@ -39,7 +39,9 @@ export interface HoundState {
  * сдвиги, потом доли, — и читают это ВСЕ: тик, модель, сцена, сейв. Без
  * талантов возвращается ТОТ ЖЕ объект из данных, бит в бит.
  */
-export function companionOf(state: Pick<GameState, 'classId' | 'talents'>): CompanionDef | null {
+export function companionOf(
+  state: Pick<GameState, 'classId' | 'talents' | 'stats'>,
+): CompanionDef | null {
   const base = classById(state.classId).companion ?? null
   if (!base) return null
   const points: Partial<Record<HoundTuneField, number>> = {}
@@ -53,6 +55,50 @@ export function companionOf(state: Pick<GameState, 'classId' | 'talents'>): Comp
     touched = true
     const bucket = effect.op === 'points' ? points : percent
     bucket[effect.field] = (bucket[effect.field] ?? 0) + effect.value * rank
+  }
+  // ХАРАКТЕРИСТИКИ СПУТНИКА — ВТОРОЕ СЛАГАЕМОЕ, И СКЛАДЫВАЮТСЯ ОНИ ЗДЕСЬ.
+  //
+  // Флаг `hound-tune` — способ ТАЛАНТА править спутника; характеристики
+  // конвейера (`houndAttackPower` и соседи) — способ сделать то же вещью,
+  // зачарованием или зельем. Источника два, а место сложения ОДНО: ни тик, ни
+  // модель, ни сцена к ним по отдельности не обращаются, все берут готовый
+  // `CompanionDef` отсюда. Заменить флаг характеристиками было бы чище, но это
+  // значило бы переписать дерево Псаря и сдвинуть его ключи — а ночь обещала
+  // их не трогать.
+  //
+  // Ложатся они в ТУ ЖЕ корзину процентов, что и флаг: «на десять процентов
+  // сильнее укус» от таланта и от вещи — одно и то же действие, и складывать
+  // их дважды разными способами было бы ровно тем двойным счётом, ради
+  // которого эта оговорка и написана.
+  const fromStats: Partial<Record<HoundTuneField, number>> = {
+    hitShare: state.stats.houndAttackPower,
+    maxHpShare: state.stats.houndMaxHp,
+    // Возврат — время: «быстрее на треть» это множитель (1 − доля), поэтому
+    // доля входит со знаком минус.
+    returnSec: -state.stats.houndReviveSpeed,
+  }
+  for (const [field, value] of Object.entries(fromStats)) {
+    if (!value) continue
+    touched = true
+    const key = field as HoundTuneField
+    percent[key] = (percent[key] ?? 0) + value
+  }
+  // ВОССТАНОВЛЕНИЕ И ДОЛЯ ПЕРЕНАПРАВЛЕНИЯ ЛОЖАТСЯ ПЛОСКО, А НЕ ПРОЦЕНТОМ, И
+  // ЭТО НЕ МЕЛОЧЬ. У пса восстановление В БОЮ равно нулю (`regenShare`:
+  // inCombat 0, outOfCombat 0.04) — процент от нуля дал бы ноль, и
+  // характеристика была бы мёртвой ровно там, где она нужнее всего. Доля
+  // перенаправления по той же причине: «ещё пять процентов входящего» не
+  // зависит от того, сколько их было.
+  const flat: Partial<Record<HoundTuneField, number>> = {
+    regenInCombat: state.stats.houndHpRegen,
+    regenOutOfCombat: state.stats.houndHpRegen,
+    redirectShare: state.stats.redirectShare,
+  }
+  for (const [field, value] of Object.entries(flat)) {
+    if (!value) continue
+    touched = true
+    const key = field as HoundTuneField
+    points[key] = (points[key] ?? 0) + value
   }
   if (!touched) return base
   const tune = (field: HoundTuneField, value: number): number =>
@@ -172,9 +218,34 @@ export function advanceHounds(
   return { hounds, returned }
 }
 
-/** Укус: та же формула удара, что у героя, в доле `hitShare`; крит — его. */
+/**
+ * Укус: та же формула удара, что у героя, в доле `hitShare`.
+ *
+ * КРИТ У ПСА СВОЙ ПОВЕРХ ГЕРОЙСКОГО. Базовый шанс он берёт у героя — своей
+ * ловкости у пса нет, — а `houndCritChance` прибавляется сверху. Подмена идёт
+ * ОДНИМ полем статблока, а не второй формулой удара: формула удара в игре
+ * одна, и заводить вторую ради пса значило бы держать две.
+ */
 export function rollHoundBite(stats: StatBlock, def: CompanionDef, rng: Rng) {
-  return rollSwing(stats, rng, new Decimal(def.hitShare))
+  const own =
+    stats.houndCritChance > 0
+      ? { ...stats, critChance: Math.min(1, stats.critChance + stats.houndCritChance) }
+      : stats
+  return rollSwing(own, rng, new Decimal(def.hitShare))
+}
+
+/**
+ * ЧТО ПЁС СНИМАЕТ СО СВОЕЙ ЧАСТИ УДАРА. Доля 0..1: броня режет её, уворот
+ * отменяет целиком. ДЕЛЁЖ УДАРА ЭТО НЕ ТРОГАЕТ — герою достаётся ровно та же
+ * часть, что и раньше; меняется только то, сколько из своей части пёс
+ * действительно принимает. Правило «перенаправление, а не смягчение» про
+ * ЧАСТЬ ГЕРОЯ, и она здесь не участвует.
+ */
+export function houndTakenShare(stats: StatBlock, rng: Rng): number {
+  // Бросок уворота делается ТОЛЬКО когда уворот есть: лишний вызов rng
+  // сдвинул бы поток у всех, у кого этой характеристики нет.
+  if (stats.houndDodge > 0 && rng() < stats.houndDodge) return 0
+  return 1 - Math.min(1, Math.max(0, stats.houndArmor))
 }
 
 /**
@@ -186,6 +257,8 @@ export function redirectToHounds(
   hounds: HoundState[],
   amount: Decimal,
   def: CompanionDef,
+  stats: StatBlock,
+  rng: Rng,
 ): { heroPart: Decimal; houndPart: Decimal; hounds: HoundState[]; index: number; fell: boolean } {
   const index = hounds.findIndex(isHoundUp)
   if (index === -1 || def.redirectShare <= 0) {
@@ -194,7 +267,10 @@ export function redirectToHounds(
   const houndPart = amount.times(def.redirectShare)
   const heroPart = amount.minus(houndPart)
   const hound = hounds[index]
-  const hpLeft = hound.hp.minus(houndPart)
+  // Пёс принимает не всё, что на него перенаправлено: своя броня режет долю,
+  // свой уворот отменяет удар целиком. Часть героя при этом не меняется.
+  const taken = houndPart.times(houndTakenShare(stats, rng))
+  const hpLeft = hound.hp.minus(taken)
   const fell = hpLeft.lte(0)
   const next = fell
     ? { hp: new Decimal(0), swing: 0, downMsLeft: def.returnSec * 1000 }
@@ -297,8 +373,15 @@ export function houndModel(
   const redirectShare =
     Math.min(1, def.redirectShare + Math.max(0, tune.redirectBonus)) *
     (1 - Math.min(1, Math.max(0, tune.silentShare)))
+  // Пёс принимает не всё перенаправленное: броня режет долю, уворот отменяет
+  // удар целиком. В матожидании это один множитель — та же величина, что
+  // бросает `houndTakenShare` в тике, только без броска.
+  const takenShare =
+    (1 - Math.min(1, Math.max(0, stats.houndDodge))) *
+    (1 - Math.min(1, Math.max(0, stats.houndArmor)))
   const lossPerSec = incomingPerSec
     .times(redirectShare)
+    .times(takenShare)
     .minus(max.times(def.regenShare.inCombat + Math.max(0, tune.healPerSecShare)))
   // Стоит, пока запас держит перенаправленное; лежит `returnSec` — или
   // меньше, если в ряду оклик.
@@ -312,10 +395,17 @@ export function houndModel(
   const rate = new Decimal(standing)
     .div(swingTime)
     .times(1 - Math.min(1, Math.max(0, tune.silentShare)))
+  // Крит укуса — геройский ПЛЮС свой: та же прибавка, что бросает
+  // `rollHoundBite`, только взятая матожиданием.
+  const biteCrit = critFactor(
+    stats.houndCritChance > 0
+      ? { ...stats, critChance: Math.min(1, stats.critChance + stats.houndCritChance) }
+      : stats,
+  )
   return {
     rate,
     hit,
-    dps: hit.times(rate).times(critFactor(stats)),
+    dps: hit.times(rate).times(biteCrit),
     redirect: redirectShare * aliveShare,
     standing,
     fallsPerSec,

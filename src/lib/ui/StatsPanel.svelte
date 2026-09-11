@@ -19,7 +19,7 @@
   import { Button, NumberText, Panel } from './kit'
   import { STAT_ICONS } from '../data/stats'
   import { resourceWords } from './resource'
-  import { PERCENT_STATS, SECONDS_STATS, SHOWN_STAT_IDS, statNames } from './statFormat'
+  import { PERCENT_STATS, SECONDS_STATS, shownStatIds, statNames } from './statFormat'
   import { flatText } from './statText'
   import { Icon } from './icons'
 
@@ -190,7 +190,9 @@
         </div>
       {/if}
     </li>
-    {#each SHOWN_STAT_IDS as stat (stat)}
+    <!-- СПИСОК ЗАВИСИТ ОТ КЛАССА: характеристики спутника видит только тот,
+         у кого спутник есть — см. shownStatIds. -->
+    {#each shownStatIds($gameState.classId) as stat (stat)}
       {@const breakdown = explainStat($gameState, stat)}
       <li>
         <button type="button" class="stat-row" onclick={() => toggle(stat)}>

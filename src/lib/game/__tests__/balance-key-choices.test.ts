@@ -22,7 +22,7 @@ import { DEFAULT_CLASS } from '../../data/classes'
 import { ZONES } from '../../data/zones'
 import {
   BRANCHES,
-  CONCEPT_ROWS,
+  keyRowsOf,
   pathRanks,
   pathsOf,
   talentsInBranch,
@@ -94,8 +94,8 @@ function measure(branch: BranchId, path: TalentPath): BuildRow {
     abilityAll += cast.totalDamage.toNumber() * cast.castsPerSecond
     dotAll += cast.totalDamage.minus(cast.hitDamage).toNumber() * cast.castsPerSecond
   }
-  const keys = CONCEPT_ROWS.map(
-    (row) =>
+  const keys = keyRowsOf(branch).map(
+    (row: number) =>
       talentsInBranch(branch)
         .filter((t) => t.row === row)
         .find((t) => (ranks[t.id] ?? 0) > 0)?.id ?? '—',
@@ -238,7 +238,14 @@ describe('шесть путей: выбор на ключевых этажах �
         dump(`talents/vigil-vs-wrath/${w.path.id}/${v.path.id}/four-differ`, c.sameFour ? 0 : 1)
       }
     }
-    expect(wrath.length).toBe(2)
-    expect(vigil.length).toBe(2)
+    // ПУТЕЙ У ВЕТКИ СТОЛЬКО, СКОЛЬКО ИХ ОБЪЯВЛЕНО, а не ровно два. Здесь
+    // стояло «два», и это было верно пока венец был один на две клетки. У
+    // Гнева венцов четыре — четыре разных механизма, — и путей столько же:
+    // венец берётся один на сборку, а талант вне путей не измерен ничем.
+    // Проверяется по-прежнему НЕ МЕНЬШЕ ДВУХ: одна сборка — не выбор.
+    expect(wrath.length).toBe(pathsOf('warden-wrath').length)
+    expect(vigil.length).toBe(pathsOf('warden-vigil').length)
+    expect(wrath.length).toBeGreaterThanOrEqual(2)
+    expect(vigil.length).toBeGreaterThanOrEqual(2)
   }, 1_800_000)
 })

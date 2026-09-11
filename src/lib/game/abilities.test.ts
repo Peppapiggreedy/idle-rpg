@@ -114,9 +114,14 @@ describe('данные умений', () => {
       // героя (бьёт пёс или никто); список назван поимённо, чтобы новый флаг
       // с нулевым уроном не проехал молча.
       const houndSupport = Boolean(a.recall || a.houndHeal || a.unleash || a.skulk || a.rally || a.pack)
-      // Пассивное не бьёт по определению — оно и не нажимается.
+      // Пассивное не бьёт по определению — оно и не нажимается. Оно же
+      // выпадает из правила «боевое обязано бить» целиком: у «Своры» и
+      // «Отголоска» удара нет не потому, что они поддержка, а потому, что
+      // нажатия у них нет вовсе.
       if (passive) expect(a.weaponDamagePercent.toNumber(), a.id).toBe(0)
-      expect(a.weaponDamagePercent.gt(0), a.id).toBe(!a.heal && !a.absorb && !a.edge && !houndSupport)
+      expect(a.weaponDamagePercent.gt(0), a.id).toBe(
+        !passive && !a.heal && !a.absorb && !a.edge && !houndSupport,
+      )
     }
   })
 
