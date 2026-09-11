@@ -11,8 +11,8 @@
 import { Decimal } from './numbers'
 import {
   BRANCH_BY_ID,
-  BRANCH_ROW_STEP,
-  CONCEPT_ROWS,
+  keyRowsOf,
+  rowRequirement,
   TALENTS,
   TALENT_BY_ID,
   branchesOfClass,
@@ -156,15 +156,19 @@ export function investTalent(state: GameState, talentId: string): GameState {
   // порог, честно дадут объявить его снова — он и правда снова открылся.
   let log = state.combatLog
   const before = spentInBranch(state.talents, talent.branch)
-  for (const row of CONCEPT_ROWS) {
-    const required = (row - 1) * BRANCH_ROW_STEP
+  // КЛЮЧЕВЫЕ ЭТАЖИ БЕРУТСЯ У ВЕТКИ, А НЕ ИЗ ОБЩЕГО СПИСКА НОМЕРОВ: у ветки
+  // своя форма, и «пятый этаж» у одной — это «третий» у другой. Ключевой —
+  // тот, где стоит взаимоисключающая пара, и знают это сами таланты.
+  for (const row of keyRowsOf(talent.branch)) {
+    const required = rowRequirement(talent.branch, row)
     if (before < required && before + 1 >= required) {
       log = pushEvent(log, { type: 'talent-floor', branchId: talent.branch, row })
     }
   }
-  // ВЗЯТЫЙ КЛЮЧЕВОЙ — тоже строка: первый ранг на ключевом этаже запирает
-  // соседа, и журнал называет, что именно выбрано.
-  if (rank === 0 && CONCEPT_ROWS.includes(talent.row)) {
+  // ВЗЯТЫЙ КЛЮЧЕВОЙ — тоже строка: первый ранг в группе запирает соседа, и
+  // журнал называет, что именно выбрано. Признак — САМА ГРУППА, а не номер
+  // этажа: выбор это `exclusiveGroup`, и второго определения у него нет.
+  if (rank === 0 && talent.exclusiveGroup) {
     log = pushEvent(log, { type: 'talent-key', talentId })
   }
   return ensureStats({

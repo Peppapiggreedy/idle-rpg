@@ -10,7 +10,7 @@
   // Мышь окно НЕ ловит: под ним соседние узлы, и они обязаны нажиматься.
   // Границы экрана считает общая `placeTip` — та же, что у окон куклы и
   // сумки: три окна у одного курсора обязаны переворачиваться одинаково.
-  import { CONCEPT_ROWS, TALENT_BY_ID, type TalentDef } from '../data/talents'
+  import { TALENT_BY_ID, type TalentDef } from '../data/talents'
   import type { TalentStatus } from '../game'
   import type { TakeBackStatus } from '../game/talents'
   import { placeTip } from './tipPlace'
@@ -50,7 +50,9 @@
     placeTip(x, y, size, { width: window.innerWidth, height: window.innerHeight }),
   )
 
-  const isKey = $derived(CONCEPT_ROWS.includes(talent.row))
+  // КЛЮЧЕВОЙ — ТОТ, ЧТО В ГРУППЕ ВЫБОРА, а не тот, что на этаже с
+  // определённым номером: форма у веток разная, а выбор описан у таланта.
+  const isKey = $derived(talent.exclusiveGroup !== undefined)
   const need = $derived(talent.requires)
   const anchorName = $derived(need ? TALENT_BY_ID[need.talentId]?.name : null)
 </script>

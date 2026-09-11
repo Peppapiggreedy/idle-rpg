@@ -57,14 +57,13 @@ import {
 } from '../balance'
 import type { SlotId } from '../slots'
 import {
-  CONCEPT_ROWS,
   TALENT_STAT_RULE,
-  BRANCH_ROWS,
   pathRanks,
+  rowRequirement,
   type TalentPath,
   type BranchDef,
   type TalentDef,
-  type TalentStatRule, TREE_COLUMNS,
+  type TalentStatRule,
   HOUND_TUNE_FIELDS,
   COMPANION_FLAGS,
 } from '../talents'
@@ -1141,9 +1140,6 @@ const FLAG_PAYLOADS: Record<
  * (data/talents.ts) отвечает на оба вопроса разом и закрыта по `StatId`:
  * новая характеристика не пройдёт проверку типов, пока про неё не решат.
  */
-/** Сколько талантов помещается в один ряд на экране. */
-const FLOOR_MAX_TALENTS = 3
-
 const talentRule = (stat: string): TalentStatRule | undefined =>
   TALENT_STAT_RULE[stat as keyof typeof TALENT_STAT_RULE]
 
@@ -1186,18 +1182,20 @@ export const TALENT_SCHEMA: EntitySchema<TalentDef> = {
   ],
   extra: (talent, content, report) => {
     const where = `талант ${talent.id}`
-    // КЛЮЧЕВОЙ ЭТАЖ — ПОВЕДЕНИЕ, А НЕ ЧИСЛО. Этажи 5, 9 и 13 приходятся на
-    // 30-й, 50-й и 70-й уровень при вложении в одну ветку, и это три
-    // майлстоуна всей прокачки. Процент к криту майлстоуном не является:
-    // талант на ключевом этаже обязан менять УМЕНИЕ (род 'ability') или
-    // включать поведение (флаг). Модификаторы конвейера здесь запрещены.
-    if (CONCEPT_ROWS.includes(talent.row)) {
+    // КЛЮЧЕВОЙ ВЫБОР — ПОВЕДЕНИЕ, А НЕ ЧИСЛО. Признак ключевого — САМА ГРУППА
+    // выбора, а не номер этажа: здесь стоял общий список `CONCEPT_ROWS`
+    // [5, 9, 13], одинаковый на все девять веток, и он запрещал модификаторы
+    // ВСЕМУ этажу — то есть и обычным соседям пары. В ветке из семи широких
+    // этажей это неверно вдвойне: рядом с парой законно стоят фоновые узлы.
+    // Требование осталось прежним и адресным: тот, КТО В ПАРЕ, обязан менять
+    // УМЕНИЕ (род 'ability') или включать поведение (флаг).
+    if (talent.exclusiveGroup) {
       report.need(
         talent.effect.kind !== 'modifiers',
         where,
-        `стоит на ключевом этаже ${talent.row}, а даёт модификаторы конвейера — ` +
-          'ключевой талант меняет поведение (умение или флаг), а не число ' +
-          '(data/talents.ts)',
+        `стоит во взаимоисключающей группе «${talent.exclusiveGroup}», а даёт ` +
+          'модификаторы конвейера — ключевой талант меняет поведение (умение или ' +
+          'флаг), а не число (data/talents.ts)',
       )
     }
     // СТОЛБЕЦ В СЕТКЕ. Дерево рисуется четырьмя столбцами, и место узла —
@@ -1206,11 +1204,14 @@ export const TALENT_SCHEMA: EntitySchema<TalentDef> = {
     // опора и зависимый стоят в одном столбце. Лестница из одного таланта на
     // этаж столбцов не задаёт и центрируется сама.
     const onRow = content.talents.filter((t) => t.branch === talent.branch && t.row === talent.row)
+    // ШИРИНА СЕТКИ — У ВЕТКИ. Столбцов у разных веток разное число: лестница
+    // из тринадцати этажей живёт в четырёх, семиэтажная сетка — в пяти.
+    const cols = content.branches.find((b) => b.id === talent.branch)?.cols ?? 0
     if (talent.col !== undefined) {
       report.need(
-        Number.isInteger(talent.col) && talent.col >= 1 && talent.col <= TREE_COLUMNS,
+        Number.isInteger(talent.col) && talent.col >= 1 && talent.col <= cols,
         where,
-        `столбец ${talent.col} вне сетки 1..${TREE_COLUMNS} (data/talents.ts)`,
+        `столбец ${talent.col} вне сетки 1..${cols} ветки ${talent.branch} (data/talents.ts)`,
       )
       for (const mate of onRow) {
         report.need(
@@ -3807,18 +3808,51 @@ function checkReachable(content: Content, report: Report): void {
           'то есть он не измерен ничем (BRANCH_PATHS в data/talents.ts)',
       )
     }
-    // ЭТАЖ — РЯД ИЗ ОДНОГО, ДВУХ ИЛИ ТРЁХ. Раньше здесь стоял запрет на
-    // двух талантов в одном ряду — ровно та лестница, из которой дерево и
-    // делали. Осталась ВЕРХНЯЯ граница: четвёртая клетка в ряду не
-    // помещается ни на телефон, ни в ширину меню.
+    // ЭТАЖ ШИРИНОЙ В СВОЮ ВЕТКУ. Здесь стоял общий потолок в три таланта на
+    // ряд — «четвёртая клетка не помещается ни на телефон, ни в ширину меню».
+    // Верхняя граница осталась, но она у каждой ветки СВОЯ (`cols`), а не
+    // одна на все: ветка из семи этажей шире по построению — этажей вдвое
+    // меньше, значит талантов в ряду вдвое больше. Помещаются они потому, что
+    // клетка ужимается до ключевого узла (см. `.tree` в TalentPanel), и это
+    // проверено снимком на 390 пикселях, а не обещано.
     const perRow = new Map<number, number>()
     for (const talent of inBranch) perRow.set(talent.row, (perRow.get(talent.row) ?? 0) + 1)
     for (const [row, count] of perRow) {
       report.need(
-        count <= FLOOR_MAX_TALENTS,
+        count <= branch.cols,
         `ветка ${branch.id}`,
-        `на этаже ${row} ${count} талантов — больше ${FLOOR_MAX_TALENTS} в ряд не ` +
-          'помещается ни на телефон, ни в ширину меню (data/talents.ts)',
+        `на этаже ${row} ${count} талантов при ширине ветки ${branch.cols} — ` +
+          'лишняя клетка в ряд не помещается (data/talents.ts)',
+      )
+    }
+    // ЭТАЖЕЙ РОВНО СТОЛЬКО, СКОЛЬКО ОБЪЯВЛЕНО ФОРМОЙ, И БЕЗ ДЫР. Форма ветки
+    // — данные, и данные обязаны ей отвечать: пустой этаж посреди ветки это
+    // порог, за который нечего вложить, а этаж сверх формы не нарисуется
+    // вовсе. Пороги тоже сверяются с формой: `requiredPointsInBranch` обязан
+    // быть `step·(row−1)`, иначе сетка и арифметика разъедутся молча.
+    for (let row = 1; row <= branch.rows; row += 1) {
+      report.need(
+        (perRow.get(row) ?? 0) > 0,
+        `ветка ${branch.id}`,
+        `этаж ${row} пуст, а форма ветки обещает ${branch.rows} этажей — ` +
+          'порог без единого таланта за ним (data/talents.ts)',
+      )
+    }
+    for (const [row] of perRow) {
+      report.need(
+        row <= branch.rows,
+        `ветка ${branch.id}`,
+        `этаж ${row} выше формы ветки (${branch.rows} этажей) — он не нарисуется ` +
+          '(data/talents.ts)',
+      )
+    }
+    for (const talent of inBranch) {
+      report.need(
+        talent.requiredPointsInBranch === rowRequirement(branch.id, talent.row),
+        `талант ${talent.id}`,
+        `порог ${talent.requiredPointsInBranch} не отвечает форме ветки: этаж ` +
+          `${talent.row} при шаге ${branch.step} требует ` +
+          `${rowRequirement(branch.id, talent.row)} (data/talents.ts)`,
       )
     }
   }
@@ -4403,11 +4437,11 @@ function checkTalentArrows(content: Content, report: Report): void {
 function checkBranchCapstones(content: Content, report: Report): void {
   const total = content.balance.levelCap - content.mechanicLevels.talents + 1
   for (const branch of content.branches) {
-    const capstones = content.talents.filter((t) => t.branch === branch.id && t.row === BRANCH_ROWS)
+    const capstones = content.talents.filter((t) => t.branch === branch.id && t.row === branch.rows)
     report.need(
       capstones.length > 0,
       `ветка ${branch.id}`,
-      `на последнем этаже ${BRANCH_ROWS} нет ни одного таланта: венца у ветки нет, ` +
+      `на последнем этаже ${branch.rows} нет ни одного таланта: венца у ветки нет, ` +
         'и брать её незачем (data/talents.ts)',
     )
     for (const path of content.pathsOf(branch.id)) {

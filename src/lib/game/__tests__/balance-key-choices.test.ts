@@ -22,7 +22,7 @@ import { DEFAULT_CLASS } from '../../data/classes'
 import { ZONES } from '../../data/zones'
 import {
   BRANCHES,
-  CONCEPT_ROWS,
+  keyRowsOf,
   pathRanks,
   pathsOf,
   talentsInBranch,
@@ -94,8 +94,8 @@ function measure(branch: BranchId, path: TalentPath): BuildRow {
     abilityAll += cast.totalDamage.toNumber() * cast.castsPerSecond
     dotAll += cast.totalDamage.minus(cast.hitDamage).toNumber() * cast.castsPerSecond
   }
-  const keys = CONCEPT_ROWS.map(
-    (row) =>
+  const keys = keyRowsOf(branch).map(
+    (row: number) =>
       talentsInBranch(branch)
         .filter((t) => t.row === row)
         .find((t) => (ranks[t.id] ?? 0) > 0)?.id ?? '—',

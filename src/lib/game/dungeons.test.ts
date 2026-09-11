@@ -36,7 +36,7 @@ import { classIt, contractClasses } from './__tests__/class-set'
  * его готовый класс; у превью-класса расхождение — предупреждение, не провал.
  */
 const CLASS_SET = contractClasses(false)
-import { BRANCH_DEPTH, BRANCHES, pathsOf } from '../data/talents'
+import { BRANCHES, branchDepth, pathsOf } from '../data/talents'
 import { ZONE_BY_ID, representativeMonster } from '../data/zones'
 
 const DUNGEON = DUNGEONS[0]
@@ -486,7 +486,7 @@ describe('правило чисел держится на всех восьми 
       // восьмым (см. data/talents.ts), и герой третьего тира (31 очко) его
       // ещё не берёт. С ним первый босс тира стоит 54 % при поле 60 —
       // открытый вопрос владельцу, а не ручка этой ночи.
-      talents: pureBranchTalents(branch.id, Math.min(branchPoints(level), BRANCH_DEPTH)),
+      talents: pureBranchTalents(branch.id, Math.min(branchPoints(level), branchDepth(branch.id))),
       equipment: averageGear(gearLevel),
       currentZoneId: dungeon.zoneId,
       statsDirty: true,
