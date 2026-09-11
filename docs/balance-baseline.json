@@ -1,5 +1,5 @@
 {
-  "abilities/houndmaster/level-020/best-four-over-default/value": "1.13567181512",
+  "abilities/houndmaster/level-020/best-four-over-default/value": "1.17193420586",
   "abilities/reaver/level-020/best-four-over-default/value": "1.03117365002",
   "abilities/warden/autocast/worst-gap": "1.35801811729e-1",
   "abilities/warden/level-010/best-four-over-old/value": "1.06610202599",
@@ -1858,8 +1858,8 @@
   "gold/reward-slope/slope-0-20/start-zone-share": "0.263746676696",
   "gold/reward-slope/slope-0-26/spread": "1.60552044751",
   "gold/reward-slope/slope-0-26/start-zone-share": "0.235382521238",
-  "power/houndmaster/level-100/best-four-over-default/value": "1.11771577324",
-  "power/houndmaster/level-100/best-four-with-pack-over-default/value": "1.11771577324",
+  "power/houndmaster/level-100/best-four-over-default/value": "1.14626039469",
+  "power/houndmaster/level-100/best-four-with-pack-over-default/value": "1.14626039469",
   "power/houndmaster/level-100/full-manual/damage-share/abilities": "0.345471395356",
   "power/houndmaster/level-100/full-manual/damage-share/autoattack": "0.509486446034",
   "power/houndmaster/level-100/full-manual/damage-share/hound": "0.145042158611",
