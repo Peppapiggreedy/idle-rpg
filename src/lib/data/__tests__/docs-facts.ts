@@ -19,7 +19,8 @@
 import { SAVE_VERSION, MIGRATIONS } from '../../game/save'
 import { CLASSES } from '../classes'
 import { ZONES } from '../zones'
-import { BRANCHES } from '../talents'
+import { BRANCHES, branchDepth } from '../talents'
+import { ABILITIES } from '../abilities'
 import { ABILITY_SLOTS } from '../balance'
 
 export interface DocFact {
@@ -36,14 +37,14 @@ export const DOC_FACTS_FILE = 'ARCHITECTURE.md'
 export const DOC_FACTS_HEADING = '## Сверяемые числа'
 
 /**
- * ФОРМЫ ВЕТКИ ЗДЕСЬ НЕТ НАМЕРЕННО. Число этажей и шаг меняются той же ночью,
- * что и этот список, и внеси их сразу — проверка краснела бы от второй стадии
- * до одиннадцатой, то есть всю ночь. Их добавляет стадия 11, когда тексты уже
- * описывают новую форму.
+ * ФОРМА ВЕТКИ ВНЕСЕНА В СПИСОК СТАДИЕЙ 11, и до неё её тут не было намеренно:
+ * число этажей и шаг менялись той же ночью, и внеси их сразу — проверка
+ * краснела бы со второй стадии по одиннадцатую, то есть всю ночь. Теперь все
+ * девять веток на одной форме, тексты её описывают, и число можно сторожить.
  *
- * ВРЕМЁН ПРОВЕРОК ЗДЕСЬ ТОЖЕ НЕТ И НЕ БУДЕТ: они зависят от машины и числа
- * ядер, сверять их не с чем. Для них правило другое — замер первой стадией
- * каждой ночи, где они упоминаются.
+ * ВРЕМЁН ПРОВЕРОК ЗДЕСЬ НЕТ И НЕ БУДЕТ: они зависят от машины и числа ядер,
+ * сверять их не с чем. Для них правило другое — замер первой стадией каждой
+ * ночи, где они упоминаются, и число ядер рядом с числом секунд.
  */
 export const DOC_FACTS: readonly DocFact[] = [
   { label: 'версия сейва', constant: 'SAVE_VERSION', actual: () => SAVE_VERSION },
@@ -69,4 +70,22 @@ export const DOC_FACTS: readonly DocFact[] = [
   { label: 'слотов действий', constant: 'ABILITY_SLOTS', actual: () => ABILITY_SLOTS },
   { label: 'веток талантов', constant: 'BRANCHES.length', actual: () => BRANCHES.length },
   { label: 'зон', constant: 'ZONES.length', actual: () => ZONES.length },
+  // Форма ветки. Этажей и шаг — у каждой ветки своя запись, но числа у всех
+  // девяти совпадают, и тест это отдельно проверяет: разойдись они, честного
+  // одного числа в таблице не было бы.
+  { label: 'этажей в ветке', constant: 'BranchDef.rows', actual: () => BRANCHES[0].rows },
+  { label: 'шаг порога этажа', constant: 'BranchDef.step', actual: () => BRANCHES[0].step },
+  {
+    label: 'очков до венца',
+    constant: 'branchDepth(id)',
+    actual: () => branchDepth(BRANCHES[0].id),
+  },
+  {
+    // Умения, которых нет ни в одной книге класса: их открывает ОЧКО, а не
+    // уровень. Считаются по данным, а не перечисляются руками.
+    label: 'умений от талантов',
+    constant: 'ABILITIES вне всех ClassDef.abilityIds',
+    actual: () =>
+      ABILITIES.filter((a) => !CLASSES.some((c) => c.abilityIds.includes(a.id))).length,
+  },
 ]
