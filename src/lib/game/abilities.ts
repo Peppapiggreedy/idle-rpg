@@ -20,6 +20,7 @@ import {
   type HoundState,
 } from './hound'
 import {
+  activeAbilityIds,
   abilitiesOf,
   equippedBoons,
   pushEvent,
@@ -254,8 +255,7 @@ export function houndCapacity(
   const def = companionOf(state)
   if (!def) return 0
   let extra = 0
-  for (const id of state.abilitySlots) {
-    if (id === null) continue
+  for (const id of activeAbilityIds(state)) {
     const base = ABILITY_BY_ID[id]
     if (!base || state.level.lt(base.unlockLevel)) continue
     const ability = tuneAbility(base, state.talents, equippedBoons(state.equipment))
@@ -508,8 +508,7 @@ export function echoShare(
   state: Pick<GameState, 'classId' | 'abilitySlots' | 'level' | 'talents' | 'equipment'>,
 ): number {
   let share = 0
-  for (const id of state.abilitySlots) {
-    if (id === null) continue
+  for (const id of activeAbilityIds(state)) {
     const base = ABILITY_BY_ID[id]
     if (!base || state.level.lt(base.unlockLevel)) continue
     const ability = tuneAbility(base, state.talents, equippedBoons(state.equipment))

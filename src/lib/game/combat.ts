@@ -40,6 +40,7 @@ import type { Monster } from '../types'
 import { SAFE_ZONE, ZONE_BY_ID, zoneSpawnVariants, type Zone } from '../data/zones'
 import { equippedBoons, monsterFromTemplate, type AbilitySettings, type Rotation,
   heroSettings,
+  activeAbilityIds,
 } from './state'
 import { ABILITY_BY_ID, MODEL_RESOURCE_FILL, type AbilityDef } from '../data/abilities'
 import { classById } from '../data/classes'
@@ -1231,7 +1232,9 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
   // Свойства надетых вещей — тем же поездом и по тому же доводу: сборка
   // правит умение, и модель обязана считать по правленому.
   const heroRotation: Rotation = {
-    slots: s.abilitySlots,
+    // Эффективный ряд: автоматические умения модель обязана видеть, иначе
+    // «оффлайн <= автокаст» сломается молча — тик-то их видит.
+    slots: activeAbilityIds(s),
     settings,
     talents: s.talents,
     boons: equippedBoons(s.equipment),
