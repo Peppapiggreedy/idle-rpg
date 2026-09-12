@@ -53,29 +53,21 @@ describe('форма ветки — данные', () => {
     }
   })
 
-  it('форм БОЛЬШЕ ОДНОЙ — иначе форма снова стала бы константой', () => {
-    const shapes = new Set(BRANCHES.map((b) => `${b.rows}/${b.step}/${b.cols}`))
-    expect(shapes.size).toBeGreaterThan(1)
+  it('у каждой ветки СВОЯ запись формы — иначе она снова станет константой', () => {
+    // Числа у всех девяти совпали, и это правильное состояние, а не потеря
+    // свойства: свойство здесь в том, что форма ЗАПИСАНА У ВЕТКИ и её можно
+    // сменить одной строкой, не трогая остальные восемь.
+    const src = readFileSync(new URL('../data/talents.ts', import.meta.url), 'utf8')
+    expect(src.includes('...LADDER')).toBe(false)
+    expect((src.match(/rows: \d+, step: \d+, cols: \d+/g) ?? []).length).toBe(BRANCHES.length)
   })
 
-  // ПЕРЕЕХАВШИЕ ВЕТКИ ПЕРЕЧИСЛЕНЫ ПОИМЁННО, И СПИСОК РАСТЁТ ПО ОДНОЙ СТРОКЕ
-  // НА СТАДИЮ. Так «недоехало» не выглядит как «сломано»: ветка, переехавшая
-  // молча, роняет вторую проверку, а забытая в списке — первую.
-  const MIGRATED = ['warden-wrath', 'warden-bulwark', 'warden-vigil', 'reaver-carnage', 'reaver-sinew', 'reaver-instinct']
-
-  it('переехавшие: семь этажей по десять очков, пять столбцов', () => {
-    for (const id of MIGRATED) {
-      const branch = BRANCH_BY_ID[id]
-      expect([branch.rows, branch.step, branch.cols], id).toEqual([7, 10, 5])
-      expect(branchDepth(branch.id), id).toBe(60)
-    }
-  })
-
-  it('оставшиеся — пока лестницы: это ОСОЗНАННОЕ смешанное состояние', () => {
-    // Ветки переезжают по одной, коммит на ветку. Пока остальные здесь,
-    // проверка держит их форму.
-    for (const branch of BRANCHES.filter((b) => !MIGRATED.includes(b.id))) {
-      expect([branch.rows, branch.step, branch.cols], branch.id).toEqual([13, 5, 4])
+  it('ВСЕ ДЕВЯТЬ на семи этажах по десять очков и пяти столбцах', () => {
+    // Смешанного состояния больше нет: ночь восьми веток довела до общей формы
+    // все ветки до одной. Глубина при этом та же шестьдесят, что и у прежних
+    // тринадцати этажей, — переезд сменил РИТМ, а не цену ветки.
+    for (const branch of BRANCHES) {
+      expect([branch.rows, branch.step, branch.cols], branch.id).toEqual([7, 10, 5])
       expect(branchDepth(branch.id), branch.id).toBe(60)
     }
   })

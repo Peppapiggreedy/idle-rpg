@@ -51,10 +51,9 @@ export type TalentColumn = 1 | 2 | 3 | 4 | 5
  * глубина СЧИТАЕТСЯ из них (`branchDepth`) и отдельной константой не лежит:
  * два числа, описывающих одно и то же, разъезжаются на первой же правке.
  *
- * СМЕШАННОЕ СОСТОЯНИЕ ЗАКОННО И ВРЕМЕННО. Сегодня Гнев живёт на семи этажах
- * с шагом 10, остальные восемь веток — на тринадцати с шагом 5. Это не
- * недоделка формы, а порядок переезда: машинерия строится и обкатывается на
- * ОДНОЙ ветке, а восемь оставшихся переезжают следом почти чистыми данными.
+ * СМЕШАННОГО СОСТОЯНИЯ БОЛЬШЕ НЕТ: все девять веток стоят на семи этажах с
+ * шагом 10. Форма всё равно остаётся ПОЛЕМ, а не константой — ровно затем,
+ * чтобы следующая ветка могла быть другой, не переписывая остальные восемь.
  */
 
 
@@ -94,9 +93,6 @@ export interface BranchDef {
   cols: TalentColumn
 }
 
-/** Форма, с которой ветки жили до переезда: тринадцать этажей по пять очков. */
-const LADDER = { rows: 13, step: 5, cols: 4 } as const
-
 export const BRANCHES: BranchDef[] = [
   // --- Страж: мана, одноручное и щит ---
   // ГНЕВ ПЕРЕЕХАЛ НА СЕМЬ ЭТАЖЕЙ ПО ДЕСЯТЬ ОЧКОВ. Глубина та же — 60, — но
@@ -112,9 +108,9 @@ export const BRANCHES: BranchDef[] = [
   { id: 'reaver-sinew', name: 'Жилы', classId: 'reaver', style: 'survival', rows: 7, step: 10, cols: 5 },
   { id: 'reaver-instinct', name: 'Чутьё', classId: 'reaver', style: 'autonomy', rows: 7, step: 10, cols: 5 },
   // --- Псарь: энергия, лёгкий клинок и пёс ---
-  { id: 'houndmaster-chase', name: 'Гон', classId: 'houndmaster', style: 'damage', ...LADDER },
-  { id: 'houndmaster-leash', name: 'Привязь', classId: 'houndmaster', style: 'survival', ...LADDER },
-  { id: 'houndmaster-trail', name: 'Тропа', classId: 'houndmaster', style: 'autonomy', ...LADDER },
+  { id: 'houndmaster-chase', name: 'Гон', classId: 'houndmaster', style: 'damage', rows: 7, step: 10, cols: 5 },
+  { id: 'houndmaster-leash', name: 'Привязь', classId: 'houndmaster', style: 'survival', rows: 7, step: 10, cols: 5 },
+  { id: 'houndmaster-trail', name: 'Тропа', classId: 'houndmaster', style: 'autonomy', rows: 7, step: 10, cols: 5 },
 ]
 
 /**
@@ -2847,892 +2843,951 @@ const REAVER_INSTINCT = branch('reaver-instinct', [
     },
   ],
 ])
-
+// ГОН: СЕМЬ ЭТАЖЕЙ ПО ДЕСЯТЬ ОЧКОВ.
+//
+// Первая ветка Псаря на новой форме. Ёмкость 112 при глубине 60.
+//
+// ВЕТКА ГОНА. Два тела бьют в такт: ветка растит укус пса и те умения героя,
+// которые пса ЧИТАЮТ, — «Подрез» бьёт сильнее, пока пёс грызёт ту же цель,
+// «Серия» заставляет пса кусать на каждый удар.
+//
+// ЧЕГО ЗДЕСЬ НЕТ — ТАЛАНТА НА КРИТ ПСА, и это не забывчивость. Замер стадии 7
+// показал: `houndCritChance` доходит до `damagePerSecond`, но НЕ доходит до
+// `killsPerSecond` — числа, на котором стоят все контракты, прогноз зоны,
+// оффлайн и обе оси героя. Талант на него был бы виден тику и невидим всему
+// остальному; подробности и воспроизведение — в `docs/TREE-EIGHT.md`.
 const HOUNDMASTER_CHASE = branch('houndmaster-chase', [
+  // --- ЭТАЖ 1 · порог 0 · с уровня 10 --------------------------------------
   [
     {
-      // Ускорение — flat по haste (правило про weaponSpeed см. у Стража).
-      id: 'chase-quick-hands',
-      name: 'Быстрые руки',
-      icon: 'talent-quick-hands',
-      maxRank: 6,
-      col: 2,
-      effect: mods(m('haste', 'flat', 0.00703)),
-    },
-    {
-      id: 'chase-sure-cut',
-      name: 'Верный надрез',
-      icon: 'talent-sure-cut',
+      id: 'chase-light-hand',
+      name: 'Лёгкая рука',
+      icon: 'talent-strength',
       maxRank: 5,
-      col: 3,
-      effect: tunes('undercut', { field: 'weaponDamagePercent', kind: 'percent', value: 0.04 }),
+      col: 1,
+      effect: mods(m('attackPower', 'percent', 0.02)),
     },
-  ],
-  [
     {
-      // ПЁС КУСАЕТ СИЛЬНЕЕ: число спутника правится флагом с payload'ом —
-      // `hound-tune`, поле и операция как у правки умения.
-      id: 'chase-sharp-fangs',
-      name: 'Острые клыки',
-      icon: 'talent-sharp-fangs',
+      id: 'chase-wolf-grip',
+      name: 'Волчья хватка',
+      icon: 'talent-savage-blows',
       maxRank: 5,
       col: 2,
-      effect: houndTune('hitShare', 'percent', 0.06),
+      effect: mods(m('critMultiplier', 'flat', 0.03)),
     },
     {
-      id: 'chase-deep-hamstring',
-      name: 'Глубокий подрез',
-      icon: 'talent-deep-cut',
-      maxRank: 5,
+      id: 'chase-mean-sic',
+      name: 'Злая травля',
+      icon: 'ability-sic',
+      maxRank: 3,
       col: 3,
-      effect: tunes('hamstring', { field: 'weaponDamagePercent', kind: 'percent', value: 0.05 }),
+      effect: tunes('sic', { field: 'houndHasteShare', kind: 'percent', value: 0.1 }),
+    },
+    {
+      id: 'chase-heavy-hamstring',
+      name: 'Тяжёлый подрез',
+      icon: 'ability-hamstring',
+      maxRank: 3,
+      col: 4,
+      effect: tunes('hamstring', { field: 'weaponDamagePercent', kind: 'percent', value: 0.1 }),
     },
   ],
+  // --- ЭТАЖ 2 · порог 10 · с уровня 20 -------------------------------------
   [
     {
-      id: 'chase-keen-eye',
-      name: 'Зоркий глаз',
+      id: 'chase-hunter-eye',
+      name: 'Глаз ловчего',
       icon: 'talent-keen-eye',
       maxRank: 5,
       col: 1,
       effect: mods(m('critChance', 'flat', 0.01)),
     },
     {
-      id: 'chase-long-chase',
-      name: 'Долгий гон',
-      icon: 'talent-long-focus',
-      maxRank: 4,
-      col: 2,
-      effect: tunes('sic', { field: 'houndHasteDurationSec', kind: 'percent', value: 0.15 }),
-    },
-    {
-      id: 'chase-wide-flurry',
-      name: 'Широкая серия',
-      icon: 'talent-savage-blows',
-      maxRank: 5,
-      col: 3,
-      effect: tunes('flurry', { field: 'weaponDamagePercent', kind: 'percent', value: 0.05 }),
-    },
-  ],
-  [
-    {
-      // ЗАМАХ ПСА КОРОЧЕ — процентом от секунд, а не плоско: плоская правка
-      // увела бы замах в ноль тем же путём, что и у оружия героя.
-      id: 'chase-fast-jaws',
-      name: 'Быстрые челюсти',
-      icon: 'talent-fast-jaws',
-      maxRank: 5,
-      col: 2,
-      effect: houndTune('swingTime', 'percent', -0.05),
-    },
-    {
-      id: 'chase-heavy-hand',
-      name: 'Тяжёлая рука',
-      icon: 'talent-heavy-shatter',
-      maxRank: 5,
-      col: 3,
-      effect: mods(m('critMultiplier', 'flat', 0.04)),
-    },
-  ],
-  [
-    // КЛЮЧЕВОЙ ЭТАЖ 5: два поворота, берётся один.
-    {
-      // СТАЯ: пока пёс на ногах, ВЕСЬ урон героя выше. Состояние второго
-      // тела становится множителем первого — вопрос класса в одном флаге.
-      id: 'chase-pack-tactics',
-      name: 'Стая',
-      icon: 'talent-pack-tactics',
-      maxRank: 1,
-      col: 2,
-      exclusiveGroup: 'chase-key-5',
-      effect: { kind: 'flag', flag: 'pack-tactics', bonusShare: 0.12 },
-    },
-    {
-      // ЗЛОЙ СПУСК: укус по команде в полтора раза злее. Всплеск против
-      // ровного множителя стаи — разные роды, а не разные величины.
-      id: 'chase-savage-unleash',
-      name: 'Злой спуск',
-      icon: 'talent-savage-unleash',
-      maxRank: 1,
-      col: 3,
-      exclusiveGroup: 'chase-key-5',
-      effect: tunes('unleash', { field: 'unleashBiteMult', kind: 'percent', value: 0.5 }),
-    },
-  ],
-  [
-    {
-      id: 'chase-honed',
-      name: 'Точёный нож',
-      icon: 'talent-honed-edge',
-      maxRank: 5,
-      col: 2,
-      effect: mods(m('attackPower', 'percent', 0.02)),
-    },
-    {
-      id: 'chase-cheap-cut',
-      name: 'Лёгкая подсечка',
-      icon: 'talent-thrift-wound',
-      maxRank: 5,
-      col: 3,
-      effect: tunes('undercut', { field: 'manaCost', kind: 'percent', value: -0.06 }),
-    },
-    {
-      id: 'chase-sic-fury',
-      name: 'Азарт травли',
-      icon: 'talent-frenzy',
-      maxRank: 4,
-      col: 1,
-      effect: tunes('sic', { field: 'houndHasteShare', kind: 'percent', value: 0.1 }),
-    },
-  ],
-  [
-    {
-      // Стрелка: развивает «Быстрые руки» — тот же столбец, доработка буквально.
-      id: 'chase-swift',
-      name: 'Стремительность',
-      icon: 'talent-headlong',
-      maxRank: 5,
-      col: 2,
-      requires: { talentId: 'chase-quick-hands', minRank: 3 },
-      effect: mods(m('haste', 'flat', 0.007)),
-    },
-    {
-      id: 'chase-crush-grip',
-      name: 'Дробящая хватка',
-      icon: 'talent-firm-press',
-      maxRank: 5,
-      col: 3,
-      effect: tunes('grip', { field: 'weaponDamagePercent', kind: 'percent', value: 0.06 }),
-    },
-  ],
-  [
-    {
-      // Стрелка: развивает «Острые клыки».
-      id: 'chase-relentless',
-      name: 'Неотступный',
-      icon: 'talent-relentless',
-      maxRank: 5,
-      col: 2,
-      requires: { talentId: 'chase-sharp-fangs', minRank: 3 },
-      effect: houndTune('hitShare', 'percent', 0.04),
-    },
-    {
-      id: 'chase-lean-flurry',
-      name: 'Экономная серия',
-      icon: 'talent-thrift-shatter',
-      maxRank: 5,
-      col: 3,
-      effect: tunes('flurry', { field: 'manaCost', kind: 'percent', value: -0.07 }),
-    },
-  ],
-  [
-    // КЛЮЧЕВОЙ ЭТАЖ 9.
-    {
-      // МСТИТЕЛЬ: пал пёс — герой шесть секунд бьёт на треть сильнее. Урон,
-      // растущий из ПОТЕРИ второго тела: наказание за слабого пса становится
-      // окном.
-      id: 'chase-avenger',
-      name: 'Мститель',
-      icon: 'talent-avenger',
-      maxRank: 1,
-      col: 2,
-      exclusiveGroup: 'chase-key-9',
-      effect: { kind: 'flag', flag: 'hound-avenge', bonusShare: 0.3, durationSec: 6 },
-    },
-    {
-      // ЧЕТВЁРТЫЙ УДАР: серия из четырёх, и пёс кусает четыре раза. Ровный
-      // прирост против окна мстителя.
-      id: 'chase-fourth-cut',
-      name: 'Четвёртый удар',
-      icon: 'talent-fourth-cut',
-      maxRank: 1,
-      col: 3,
-      exclusiveGroup: 'chase-key-9',
-      effect: tunes('flurry', { field: 'flurryHits', kind: 'percent', value: 0.34 }),
-    },
-  ],
-  [
-    {
-      id: 'chase-power',
-      name: 'Сила удара',
-      icon: 'talent-strength',
-      maxRank: 5,
-      col: 2,
-      effect: mods(m('attackPower', 'percent', 0.02)),
-    },
-    {
-      id: 'chase-quick-unleash',
-      name: 'Скорый спуск',
-      icon: 'talent-quick-mercy',
-      maxRank: 5,
-      col: 3,
-      effect: tunes('unleash', { field: 'cooldownSec', kind: 'percent', value: -0.08 }),
-    },
-    {
-      id: 'chase-keener-eye',
-      name: 'Зорче',
-      icon: 'talent-wide-mercy',
-      maxRank: 5,
-      col: 1,
-      effect: mods(m('critChance', 'flat', 0.01)),
-    },
-  ],
-  [
-    {
-      // Стрелка: развивает «Неотступного» — третья ступень клыков.
-      id: 'chase-fangs-of-old',
-      name: 'Клыки матёрого',
-      icon: 'talent-fangs-of-old',
-      maxRank: 5,
-      col: 2,
-      requires: { talentId: 'chase-relentless', minRank: 3 },
-      effect: houndTune('hitShare', 'percent', 0.04),
-    },
-    {
-      id: 'chase-pack-cut',
-      name: 'Стайный подрез',
-      icon: 'talent-open-wound',
-      maxRank: 4,
-      col: 3,
-      effect: tunes('hamstring', { field: 'packStrikeBonusShare', kind: 'percent', value: 0.15 }),
-    },
-  ],
-  [
-    {
-      id: 'chase-haste-of-hunt',
-      name: 'Охотничий шаг',
-      icon: 'talent-swift-return',
-      maxRank: 5,
-      col: 2,
-      effect: mods(m('haste', 'flat', 0.007)),
-    },
-    {
-      id: 'chase-cheap-sic',
-      name: 'Лёгкая травля',
-      icon: 'talent-thrift-rupture',
-      maxRank: 5,
-      col: 3,
-      effect: tunes('sic', { field: 'manaCost', kind: 'percent', value: -0.07 }),
-    },
-  ],
-  [
-    // ВЕНЕЦ: два капстоуна, берётся один.
-    {
-      // ДВОЙНОЙ УКУС: спуск вдвое злее. Козырь класса целиком в зубах пса.
-      id: 'chase-twin-fang',
-      name: 'Двойной укус',
-      icon: 'talent-twin-fang',
-      maxRank: 1,
-      col: 2,
-      exclusiveGroup: 'chase-key-13',
-      effect: tunes('unleash', { field: 'unleashBiteMult', kind: 'multiplier', value: 2 }),
-    },
-    {
-      // ВТОРОЙ ЗАМАХ: автоатака героя с шансом бьёт дважды — общий флаг,
-      // урон руки против урона зубов.
-      id: 'chase-double-strike',
-      name: 'Второй замах',
-      icon: 'talent-double-strike',
-      maxRank: 1,
-      col: 3,
-      exclusiveGroup: 'chase-key-13',
-      effect: { kind: 'flag', flag: 'double-strike', chance: 0.2 },
-    },
-  ],
-])
-
-// ПРИВЯЗЬ: ЖИВУЧЕСТЬ ЧЕРЕЗ ПСА.
-//
-// Ветка Псаря про выживание, и выживает он ВТОРЫМ ТЕЛОМ: запас пса, доля
-// ударов, которые он принимает, его возврат и лечение — а не щит и не броня
-// героя. Ключевые пары: «долгое зализывание» (отзыв лечит вдвое) против
-// «второго дыхания» (быстрое воскрешение героя) — пёс живёт против герой не
-// умирает; «железная привязь» (скрадывание вдвое) против «полного оклика»
-// (пёс встаёт целым); венец — «неутомимый оклик» против «тени» (скрадывание
-// вдвое дольше) — часто поднимать против долго прятаться.
-const HOUNDMASTER_LEASH = branch('houndmaster-leash', [
-  [
-    {
-      id: 'leash-thick-coat',
-      name: 'Густая шерсть',
+      id: 'chase-wolf-frame',
+      name: 'Волчья стать',
       icon: 'talent-thick-coat',
       maxRank: 5,
       col: 2,
-      effect: mods(m('maxHp', 'percent', 0.02)),
+      effect: { kind: 'flag', flag: 'hound-tune', field: 'maxHpShare', op: 'percent', value: 0.05 },
     },
     {
-      id: 'leash-steady-breath',
-      name: 'Ровное дыхание',
-      icon: 'talent-even-breath',
+      id: 'chase-long-sic',
+      name: 'Долгая травля',
+      icon: 'talent-long-focus',
       maxRank: 5,
       col: 3,
-      effect: mods(m('hpRegen', 'percent', 0.05)),
+      requires: { talentId: 'chase-mean-sic', minRank: 2 },
+      effect: tunes('sic', { field: 'houndHasteDurationSec', kind: 'percent', value: 0.15 }),
+    },
+    {
+      id: 'chase-cut-trail',
+      name: 'Резаный след',
+      icon: 'talent-quick-hands',
+      maxRank: 5,
+      col: 4,
+      requires: { talentId: 'chase-heavy-hamstring', minRank: 2 },
+      effect: tunes('hamstring', { field: 'cooldownSec', kind: 'percent', value: -0.1 }),
     },
   ],
+  // --- ЭТАЖ 3 · порог 20 · с уровня 30 · ПЕРВЫЙ ВЫБОР ----------------------
   [
     {
-      // ЗАПАС ПСА — доля запаса героя, и талант растит именно доли: пёс
-      // остаётся собой на любом уровне.
-      id: 'leash-tough-hide',
-      name: 'Крепкая шкура',
-      icon: 'talent-thick-hide',
+      id: 'chase-rush',
+      name: 'Разгон',
+      icon: 'talent-frenzy',
+      maxRank: 5,
+      col: 1,
+      effect: mods(m('haste', 'flat', 0.01)),
+    },
+    {
+      id: 'chase-fast-jaws',
+      name: 'Скорые челюсти',
+      icon: 'talent-fast-jaws',
       maxRank: 5,
       col: 2,
-      effect: houndTune('maxHpShare', 'percent', 0.08),
+      effect: { kind: 'flag', flag: 'hound-tune', field: 'swingTime', op: 'percent', value: -0.05 },
     },
     {
-      id: 'leash-quick-bandage',
-      name: 'Быстрая перевязка',
-      icon: 'talent-quick-mend',
+      id: 'chase-often-sic',
+      name: 'Частая травля',
+      icon: 'talent-restless-legs',
       maxRank: 5,
       col: 3,
-      effect: tunes('bandage', { field: 'cooldownSec', kind: 'percent', value: -0.08 }),
+      requires: { talentId: 'chase-long-sic', minRank: 3 },
+      effect: tunes('sic', { field: 'cooldownSec', kind: 'percent', value: -0.1 }),
+    },
+    {
+      // РЫВОК — ПРАВКА УМЕНИЯ: «Отзыв» перестаёт быть лечением и становится
+      // мгновенным возвратом. Защитная кнопка превращается в наступательную.
+      id: 'chase-dash',
+      name: 'Рывок',
+      icon: 'ability-recall',
+      maxRank: 1,
+      col: 4,
+      exclusiveGroup: 'chase-key-3',
+      effect: tunes(
+        'recall',
+        { field: 'recallHealShare', kind: 'multiplier', value: 0.1 },
+        { field: 'recallDurationSec', kind: 'multiplier', value: 0.4 },
+      ),
+    },
+    {
+      // ПАРА РАЗВЕДЕНА РОДОМ: сосед меняет, ЧТО делает кнопка, а «В две пасти»
+      // не трогает ни одной кнопки и открывает окно по СОБЫТИЮ боя.
+      id: 'chase-twin-fang',
+      name: 'В две пасти',
+      icon: 'talent-twin-fang',
+      maxRank: 1,
+      col: 5,
+      exclusiveGroup: 'chase-key-3',
+      effect: {
+        kind: 'flag',
+        flag: 'proc',
+        trigger: 'crit',
+        everyNth: 2,
+        effect: { kind: 'stat', stat: 'haste', value: 0.1, durationSec: 4 },
+      },
     },
   ],
+  // --- ЭТАЖ 4 · порог 30 · с уровня 40 -------------------------------------
   [
     {
-      id: 'leash-firm-grip',
-      name: 'Крепкая хватка',
-      icon: 'talent-firm-press',
+      id: 'chase-strong-bite',
+      name: 'Крепкий укус',
+      icon: 'ability-unleash',
+      maxRank: 5,
+      col: 1,
+      effect: tunes('unleash', { field: 'unleashBiteMult', kind: 'percent', value: 0.12 }),
+    },
+    {
+      id: 'chase-tight-flurry',
+      name: 'Слитная серия',
+      icon: 'ability-flurry',
+      maxRank: 5,
+      col: 2,
+      effect: tunes('flurry', { field: 'flurryHits', kind: 'percent', value: 0.2 }),
+    },
+    {
+      id: 'chase-quick-undercut',
+      name: 'Быстрая подсечка',
+      icon: 'ability-undercut',
+      maxRank: 3,
+      col: 3,
+      effect: tunes('undercut', { field: 'weaponDamagePercent', kind: 'percent', value: 0.1 }),
+    },
+    {
+      // ЕДИНСТВЕННЫЙ ТАЛАНТ ВЕТКИ В ДВА РАНГА — прок читает ранг.
+      id: 'chase-scent',
+      name: 'Запах',
+      icon: 'talent-sharp-fangs',
+      maxRank: 2,
+      col: 4,
+      effect: {
+        kind: 'flag',
+        flag: 'proc',
+        trigger: 'hit',
+        everyNth: 4,
+        effect: { kind: 'stat', stat: 'critChance', value: 0.05, durationSec: 6 },
+      },
+    },
+    {
+      id: 'chase-long-grip',
+      name: 'Долгая хватка',
+      icon: 'ability-grip',
+      maxRank: 5,
+      col: 5,
+      effect: tunes('grip', { field: 'gripDurationSec', kind: 'percent', value: 0.1 }),
+    },
+  ],
+  // --- ЭТАЖ 5 · порог 40 · с уровня 50 · ВТОРОЙ ВЫБОР ----------------------
+  [
+    {
+      id: 'chase-fang',
+      name: 'Клык',
+      icon: 'talent-sharp-fangs',
+      maxRank: 5,
+      col: 1,
+      effect: { kind: 'flag', flag: 'hound-tune', field: 'hitShare', op: 'percent', value: 0.04 },
+    },
+    {
+      id: 'chase-swift-unleash',
+      name: 'Скорый спуск',
+      icon: 'talent-savage-unleash',
+      maxRank: 5,
+      col: 2,
+      effect: tunes('unleash', { field: 'cooldownSec', kind: 'percent', value: -0.1 }),
+    },
+    {
+      id: 'chase-fierce-leader',
+      name: 'Ярый вожак',
+      icon: 'talent-hound-mending',
+      maxRank: 5,
+      col: 3,
+      effect: {
+        kind: 'flag',
+        flag: 'hound-tune',
+        field: 'regenInCombat',
+        op: 'percent',
+        value: 0.1,
+      },
+    },
+    {
+      // САМА СПУСКАЕТСЯ — «Травля» уходит из четвёрки и жмётся сама.
+      id: 'chase-self-sic',
+      name: 'Сама спускается',
+      icon: 'talent-quick-hands',
+      maxRank: 1,
+      col: 4,
+      exclusiveGroup: 'chase-key-5',
+      effect: { kind: 'flag', flag: 'auto-ability', abilityId: 'sic' },
+    },
+    {
+      // ПАРА РАЗВЕДЕНА РОДОМ: сосед отдаёт слот, а «Загонный лай» слота не
+      // трогает и открывает окно по СОБЫТИЮ — каждый третий удар героя.
+      id: 'chase-bay',
+      name: 'Загонный лай',
+      icon: 'talent-fangs-of-old',
+      maxRank: 1,
+      col: 5,
+      exclusiveGroup: 'chase-key-5',
+      effect: {
+        kind: 'flag',
+        flag: 'proc',
+        trigger: 'hit',
+        everyNth: 3,
+        effect: { kind: 'stat', stat: 'critMultiplier', value: 0.25, durationSec: 6 },
+      },
+    },
+  ],
+  // --- ЭТАЖ 6 · порог 50 · с уровня 60 -------------------------------------
+  [
+    {
+      id: 'chase-strong-beast',
+      name: 'Сильный зверь',
+      icon: 'ability-grip',
       maxRank: 5,
       col: 1,
       effect: tunes('grip', { field: 'gripSlowShare', kind: 'percent', value: 0.08 }),
     },
     {
-      // ДОЛЯ ПЕРЕНАПРАВЛЕНИЯ — В ПУНКТАХ: она доля, и «на 10 % больше» от 0.3
-      // игрок прочитал бы как 40 %, а не 33.
-      id: 'leash-fur-shield',
-      name: 'Живой щит',
-      icon: 'talent-fur-shield',
+      id: 'chase-clinging-grip',
+      name: 'Цепкая хватка',
+      icon: 'talent-firm-press',
       maxRank: 5,
       col: 2,
-      effect: houndTune('redirectShare', 'points', 0.03),
+      effect: tunes('grip', { field: 'cooldownSec', kind: 'percent', value: -0.1 }),
     },
     {
-      id: 'leash-deep-bandage',
-      name: 'Тугая перевязка',
-      icon: 'talent-deep-mend',
+      id: 'chase-heavy-flurry',
+      name: 'Тяжёлая серия',
+      icon: 'ability-flurry',
       maxRank: 5,
       col: 3,
-      effect: tunes('bandage', { field: 'houndHealMaxHpShare', kind: 'percent', value: 0.08 }),
+      effect: tunes('flurry', { field: 'weaponDamagePercent', kind: 'percent', value: 0.1 }),
+    },
+    {
+      // ЦЕНУ «ПОДРЕЗА» РЕЖЕТ ТРОПА, А НЕ ГОН. Проценты одного поля
+      // СКЛАДЫВАЮТСЯ по всем веткам класса, и две ветки по −50 % на потолке
+      // рангов сделали бы умение бесплатным. Поймал `content:check`.
+      id: 'chase-sharp-sic',
+      name: 'Резкая травля',
+      icon: 'ability-sic',
+      maxRank: 5,
+      col: 4,
+      effect: tunes('sic', { field: 'weaponDamagePercent', kind: 'percent', value: 0.1 }),
     },
   ],
+  // --- ЭТАЖ 7 · порог 60 · с уровня 70 · ВЕНЕЦ -----------------------------
   [
     {
-      id: 'leash-fast-return',
-      name: 'Скорый возврат',
-      icon: 'talent-fast-return',
-      maxRank: 5,
-      col: 2,
-      effect: houndTune('returnSec', 'percent', -0.08),
+      id: 'chase-pack-release',
+      name: 'Спуск своры',
+      icon: 'ability-pack-release',
+      maxRank: 1,
+      col: 1,
+      exclusiveGroup: 'chase-key-7',
+      requires: { talentId: 'chase-strong-beast', minRank: 3 },
+      effect: { kind: 'flag', flag: 'grant-ability', abilityId: 'pack-release' },
     },
     {
-      id: 'leash-cheap-recall',
-      name: 'Лёгкий отзыв',
-      icon: 'talent-thrift-mercy',
-      maxRank: 5,
-      col: 3,
-      effect: tunes('recall', { field: 'manaCost', kind: 'percent', value: -0.07 }),
-    },
-  ],
-  [
-    // КЛЮЧЕВОЙ ЭТАЖ 5.
-    {
-      // ДОЛГОЕ ЗАЛИЗЫВАНИЕ: отзыв лечит вдвое. Пёс живёт — герой платит уроном.
-      id: 'leash-long-lick',
-      name: 'Зализать раны',
-      icon: 'talent-quiet-mend',
+      // ЭХО СВОРЫ — ПАССИВНЫЙ ВЕНЕЦ: слота не занимает. «Пёс повторяет каждое
+      // умение героя» механизма не имеет (эхо у Стража — поле самого умения, а
+      // не таланта), и `pack-tactics` даёт ту же мысль честно: пока пёс на
+      // ногах, весь урон героя выше.
+      id: 'chase-pack-echo',
+      name: 'Эхо своры',
+      icon: 'talent-pack-tactics',
       maxRank: 1,
       col: 2,
-      exclusiveGroup: 'leash-key-5',
-      effect: tunes('recall', { field: 'recallHealShare', kind: 'percent', value: 1.0 }),
-    },
-    {
-      // ВТОРОЕ ДЫХАНИЕ: герой воскресает вдвое быстрее — общий флаг. Другой род:
-      // не пёс не падает, а смерть героя стоит дешевле.
-      id: 'leash-second-wind',
-      name: 'Второе дыхание',
-      icon: 'talent-second-wind',
-      maxRank: 1,
-      col: 3,
-      exclusiveGroup: 'leash-key-5',
-      effect: { kind: 'flag', flag: 'faster-revive', reviveMultiplier: 0.5 },
+      exclusiveGroup: 'chase-key-7',
+      requires: { talentId: 'chase-clinging-grip', minRank: 3 },
+      effect: { kind: 'flag', flag: 'pack-tactics', bonusShare: 0.18 },
     },
   ],
+])
+// ПРИВЯЗЬ: СЕМЬ ЭТАЖЕЙ ПО ДЕСЯТЬ ОЧКОВ.
+//
+// Ветка живучести Псаря, и живучесть у него ЧУЖАЯ: удар принимает пёс. Всё,
+// что растит ветка, — это способность второго тела стоять под ударом:
+// перенаправление, запас пса, его броня и уворот, лечение и скорость подъёма.
+const HOUNDMASTER_LEASH = branch('houndmaster-leash', [
+  // --- ЭТАЖ 1 · порог 0 · с уровня 10 --------------------------------------
   [
     {
-      id: 'leash-hound-mending',
-      name: 'Зализывание на ходу',
-      icon: 'talent-hound-mending',
+      id: 'leash-strong-breed',
+      name: 'Крепкая порода',
+      icon: 'talent-thick-coat',
       maxRank: 5,
       col: 1,
-      effect: houndTune('regenInCombat', 'points', 0.01),
+      effect: mods(m('houndMaxHp', 'flat', 0.05)),
     },
     {
-      id: 'leash-vitality',
-      name: 'Крепость тела',
-      icon: 'talent-vitality',
+      id: 'leash-own-hide',
+      name: 'Своя шкура',
+      icon: 'talent-thick-hide',
       maxRank: 5,
       col: 2,
-      effect: mods(m('maxHp', 'percent', 0.02)),
-    },
-    {
-      id: 'leash-long-skulk',
-      name: 'Долгое скрадывание',
-      icon: 'talent-long-stance',
-      maxRank: 5,
-      col: 3,
-      effect: tunes('skulk', { field: 'skulkDurationSec', kind: 'percent', value: 0.12 }),
-    },
-  ],
-  [
-    {
-      id: 'leash-armor',
-      name: 'Кожаный доспех',
-      icon: 'talent-shield-wall',
-      maxRank: 5,
-      col: 2,
-      effect: mods(m('armor', 'percent', 0.03)),
-    },
-    {
-      id: 'leash-cheap-bandage',
-      name: 'Лёгкая перевязка',
-      icon: 'talent-thrift-wall',
-      maxRank: 5,
-      col: 3,
-      effect: tunes('bandage', { field: 'manaCost', kind: 'percent', value: -0.07 }),
-    },
-  ],
-  [
-    {
-      // Стрелка: развивает «Крепкую шкуру».
-      id: 'leash-thicker-hide',
-      name: 'Толстая шкура',
-      icon: 'talent-hard-to-kill',
-      maxRank: 5,
-      col: 2,
-      requires: { talentId: 'leash-tough-hide', minRank: 3 },
-      effect: houndTune('maxHpShare', 'percent', 0.06),
-    },
-    {
-      id: 'leash-quick-rally',
-      name: 'Скорый оклик',
-      icon: 'talent-early-call',
-      maxRank: 5,
-      col: 3,
-      effect: tunes('rally', { field: 'cooldownSec', kind: 'percent', value: -0.1 }),
-    },
-  ],
-  [
-    // КЛЮЧЕВОЙ ЭТАЖ 9.
-    {
-      // ЖЕЛЕЗНАЯ ПРИВЯЗЬ: скрадывание перекладывает на пса вдвое больше.
-      id: 'leash-iron-leash',
-      name: 'Железная привязь',
-      icon: 'talent-immovable',
-      maxRank: 1,
-      col: 2,
-      exclusiveGroup: 'leash-key-9',
-      effect: tunes('skulk', { field: 'skulkRedirectBonus', kind: 'percent', value: 1.0 }),
-    },
-    {
-      // ПОЛНЫЙ ОКЛИК: павший пёс встаёт целым. Не «пёс держит больше», а
-      // «падение стоит меньше» — другой род.
-      id: 'leash-full-rally',
-      name: 'Полный оклик',
-      icon: 'talent-full-rally',
-      maxRank: 1,
-      col: 3,
-      exclusiveGroup: 'leash-key-9',
-      effect: tunes('rally', { field: 'rallyHpShare', kind: 'percent', value: 1.0 }),
-    },
-  ],
-  [
-    {
-      id: 'leash-even-breath',
-      name: 'Глубокое дыхание',
-      icon: 'talent-steady-breath',
-      maxRank: 5,
-      col: 2,
-      effect: mods(m('hpRegen', 'percent', 0.05)),
-    },
-    {
-      // Стрелка: развивает «Долгое скрадывание» — тот же столбец.
-      id: 'leash-deep-skulk',
-      name: 'Глубокое скрадывание',
-      icon: 'talent-spiked-guard',
-      maxRank: 5,
-      col: 3,
-      requires: { talentId: 'leash-long-skulk', minRank: 2 },
-      effect: tunes('skulk', { field: 'skulkRedirectBonus', kind: 'percent', value: 0.1 }),
-    },
-  ],
-  [
-    {
-      // Стрелка: развивает «Скорый возврат».
-      id: 'leash-swift-return',
-      name: 'Стремительный возврат',
-      icon: 'talent-swift-return',
-      maxRank: 5,
-      col: 2,
-      requires: { talentId: 'leash-fast-return', minRank: 3 },
-      effect: houndTune('returnSec', 'percent', -0.06),
-    },
-    {
-      id: 'leash-long-recall',
-      name: 'Долгий отзыв',
-      icon: 'talent-long-wall',
-      maxRank: 4,
-      col: 3,
-      effect: tunes('recall', { field: 'recallDurationSec', kind: 'percent', value: 0.15 }),
-    },
-  ],
-  [
-    {
-      id: 'leash-hardened',
-      name: 'Закалка',
-      icon: 'talent-bulwark-training',
-      maxRank: 5,
-      col: 2,
-      effect: mods(m('maxHp', 'percent', 0.02)),
+      effect: mods(m('maxHp', 'percent', 0.04)),
     },
     {
       id: 'leash-long-grip',
       name: 'Долгая хватка',
-      icon: 'talent-braced',
-      maxRank: 5,
+      icon: 'ability-grip',
+      maxRank: 3,
       col: 3,
-      effect: tunes('grip', { field: 'gripDurationSec', kind: 'percent', value: 0.12 }),
+      effect: tunes('grip', { field: 'gripDurationSec', kind: 'percent', value: 0.1 }),
+    },
+    {
+      id: 'leash-tight-grip',
+      name: 'Тугая хватка',
+      icon: 'talent-spare-edge',
+      maxRank: 3,
+      col: 4,
+      effect: tunes('grip', { field: 'manaCost', kind: 'percent', value: -0.1 }),
     },
   ],
+  // --- ЭТАЖ 2 · порог 10 · с уровня 20 -------------------------------------
   [
-    // ВЕНЕЦ.
     {
-      // НЕУТОМИМЫЙ ОКЛИК: откат оклика в два с половиной раза короче —
-      // павший пёс почти не лежит.
-      id: 'leash-tireless-rally',
-      name: 'Неутомимый оклик',
-      icon: 'ability-rally',
-      maxRank: 1,
-      col: 2,
-      exclusiveGroup: 'leash-key-13',
-      effect: tunes('rally', { field: 'cooldownSec', kind: 'multiplier', value: 0.4 }),
+      id: 'leash-tanned-hide',
+      name: 'Дублёная шкура',
+      icon: 'talent-iron-skin',
+      maxRank: 5,
+      col: 1,
+      effect: mods(m('damageReduction', 'flat', 0.01)),
     },
     {
-      // ТЕНЬ: скрадывание вдвое дольше — герой почти не выходит из-за пса.
-      id: 'leash-shadow-hound',
-      name: 'Тень пса',
-      icon: 'ability-skulk',
-      maxRank: 1,
+      id: 'leash-thick-fur',
+      name: 'Толстая шерсть',
+      icon: 'talent-fur-shield',
+      maxRank: 5,
+      col: 2,
+      effect: mods(m('houndArmor', 'flat', 0.04)),
+    },
+    {
+      id: 'leash-tight-bandage',
+      name: 'Тугая перевязка',
+      icon: 'ability-bandage',
+      maxRank: 5,
       col: 3,
-      exclusiveGroup: 'leash-key-13',
-      effect: tunes('skulk', { field: 'skulkDurationSec', kind: 'multiplier', value: 2 }),
+      requires: { talentId: 'leash-long-grip', minRank: 2 },
+      effect: tunes('bandage', { field: 'houndHealMaxHpShare', kind: 'percent', value: 0.12 }),
+    },
+    {
+      id: 'leash-swift-bandage',
+      name: 'Скорая перевязка',
+      icon: 'talent-quick-mend',
+      maxRank: 5,
+      col: 4,
+      requires: { talentId: 'leash-tight-grip', minRank: 2 },
+      effect: tunes('bandage', { field: 'cooldownSec', kind: 'percent', value: -0.1 }),
+    },
+  ],
+  // --- ЭТАЖ 3 · порог 20 · с уровня 30 · ПЕРВЫЙ ВЫБОР ----------------------
+  [
+    {
+      id: 'leash-hardy-hound',
+      name: 'Живучий пёс',
+      icon: 'talent-hard-to-kill',
+      maxRank: 5,
+      col: 1,
+      effect: { kind: 'flag', flag: 'hound-tune', field: 'maxHpShare', op: 'percent', value: 0.06 },
+    },
+    {
+      id: 'leash-long-skulk',
+      name: 'Долгое скрадывание',
+      icon: 'ability-skulk',
+      maxRank: 5,
+      col: 2,
+      effect: tunes('skulk', { field: 'skulkDurationSec', kind: 'percent', value: 0.15 }),
+    },
+    {
+      id: 'leash-deep-bandage',
+      name: 'Ранняя перевязка',
+      icon: 'talent-early-call',
+      maxRank: 5,
+      col: 3,
+      requires: { talentId: 'leash-tight-bandage', minRank: 3 },
+      effect: tunes('bandage', {
+        field: 'houndHealAutocastBelowHpShare',
+        kind: 'points',
+        value: 0.05,
+      }),
+    },
+    {
+      // ПАРА РАЗВЕДЕНА РОДОМ: «Не бросит» открывает окно по СОБЫТИЮ боя,
+      // «Крепкий поводок» меняет, ЧТО делает кнопка отзыва.
+      id: 'leash-wont-leave',
+      name: 'Не бросит',
+      icon: 'talent-hound-rests',
+      maxRank: 1,
+      col: 4,
+      exclusiveGroup: 'leash-key-3',
+      effect: {
+        kind: 'flag',
+        flag: 'proc',
+        trigger: 'hit',
+        everyNth: 4,
+        effect: { kind: 'stat', stat: 'houndDodge', value: 0.1, durationSec: 6 },
+      },
+    },
+    {
+      id: 'leash-strong-lead',
+      name: 'Крепкий поводок',
+      icon: 'ability-recall',
+      maxRank: 1,
+      col: 5,
+      exclusiveGroup: 'leash-key-3',
+      effect: tunes('recall', { field: 'recallHealShare', kind: 'percent', value: 1 }),
+    },
+  ],
+  // --- ЭТАЖ 4 · порог 30 · с уровня 40 -------------------------------------
+  [
+    {
+      id: 'leash-stone-skin',
+      name: 'Каменная кожа',
+      icon: 'talent-iron-skin',
+      maxRank: 5,
+      col: 1,
+      effect: mods(m('damageReduction', 'flat', 0.01)),
+    },
+    {
+      id: 'leash-leader-hide',
+      name: 'Шкура вожака',
+      icon: 'talent-fur-shield',
+      maxRank: 5,
+      col: 2,
+      effect: mods(m('houndArmor', 'flat', 0.03)),
+    },
+    {
+      // ЕДИНСТВЕННЫЙ ТАЛАНТ ВЕТКИ В ДВА РАНГА — прок читает ранг.
+      id: 'leash-tempering',
+      name: 'Закалка',
+      icon: 'talent-spiked-guard',
+      maxRank: 2,
+      col: 3,
+      effect: {
+        kind: 'flag',
+        flag: 'proc',
+        trigger: 'crit',
+        everyNth: 2,
+        effect: { kind: 'stat', stat: 'damageReduction', value: 0.04, durationSec: 8 },
+      },
+    },
+    {
+      id: 'leash-tight-rally',
+      name: 'Тугой оклик',
+      icon: 'ability-rally',
+      maxRank: 5,
+      col: 4,
+      effect: tunes('rally', { field: 'rallyHpShare', kind: 'percent', value: 0.12 }),
+    },
+    {
+      id: 'leash-swift-rally',
+      name: 'Скорый оклик',
+      icon: 'talent-full-rally',
+      maxRank: 5,
+      col: 5,
+      effect: tunes('rally', { field: 'cooldownSec', kind: 'percent', value: -0.1 }),
+    },
+  ],
+  // --- ЭТАЖ 5 · порог 40 · с уровня 50 · ВТОРОЙ ВЫБОР ----------------------
+  [
+    {
+      id: 'leash-own-blood',
+      name: 'Своя кровь',
+      icon: 'talent-vitality',
+      maxRank: 5,
+      col: 1,
+      effect: mods(m('maxHp', 'percent', 0.03)),
+    },
+    {
+      id: 'leash-quick-rise',
+      name: 'Быстрый подъём',
+      icon: 'talent-fast-return',
+      maxRank: 5,
+      col: 2,
+      effect: mods(m('houndReviveSpeed', 'flat', 0.05)),
+    },
+    {
+      id: 'leash-wide-guard',
+      name: 'Широкий заслон',
+      icon: 'talent-fur-shield',
+      maxRank: 5,
+      col: 3,
+      effect: {
+        kind: 'flag',
+        flag: 'hound-tune',
+        field: 'redirectShare',
+        op: 'percent',
+        value: 0.1,
+      },
+    },
+    {
+      // САМ ПРИКРОЕТ — «Скрадывание» уходит из четвёрки и жмётся само.
+      id: 'leash-self-skulk',
+      name: 'Сам прикроет',
+      icon: 'talent-quick-hands',
+      maxRank: 1,
+      col: 4,
+      exclusiveGroup: 'leash-key-5',
+      effect: { kind: 'flag', flag: 'auto-ability', abilityId: 'skulk' },
+    },
+    {
+      // ПАРА РАЗВЕДЕНА РОДОМ: сосед отдаёт слот, а «Скорое возвращение» слота
+      // не трогает и правит ЧИСЛО спутника — пёс лежит вдвое меньше.
+      id: 'leash-swift-return',
+      name: 'Скорое возвращение',
+      icon: 'talent-hound-sleeps',
+      maxRank: 1,
+      col: 5,
+      exclusiveGroup: 'leash-key-5',
+      effect: { kind: 'flag', flag: 'hound-tune', field: 'returnSec', op: 'percent', value: -0.5 },
+    },
+  ],
+  // --- ЭТАЖ 6 · порог 50 · с уровня 60 -------------------------------------
+  [
+    {
+      id: 'leash-beast-hound',
+      name: 'Пёс-зверь',
+      icon: 'talent-hard-to-kill',
+      maxRank: 5,
+      col: 1,
+      effect: { kind: 'flag', flag: 'hound-tune', field: 'maxHpShare', op: 'percent', value: 0.05 },
+    },
+    {
+      id: 'leash-dodge',
+      name: 'Уворот',
+      icon: 'talent-quick-hands',
+      maxRank: 5,
+      col: 2,
+      effect: mods(m('houndDodge', 'flat', 0.03)),
+    },
+    {
+      id: 'leash-hound-breath',
+      name: 'Дыхание пса',
+      icon: 'talent-hound-mending',
+      maxRank: 5,
+      col: 3,
+      effect: {
+        kind: 'flag',
+        flag: 'hound-tune',
+        field: 'regenInCombat',
+        op: 'percent',
+        value: 0.1,
+      },
+    },
+    {
+      id: 'leash-even-breath',
+      name: 'Ровное дыхание',
+      icon: 'talent-even-breath',
+      maxRank: 5,
+      col: 4,
+      effect: mods(m('hpRegen', 'percent', 0.05)),
+    },
+  ],
+  // --- ЭТАЖ 7 · порог 60 · с уровня 70 · ВЕНЕЦ -----------------------------
+  [
+    {
+      id: 'leash-swap',
+      name: 'Подмена',
+      icon: 'ability-swap',
+      maxRank: 1,
+      col: 1,
+      exclusiveGroup: 'leash-key-7',
+      requires: { talentId: 'leash-beast-hound', minRank: 3 },
+      effect: { kind: 'flag', flag: 'grant-ability', abilityId: 'swap' },
+    },
+    {
+      // ЖИВОЙ ЩИТ — ПАССИВНЫЙ ВЕНЕЦ: слота не занимает. «Смертельный удар
+      // целиком уходит в пса» механизма не имеет — это отмена смерти, а её
+      // модель не считает. Оставлено то, что ветка и обещает: доля входящего,
+      // уходящая в пса, растёт вдвое.
+      id: 'leash-living-shield',
+      name: 'Живой щит',
+      icon: 'talent-fur-shield',
+      maxRank: 1,
+      col: 2,
+      exclusiveGroup: 'leash-key-7',
+      requires: { talentId: 'leash-dodge', minRank: 3 },
+      effect: {
+        kind: 'flag',
+        flag: 'hound-tune',
+        field: 'redirectShare',
+        op: 'percent',
+        value: 1,
+      },
     },
   ],
 ])
-
-// ТРОПА: АВТОНОМНОСТЬ ЭНЕРГИИ.
+// ТРОПА: СЕМЬ ЭТАЖЕЙ ПО ДЕСЯТЬ ОЧКОВ.
 //
-// Ветка Псаря про то, сколько игра идёт сама: скорость возвращения энергии,
-// цена команд, длина привала, восстановление вне боя — героя и пса. Ключевые
-// пары — про РИТМ, а не про числа: «привал снимает откаты» против «убийство
-// срезает откаты» (пауза против непрерывности); «привал вдвое короче» против
-// «второй заряд серии» (меньше ждать против больше выстрелить); венец —
-// «неутомимая серия» (вдвое дешевле) против «дыхания охоты» (травля дешевле и
-// дольше) — рука против пса.
+// Третья ветка Псаря, и с ней ВСЕ ДЕВЯТЬ веток игры стоят на одной форме.
+// Ёмкость 112 при глубине 60.
+//
+// ВЕТКА ТРОПЫ. Псарь не останавливается: энергия возвращается сама, и вся
+// беда в другом — в привале. Ветка режет его длину, делает команды псу
+// дешевле и приводит к венцу, которого у класса не было вовсе, — ЛЕЧЕНИЮ.
 const HOUNDMASTER_TRAIL = branch('houndmaster-trail', [
-  [
-    {
-      // Энергия восстанавливается статом manaRegen: процент от постоянной
-      // базы — единственная законная правка её скорости.
-      id: 'trail-restless-legs',
-      name: 'Неутомимые ноги',
-      icon: 'talent-restless-legs',
-      maxRank: 5,
-      col: 2,
-      effect: mods(m('manaRegen', 'percent', 0.04)),
-    },
-    {
-      id: 'trail-short-camp',
-      name: 'Короткая стоянка',
-      icon: 'talent-short-camp',
-      maxRank: 5,
-      col: 3,
-      effect: mods(m('restDuration', 'percent', -0.04)),
-    },
-  ],
+  // --- ЭТАЖ 1 · порог 0 · с уровня 10 --------------------------------------
   [
     {
       id: 'trail-light-step',
       name: 'Лёгкий шаг',
-      icon: 'talent-thrift-wound',
-      maxRank: 5,
-      col: 2,
-      effect: tunes('undercut', { field: 'manaCost', kind: 'percent', value: -0.06 }),
-    },
-    {
-      id: 'trail-second-breath',
-      name: 'Второе дыхание тропы',
-      icon: 'talent-clear-mind',
-      maxRank: 5,
-      col: 3,
-      effect: mods(m('hpRegenOutOfCombat', 'percent', 0.06)),
-    },
-  ],
-  [
-    {
-      id: 'trail-quick-camp',
-      name: 'Быстрый лагерь',
       icon: 'talent-quick-camp',
       maxRank: 5,
       col: 1,
-      effect: mods(m('restDuration', 'percent', -0.04)),
+      effect: mods(m('restDuration', 'flat', -0.2)),
     },
     {
-      // Стрелка: развивает «Неутомимые ноги».
-      id: 'trail-flow',
-      name: 'Ровный ток',
-      icon: 'talent-deep-well',
-      maxRank: 5,
-      col: 2,
-      requires: { talentId: 'trail-restless-legs', minRank: 3 },
-      effect: mods(m('manaRegen', 'percent', 0.04)),
-    },
-    {
-      id: 'trail-cheap-sic',
-      name: 'Лёгкая команда',
-      icon: 'talent-thrift-rupture',
-      maxRank: 5,
-      col: 3,
-      effect: tunes('sic', { field: 'manaCost', kind: 'percent', value: -0.07 }),
-    },
-  ],
-  [
-    {
-      // ПЁС ОТДЫХАЕТ ВМЕСТЕ С ГЕРОЕМ: восстановление вне боя — в пунктах доли
-      // запаса в секунду.
-      id: 'trail-hound-rests',
-      name: 'Пёс у костра',
+      id: 'trail-fed-hound',
+      name: 'Сытый пёс',
       icon: 'talent-hound-rests',
       maxRank: 5,
       col: 2,
-      effect: houndTune('regenOutOfCombat', 'points', 0.02),
-    },
-    {
-      id: 'trail-cheap-grip',
-      name: 'Лёгкая хватка',
-      icon: 'talent-thrift-stance',
-      maxRank: 5,
-      col: 3,
-      effect: tunes('grip', { field: 'manaCost', kind: 'percent', value: -0.07 }),
-    },
-  ],
-  [
-    // КЛЮЧЕВОЙ ЭТАЖ 5: пауза против непрерывности.
-    {
-      id: 'trail-camp-refresh',
-      name: 'Отдых снимает усталость',
-      icon: 'talent-quick-focus',
-      maxRank: 1,
-      col: 2,
-      exclusiveGroup: 'trail-key-5',
-      effect: { kind: 'flag', flag: 'rest-clears-cooldowns', cooldownShare: 0.5 },
-    },
-    {
-      id: 'trail-hunt-rhythm',
-      name: 'Ритм охоты',
-      icon: 'talent-kill-refund',
-      maxRank: 1,
-      col: 3,
-      exclusiveGroup: 'trail-key-5',
-      effect: { kind: 'flag', flag: 'kill-refunds-cooldowns', cooldownShare: 0.7 },
-    },
-  ],
-  [
-    {
-      id: 'trail-quick-undercut',
-      name: 'Частая подсечка',
-      icon: 'talent-firm-hand',
-      maxRank: 5,
-      col: 1,
-      effect: tunes('undercut', { field: 'cooldownSec', kind: 'percent', value: -0.05 }),
-    },
-    {
-      id: 'trail-deep-breath',
-      name: 'Глубокий вдох',
-      icon: 'talent-long-mind',
-      maxRank: 5,
-      col: 2,
-      effect: mods(m('manaRegen', 'percent', 0.04)),
-    },
-    {
-      id: 'trail-cheap-flurry',
-      name: 'Лёгкая серия',
-      icon: 'talent-thrift-shatter',
-      maxRank: 5,
-      col: 3,
-      effect: tunes('flurry', { field: 'manaCost', kind: 'percent', value: -0.06 }),
-    },
-  ],
-  [
-    {
-      id: 'trail-lean-bandage',
-      name: 'Бережная перевязка',
-      icon: 'talent-thrift-wall',
-      maxRank: 5,
-      col: 2,
-      effect: tunes('bandage', { field: 'manaCost', kind: 'percent', value: -0.08 }),
-    },
-    {
-      id: 'trail-cheap-unleash',
-      name: 'Лёгкий спуск',
-      icon: 'talent-thrift-mercy',
-      maxRank: 5,
-      col: 3,
-      effect: tunes('unleash', { field: 'manaCost', kind: 'percent', value: -0.06 }),
-    },
-  ],
-  [
-    {
-      // Стрелка: развивает «Короткую стоянку».
-      id: 'trail-brief-camp',
-      name: 'Стоянка на ходу',
-      icon: 'talent-shorter-rest',
-      maxRank: 5,
-      col: 3,
-      requires: { talentId: 'trail-short-camp', minRank: 3 },
-      effect: mods(m('restDuration', 'percent', -0.04)),
+      effect: {
+        kind: 'flag',
+        flag: 'hound-tune',
+        field: 'regenOutOfCombat',
+        op: 'percent',
+        value: 0.1,
+      },
     },
     {
       id: 'trail-cheap-hamstring',
-      name: 'Лёгкий подрез',
+      name: 'Дешёвый подрез',
       icon: 'talent-spare-edge',
-      maxRank: 5,
-      col: 2,
-      effect: tunes('hamstring', { field: 'manaCost', kind: 'percent', value: -0.06 }),
-    },
-  ],
-  [
-    // КЛЮЧЕВОЙ ЭТАЖ 9: меньше ждать против больше выстрелить.
-    {
-      id: 'trail-short-rest',
-      name: 'Полпривала',
-      icon: 'stat-hpRegenOutOfCombat',
-      maxRank: 1,
-      col: 2,
-      exclusiveGroup: 'trail-key-9',
-      effect: { kind: 'flag', flag: 'shorter-rest', durationMultiplier: 0.5 },
-    },
-    {
-      id: 'trail-flurry-charge',
-      name: 'Вторая серия',
-      icon: 'talent-second-charge',
-      maxRank: 1,
+      maxRank: 3,
       col: 3,
-      exclusiveGroup: 'trail-key-9',
-      effect: { kind: 'flag', flag: 'ability-extra-charge', abilityId: 'flurry', extraCharges: 1 },
+      effect: tunes('hamstring', { field: 'manaCost', kind: 'percent', value: -0.1 }),
+    },
+    {
+      id: 'trail-cheap-undercut',
+      name: 'Дешёвая подсечка',
+      icon: 'talent-thrift-wound',
+      maxRank: 3,
+      col: 4,
+      effect: tunes('undercut', { field: 'manaCost', kind: 'percent', value: -0.1 }),
     },
   ],
+  // --- ЭТАЖ 2 · порог 10 · с уровня 20 -------------------------------------
   [
     {
-      id: 'trail-out-regen',
-      name: 'Отдых у тропы',
-      icon: 'talent-cold-blood',
+      id: 'trail-short-camp',
+      name: 'Короткий привал',
+      icon: 'talent-short-camp',
       maxRank: 5,
       col: 1,
-      effect: mods(m('hpRegenOutOfCombat', 'percent', 0.06)),
+      effect: mods(m('restDuration', 'percent', -0.05)),
     },
     {
-      id: 'trail-endless-legs',
-      name: 'Бесконечные ноги',
-      icon: 'talent-endless-mind',
+      id: 'trail-light-sleep',
+      name: 'Чуткий сон',
+      icon: 'talent-even-breath',
       maxRank: 5,
       col: 2,
-      effect: mods(m('manaRegen', 'percent', 0.04)),
+      effect: mods(m('hpRegenOutOfCombat', 'percent', 0.1)),
     },
     {
-      id: 'trail-cheap-skulk',
-      name: 'Лёгкое скрадывание',
-      icon: 'talent-thrift-stance',
+      // ОТКАТ «ПОДРЕЗА» РЕЖЕТ ГОН — см. «Резкую травлю» там же: одно поле, две
+      // ветки и потолок рангов уводили откат в ноль.
+      id: 'trail-cheap-recall',
+      name: 'Дешёвый отзыв',
+      icon: 'ability-recall',
       maxRank: 5,
       col: 3,
-      effect: tunes('skulk', { field: 'manaCost', kind: 'percent', value: -0.06 }),
+      effect: tunes('recall', { field: 'manaCost', kind: 'percent', value: -0.1 }),
+    },
+    {
+      id: 'trail-swift-undercut',
+      name: 'Скорая подсечка',
+      icon: 'talent-restless-legs',
+      maxRank: 5,
+      col: 4,
+      requires: { talentId: 'trail-cheap-undercut', minRank: 2 },
+      effect: tunes('undercut', { field: 'cooldownSec', kind: 'percent', value: -0.1 }),
     },
   ],
+  // --- ЭТАЖ 3 · порог 20 · с уровня 30 · ПЕРВЫЙ ВЫБОР ----------------------
   [
     {
-      // Стрелка: развивает «Пса у костра».
-      id: 'trail-hound-sleeps',
-      name: 'Пёс спит у ног',
-      icon: 'talent-hound-sleeps',
+      id: 'trail-wolf-sleep',
+      name: 'Волчий сон',
+      icon: 'talent-second-wind',
+      maxRank: 5,
+      col: 1,
+      effect: mods(m('hpRegen', 'percent', 0.1)),
+    },
+    {
+      id: 'trail-long-recall',
+      name: 'Долгий отзыв',
+      icon: 'ability-recall',
       maxRank: 5,
       col: 2,
-      requires: { talentId: 'trail-hound-rests', minRank: 3 },
-      effect: houndTune('regenOutOfCombat', 'points', 0.02),
+      effect: tunes('recall', { field: 'recallDurationSec', kind: 'percent', value: 0.15 }),
+    },
+    {
+      id: 'trail-tight-recall',
+      name: 'Тугой отзыв',
+      icon: 'talent-hound-mending',
+      maxRank: 5,
+      col: 3,
+      effect: tunes('recall', { field: 'recallHealShare', kind: 'percent', value: 0.12 }),
+    },
+    {
+      // ПАРА РАЗВЕДЕНА РОДОМ: «Вкус охоты» платит за УБИЙСТВО, «Не остывая» —
+      // за ПРИВАЛ. Один ускоряет цепочку, другой делает паузу бесплатной.
+      id: 'trail-taste-of-hunt',
+      name: 'Вкус охоты',
+      icon: 'talent-kill-refund',
+      maxRank: 1,
+      col: 4,
+      exclusiveGroup: 'trail-key-3',
+      effect: { kind: 'flag', flag: 'kill-refunds-cooldowns', cooldownShare: 0.75 },
+    },
+    {
+      id: 'trail-not-cooling',
+      name: 'Не остывая',
+      icon: 'talent-unbroken-focus',
+      maxRank: 1,
+      col: 5,
+      exclusiveGroup: 'trail-key-3',
+      effect: { kind: 'flag', flag: 'rest-clears-cooldowns', cooldownShare: 0 },
+    },
+  ],
+  // --- ЭТАЖ 4 · порог 30 · с уровня 40 -------------------------------------
+  [
+    {
+      // ЗАПАС ЭНЕРГИИ — РОВНО СТО, и поднять его может только талант: у Псаря
+      // интеллект погашен множителем-нолём, и ни вещи, ни уровень запаса не
+      // двигают.
+      id: 'trail-deep-wind',
+      name: 'Второе дыхание',
+      icon: 'talent-deep-well',
+      maxRank: 5,
+      col: 1,
+      effect: mods(m('maxMana', 'percent', 0.05)),
+    },
+    {
+      // ЕДИНСТВЕННЫЙ ТАЛАНТ ВЕТКИ В ДВА РАНГА — прок читает ранг.
+      id: 'trail-long-trace',
+      name: 'Долгий след',
+      icon: 'talent-fast-jaws',
+      maxRank: 2,
+      col: 2,
+      effect: {
+        kind: 'flag',
+        flag: 'proc',
+        trigger: 'crit',
+        everyNth: 2,
+        effect: { kind: 'stat', stat: 'haste', value: 0.04, durationSec: 6 },
+      },
+    },
+    {
+      id: 'trail-cheap-sic',
+      name: 'Дешёвая травля',
+      icon: 'ability-sic',
+      maxRank: 3,
+      col: 3,
+      effect: tunes('sic', { field: 'manaCost', kind: 'percent', value: -0.1 }),
+    },
+    {
+      id: 'trail-cheap-grip',
+      name: 'Дешёвая хватка',
+      icon: 'ability-grip',
+      maxRank: 5,
+      col: 4,
+      effect: tunes('grip', { field: 'manaCost', kind: 'percent', value: -0.1 }),
     },
     {
       id: 'trail-cheap-rally',
-      name: 'Лёгкий оклик',
-      icon: 'talent-early-call',
-      maxRank: 4,
-      col: 3,
+      name: 'Дешёвый оклик',
+      icon: 'ability-rally',
+      maxRank: 5,
+      col: 5,
       effect: tunes('rally', { field: 'manaCost', kind: 'percent', value: -0.1 }),
     },
   ],
+  // --- ЭТАЖ 5 · порог 40 · с уровня 50 · ВТОРОЙ ВЫБОР ----------------------
   [
     {
-      id: 'trail-short-halt',
-      name: 'Короткий привал',
-      icon: 'talent-long-focus',
+      id: 'trail-quiet-step',
+      name: 'Тихий шаг',
+      icon: 'talent-shorter-rest',
       maxRank: 5,
-      col: 2,
-      effect: mods(m('restDuration', 'percent', -0.04)),
+      col: 1,
+      effect: mods(m('restDuration', 'flat', -0.1)),
     },
     {
-      // БЫЛ «ЛЁГКИЙ ЗОВ» — СКИДКА НА «СВОРУ», И ОН УМЕР ВМЕСТЕ С ЕЁ ЦЕНОЙ.
-      // «Свора» стала пассивной, её цена — ноль, а процент от нуля есть ноль:
-      // талант проходил бы все ссылочные проверки и не делал РОВНО НИЧЕГО.
-      // Ловит это `checkTalentTunes` (TUNE_NEEDS.manaCost требует цены), и
-      // поймал он это сразу — то есть правило работает ровно так, как
-      // задумано: тихая поломка дерева стала громкой.
-      //
-      // НА ЕГО МЕСТЕ — СКИДКА НА ПОДСЕЧКУ, единственное умение класса, цены
-      // которого «Тропа» ещё не касалась (откат ей режет «Частая подсечка»
-      // этажом выше). Ставка ВТРОЕ МЕНЬШЕ соседей по ветке (-0.03 против
-      // -0.06…-0.10) нарочно: те режут цену умений с откатом в 14–45 секунд,
-      // а подсечка жмётся раз в две секунды — та же доля стоила бы на порядок
-      // дороже в энергии за минуту.
-      id: 'trail-cheap-undercut',
-      name: 'Лёгкая подсечка',
-      icon: 'talent-unbroken-focus',
+      id: 'trail-cheap-skulk',
+      name: 'Дешёвое скрадывание',
+      icon: 'ability-skulk',
+      maxRank: 5,
+      col: 2,
+      effect: tunes('skulk', { field: 'manaCost', kind: 'percent', value: -0.1 }),
+    },
+    {
+      id: 'trail-cheap-flurry',
+      name: 'Дешёвая серия',
+      icon: 'ability-flurry',
       maxRank: 5,
       col: 3,
-      effect: tunes('undercut', { field: 'manaCost', kind: 'percent', value: -0.03 }),
+      effect: tunes('flurry', { field: 'manaCost', kind: 'percent', value: -0.1 }),
+    },
+    {
+      // САМ ВЕРНЁТСЯ — «Отзыв» уходит из четвёрки и жмётся сам, по своему же
+      // порогу здоровья пса.
+      id: 'trail-self-recall',
+      name: 'Сам вернётся',
+      icon: 'talent-quick-hands',
+      maxRank: 1,
+      col: 4,
+      exclusiveGroup: 'trail-key-5',
+      effect: { kind: 'flag', flag: 'auto-ability', abilityId: 'recall' },
+    },
+    {
+      // ПАРА РАЗВЕДЕНА РОДОМ: сосед отдаёт слот, а «Второй оклик» слота не
+      // трогает и копит заряд — павший пёс встаёт дважды подряд.
+      id: 'trail-second-rally',
+      name: 'Второй оклик',
+      icon: 'talent-second-charge',
+      maxRank: 1,
+      col: 5,
+      exclusiveGroup: 'trail-key-5',
+      effect: {
+        kind: 'flag',
+        flag: 'ability-extra-charge',
+        abilityId: 'rally',
+        extraCharges: 1,
+      },
     },
   ],
+  // --- ЭТАЖ 6 · порог 50 · с уровня 60 -------------------------------------
   [
-    // ВЕНЕЦ: рука против пса.
     {
-      id: 'trail-tireless-flurry',
-      name: 'Неутомимая серия',
-      icon: 'ability-flurry',
-      maxRank: 1,
-      col: 2,
-      exclusiveGroup: 'trail-key-13',
-      effect: tunes('flurry', { field: 'manaCost', kind: 'multiplier', value: 0.5 }),
+      id: 'trail-wolf-camp',
+      name: 'Волчий привал',
+      icon: 'talent-quick-camp',
+      maxRank: 5,
+      col: 1,
+      effect: mods(m('restDuration', 'percent', -0.05)),
     },
     {
-      id: 'trail-hunting-breath',
-      name: 'Дыхание охоты',
-      icon: 'ability-sic',
-      maxRank: 1,
+      id: 'trail-fed-pack',
+      name: 'Сытая свора',
+      icon: 'talent-hound-sleeps',
+      maxRank: 5,
+      col: 2,
+      effect: {
+        kind: 'flag',
+        flag: 'hound-tune',
+        field: 'regenOutOfCombat',
+        op: 'percent',
+        value: 0.08,
+      },
+    },
+    {
+      id: 'trail-cheap-bandage',
+      name: 'Дешёвая перевязка',
+      icon: 'ability-bandage',
+      maxRank: 5,
       col: 3,
-      exclusiveGroup: 'trail-key-13',
-      effect: tunes(
-        'sic',
-        { field: 'manaCost', kind: 'multiplier', value: 0.5 },
-        { field: 'houndHasteDurationSec', kind: 'multiplier', value: 1.5 },
-      ),
+      effect: tunes('bandage', { field: 'manaCost', kind: 'percent', value: -0.1 }),
+    },
+    {
+      id: 'trail-cheap-unleash',
+      name: 'Дешёвый спуск',
+      icon: 'ability-unleash',
+      maxRank: 5,
+      col: 4,
+      effect: tunes('unleash', { field: 'manaCost', kind: 'percent', value: -0.1 }),
+    },
+  ],
+  // --- ЭТАЖ 7 · порог 60 · с уровня 70 · ВЕНЕЦ -----------------------------
+  [
+    {
+      id: 'trail-breather',
+      name: 'Передышка',
+      icon: 'ability-breather',
+      maxRank: 1,
+      col: 1,
+      exclusiveGroup: 'trail-key-7',
+      requires: { talentId: 'trail-wolf-camp', minRank: 3 },
+      effect: { kind: 'flag', flag: 'grant-ability', abilityId: 'breather' },
+    },
+    {
+      // СВОИМ ХОДОМ — ПАССИВНЫЙ ВЕНЕЦ: слота не занимает. «Пёс дерётся, пока
+      // герой на привале» механизма не имеет — привал останавливает бой
+      // целиком, и разводить эти два состояния значило бы переписать тик.
+      // Оставлено то, что у простоя можно отнять честно: его ДЛИНУ.
+      id: 'trail-on-the-move',
+      name: 'Своим ходом',
+      icon: 'talent-shorter-rest',
+      maxRank: 1,
+      col: 2,
+      exclusiveGroup: 'trail-key-7',
+      requires: { talentId: 'trail-fed-pack', minRank: 3 },
+      effect: { kind: 'flag', flag: 'shorter-rest', durationMultiplier: 1 / 3 },
     },
   ],
 ])
@@ -4720,216 +4775,219 @@ const BRANCH_PATHS: Partial<Record<BranchId, TalentPath[]>> = {
   ],
   'houndmaster-chase': [
     {
-      // СТАЯ. Герой и пёс сильнее вместе: стая, мститель, двойной укус —
-      // всё про то, чтобы пёс стоял и кусал, а герой бил рядом. Четвёрка —
-      // та же, что по умолчанию: первый путь — прибор.
+      // СТАЯ. Четвёрка по умолчанию — первый путь ветки это прибор. Ставка на
+      // укус: пёс бьёт чаще и тяжелее, «Подрез» читает его хватку.
       id: 'chase-pack',
       name: 'Стая',
       abilities: ['undercut', 'sic', 'hamstring', 'recall'],
       order: [
-        'chase-pack-tactics',
-        'chase-avenger',
+        'chase-mean-sic',
+        'chase-long-sic',
+        'chase-often-sic',
         'chase-twin-fang',
-        'chase-sharp-fangs',
-        'chase-quick-hands',
-        'chase-sure-cut',
-        'chase-deep-hamstring',
-        'chase-long-chase',
+        'chase-bay',
+        'chase-clinging-grip',
+        'chase-pack-echo',
+        'chase-fang',
         'chase-fast-jaws',
-        'chase-keen-eye',
-        'chase-heavy-hand',
-        'chase-sic-fury',
-        'chase-honed',
-        'chase-cheap-cut',
-        'chase-relentless',
-        'chase-swift',
-        'chase-crush-grip',
-        'chase-lean-flurry',
-        'chase-power',
-        'chase-keener-eye',
-        'chase-fangs-of-old',
-        'chase-pack-cut',
-        'chase-haste-of-hunt',
-        'chase-cheap-sic',
-        'chase-quick-unleash',
-        'chase-wide-flurry',
+        'chase-wolf-frame',
+        'chase-fierce-leader',
+        'chase-heavy-hamstring',
+        'chase-cut-trail',
+        'chase-sharp-sic',
+        'chase-quick-undercut',
+        'chase-light-hand',
+        'chase-wolf-grip',
+        'chase-hunter-eye',
+        'chase-rush',
+        'chase-scent',
+        'chase-strong-bite',
+        'chase-swift-unleash',
+        'chase-tight-flurry',
+        'chase-heavy-flurry',
+        'chase-long-grip',
+        'chase-strong-beast',
       ],
     },
     {
-      // ЗУБЫ И СЕРИЯ. Всплески: злой спуск, четвёртый удар серии, второй
-      // замах героя. Четвёрка другая — спуск и серия вместо отзыва и подреза.
+      // ЗУБЫ. Венец занимает слот, и четвёрка его несёт: «Спуск своры»
+      // удваивает укус, «Серия» заставляет пса кусать на каждый удар.
       id: 'chase-burst',
       name: 'Зубы',
-      abilities: ['undercut', 'sic', 'flurry', 'unleash'],
+      abilities: ['pack-release', 'undercut', 'hamstring', 'flurry'],
       order: [
-        'chase-savage-unleash',
-        'chase-fourth-cut',
-        'chase-double-strike',
-        'chase-wide-flurry',
-        'chase-quick-unleash',
-        'chase-lean-flurry',
-        'chase-sharp-fangs',
-        'chase-quick-hands',
-        'chase-sure-cut',
+        'chase-dash',
+        'chase-strong-beast',
+        'chase-self-sic',
+        'chase-pack-release',
+        'chase-tight-flurry',
+        'chase-heavy-flurry',
+        'chase-fang',
         'chase-fast-jaws',
-        'chase-heavy-hand',
-        'chase-keen-eye',
-        'chase-long-chase',
-        'chase-sic-fury',
-        'chase-honed',
-        'chase-cheap-cut',
-        'chase-relentless',
-        'chase-swift',
-        'chase-crush-grip',
-        'chase-power',
-        'chase-keener-eye',
-        'chase-fangs-of-old',
-        'chase-haste-of-hunt',
-        'chase-cheap-sic',
-        'chase-deep-hamstring',
-        'chase-pack-cut',
+        'chase-wolf-frame',
+        'chase-fierce-leader',
+        'chase-heavy-hamstring',
+        'chase-cut-trail',
+        'chase-sharp-sic',
+        'chase-quick-undercut',
+        'chase-light-hand',
+        'chase-wolf-grip',
+        'chase-hunter-eye',
+        'chase-rush',
+        'chase-scent',
+        'chase-strong-bite',
+        'chase-swift-unleash',
+        'chase-long-grip',
+        'chase-clinging-grip',
+        'chase-mean-sic',
+        'chase-long-sic',
+        'chase-often-sic',
       ],
     },
   ],
   'houndmaster-leash': [
     {
-      // ПРИВЯЗЬ. Пёс стоит: крепче, чаще возвращается, отзыв лечит вдвое,
-      // оклик почти без отката. Четвёрка по умолчанию — первый путь прибор.
+      // ПРИВЯЗЬ. Четвёрка по умолчанию — первый путь ветки это прибор. Ставка
+      // на второе тело: пёс крепче, брони и уворота больше, «Хватка» держит
+      // цель дольше.
       id: 'leash-hold',
       name: 'Привязь',
       abilities: ['undercut', 'sic', 'hamstring', 'recall'],
       order: [
-        'leash-long-lick',
-        'leash-iron-leash',
-        'leash-tireless-rally',
-        'leash-tough-hide',
-        'leash-thick-coat',
-        'leash-steady-breath',
-        'leash-fur-shield',
-        'leash-fast-return',
-        'leash-cheap-recall',
-        'leash-hound-mending',
-        'leash-vitality',
-        'leash-thicker-hide',
-        'leash-quick-rally',
-        'leash-even-breath',
+        'leash-wont-leave',
+        'leash-dodge',
         'leash-swift-return',
-        'leash-long-recall',
-        'leash-hardened',
-        'leash-firm-grip',
-        'leash-armor',
-        'leash-quick-bandage',
-        'leash-deep-bandage',
-        'leash-cheap-bandage',
+        'leash-living-shield',
+        'leash-strong-breed',
+        'leash-hardy-hound',
+        'leash-beast-hound',
+        'leash-thick-fur',
+        'leash-leader-hide',
+        'leash-wide-guard',
+        'leash-quick-rise',
+        'leash-own-hide',
+        'leash-own-blood',
+        'leash-tanned-hide',
+        'leash-stone-skin',
+        'leash-hound-breath',
+        'leash-even-breath',
+        'leash-tempering',
         'leash-long-grip',
+        'leash-tight-grip',
+        'leash-tight-bandage',
+        'leash-swift-bandage',
+        'leash-deep-bandage',
+        'leash-tight-rally',
+        'leash-swift-rally',
         'leash-long-skulk',
-        'leash-deep-skulk',
       ],
     },
     {
-      // ТЕНЬ. Герой прячется за псом: скрадывание вдвое и вдвое дольше, пёс
-      // встаёт целым, герой воскресает вдвое быстрее. Четвёрка другая.
+      // ТЕНЬ. Венец занимает слот, и четвёрка его несёт: «Подмена» уводит
+      // удар в пса, «Скрадывание» и «Перевязка» держат его на ногах.
       id: 'leash-shadow',
       name: 'Тень',
-      abilities: ['undercut', 'skulk', 'bandage', 'rally'],
+      abilities: ['swap', 'undercut', 'bandage', 'skulk'],
       order: [
-        'leash-second-wind',
-        'leash-full-rally',
-        'leash-shadow-hound',
+        'leash-strong-lead',
+        'leash-beast-hound',
+        'leash-self-skulk',
+        'leash-swap',
         'leash-long-skulk',
-        'leash-deep-skulk',
-        'leash-quick-bandage',
+        'leash-tight-bandage',
+        'leash-swift-bandage',
         'leash-deep-bandage',
-        'leash-cheap-bandage',
-        'leash-quick-rally',
-        'leash-tough-hide',
-        'leash-thick-coat',
-        'leash-steady-breath',
-        'leash-fur-shield',
-        'leash-fast-return',
-        'leash-hound-mending',
-        'leash-vitality',
-        'leash-thicker-hide',
+        'leash-strong-breed',
+        'leash-hardy-hound',
+        'leash-thick-fur',
+        'leash-leader-hide',
+        'leash-wide-guard',
+        'leash-quick-rise',
+        'leash-dodge',
+        'leash-own-hide',
+        'leash-own-blood',
+        'leash-tanned-hide',
+        'leash-stone-skin',
+        'leash-hound-breath',
         'leash-even-breath',
-        'leash-swift-return',
-        'leash-hardened',
-        'leash-armor',
-        'leash-firm-grip',
+        'leash-tempering',
+        'leash-tight-rally',
+        'leash-swift-rally',
         'leash-long-grip',
-        'leash-cheap-recall',
-        'leash-long-recall',
+        'leash-tight-grip',
       ],
     },
   ],
   'houndmaster-trail': [
     {
-      // ТРОПА. Привал снимает откаты и короче вдвое, травля дешевле и дольше:
-      // герой идёт сам и почти не стоит. Четвёрка по умолчанию — прибор.
+      // ТРОПА. Четвёрка по умолчанию — первый путь ветки это прибор. Узлы
+      // привала стоят в голове: ветка меряется тем, во сколько срезан простой.
       id: 'trail-walk',
       name: 'Тропа',
       abilities: ['undercut', 'sic', 'hamstring', 'recall'],
       order: [
-        'trail-camp-refresh',
-        'trail-short-rest',
-        'trail-hunting-breath',
-        'trail-restless-legs',
-        'trail-short-camp',
+        'trail-taste-of-hunt',
+        'trail-fed-pack',
+        'trail-self-recall',
+        'trail-on-the-move',
         'trail-light-step',
-        'trail-second-breath',
-        'trail-flow',
-        'trail-cheap-sic',
-        'trail-quick-camp',
-        'trail-hound-rests',
-        'trail-cheap-grip',
-        'trail-quick-undercut',
-        'trail-deep-breath',
-        'trail-lean-bandage',
-        'trail-brief-camp',
+        'trail-short-camp',
+        'trail-quiet-step',
+        'trail-wolf-camp',
+        'trail-wolf-sleep',
+        'trail-light-sleep',
+        'trail-fed-hound',
+        'trail-deep-wind',
+        'trail-long-trace',
         'trail-cheap-hamstring',
-        'trail-out-regen',
-        'trail-endless-legs',
-        'trail-hound-sleeps',
-        'trail-cheap-rally',
-        'trail-short-halt',
-        'trail-cheap-flurry',
-        'trail-cheap-unleash',
-        'trail-cheap-skulk',
+        'trail-cheap-recall',
         'trail-cheap-undercut',
+        'trail-swift-undercut',
+        'trail-cheap-sic',
+        'trail-long-recall',
+        'trail-tight-recall',
+        'trail-cheap-grip',
+        'trail-cheap-rally',
+        'trail-cheap-skulk',
+        'trail-cheap-flurry',
+        'trail-cheap-bandage',
+        'trail-cheap-unleash',
       ],
     },
     {
-      // РИТМ. Убийство срезает откаты, серия с двумя зарядами и вдвое
-      // дешевле: непрерывный бой без пауз. Четвёрка — всплесковая.
+      // ПЕРЕДЫШКА. Венец занимает слот, и четвёрка его несёт: у Псаря
+      // появляется ЛЕЧЕНИЕ, которого у класса не было вовсе, — и простой от
+      // привала режется не длиной, а тем, что привал не случается.
       id: 'trail-rhythm',
-      name: 'Ритм',
-      abilities: ['undercut', 'sic', 'flurry', 'unleash'],
+      name: 'Передышка',
+      abilities: ['breather', 'undercut', 'sic', 'hamstring'],
       order: [
-        'trail-hunt-rhythm',
-        'trail-flurry-charge',
-        'trail-tireless-flurry',
-        'trail-cheap-flurry',
-        'trail-cheap-unleash',
-        'trail-restless-legs',
+        'trail-not-cooling',
+        'trail-wolf-camp',
+        'trail-second-rally',
+        'trail-breather',
         'trail-light-step',
-        'trail-flow',
-        'trail-cheap-sic',
-        'trail-quick-undercut',
-        'trail-deep-breath',
-        'trail-endless-legs',
         'trail-short-camp',
-        'trail-second-breath',
-        'trail-quick-camp',
-        'trail-hound-rests',
-        'trail-cheap-grip',
-        'trail-lean-bandage',
-        'trail-brief-camp',
+        'trail-quiet-step',
+        'trail-wolf-sleep',
+        'trail-light-sleep',
+        'trail-fed-hound',
+        'trail-fed-pack',
+        'trail-deep-wind',
+        'trail-long-trace',
         'trail-cheap-hamstring',
-        'trail-out-regen',
-        'trail-hound-sleeps',
-        'trail-cheap-rally',
-        'trail-short-halt',
-        'trail-cheap-skulk',
+        'trail-cheap-recall',
         'trail-cheap-undercut',
+        'trail-swift-undercut',
+        'trail-cheap-sic',
+        'trail-long-recall',
+        'trail-tight-recall',
+        'trail-cheap-grip',
+        'trail-cheap-rally',
+        'trail-cheap-skulk',
+        'trail-cheap-flurry',
+        'trail-cheap-bandage',
+        'trail-cheap-unleash',
       ],
     },
   ],

@@ -1010,6 +1010,64 @@ export const ABILITIES: AbilityDef[] = [
     autocast: { resourceBelow: 0.4 },
   },
   {
+    // СПУСК СВОРЫ — ВЕНЕЦ ГОНА, ВЫДАННЫЙ ТАЛАНТОМ. Десять секунд пёс работает
+    // за двоих: кусает вдвое чаще и вдвое тяжелее.
+    //
+    // ВТОРОГО ТЕЛА НА ПОЛЕ ПРИ ЭТОМ НЕ ПОЯВЛЯЕТСЯ, и это решение. Временный
+    // пёс — это запись в `GameState.hounds`, которую надо завести, отсчитать и
+    // убрать, и которую сейв обязан пережить; ёмкость своры при этом считается
+    // ПРОИЗВОДНОЙ от ряда (`houndCapacity`), и тик доводит число псов до неё в
+    // ОБЕ стороны — временный пёс исчез бы на первом же тике. Удвоенный укус
+    // даёт тот же вклад в модель и не заводит ни одной новой сущности.
+    id: 'pack-release',
+    icon: 'ability-pack-release',
+    name: 'Спуск своры',
+    type: 'instant',
+    unlockLevel: 1,
+    manaCost: new Decimal(45),
+    cooldownSec: 30,
+    weaponDamagePercent: new Decimal(0),
+    triggersGcd: true,
+    houndHaste: { share: 1, durationSec: 10 },
+    unleash: { biteMult: 2 },
+  },
+  {
+    // ПОДМЕНА — ВЕНЕЦ ПРИВЯЗИ. Пять секунд почти весь входящий по герою уходит
+    // в пса; сам пёс на это время получает и лечение, чтобы подмена не была
+    // просто переносом смерти.
+    id: 'swap',
+    icon: 'ability-swap',
+    name: 'Подмена',
+    type: 'instant',
+    unlockLevel: 1,
+    manaCost: new Decimal(40),
+    cooldownSec: 25,
+    weaponDamagePercent: new Decimal(0),
+    triggersGcd: true,
+    skulk: { redirectBonus: 0.6, durationSec: 5 },
+    houndHeal: { maxHpShare: 0.3, autocastBelowHpShare: 0.6 },
+  },
+  {
+    // ПЕРЕДЫШКА — ВЕНЕЦ ТРОПЫ, и это ПЕРВОЕ ЛЕЧЕНИЕ У ПСАРЯ. Пёс сторожит,
+    // пока герой переводит дух.
+    //
+    // «ПОИСК», КОТОРЫЙ ПРИНОСИТ РЕАГЕНТ, — ЭТОГО НЕТ. Добыча падает с мобов
+    // (`rollLoot`) и считается убийствами; умение, выдающее предмет по
+    // таймеру, завело бы второй источник лута рядом с первым, а модель боя
+    // (её вход — статы и моб) его не увидела бы вовсе. Ось ветки —
+    // «во сколько срезан простой», и лечение режет его напрямую и честно.
+    id: 'breather',
+    icon: 'ability-breather',
+    name: 'Передышка',
+    type: 'instant',
+    unlockLevel: 1,
+    manaCost: new Decimal(25),
+    cooldownSec: 20,
+    weaponDamagePercent: new Decimal(0),
+    triggersGcd: true,
+    heal: { maxHpShare: new Decimal(0.2), autocastBelowHpShare: 0.55 },
+  },
+  {
     // РАЗРЫВ. Съедает кровотечение с цели и наносит его остаток сразу с
     // множителем. БЕЗ «РВАНОЙ РАНЫ» В ЧЕТВЁРКЕ БЕСПОЛЕЗЕН, и связка названа
     // данными (`combo`) — интерфейс обязан сказать это прямо, а логика

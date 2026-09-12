@@ -4405,16 +4405,11 @@ function tunedAbilityId(talent: TalentDef): string | undefined {
  * тихо разрешит новый повтор.
  */
 const TUNE_DUPLICATE_LEGACY: readonly string[] = [
-  // Два таланта Бдения ушли из списка вместе с пересборкой ветки: повторов
-  // там больше нет, а исключение, пережившее свою причину, тихо разрешало бы
-  // новый повтор. Сторож это и поймал.
-  'chase-twin-fang',
-  'leash-deep-skulk',
-  'leash-tireless-rally',
-  'leash-shadow-hound',
-  'trail-cheap-undercut',
-  'trail-tireless-flurry',
-  'trail-hunting-breath',
+  // ПУСТО, И ЭТО ИТОГ НОЧИ ВОСЬМИ ВЕТОК. Список держал пятнадцать талантов,
+  // которым разрешался повтор поля внутри ветки; все девять веток пересобраны,
+  // и ни одного повтора не осталось. Обратная проверка списка («числишься в
+  // исключениях, а нарушения нет») поймала их все до одного — без неё
+  // исключение молча разрешало бы НОВЫЙ повтор на том же id.
 ]
 
 function checkTalentTuneDuplicates(content: Content, report: Report): void {
