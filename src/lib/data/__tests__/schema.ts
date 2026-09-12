@@ -4408,12 +4408,6 @@ const TUNE_DUPLICATE_LEGACY: readonly string[] = [
   // Два таланта Бдения ушли из списка вместе с пересборкой ветки: повторов
   // там больше нет, а исключение, пережившее свою причину, тихо разрешало бы
   // новый повтор. Сторож это и поймал.
-  'sinew-swift-dig',
-  'sinew-lasting-dig',
-  'sinew-unbroken',
-  'instinct-endless-letting',
-  'instinct-restless',
-  'instinct-endless-roar',
   'chase-twin-fang',
   'leash-deep-skulk',
   'leash-tireless-rally',

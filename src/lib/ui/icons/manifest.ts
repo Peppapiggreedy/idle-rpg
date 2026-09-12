@@ -38,6 +38,8 @@ export const ICONS = {
   // выдаётся талантом.
   'ability-blunt-edge': { file: 'lorc/hammer-nails.svg', author: 'Lorc' },
   'ability-endless-reckoning': { file: 'lorc/guillotine.svg', author: 'Lorc' },
+  'ability-butcher': { file: 'lorc/meat-cleaver.svg', author: 'Lorc' },
+  'ability-call': { file: 'lorc/wolf-howl.svg', author: 'Lorc' },
   'ability-mend-wounds': { file: 'delapouite/first-aid-kit.svg', author: 'Delapouite' },
   'ability-shield-shove': { file: 'delapouite/shield-bash.svg', author: 'Delapouite' },
   'ability-rupture': { file: 'lorc/tearing.svg', author: 'Lorc' },
