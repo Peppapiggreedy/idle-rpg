@@ -108,7 +108,7 @@ export const BRANCHES: BranchDef[] = [
   { id: 'warden-bulwark', name: 'Оплот', classId: 'warden', style: 'survival', rows: 7, step: 10, cols: 5 },
   { id: 'warden-vigil', name: 'Бдение', classId: 'warden', style: 'autonomy', rows: 7, step: 10, cols: 5 },
   // --- Изувер: ярость, два клинка ---
-  { id: 'reaver-carnage', name: 'Резня', classId: 'reaver', style: 'damage', ...LADDER },
+  { id: 'reaver-carnage', name: 'Резня', classId: 'reaver', style: 'damage', rows: 7, step: 10, cols: 5 },
   { id: 'reaver-sinew', name: 'Жилы', classId: 'reaver', style: 'survival', ...LADDER },
   { id: 'reaver-instinct', name: 'Чутьё', classId: 'reaver', style: 'autonomy', ...LADDER },
   // --- Псарь: энергия, лёгкий клинок и пёс ---
@@ -1878,385 +1878,344 @@ const WARDEN_VIGIL = branch('warden-vigil', [
     },
   ],
 ])
-// ---------------------------------------------------------------------------
-// ИЗУВЕР
-// ---------------------------------------------------------------------------
-
-// Резня: тот же стиль, что и Гнев, но растёт в две руки — вместо ускорения
-// на четвёртом этаже стоит сила левой руки, и оба заряда-капстоуна другие.
-// ---------------------------------------------------------------------------
-// ИЗУВЕР
-// ---------------------------------------------------------------------------
-
-// РЕЗНЯ: ВСЁ ПРО УДАР И ПРО ТО, ЧЕМ ЕГО ОПЛАЧИВАЮТ.
+// РЕЗНЯ: СЕМЬ ЭТАЖЕЙ ПО ДЕСЯТЬ ОЧКОВ.
 //
-// Ветка была лестницей из тринадцати одиночных узлов — очки лились в
-// единственный доступный талант, и выбора не было ни на одном этаже. Теперь
-// на этаже двое-трое, ёмкость больше, чем очков у героя, и это и есть цена
-// выбора.
+// Первая ветка Изувера на новой форме. Ёмкость 112 при глубине 60.
 //
-// БОЛЬШЕ ПОЛОВИНЫ ТАЛАНТОВ ПРАВЯТ УМЕНИЯ, и это не украшение: у класса их
-// теперь одиннадцать, и ветка, состоящая из процентов, меняла бы ЧИСЛА, а не
-// ротацию. Ключевые этажи (5, 9, 13) — пары взаимоисключающих, и обе стороны
-// пары различаются РОДОМ, а не величиной.
+// ВЕТКА РЕЗНИ. Ярость у Изувера не валюта, а СОСТОЯНИЕ, и ветка растит именно
+// его: сколько ярости приходит с каждого взмаха, как высоко она забирается и
+// что герой с полной полоски получает. Вопрос класса — «в каком я сейчас» — и
+// столбцы разложены по нему: первый растит полоску и то, что от неё зависит,
+// второй — «Багровую грань» и «Бешенство», третий — «Потрошащий взмах»,
+// четвёртый — «Кровавое исступление» и «Расправу».
+//
+// СТОЛБЕЦ — ЭТО ПОЛОСА, и стрелка идёт по своей полосе прямой линией вниз.
 const REAVER_CARNAGE = branch('reaver-carnage', [
+  // --- ЭТАЖ 1 · порог 0 · с уровня 10 --------------------------------------
   [
     {
       id: 'carnage-bloodlust',
       name: 'Жажда крови',
-      icon: 'talent-honed-edge',
-      maxRank: 6,
-      col: 2,
+      icon: 'talent-strength',
+      maxRank: 5,
+      col: 1,
       effect: mods(m('attackPower', 'percent', 0.02)),
     },
-    {
-      id: 'carnage-quick-cleaver',
-      name: 'Скорый тесак',
-      icon: 'talent-firm-hand',
-      maxRank: 5,
-      col: 3,
-      effect: tunes('gut-rip', { field: 'cooldownSec', kind: 'percent', value: -0.06 }),
-    },
-  ],
-  [
-    {
-      id: 'carnage-predator-eye',
-      name: 'Хищный взгляд',
-      icon: 'talent-keen-eye',
-      maxRank: 6,
-      col: 2,
-      effect: mods(m('critChance', 'flat', 0.012)),
-    },
-    {
-      // ПЕРЕЦЕЛЕН, А НЕ УДАЛЁН. Талант правил урон КРОВОТЕЧЕНИЯ «Кровавого
-      // исступления»; кровотечение уехало Стражу вместе со всем механизмом
-      // меток, и правка стала правкой пустоты — тихой, потому что схема
-      // проверяла только имя поля. Теперь он правит РАЗГОН, то есть то, чем
-      // это умение стало: прирост за каждый свой удар.
-      id: 'carnage-deep-frenzy',
-      name: 'Глубокое исступление',
-      icon: 'talent-bleed-deep',
-      maxRank: 5,
-      col: 3,
-      effect: tunes('blood-frenzy', {
-        field: 'rampPerSwing',
-        kind: 'percent',
-        value: 0.08,
-      }),
-    },
-  ],
-  [
     {
       id: 'carnage-ferocity',
       name: 'Свирепость',
       icon: 'talent-savage-blows',
-      maxRank: 6,
-      col: 1,
-      effect: mods(m('critMultiplier', 'flat', 0.08)),
-    },
-    {
-      id: 'carnage-heavy-splitter',
-      name: 'Тяжёлый череполом',
-      icon: 'talent-heavy-shatter',
       maxRank: 5,
       col: 2,
-      effect: tunes('skull-splitter', {
-        field: 'weaponDamagePercent',
-        kind: 'percent',
-        value: 0.06,
-      }),
+      effect: mods(m('critMultiplier', 'flat', 0.03)),
     },
     {
-      id: 'carnage-thirsty-blade',
-      name: 'Жадный клинок',
-      icon: 'talent-deep-cut',
-      maxRank: 5,
-      col: 3,
-      effect: tunes('blood-thirst', {
-        field: 'weaponDamagePercent',
-        kind: 'percent',
-        value: 0.07,
-      }),
-    },
-  ],
-  [
-    {
-      id: 'carnage-offhand',
-      name: 'Левая рука',
-      icon: 'talent-offhand-mastery',
-      // Штраф левой руки — СТАТ, поэтому талант правит его модификатором.
-      // Со щитом или двуручным он не даёт ничего, и это честно.
-      maxRank: 6,
-      col: 1,
-      effect: mods(m('offhandPenalty', 'flat', 0.03)),
-    },
-    {
-      id: 'carnage-swift-cleaver',
-      name: 'Широкий тесак',
-      icon: 'talent-spare-edge',
-      maxRank: 5,
-      col: 3,
-      effect: tunes('gut-rip', { field: 'weaponDamagePercent', kind: 'percent', value: 0.05 }),
-      // Стрелка по смыслу: оба таланта про «Потрошащий взмах», и второй
-      // буквально дорабатывает первый — сперва чаще, потом сильнее.
-      requires: { talentId: 'carnage-quick-cleaver' },
-    },
-  ],
-  [
-    // 21-е очко, КЛЮЧЕВОЙ ЭТАЖ, И ОН ПЕРЕСОБРАН ЦЕЛИКОМ.
-    //
-    // Пара была такая: слева дешёвый удар НАЧИНАЛ КРОВИТЬ, справа
-    // кровотечение переставало ЖДАТЬ ЗАМАХА. Оба таланта — про метку на
-    // цели, то есть про механизм СТРАЖА, выданный Изуверу под другими
-    // именами; а после того как кровотечение уехало Стражу целиком, правый
-    // и вовсе стал ставить «мгновенное» умению, которое уже мгновенное.
-    // Ключевой этаж, где ОБА варианта ничего не делают, — худшее, что
-    // бывает с деревом: игрок платит 21 очко за выбор между двумя нулями.
-    //
-    // Новая пара — про СБРОС, главную кнопку класса, и различается она
-    // родом: слева меняется МОМЕНТ (автокаст ждёт почти полной полоски),
-    // справа — СПОСОБ (удар перестаёт ждать замаха). Числа тут ни при чём:
-    // при них ротация разная — редкие огромные удары против частых сразу.
-    {
-      id: 'carnage-bleeding-wound',
-      name: 'Полный размах',
-      icon: 'talent-bleed-deep',
-      maxRank: 1,
-      col: 2,
-      exclusiveGroup: 'carnage-key-5',
-      effect: tunes('skull-splitter', {
-        field: 'autocastResourceAbove',
-        kind: 'points',
-        value: 0.3,
-      }),
-    },
-    {
-      id: 'carnage-open-veins',
-      name: 'Рваный размах',
+      id: 'carnage-generous-rip',
+      name: 'Щедрый взмах',
       icon: 'talent-open-vein',
-      maxRank: 1,
+      maxRank: 3,
       col: 3,
-      exclusiveGroup: 'carnage-key-5',
-      effect: tunes('skull-splitter', { field: 'type', kind: 'set', value: 'instant' }),
+      effect: tunes('gut-rip', { field: 'generateResourceShare', kind: 'percent', value: 0.1 }),
+    },
+    {
+      id: 'carnage-deep-frenzy',
+      name: 'Глубокое исступление',
+      icon: 'talent-blood-charge',
+      maxRank: 3,
+      col: 4,
+      effect: tunes('blood-frenzy', { field: 'rampPerSwing', kind: 'percent', value: 0.1 }),
     },
   ],
+  // --- ЭТАЖ 2 · порог 10 · с уровня 20 -------------------------------------
   [
     {
-      id: 'carnage-wild-strength',
-      name: 'Дикая сила',
-      icon: 'talent-strength',
-      maxRank: 6,
-      col: 1,
-      // Процент, а не плоская сила: плоская прибавка к характеристике
-      // обесценивается к сотому уровню (см. TALENT_STAT_RULE).
-      effect: mods(m('attackPower', 'percent', 0.011)),
-    },
-    {
-      // Правил множитель детонации — детонация уехала Стражу. На месте того
-      // же умения теперь ГРАНЬ, и талант правит её силу.
-      id: 'carnage-hungry-tear',
-      name: 'Голодная грань',
-      icon: 'talent-full-rupture',
+      id: 'carnage-keen-eye',
+      name: 'Хищный взгляд',
+      icon: 'talent-keen-eye',
       maxRank: 5,
-      col: 2,
-      effect: tunes('sinew-tear', { field: 'edgeDamagePerShare', kind: 'percent', value: 0.06 }),
-    },
-    {
-      id: 'carnage-brutal-reckoning',
-      name: 'Жестокая расправа',
-      icon: 'talent-wide-mercy',
-      maxRank: 5,
-      col: 3,
-      effect: tunes('reckoning', { field: 'weaponDamagePercent', kind: 'percent', value: 0.07 }),
-    },
-  ],
-  [
-    {
-      id: 'carnage-beast-aim',
-      name: 'Звериный глазомер',
-      icon: 'talent-cold-blood',
-      maxRank: 6,
       col: 1,
       effect: mods(m('critChance', 'flat', 0.01)),
     },
     {
-      // ПОРОГ ДОБИВАНИЯ — В ПУНКТАХ: 20 % + 5 рангов по 2 = 30 %.
-      id: 'carnage-wide-reckoning',
-      name: 'Ранняя расправа',
-      icon: 'talent-quick-mercy',
+      // ЗАПАХ КРОВИ — ПРОК, И СОБЫТИЕ У НЕГО КРИТ, А НЕ «КРИТ ДАЁТ ЯРОСТЬ».
+      // Прибавка прока — обычный модификатор конвейера, то есть
+      // ХАРАКТЕРИСТИКА; «даёт пять ярости» характеристикой не выражается, и
+      // такой прок был бы виден тику и невидим модели.
+      id: 'carnage-blood-scent',
+      name: 'Запах крови',
+      icon: 'talent-cold-blood',
+      maxRank: 5,
+      col: 2,
+      effect: {
+        kind: 'flag',
+        flag: 'proc',
+        trigger: 'crit',
+        everyNth: 2,
+        effect: { kind: 'stat', stat: 'critMultiplier', value: 0.05, durationSec: 6 },
+      },
+    },
+    {
+      id: 'carnage-press',
+      name: 'Напор',
+      icon: 'talent-firm-hand',
       maxRank: 5,
       col: 3,
-      effect: tunes('reckoning', {
-        field: 'executeBelowHpShare',
-        kind: 'points',
-        value: 0.02,
-      }),
+      requires: { talentId: 'carnage-generous-rip', minRank: 2 },
+      effect: tunes('gut-rip', { field: 'weaponDamagePercent', kind: 'percent', value: 0.1 }),
+    },
+    {
+      id: 'carnage-full-frenzy',
+      name: 'Полное исступление',
+      icon: 'talent-blood-charge',
+      maxRank: 5,
+      col: 4,
+      requires: { talentId: 'carnage-deep-frenzy', minRank: 2 },
+      effect: tunes('blood-frenzy', { field: 'rampMaxShare', kind: 'percent', value: 0.1 }),
     },
   ],
+  // --- ЭТАЖ 3 · порог 20 · с уровня 30 · ПЕРВЫЙ ВЫБОР ----------------------
   [
     {
-      id: 'carnage-drive',
-      name: 'Напор',
+      id: 'carnage-rush',
+      name: 'Разгон резни',
       icon: 'talent-frenzy',
-      maxRank: 6,
-      col: 2,
+      maxRank: 5,
+      col: 1,
       effect: mods(m('haste', 'flat', 0.01)),
     },
     {
-      id: 'carnage-long-roar',
-      name: 'Долгий рёв',
-      icon: 'talent-long-focus',
-      maxRank: 5,
-      col: 3,
-      effect: tunes('blood-roar', { field: 'windowDurationSec', kind: 'percent', value: 0.08 }),
-    },
-  ],
-  [
-    // 41-е очко, КЛЮЧЕВОЙ ЭТАЖ. Слева ПРОК (иногда бьёшь дважды), справа —
-    // снятие ожидания замаха у детонатора. Первое добавляет ударов, второе
-    // переставляет их во времени: разные роды, а не разные числа.
-    {
-      id: 'carnage-blade-storm',
-      name: 'Буря клинков',
-      icon: 'talent-double-strike',
+      // ТУПАЯ СТОРОНА — ЗАМЕНА УМЕНИЯ ЦЕЛИКОМ. `spendAll` не поле, а ФОРМА
+      // умения: правкой из `ABILITY_TUNABLE` «тратит всё» в «тратит сорок» не
+      // превратить. «Обух» бьёт сразу, стоит фиксированно и входит в каждый
+      // цикл — удар «всё или ничего» становится ротацией.
+      id: 'carnage-blunt-side',
+      name: 'Тупая сторона',
+      icon: 'ability-blunt-edge',
       maxRank: 1,
       col: 2,
-      exclusiveGroup: 'carnage-key-9',
-      effect: { kind: 'flag', flag: 'double-strike', chance: 0.12 },
+      exclusiveGroup: 'carnage-key-3',
+      effect: { kind: 'flag', flag: 'replace-ability', from: 'skull-splitter', to: 'blunt-edge' },
     },
     {
-      // Ставил «мгновенное» умению, которое стало мгновенным само: после
-      // переделки правая половина ключевого этажа не делала НИЧЕГО. Теперь
-      // она опускает порог ГРАНИ на двадцать пять пунктов — состояние
-      // начинает платить почти сразу и держится всё время, но каждая
-      // единица ярости в нём стоит меньше. Против «Бури клинков» это выбор
-      // рода: лишние замахи рулеткой против ровной прибавки от полоски.
-      id: 'carnage-frenzied-tear',
-      name: 'Через край',
-      icon: 'talent-rupture',
-      maxRank: 1,
+      id: 'carnage-often-rip',
+      name: 'Частый взмах',
+      icon: 'talent-quick-hands',
+      maxRank: 5,
       col: 3,
-      exclusiveGroup: 'carnage-key-9',
-      effect: tunes('sinew-tear', {
-        field: 'edgeResourceAbove',
-        kind: 'points',
-        value: -0.25,
-      }),
+      requires: { talentId: 'carnage-press', minRank: 3 },
+      effect: tunes('gut-rip', { field: 'cooldownSec', kind: 'percent', value: -0.1 }),
+    },
+    {
+      id: 'carnage-long-frenzy',
+      name: 'Долгое исступление',
+      icon: 'talent-blood-charge',
+      maxRank: 5,
+      col: 4,
+      requires: { talentId: 'carnage-full-frenzy', minRank: 3 },
+      effect: tunes('blood-frenzy', { field: 'rampDurationSec', kind: 'percent', value: 0.15 }),
+    },
+    {
+      // ПАРА РАЗВЕДЕНА РОДОМ: сосед меняет, ЧЕМ герой бьёт, а «По живому»
+      // меняет, КОГДА он бьёт сильнее всего — окно открывается только на
+      // израненной цели, то есть в последней трети схватки.
+      id: 'carnage-on-the-quick',
+      name: 'По живому',
+      icon: 'talent-bleed-deep',
+      maxRank: 1,
+      col: 5,
+      exclusiveGroup: 'carnage-key-3',
+      effect: {
+        kind: 'flag',
+        flag: 'proc',
+        trigger: 'crit',
+        when: { kind: 'target-below', share: 0.5 },
+        effect: { kind: 'stat', stat: 'critChance', value: 0.15, durationSec: 6 },
+      },
     },
   ],
+  // --- ЭТАЖ 4 · порог 30 · с уровня 40 -------------------------------------
   [
     {
+      id: 'carnage-heavy-skull',
+      name: 'Тяжёлый череп',
+      icon: 'talent-heavy-shatter',
+      maxRank: 5,
+      col: 1,
+      effect: tunes('skull-splitter', {
+        field: 'weaponDamageFromResource',
+        kind: 'percent',
+        value: 0.1,
+      }),
+    },
+    {
+      id: 'carnage-sharp-edge',
+      name: 'Острая грань',
+      icon: 'talent-honed-edge',
+      maxRank: 5,
+      col: 2,
+      effect: tunes('sinew-tear', { field: 'edgeDamagePerShare', kind: 'percent', value: 0.1 }),
+    },
+    {
+      id: 'carnage-early-reckoning',
+      name: 'Ранняя расправа',
+      icon: 'talent-wide-mercy',
+      maxRank: 3,
+      col: 3,
+      effect: tunes('reckoning', { field: 'executeBelowHpShare', kind: 'points', value: 0.03 }),
+    },
+    {
+      // ЕДИНСТВЕННЫЙ ТАЛАНТ ВЕТКИ В ДВА РАНГА — прок, потому что прок
+      // единственный из флагов читает ранг.
+      id: 'carnage-butchery',
+      name: 'Разгон бойни',
+      icon: 'talent-restless-legs',
+      maxRank: 2,
+      col: 4,
+      effect: {
+        kind: 'flag',
+        flag: 'proc',
+        trigger: 'hit',
+        everyNth: 3,
+        effect: { kind: 'stat', stat: 'haste', value: 0.05, durationSec: 5 },
+      },
+    },
+    {
+      id: 'carnage-fed-reckoning',
+      name: 'Сытая расправа',
+      icon: 'talent-kill-refund',
+      maxRank: 5,
+      col: 5,
+      effect: tunes('reckoning', { field: 'refundResourceShare', kind: 'percent', value: 0.12 }),
+    },
+  ],
+  // --- ЭТАЖ 5 · порог 40 · с уровня 50 · ВТОРОЙ ВЫБОР ----------------------
+  [
+    {
+      id: 'carnage-swift-skull',
+      name: 'Скорый череп',
+      icon: 'talent-swift-shatter',
+      maxRank: 5,
+      col: 1,
+      requires: { talentId: 'carnage-heavy-skull', minRank: 3 },
+      effect: tunes('skull-splitter', { field: 'cooldownSec', kind: 'percent', value: -0.1 }),
+    },
+    {
+      // ЗДЕСЬ ДОЛЖНО БЫЛО СТОЯТЬ ПРОБИВАНИЕ БРОНИ, И ЕГО НЕТ ПО ТОЙ ЖЕ
+      // ПРИЧИНЕ, ЧТО У ГНЕВА: у мобов брони нет вовсе, стат был бы мёртвым.
+      // Место занял узел, которого у Изувера и не хватало: он единственный
+      // класс с ДВУМЯ клинками, а сила левой руки не росла у него ничем.
+      // `offhandPenalty` — доля (`share`), поэтому плоская прибавка законна.
       id: 'carnage-second-hand',
       name: 'Вторая рука',
       icon: 'talent-offhand-mastery',
       maxRank: 5,
-      col: 1,
+      col: 2,
       effect: mods(m('offhandPenalty', 'flat', 0.02)),
     },
     {
-      // Правил ЦЕНУ Череполома. Своей цены у него больше нет вовсе — он
-      // тратит всю полоску, — и скидка в −7 % от нуля была нулём. Талант
-      // переехал к грани, к соседу по столбцу, и стрелка вслед за ним.
-      id: 'carnage-cheap-splitter',
-      name: 'Затяжная грань',
-      icon: 'talent-thrift-shatter',
-      maxRank: 5,
-      col: 2,
-      effect: tunes('sinew-tear', { field: 'edgeDurationSec', kind: 'percent', value: 0.09 }),
-      requires: { talentId: 'carnage-hungry-tear' },
-    },
-    {
-      // Правил число тиков кровотечения — теперь правит то, что от «долгого»
-      // и осталось: сколько секунд держится разгон.
-      id: 'carnage-deeper-frenzy',
-      name: 'Долгое исступление',
-      icon: 'talent-open-wound',
-      maxRank: 3,
-      col: 3,
-      effect: tunes('blood-frenzy', { field: 'rampDurationSec', kind: 'percent', value: 0.2 }),
-      requires: { talentId: 'carnage-deep-frenzy' },
-    },
-  ],
-  [
-    {
-      id: 'carnage-onslaught',
-      name: 'Натиск',
-      icon: 'talent-relentless',
-      maxRank: 6,
-      col: 2,
-      effect: mods(m('attackPower', 'percent', 0.012)),
-    },
-    {
-      id: 'carnage-swift-splitter',
-      name: 'Скорый череполом',
-      icon: 'talent-swift-shatter',
+      id: 'carnage-low-edge',
+      name: 'Низкая грань',
+      icon: 'talent-spare-edge',
       maxRank: 5,
       col: 3,
-      effect: tunes('skull-splitter', { field: 'cooldownSec', kind: 'percent', value: -0.06 }),
-    },
-  ],
-  [
-    {
-      id: 'carnage-blood-charge',
-      name: 'Кровавый разгон',
-      icon: 'talent-blood-charge',
-      maxRank: 5,
-      col: 1,
-      effect: mods(m('haste', 'flat', 0.012)),
+      effect: tunes('sinew-tear', { field: 'edgeResourceAbove', kind: 'points', value: -0.03 }),
     },
     {
-      id: 'carnage-fierce-berserk',
-      name: 'Лютое бешенство',
-      icon: 'talent-hard-stance',
-      maxRank: 5,
-      col: 2,
-      // Доля стойки отрицательная (урон ВЫШЕ), и процент её усиливает —
-      // знак при этом не меняется, обмен остаётся обменом.
-      effect: tunes('berserk', { field: 'stanceDamageShare', kind: 'percent', value: 0.08 }),
+      // САМО СОБОЙ — узел, освобождающий слот: «Кровавое исступление» уходит
+      // из четвёрки и играется само, по своим же порогам автокаста.
+      id: 'carnage-by-itself',
+      name: 'Само собой',
+      icon: 'talent-quick-hands',
+      maxRank: 1,
+      col: 4,
+      exclusiveGroup: 'carnage-key-5',
+      effect: { kind: 'flag', flag: 'auto-ability', abilityId: 'blood-frenzy' },
     },
-  ],
-  [
-    // 61-е очко, ВЕНЕЦ. Слева расправа становится двигателем ротации: вдвое
-    // чаще и вдвое щедрее на ярость. Справа бешенство становится почти
-    // постоянным. Первое про ХВОСТ боя, второе про весь бой целиком.
     {
-      id: 'carnage-carnage',
-      name: 'Резня',
+      // ПАРА РАЗВЕДЕНА РОДОМ: сосед отдаёт слот, а «Второй череп» его не
+      // трогает и меняет РИТМ — козырь копит два заряда и уходит связкой.
+      id: 'carnage-second-skull',
+      name: 'Второй череп',
       icon: 'talent-second-charge',
       maxRank: 1,
-      col: 2,
-      exclusiveGroup: 'carnage-key-13',
-      // ВТОРОЙ ЗАРЯД ДОБИВАНИЯ. Хвост боя срезается дважды подряд, и ярость
-      // возвращается дважды — на следующий бой герой входит не пустым.
+      col: 5,
+      exclusiveGroup: 'carnage-key-5',
       effect: {
         kind: 'flag',
         flag: 'ability-extra-charge',
-        abilityId: 'reckoning',
+        abilityId: 'skull-splitter',
         extraCharges: 1,
       },
     },
+  ],
+  // --- ЭТАЖ 6 · порог 50 · с уровня 60 -------------------------------------
+  [
     {
-      id: 'carnage-red-haze',
-      name: 'Багровая пелена',
-      icon: 'talent-long-stance',
+      id: 'carnage-heavy-reckoning',
+      name: 'Тяжёлая расправа',
+      icon: 'talent-quick-mercy',
+      maxRank: 5,
+      col: 1,
+      effect: tunes('reckoning', { field: 'weaponDamagePercent', kind: 'percent', value: 0.15 }),
+    },
+    {
+      id: 'carnage-long-edge',
+      name: 'Долгая грань',
+      icon: 'talent-long-focus',
+      maxRank: 5,
+      col: 2,
+      effect: tunes('sinew-tear', { field: 'edgeDurationSec', kind: 'percent', value: 0.15 }),
+    },
+    {
+      id: 'carnage-cheap-edge',
+      name: 'Дешёвая грань',
+      icon: 'talent-thrift-rupture',
+      maxRank: 5,
+      col: 3,
+      effect: tunes('sinew-tear', { field: 'manaCost', kind: 'percent', value: -0.1 }),
+    },
+    {
+      id: 'carnage-red-grin',
+      name: 'Хищный оскал',
+      icon: 'talent-fangs-of-old',
+      maxRank: 5,
+      col: 4,
+      effect: mods(m('critChance', 'flat', 0.01)),
+    },
+  ],
+  // --- ЭТАЖ 7 · порог 60 · с уровня 70 · ВЕНЕЦ -----------------------------
+  [
+    {
+      id: 'carnage-endless-reckoning',
+      name: 'Расправа без конца',
+      icon: 'ability-endless-reckoning',
+      maxRank: 1,
+      col: 1,
+      exclusiveGroup: 'carnage-key-7',
+      requires: { talentId: 'carnage-heavy-reckoning', minRank: 3 },
+      effect: { kind: 'flag', flag: 'grant-ability', abilityId: 'endless-reckoning' },
+    },
+    {
+      // КРАСНАЯ ПЕЛЕНА — ПАССИВНЫЙ ВЕНЕЦ: слота не занимает, и потому это
+      // ДОЛЯ, а не состояние. «На полной ярости бьёшь дважды» требовало бы
+      // условия по СВОЕЙ полоске, которого в игре нет ни у прока, ни у
+      // модификатора; четверть автоатак дважды модель считает честно.
+      // ОПОРА ВЕНЦА — УЗЕЛ ЕГО СОБСТВЕННОЙ СБОРКИ. Стояла «Долгая грань»
+      // («Багровая грань»), которой в четвёрке этого пути нет вовсе: путь
+      // тратил на опору пять очков в пустоту и приходил к венцу слабее, чем
+      // ушёл. Опора обязана лежать в той полосе, которой путь и играет.
+      id: 'carnage-red-veil',
+      name: 'Красная пелена',
+      icon: 'talent-double-strike',
       maxRank: 1,
       col: 3,
-      exclusiveGroup: 'carnage-key-13',
-      effect: tunes(
-        'berserk',
-        { field: 'stanceDurationSec', kind: 'multiplier', value: 2 },
-        { field: 'cooldownSec', kind: 'multiplier', value: 0.6 },
-      ),
+      exclusiveGroup: 'carnage-key-7',
+      requires: { talentId: 'carnage-often-rip', minRank: 3 },
+      effect: { kind: 'flag', flag: 'double-strike', chance: 0.25 },
     },
   ],
 ])
 
-// ЖИЛЫ: ЧЕМ ДОЛЬШЕ СТОИШЬ, ТЕМ ДЕШЕВЛЕ СТОЯТЬ.
-//
-// Ветка живучести класса, у которого нет ни лечащего умения, ни налива
-// ресурса привалом: держится он тем, что БЬЁТ (вампиризм) и тем, что
-// НЕ УХОДИТ (упор). Отсюда и наполнение — половина талантов правит именно
-// эти два умения.
 const REAVER_SINEW = branch('reaver-sinew', [
   [
     {
@@ -4382,73 +4341,125 @@ const BRANCH_PATHS: Partial<Record<BranchId, TalentPath[]>> = {
   ],
   'reaver-carnage': [
     {
-      // КРОВЬ. Дешёвый удар учится кровить, автоатака иногда бьёт дважды,
-      // добивание получает второй заряд. Урон идёт РОВНО.
+      // КРОВЬ. Четвёрка по умолчанию — первый путь ветки это прибор. Ставка
+      // на взмах и разгон: полоска наливается быстрее, держится выше и
+      // дольше, «Череполом» копит второй заряд, а венец удваивает четверть
+      // автоатак.
+      //
+      // ПОРЯДОК ЧИТАЕТСЯ ВМЕСТЕ С ЧЕТВЁРКОЙ. «Багровая грань», «Расправа» и
+      // «Обух» в ней не стоят, значит их настройки не делают НИЧЕГО и лежат
+      // в хвосте, куда шестьдесят пять очков не доходят.
       id: 'carnage-blood',
       name: 'Кровь',
-      abilities: ['gut-rip', 'blood-letting', 'blood-frenzy', 'blood-thirst'],
+      abilities: ['gut-rip', 'blood-frenzy', 'blood-thirst', 'skull-splitter'],
       order: [
-        'carnage-bleeding-wound',
-        'carnage-blade-storm',
-        'carnage-carnage',
-        'carnage-bloodlust',
-        'carnage-quick-cleaver',
-        'carnage-predator-eye',
+        // Опора венца — первой: она же и полезна пути.
+        'carnage-generous-rip',
+        'carnage-press',
+        'carnage-often-rip',
+        'carnage-on-the-quick',
+        'carnage-second-skull',
+        'carnage-red-veil',
         'carnage-deep-frenzy',
-        'carnage-ferocity',
-        'carnage-heavy-splitter',
-        'carnage-thirsty-blade',
-        'carnage-offhand',
-        'carnage-swift-cleaver',
-        'carnage-wild-strength',
-        'carnage-hungry-tear',
-        'carnage-brutal-reckoning',
-        'carnage-beast-aim',
-        'carnage-wide-reckoning',
-        'carnage-drive',
-        'carnage-long-roar',
+        'carnage-full-frenzy',
+        'carnage-long-frenzy',
+        'carnage-heavy-skull',
+        'carnage-swift-skull',
+        'carnage-bloodlust',
         'carnage-second-hand',
-        'carnage-cheap-splitter',
-        'carnage-deeper-frenzy',
-        'carnage-onslaught',
-        'carnage-swift-splitter',
-        'carnage-blood-charge',
-        'carnage-fierce-berserk',
+        'carnage-ferocity',
+        'carnage-keen-eye',
+        'carnage-red-grin',
+        'carnage-rush',
+        'carnage-blood-scent',
+        'carnage-butchery',
+        'carnage-sharp-edge',
+        'carnage-low-edge',
+        'carnage-long-edge',
+        'carnage-cheap-edge',
+        'carnage-early-reckoning',
+        'carnage-fed-reckoning',
+        'carnage-heavy-reckoning',
       ],
     },
     {
-      // ЯРОСТЬ. Кровотечение и разрыв перестают ждать замаха, бешенство
-      // держится почти постоянно. Урон идёт ВСПЛЕСКАМИ, и четвёрка другая.
-      id: 'carnage-fury',
-      name: 'Ярость',
-      abilities: ['gut-rip', 'blood-letting', 'reckoning', 'berserk'],
+      // РАСПРАВА. Венец занимает слот, и четвёрка его несёт. «Кровавое
+      // исступление» при этом играется САМО («Само собой»), то есть слот под
+      // венец освобождает именно оно — обмен виден целиком.
+      id: 'carnage-reckoning-path',
+      name: 'Расправа',
+      abilities: ['endless-reckoning', 'gut-rip', 'sinew-tear', 'blood-thirst'],
       order: [
-        'carnage-open-veins',
-        'carnage-frenzied-tear',
-        'carnage-red-haze',
+        // ОПОРА ВЕНЦА КУПЛЕНА, А ОСТАЛЬНЫЕ НАСТРОЙКИ «РАСПРАВЫ» — В ХВОСТЕ, И
+        // ЭТО НЕ НЕБРЕЖНОСТЬ. «Расправа без конца» — ОТДЕЛЬНОЕ УМЕНИЕ со
+        // своим id: таланты, правящие `reckoning`, до него не достают. Опора
+        // стоит здесь потому, что её требует стрелка, а не потому, что она
+        // работает.
+        'carnage-heavy-reckoning',
+        'carnage-on-the-quick',
+        'carnage-by-itself',
+        'carnage-endless-reckoning',
+        'carnage-sharp-edge',
+        'carnage-low-edge',
+        'carnage-long-edge',
+        'carnage-cheap-edge',
+        'carnage-generous-rip',
+        'carnage-press',
+        'carnage-often-rip',
         'carnage-bloodlust',
-        'carnage-quick-cleaver',
-        'carnage-predator-eye',
-        'carnage-deep-frenzy',
-        'carnage-ferocity',
-        'carnage-heavy-splitter',
-        'carnage-thirsty-blade',
-        'carnage-offhand',
-        'carnage-swift-cleaver',
-        'carnage-wild-strength',
-        'carnage-hungry-tear',
-        'carnage-brutal-reckoning',
-        'carnage-beast-aim',
-        'carnage-wide-reckoning',
-        'carnage-drive',
-        'carnage-long-roar',
         'carnage-second-hand',
-        'carnage-cheap-splitter',
-        'carnage-deeper-frenzy',
-        'carnage-onslaught',
-        'carnage-swift-splitter',
-        'carnage-blood-charge',
-        'carnage-fierce-berserk',
+        'carnage-ferocity',
+        'carnage-keen-eye',
+        'carnage-red-grin',
+        'carnage-rush',
+        'carnage-blood-scent',
+        'carnage-butchery',
+        'carnage-deep-frenzy',
+        'carnage-full-frenzy',
+        'carnage-long-frenzy',
+        'carnage-heavy-skull',
+        'carnage-swift-skull',
+        'carnage-early-reckoning',
+        'carnage-fed-reckoning',
+      ],
+    },
+    {
+      // ОБУХ. Третий путь существует ради замены: «Череполом» перестаёт быть
+      // ударом «всё или ничего» и входит в каждый цикл. Четвёрка та же, что у
+      // «Крови», — играется в ней ДРУГОЕ умение под тем же слотом, и именно
+      // это замена и значит.
+      id: 'carnage-blunt-path',
+      name: 'Обух',
+      // ЧЕТВЁРКА БЕЗ «ИССТУПЛЕНИЯ»: его отдаёт «Само собой», и освободившийся
+      // слот занят «Багровой гранью». Ради этого узел и берут.
+      abilities: ['gut-rip', 'sinew-tear', 'blood-thirst', 'skull-splitter'],
+      order: [
+        'carnage-generous-rip',
+        'carnage-press',
+        'carnage-often-rip',
+        'carnage-blunt-side',
+        'carnage-second-skull',
+        'carnage-red-veil',
+        'carnage-heavy-skull',
+        'carnage-swift-skull',
+        'carnage-deep-frenzy',
+        'carnage-full-frenzy',
+        'carnage-long-frenzy',
+        'carnage-bloodlust',
+        'carnage-second-hand',
+        'carnage-ferocity',
+        'carnage-keen-eye',
+        'carnage-red-grin',
+        'carnage-rush',
+        'carnage-blood-scent',
+        'carnage-butchery',
+        'carnage-sharp-edge',
+        'carnage-low-edge',
+        'carnage-long-edge',
+        'carnage-cheap-edge',
+        'carnage-early-reckoning',
+        'carnage-fed-reckoning',
+        'carnage-heavy-reckoning',
       ],
     },
   ],

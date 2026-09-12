@@ -34,6 +34,10 @@ export const ICONS = {
   'ability-shield-jab': { file: 'delapouite/shield-impact.svg', author: 'Delapouite' },
   // Венец Бдения — умение от таланта: разом наливает треть запаса.
   'ability-second-wind': { file: 'delapouite/lungs.svg', author: 'Delapouite' },
+  // Венцы Изувера: «Обух» подменяет «Череполом», «Расправа без конца»
+  // выдаётся талантом.
+  'ability-blunt-edge': { file: 'lorc/hammer-nails.svg', author: 'Lorc' },
+  'ability-endless-reckoning': { file: 'lorc/guillotine.svg', author: 'Lorc' },
   'ability-mend-wounds': { file: 'delapouite/first-aid-kit.svg', author: 'Delapouite' },
   'ability-shield-shove': { file: 'delapouite/shield-bash.svg', author: 'Delapouite' },
   'ability-rupture': { file: 'lorc/tearing.svg', author: 'Lorc' },

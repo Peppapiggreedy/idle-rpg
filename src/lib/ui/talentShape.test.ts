@@ -61,7 +61,7 @@ describe('форма ветки — данные', () => {
   // ПЕРЕЕХАВШИЕ ВЕТКИ ПЕРЕЧИСЛЕНЫ ПОИМЁННО, И СПИСОК РАСТЁТ ПО ОДНОЙ СТРОКЕ
   // НА СТАДИЮ. Так «недоехало» не выглядит как «сломано»: ветка, переехавшая
   // молча, роняет вторую проверку, а забытая в списке — первую.
-  const MIGRATED = ['warden-wrath', 'warden-bulwark', 'warden-vigil']
+  const MIGRATED = ['warden-wrath', 'warden-bulwark', 'warden-vigil', 'reaver-carnage']
 
   it('переехавшие: семь этажей по десять очков, пять столбцов', () => {
     for (const id of MIGRATED) {
