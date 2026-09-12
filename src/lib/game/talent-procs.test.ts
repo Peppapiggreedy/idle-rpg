@@ -53,7 +53,11 @@ describe('прок — данные, а не механика таланта', (
     for (const talent of PROC_TALENTS) {
       const proc = procOf(talent.id)
       expect(proc.trigger, talent.id).toBeTruthy()
-      expect(proc.effect.value, talent.id).toBeGreaterThan(0)
+      // НЕ НОЛЬ, А НЕ «БОЛЬШЕ НУЛЯ»: у `regenDelay` и `restDuration` лучше
+      // МЕНЬШЕ, и прибавка к ним отрицательная. Смысл проверки — «прок обязан
+      // что-то менять»; знак ей предписывать нечем (тот же довод записан у
+      // самой проверки в `data/__tests__/schema.ts`).
+      expect(proc.effect.value, talent.id).not.toBe(0)
     }
   })
 

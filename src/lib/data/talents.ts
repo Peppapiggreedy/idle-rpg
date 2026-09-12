@@ -106,7 +106,7 @@ export const BRANCHES: BranchDef[] = [
   // на этажи 3, 5 и 7 сами собой — ровно туда, где стоят пары выбора.
   { id: 'warden-wrath', name: 'Гнев', classId: 'warden', style: 'damage', rows: 7, step: 10, cols: 5 },
   { id: 'warden-bulwark', name: 'Оплот', classId: 'warden', style: 'survival', rows: 7, step: 10, cols: 5 },
-  { id: 'warden-vigil', name: 'Бдение', classId: 'warden', style: 'autonomy', ...LADDER },
+  { id: 'warden-vigil', name: 'Бдение', classId: 'warden', style: 'autonomy', rows: 7, step: 10, cols: 5 },
   // --- Изувер: ярость, два клинка ---
   { id: 'reaver-carnage', name: 'Резня', classId: 'reaver', style: 'damage', ...LADDER },
   { id: 'reaver-sinew', name: 'Жилы', classId: 'reaver', style: 'survival', ...LADDER },
@@ -1555,92 +1555,121 @@ const WARDEN_BULWARK = branch('warden-bulwark', [
   ],
 ])
 
-// БДЕНИЕ: ВСЁ ПРО ПАУЗЫ — И ТЕПЕРЬ ЭТО ВЫБОР.
+// БДЕНИЕ: СЕМЬ ЭТАЖЕЙ ПО ДЕСЯТЬ ОЧКОВ.
 //
-// Ветка ничего не добавляет к удару и почти ничего к запасу HP: её вклад в
-// том, что герой реже ОСТАНАВЛИВАЕТСЯ. Прежние тринадцать талантов правили
-// только числа пауз — реген, задержку, длину привала. Половина ветки теперь
-// правит ЭКОНОМИКУ РОТАЦИИ: цену умений, откат «Сосредоточения» и жизнь
-// «Клейма», то есть то, из-за чего паузы вообще случаются.
+// Третья ветка Стража на новой форме, и с ней класс становится ПЕРВЫМ, у кого
+// все три ветки устроены одинаково. Ёмкость 112 при глубине 60.
 //
-// ТАЛАНТ, БЬЮЩИЙ ПО ПРИЧИНЕ ОБЯЗАТЕЛЬНОСТИ УМЕНИЯ, здесь «Полный разрыв».
-// «Сокрушение» стоит в четвёрке потому, что незаменимо: 5.0 удара оружия —
-// вдвое больше следующего. «Разрыв» со «Рваной раной» бьёт всплеском тоже,
-// но множитель детонации 1.5 не догоняет; три ранга доводят его до 2.2, и
-// связка становится вторым ответом на тот же вопрос.
+// ВЕТКА БДЕНИЯ. Игра идёт, пока игрока нет, и вопрос у ветки один: сколько
+// времени герой тратит ВПУСТУЮ. Она ничего не добавляет к удару и почти
+// ничего к запасу — она сокращает паузы: цену ротации (из-за неё кончается
+// мана), длину привала и то, что привал отнимает.
 //
-// Числа срезаны множителем 0.586 — тем же, что в Гневе и Оплоте.
+// ЧЕМ МЕРЯЕТСЯ ВЕТКА, ТЕМ И НАБИТА. Ось автономности — «во сколько срезан
+// простой», и срезают его РОВНО ДВА рода узлов: длина привала (`restDuration`,
+// флаг `shorter-rest`) и то, из-за чего привал случается, — цена умений
+// против прихода маны. Прежняя ветка этого не различала: путь «Клеймо» состоял
+// из настроек клейма и не трогал паузы ВОВСЕ, отчего и стоял красным на 1.05
+// при ленте 1.2. Теперь узлы привала лежат в обоих путях, а не в одном.
+//
+// СТОЛБЕЦ — ЭТО ПОЛОСА: первый — запас и привал, второй — восстановление и
+// «Сосредоточение», третий и четвёртый — цена конкретных умений.
 const WARDEN_VIGIL = branch('warden-vigil', [
+  // --- ЭТАЖ 1 · порог 0 · с уровня 10 --------------------------------------
   [
     {
       id: 'vigil-steady-breath',
       name: 'Ровное дыхание',
       icon: 'talent-steady-breath',
-      maxRank: 6,
-      col: 2,
-      // Плоское восстановление ресурса отстаёт от уровня (38.7/с на 25-м
-      // против 120.0/с на сотом), поэтому процент; замер на 55-м (72.5/с).
-      effect: mods(m('manaRegen', 'percent', 0.0123)),
+      maxRank: 5,
+      col: 1,
+      effect: mods(m('manaRegen', 'percent', 0.1)),
     },
     {
-      // «Сосредоточение» — откат 45 секунд, самый длинный у класса, и вся
-      // его ценность ЧУЖАЯ: три бесплатных применения. Пять рангов срезают
-      // ожидание на треть.
-      id: 'vigil-quick-focus',
-      name: 'Скорое сосредоточение',
-      icon: 'talent-quick-focus',
+      id: 'vigil-deep-well',
+      name: 'Глубокий колодец',
+      icon: 'talent-deep-well',
       maxRank: 5,
+      col: 2,
+      effect: mods(m('maxMana', 'percent', 0.1)),
+    },
+    {
+      id: 'vigil-thrift-strike',
+      name: 'Бережливый выпад',
+      icon: 'talent-spare-edge',
+      maxRank: 3,
+      col: 3,
+      effect: tunes('quick-strike', { field: 'manaCost', kind: 'percent', value: -0.1 }),
+    },
+    {
+      id: 'vigil-thrift-wound',
+      name: 'Бережливая рана',
+      icon: 'talent-thrift-wound',
+      maxRank: 3,
       col: 4,
-      effect: tunes('focus', { field: 'cooldownSec', kind: 'percent', value: -0.06 }),
+      effect: tunes('rending-wound', { field: 'manaCost', kind: 'percent', value: -0.1 }),
     },
   ],
+  // --- ЭТАЖ 2 · порог 10 · с уровня 20 -------------------------------------
   [
     {
       id: 'vigil-clear-mind',
       name: 'Ясный ум',
       icon: 'talent-clear-mind',
-      // Пауза регенерации — стат: конвейер обрежет её по нулю, в минус не уйдёт.
-      maxRank: 6,
-      col: 2,
-      effect: mods(m('regenDelay', 'flat', -0.176)),
-    },
-    {
-      id: 'vigil-long-brand',
-      name: 'Долгое клеймо',
-      icon: 'talent-long-brand',
       maxRank: 5,
       col: 1,
-      effect: tunes('brand', { field: 'brandDurationSec', kind: 'percent', value: 0.08 }),
+      effect: mods(m('regenDelay', 'flat', -0.2)),
     },
-  ],
-  [
     {
-      id: 'vigil-deep-well',
-      name: 'Глубокий колодец',
-      icon: 'talent-deep-well',
-      // Запас важнее регена: пауза платится один раз за всплеск, и чем глубже
-      // запас, тем реже она приходит.
-      maxRank: 6,
+      id: 'vigil-long-mind',
+      name: 'Долгий настрой',
+      icon: 'talent-long-mind',
+      maxRank: 5,
       col: 2,
-      effect: mods(m('maxMana', 'percent', 0.0586)),
+      effect: tunes('focus', { field: 'freeCastsCasts', kind: 'percent', value: 0.2 }),
     },
     {
-      id: 'vigil-thrift-rupture',
-      name: 'Скупой разрыв',
-      icon: 'talent-thrift-rupture',
+      id: 'vigil-short-strike',
+      name: 'Выпад накоротке',
+      icon: 'talent-quick-hands',
       maxRank: 5,
       col: 3,
-      effect: tunes('rupture', { field: 'manaCost', kind: 'percent', value: -0.08 }),
+      requires: { talentId: 'vigil-thrift-strike', minRank: 2 },
+      effect: tunes('quick-strike', { field: 'cooldownSec', kind: 'percent', value: -0.1 }),
+    },
+    {
+      id: 'vigil-often-wound',
+      name: 'Частая рана',
+      icon: 'talent-open-wound',
+      maxRank: 5,
+      col: 4,
+      requires: { talentId: 'vigil-thrift-wound', minRank: 2 },
+      effect: tunes('rending-wound', { field: 'cooldownSec', kind: 'percent', value: -0.1 }),
     },
   ],
+  // --- ЭТАЖ 3 · порог 20 · с уровня 30 · ПЕРВЫЙ ВЫБОР ----------------------
+  //
+  // ВЫБОР РАЗВЕДЁН РОДОМ: «Трофейный дух» ускоряет ротацию ПО ХОДУ ФАРМА
+  // (каждое убийство сбрасывает часть откатов), «Привычная рука» ОТДАЁТ СЛОТ
+  // — заполнитель уходит из четвёрки и жмётся сам. Первое меняет темп,
+  // второе — состав.
   [
     {
       id: 'vigil-quick-camp',
       name: 'Скорый привал',
       icon: 'talent-quick-camp',
-      maxRank: 6,
+      maxRank: 5,
+      col: 1,
+      effect: mods(m('restDuration', 'flat', -0.2)),
+    },
+    {
+      id: 'vigil-quick-focus',
+      name: 'Скорое сосредоточение',
+      icon: 'talent-quick-focus',
+      maxRank: 5,
       col: 2,
-      effect: mods(m('restDuration', 'flat', -0.293)),
+      requires: { talentId: 'vigil-long-mind', minRank: 3 },
+      effect: tunes('focus', { field: 'cooldownSec', kind: 'percent', value: -0.1 }),
     },
     {
       id: 'vigil-thrift-shatter',
@@ -1648,225 +1677,207 @@ const WARDEN_VIGIL = branch('warden-vigil', [
       icon: 'talent-thrift-shatter',
       maxRank: 5,
       col: 3,
-      effect: tunes('shattering-blow', { field: 'manaCost', kind: 'percent', value: -0.07 }),
+      effect: tunes('shattering-blow', { field: 'manaCost', kind: 'percent', value: -0.1 }),
     },
-  ],
-  [
-    // 21-е очко, КОНЦЕПТ. Откаты против ресурса: два разных ответа на вопрос
-    // «почему герой стоит без дела».
     {
       id: 'vigil-trophy-spirit',
       name: 'Трофейный дух',
       icon: 'talent-kill-refund',
       maxRank: 1,
-      col: 2,
-      exclusiveGroup: 'vigil-key-5',
+      col: 4,
+      exclusiveGroup: 'vigil-key-3',
       effect: { kind: 'flag', flag: 'kill-refunds-cooldowns', cooldownShare: 0.75 },
     },
     {
-      // Три бесплатных применения становятся шестью. Умение, у которого своя
-      // ценность около нуля, превращается в половину всплеска — но только у
-      // того, кто носит ДОРОГУЮ четвёрку.
-      id: 'vigil-long-mind',
-      name: 'Долгий настрой',
-      icon: 'talent-long-mind',
+      // ПРИВЫЧНАЯ РУКА — второй узел дерева с флагом `auto-ability`, и оба
+      // отдают слот: у Оплота это «Стена», здесь — заполнитель. Когда жать,
+      // решает само умение своими порогами; своего словаря условий флаг не
+      // заводит.
+      id: 'vigil-habitual-hand',
+      name: 'Привычная рука',
+      icon: 'talent-restless-legs',
       maxRank: 1,
-      col: 3,
-      exclusiveGroup: 'vigil-key-5',
-      effect: tunes('focus', { field: 'freeCastsCasts', kind: 'percent', value: 1 }),
+      col: 5,
+      exclusiveGroup: 'vigil-key-3',
+      effect: { kind: 'flag', flag: 'auto-ability', abilityId: 'quick-strike' },
     },
   ],
+  // --- ЭТАЖ 4 · порог 30 · с уровня 40 -------------------------------------
   [
     {
-      id: 'vigil-learning',
-      name: 'Учёность',
-      icon: 'talent-intellect',
-      maxRank: 6,
-      col: 2,
-      // Было `intellect flat 3` — плоская характеристика отстаёт от уровня.
-      effect: mods(m('maxMana', 'percent', 0.0129)),
+      id: 'vigil-thrift-rupture',
+      name: 'Скупой разрыв',
+      icon: 'talent-thrift-rupture',
+      maxRank: 5,
+      col: 1,
+      effect: tunes('rupture', { field: 'manaCost', kind: 'percent', value: -0.1 }),
     },
     {
-      // ПОРОГ АВТОКАСТА КЛЕЙМА — В ПУНКТАХ: 50 % − 5 рангов по 4 = 30 %.
-      // Автокаст вешает метку и на подраненного, а не только на свежего.
-      id: 'vigil-early-brand',
-      name: 'Ранняя метка',
+      id: 'vigil-thrift-brand',
+      name: 'Скупое клеймо',
       icon: 'talent-early-brand',
       maxRank: 5,
+      col: 2,
+      effect: tunes('brand', { field: 'manaCost', kind: 'percent', value: -0.1 }),
+    },
+    {
+      id: 'vigil-early-brand',
+      name: 'Ранняя метка',
+      icon: 'talent-long-brand',
+      maxRank: 3,
       col: 3,
       effect: tunes('brand', {
         field: 'brandAutocastAboveHpShare',
         kind: 'points',
-        value: -0.04,
+        value: 0.05,
       }),
     },
     {
-      id: 'vigil-thrift-wound',
-      name: 'Скупая рана',
-      icon: 'talent-thrift-wound',
+      // ЯСНОСТЬ — ЕДИНСТВЕННЫЙ ТАЛАНТ ВЕТКИ В ДВА РАНГА: прок читает ранг, а
+      // остальные флаги не читают вовсе. Пауза перед восстановлением — это
+      // прямой простой, и окно режет её там, где герой бьёт.
+      //
+      // СОБЫТИЕ — ПОПАДАНИЕ, А НЕ УБИЙСТВО. Убийства в `ProcTrigger` нет:
+      // его частота — это результат `estimateCombatRate`, то есть той самой
+      // функции, которая прок и считает.
+      id: 'vigil-clarity',
+      name: 'Ясность',
+      icon: 'talent-clear-mind',
+      maxRank: 2,
+      col: 4,
+      effect: {
+        kind: 'flag',
+        flag: 'proc',
+        trigger: 'hit',
+        everyNth: 3,
+        effect: { kind: 'stat', stat: 'regenDelay', value: -0.5, durationSec: 6 },
+      },
+    },
+    {
+      id: 'vigil-thrift-wall',
+      name: 'Скупая стена',
+      icon: 'talent-thrift-wall',
       maxRank: 5,
-      col: 1,
-      effect: tunes('rending-wound', { field: 'manaCost', kind: 'percent', value: -0.07 }),
+      col: 5,
+      effect: tunes('bulwark', { field: 'manaCost', kind: 'percent', value: -0.1 }),
     },
   ],
+  // --- ЭТАЖ 5 · порог 40 · с уровня 50 · ВТОРОЙ ВЫБОР ----------------------
   [
     {
-      // ЗДЕСЬ СТОЯЛА «ПОХОДНАЯ ПЕРЕВЯЗКА» — талант на +2% ПОРОГА привала за ранг,
-      // и он был ошибкой уровня механики, а не числа. Порог привала — НАСТРОЙКА
-      // ИГРОКА: он выставляет её ползунком и ждёт, что игра ей следует. Талант,
-      // который молча двигает чужую настройку, читается как поломка: игрок
-      // ставит 60%, а герой уходит отдыхать на 72% и объяснения этому на экране
-      // нет. Настройки не бывают «прокачиваемыми» — прокачивается то, чем герой
-      // ЯВЛЯЕТСЯ, а не то, что он себе назначил.
-      //
-      // На его месте — настоящая характеристика: длина привала. Процентом, а не
-      // секундами: секунды уже заняты соседним «Скорым лагерем», а процент от
-      // суммы конвейера складывается с ним по-другому и даёт выбор, а не
-      // удвоение одного и того же.
-      id: 'vigil-swift-camp',
-      name: 'Скорые сборы',
-      icon: 'talent-quick-camp',
-      maxRank: 6,
-      col: 2,
-      effect: mods(m('restDuration', 'percent', -0.0234)),
+      id: 'vigil-often-rupture',
+      name: 'Частый разрыв',
+      icon: 'talent-full-rupture',
+      maxRank: 5,
+      col: 1,
+      requires: { talentId: 'vigil-thrift-rupture', minRank: 3 },
+      effect: tunes('rupture', { field: 'cooldownSec', kind: 'percent', value: -0.1 }),
     },
     {
       id: 'vigil-thrift-mercy',
       name: 'Скупая милость',
       icon: 'talent-thrift-mercy',
       maxRank: 5,
-      col: 3,
-      effect: tunes('mercy', { field: 'manaCost', kind: 'percent', value: -0.08 }),
-    },
-  ],
-  [
-    {
-      id: 'vigil-slow-bleeding',
-      name: 'Скорое заживление',
-      icon: 'talent-second-wind',
-      maxRank: 7,
       col: 2,
-      effect: mods(m('hpRegen', 'percent', 0.0223)),
+      effect: tunes('mercy', { field: 'manaCost', kind: 'percent', value: -0.1 }),
     },
     {
-      id: 'vigil-often-brand',
-      name: 'Частая метка',
-      icon: 'talent-often-brand',
+      // ЛЁГКИЕ СБОРЫ — ДОЛЯ, А НЕ СЕКУНДЫ: секунды привала уже режет «Скорый
+      // привал» этажом выше, и два узла на одном роде прибавки — это один
+      // талант, разрезанный надвое.
+      id: 'vigil-light-camp',
+      name: 'Лёгкие сборы',
+      icon: 'talent-short-camp',
       maxRank: 5,
       col: 3,
-      effect: tunes('brand', { field: 'cooldownSec', kind: 'percent', value: -0.07 }),
+      effect: mods(m('restDuration', 'percent', -0.05)),
     },
-  ],
-  [
-    // 41-е очко, КОНЦЕПТ. Привал против метки: снять цену остановки или
-    // сделать так, чтобы метка её пережила.
     {
       id: 'vigil-unbroken-focus',
       name: 'Несбитый настрой',
       icon: 'talent-unbroken-focus',
       maxRank: 1,
-      col: 2,
-      exclusiveGroup: 'vigil-key-9',
+      col: 4,
+      exclusiveGroup: 'vigil-key-5',
       effect: { kind: 'flag', flag: 'rest-clears-cooldowns', cooldownShare: 0 },
     },
     {
-      // СТРЕЛКА: метка, которую герой уже растил. Сорок секунд — дольше
-      // любой обычной схватки: клеймо перестаёт быть решением «на кого» и
-      // становится фоном.
+      // ПАРА РАЗВЕДЕНА РОДОМ: сосед делает бесплатной ПАУЗУ, а «Затяжное
+      // клеймо» убирает кнопку поддержки — клеймо ставится раз в бой и
+      // держится до конца. Один про отдых, другой про ротацию.
       id: 'vigil-lasting-brand',
       name: 'Затяжное клеймо',
       icon: 'talent-lasting-brand',
       maxRank: 1,
+      col: 5,
+      exclusiveGroup: 'vigil-key-5',
+      effect: tunes('brand', { field: 'brandDurationSec', kind: 'multiplier', value: 3 }),
+    },
+  ],
+  // --- ЭТАЖ 6 · порог 50 · с уровня 60 -------------------------------------
+  [
+    {
+      id: 'vigil-thrift-mend',
+      name: 'Скупое заживление',
+      icon: 'talent-quiet-mend',
+      maxRank: 5,
       col: 1,
-      exclusiveGroup: 'vigil-key-9',
-      requires: { talentId: 'vigil-long-brand', minRank: 3 },
-      effect: tunes('brand', { field: 'brandDurationSec', kind: 'multiplier', value: 2 }),
-    },
-  ],
-  [
-    {
-      id: 'vigil-thrift',
-      name: 'Бережливость',
-      icon: 'talent-deep-well',
-      maxRank: 5,
-      col: 2,
-      effect: mods(m('maxMana', 'percent', 0.0469)),
-    },
-    {
-      id: 'vigil-thrift-stance',
-      name: 'Скупая стойка',
-      icon: 'talent-thrift-stance',
-      maxRank: 5,
-      col: 3,
-      effect: tunes('stance', { field: 'manaCost', kind: 'percent', value: -0.08 }),
-    },
-  ],
-  [
-    {
-      id: 'vigil-composure',
-      name: 'Собранность',
-      icon: 'talent-clear-mind',
-      maxRank: 5,
-      col: 2,
-      effect: mods(m('regenDelay', 'flat', -0.117)),
+      effect: tunes('mend-wounds', { field: 'manaCost', kind: 'percent', value: -0.1 }),
     },
     {
       id: 'vigil-quick-mercy',
       name: 'Скорая милость',
       icon: 'talent-quick-mercy',
       maxRank: 5,
-      col: 3,
-      effect: tunes('mercy', { field: 'cooldownSec', kind: 'percent', value: -0.07 }),
-    },
-  ],
-  [
-    {
-      id: 'vigil-light-sleep',
-      name: 'Чуткий сон',
-      icon: 'talent-quick-camp',
-      maxRank: 5,
       col: 2,
-      effect: mods(m('restDuration', 'flat', -0.176)),
+      effect: tunes('mercy', { field: 'cooldownSec', kind: 'percent', value: -0.1 }),
     },
     {
-      // БЬЁТ ПО ПРИЧИНЕ ОБЯЗАТЕЛЬНОСТИ «СОКРУШЕНИЯ». Оно незаменимо потому,
-      // что бьёт вдвое сильнее следующего; «Разрыв» со «Рваной раной» тоже
-      // всплеск, но множитель 1.5 не догоняет. Три ранга доводят его до 2.2 —
-      // и связка становится вторым ответом на тот же вопрос.
-      id: 'vigil-full-rupture',
-      name: 'Полный разрыв',
-      icon: 'talent-full-rupture',
-      maxRank: 3,
+      id: 'vigil-composure',
+      name: 'Собранность',
+      icon: 'talent-even-breath',
+      maxRank: 5,
       col: 3,
-      effect: tunes('rupture', { field: 'detonateMultiplier', kind: 'percent', value: 0.15 }),
+      effect: mods(m('regenDelay', 'flat', -0.1)),
+    },
+    {
+      id: 'vigil-learning',
+      name: 'Учёность',
+      icon: 'talent-intellect',
+      maxRank: 5,
+      col: 4,
+      effect: mods(m('maxMana', 'percent', 0.05)),
     },
   ],
+  // --- ЭТАЖ 7 · порог 60 · с уровня 70 · ВЕНЕЦ -----------------------------
+  //
+  // ОБМЕН МЕЖДУ ВЕНЦАМИ — МЕСТО В ЧЕТВЁРКЕ. «Второе дыхание» это УМЕНИЕ:
+  // очко открывает его, и слот оно занимает как любое другое. «Костёр на
+  // ходу» слота не занимает вовсе и потому скромнее — он просто режет привал
+  // втрое.
   [
-    // 61-е очко, ДВА КАПСТОУНА: привал перестаёт быть налогом против того,
-    // чтобы всплеск приходил вдвое чаще.
+    {
+      id: 'vigil-second-wind',
+      name: 'Второе дыхание',
+      icon: 'ability-second-wind',
+      maxRank: 1,
+      col: 1,
+      exclusiveGroup: 'vigil-key-7',
+      requires: { talentId: 'vigil-thrift-mend', minRank: 3 },
+      effect: { kind: 'flag', flag: 'grant-ability', abilityId: 'second-wind' },
+    },
     {
       id: 'vigil-campfire-on-the-move',
       name: 'Костёр на ходу',
       icon: 'talent-shorter-rest',
       maxRank: 1,
       col: 2,
-      exclusiveGroup: 'vigil-key-13',
+      exclusiveGroup: 'vigil-key-7',
+      requires: { talentId: 'vigil-quick-mercy', minRank: 3 },
       effect: { kind: 'flag', flag: 'shorter-rest', durationMultiplier: 1 / 3 },
-    },
-    {
-      // СТРЕЛКА: венец достаётся тому, кто растил откат всю ветку.
-      id: 'vigil-endless-mind',
-      name: 'Неиссякаемость',
-      icon: 'talent-endless-mind',
-      maxRank: 1,
-      col: 4,
-      exclusiveGroup: 'vigil-key-13',
-      requires: { talentId: 'vigil-quick-focus', minRank: 3 },
-      effect: tunes('focus', { field: 'cooldownSec', kind: 'multiplier', value: 0.5 }),
     },
   ],
 ])
-
 // ---------------------------------------------------------------------------
 // ИЗУВЕР
 // ---------------------------------------------------------------------------
@@ -4252,89 +4263,123 @@ const BRANCH_PATHS: Partial<Record<BranchId, TalentPath[]>> = {
   ],
   'warden-vigil': [
     {
-      // ЭКОНОМИЯ. Ставка на цену ротации: каждое умение дешевле, запас глубже,
-      // пауза короче. Четвёрка по умолчанию — первый путь ветки это прибор.
+      // ЭКОНОМИЯ. Ставка на цену ротации: каждое умение дешевле, запас
+      // глубже, пауза короче. Четвёрка по умолчанию — первый путь ветки это
+      // прибор.
       id: 'vigil-thrifty',
       name: 'Экономия',
       abilities: ['quick-strike', 'rending-wound', 'mend-wounds', 'shattering-blow'],
       order: [
-        // КЛЮЧЕВЫЕ И ИХ ОПОРЫ — В ГОЛОВЕ ПУТИ. Путь — список приоритетов, и
-        // ключевые этажи это то, ради чего сборка существует: стоя в хвосте,
-        // они не покупались вовсе — очки кончались раньше.
+        // КЛЮЧЕВЫЕ И ИХ ОПОРЫ — В ГОЛОВЕ ПУТИ, а сразу за ними УЗЛЫ ПРИВАЛА.
+        // Ветка меряется тем, во сколько срезан простой, и путь, не купивший
+        // ни одного узла привала, мерит не ветку, а список файла.
         'vigil-trophy-spirit',
+        'vigil-quick-mercy',
         'vigil-unbroken-focus',
         'vigil-campfire-on-the-move',
-        'vigil-steady-breath',
-        'vigil-clear-mind',
-        'vigil-deep-well',
         'vigil-quick-camp',
-        'vigil-thrift-wound',
-        'vigil-thrift-shatter',
-        'vigil-learning',
-        'vigil-swift-camp',
-        'vigil-slow-bleeding',
-        'vigil-thrift',
+        'vigil-light-camp',
+        'vigil-clear-mind',
         'vigil-composure',
-        'vigil-light-sleep',
-        'vigil-thrift-rupture',
-        'vigil-thrift-mercy',
-        'vigil-thrift-stance',
-        'vigil-quick-mercy',
-        'vigil-full-rupture',
-        'vigil-quick-focus',
+        'vigil-steady-breath',
+        'vigil-deep-well',
+        'vigil-learning',
+        'vigil-thrift-strike',
+        'vigil-short-strike',
+        'vigil-thrift-wound',
+        'vigil-often-wound',
+        'vigil-thrift-shatter',
+        'vigil-clarity',
         'vigil-long-mind',
-        'vigil-endless-mind',
-        'vigil-long-brand',
+        'vigil-quick-focus',
+        'vigil-thrift-mend',
+        'vigil-thrift-mercy',
+        'vigil-thrift-rupture',
+        'vigil-often-rupture',
+        'vigil-thrift-brand',
         'vigil-early-brand',
-        'vigil-often-brand',
-        'vigil-lasting-brand',
+        'vigil-thrift-wall',
       ],
     },
     {
-      // КЛЕЙМО. Другой ответ: не экономить на каждом умении, а поставить метку
-      // и бить сквозь неё. Венец другой — «Неиссякаемость»: всплеск приходит
-      // вдвое чаще, и метка успевает окупиться.
-      id: 'vigil-brandbearer',
-      name: 'Клеймо',
-      abilities: ['quick-strike', 'brand', 'mend-wounds', 'focus'],
+      // ДЫХАНИЕ. Венец-умение занимает слот, и платит за него ЗАПОЛНИТЕЛЬ:
+      // «Привычная рука» убирает «Скорый выпад» из четвёрки, а освободившееся
+      // место берёт «Второе дыхание». Обмен виден целиком — одна кнопка
+      // уходит, другая приходит.
+      id: 'vigil-breath',
+      name: 'Дыхание',
+      abilities: ['second-wind', 'rending-wound', 'mend-wounds', 'shattering-blow'],
       order: [
-        // КЛЮЧЕВЫЕ И ИХ ОПОРЫ — В ГОЛОВЕ ПУТИ. Путь — список приоритетов, и
-        // ключевые этажи это то, ради чего сборка существует: стоя в хвосте,
-        // они не покупались вовсе — очки кончались раньше.
-        'vigil-long-mind',
-        'vigil-long-brand',
-        'vigil-lasting-brand',
-        'vigil-quick-focus',
-        'vigil-endless-mind',
-        'vigil-early-brand',
-        'vigil-often-brand',
+        'vigil-habitual-hand',
+        'vigil-thrift-mend',
+        'vigil-unbroken-focus',
+        'vigil-second-wind',
+        'vigil-quick-camp',
+        'vigil-light-camp',
         'vigil-steady-breath',
         'vigil-deep-well',
         'vigil-clear-mind',
-        'vigil-learning',
-        'vigil-thrift',
-        'vigil-full-rupture',
-        'vigil-quick-mercy',
-        'vigil-thrift-mercy',
-        'vigil-thrift-stance',
-        'vigil-thrift-rupture',
-        'vigil-thrift-wound',
-        'vigil-thrift-shatter',
-        'vigil-quick-camp',
-        'vigil-swift-camp',
-        'vigil-light-sleep',
         'vigil-composure',
-        'vigil-slow-bleeding',
+        'vigil-learning',
+        'vigil-thrift-wound',
+        'vigil-often-wound',
+        'vigil-thrift-shatter',
+        'vigil-clarity',
+        'vigil-thrift-strike',
+        'vigil-short-strike',
+        'vigil-long-mind',
+        'vigil-quick-focus',
+        'vigil-thrift-mercy',
+        'vigil-quick-mercy',
+        'vigil-thrift-rupture',
+        'vigil-often-rupture',
+        'vigil-thrift-brand',
+        'vigil-early-brand',
+        'vigil-thrift-wall',
+      ],
+    },
+    {
+      // КЛЕЙМО. Третий ответ на тот же вопрос: не дешевле жать, а РЕЖЕ.
+      // «Затяжное клеймо» держится втрое дольше, то есть ставится раз в бой,
+      // и кнопка поддержки перестаёт быть кнопкой.
+      //
+      // ПУТЬ ПЕРЕСОБРАН, И ЭТО ТОТ САМЫЙ КРАСНЫЙ. Прежний «Клеймоносец»
+      // состоял из настроек клейма и не покупал НИ ОДНОГО узла привала — при
+      // оси «во сколько срезан простой» он мерил 1.05 при ленте 1.2. Узлы
+      // привала и венец, режущий привал втрое, стоят теперь и здесь.
+      id: 'vigil-brandbearer',
+      name: 'Клеймо',
+      abilities: ['brand', 'quick-strike', 'mend-wounds', 'shattering-blow'],
+      order: [
         'vigil-trophy-spirit',
-        'vigil-unbroken-focus',
+        'vigil-quick-mercy',
+        'vigil-lasting-brand',
         'vigil-campfire-on-the-move',
+        'vigil-quick-camp',
+        'vigil-light-camp',
+        'vigil-thrift-brand',
+        'vigil-early-brand',
+        'vigil-clear-mind',
+        'vigil-composure',
+        'vigil-steady-breath',
+        'vigil-deep-well',
+        'vigil-learning',
+        'vigil-thrift-strike',
+        'vigil-short-strike',
+        'vigil-thrift-shatter',
+        'vigil-clarity',
+        'vigil-thrift-mend',
+        'vigil-long-mind',
+        'vigil-quick-focus',
+        'vigil-thrift-wound',
+        'vigil-often-wound',
+        'vigil-thrift-mercy',
+        'vigil-thrift-rupture',
+        'vigil-often-rupture',
+        'vigil-thrift-wall',
       ],
     },
   ],
-  // ИЗУВЕР. По два пути на ветку, как у Стража: первый — ПРИБОР (по нему
-  // считается «чистая ветка»), второй — вторая сторона ключевых этажей.
-  // Без явных путей ветку заливала бы жадность сверху вниз, а ёмкость здесь
-  // больше, чем очков у героя: до венца заливка не доходит вовсе.
   'reaver-carnage': [
     {
       // КРОВЬ. Дешёвый удар учится кровить, автоатака иногда бьёт дважды,

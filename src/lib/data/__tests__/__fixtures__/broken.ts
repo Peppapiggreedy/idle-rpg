@@ -193,7 +193,7 @@ function procTalentId(real: Content) {
  */
 function procTalentWith(
   real: Content,
-  fields: { stat?: string; durationSec?: number; swings?: number },
+  fields: { stat?: string; value?: number; durationSec?: number; swings?: number },
 ): TalentDef[] {
   const talent = procTalent(real)
   const effect = talent.effect as { kind: 'flag'; flag: 'proc'; effect: Record<string, unknown> }
@@ -2138,6 +2138,16 @@ export function brokenCases(): BrokenCase[] {
       // конвейер уходит ноль. Тише мёртвого таланта — тот хотя бы виден.
       title: 'у прока нулевое окно',
       content: { ...real, talents: procTalentWith(real, { durationSec: 0, swings: 0 }) },
+      expect: [procTalentId(real), 'не делает НИЧЕГО'],
+    },
+    {
+      // НУЛЕВАЯ ПРИБАВКА — вторая половина того же правила, и проверяется она
+      // отдельно от окна. Сама проверка говорит `!== 0`, а не `> 0`: у
+      // `regenDelay` и `restDuration` прибавка ОТРИЦАТЕЛЬНАЯ и работает.
+      // Образец нужен, чтобы послабление не превратилось в дыру: ноль обязан
+      // ронять прогон по-прежнему.
+      title: 'у прока нулевая прибавка',
+      content: { ...real, talents: procTalentWith(real, { value: 0 }) },
       expect: [procTalentId(real), 'не делает НИЧЕГО'],
     },
     {

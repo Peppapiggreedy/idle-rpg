@@ -32,6 +32,8 @@ export const ICONS = {
   // выдаётся талантом, второе подменяет «Скорый выпад».
   'ability-riposte': { file: 'lorc/bouncing-sword.svg', author: 'Lorc' },
   'ability-shield-jab': { file: 'delapouite/shield-impact.svg', author: 'Delapouite' },
+  // Венец Бдения — умение от таланта: разом наливает треть запаса.
+  'ability-second-wind': { file: 'delapouite/lungs.svg', author: 'Delapouite' },
   'ability-mend-wounds': { file: 'delapouite/first-aid-kit.svg', author: 'Delapouite' },
   'ability-shield-shove': { file: 'delapouite/shield-bash.svg', author: 'Delapouite' },
   'ability-rupture': { file: 'lorc/tearing.svg', author: 'Lorc' },
@@ -129,7 +131,6 @@ export const ICONS = {
   'talent-early-brand': { file: 'lorc/burning-eye.svg', author: 'Lorc' },
   'talent-thrift-wound': { file: 'lorc/fire-silhouette.svg', author: 'Lorc' },
   'talent-thrift-mercy': { file: 'lorc/inner-self.svg', author: 'Lorc' },
-  'talent-often-brand': { file: 'lorc/lightning-frequency.svg', author: 'Lorc' },
   'talent-lasting-brand': { file: 'lorc/eclipse-flare.svg', author: 'Lorc' },
   'talent-thrift-stance': { file: 'lorc/mineral-heart.svg', author: 'Lorc' },
   'talent-quick-mercy': { file: 'lorc/stopwatch.svg', author: 'Lorc' },
