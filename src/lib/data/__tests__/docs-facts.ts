@@ -19,7 +19,7 @@
 import { SAVE_VERSION, MIGRATIONS } from '../../game/save'
 import { CLASSES } from '../classes'
 import { ZONES } from '../zones'
-import { BRANCHES, branchDepth } from '../talents'
+import { BRANCHES, TALENTS, branchDepth } from '../talents'
 import { ABILITIES } from '../abilities'
 import { ABILITY_SLOTS } from '../balance'
 
@@ -79,6 +79,19 @@ export const DOC_FACTS: readonly DocFact[] = [
     label: 'очков до венца',
     constant: 'branchDepth(id)',
     actual: () => branchDepth(BRANCHES[0].id),
+  },
+  {
+    /**
+     * УЗЛЫ, ОСВОБОЖДАЮЩИЕ СЛОТ. Считаются ПО ДАННЫМ и заведены здесь потому,
+     * что руками это число уже соврало: в документации стояло «девять, по
+     * одному на ветку», а их восемь — у Гнева такого узла нет, он собран
+     * прошлой ночью и в эту не переделывался. Перечислением такое не ловится.
+     */
+    label: 'узлов, освобождающих слот',
+    constant: "TALENTS с флагом auto-ability",
+    actual: () =>
+      TALENTS.filter((t) => t.effect?.kind === 'flag' && t.effect.flag === 'auto-ability')
+        .length,
   },
   {
     // Умения, которых нет ни в одной книге класса: их открывает ОЧКО, а не
