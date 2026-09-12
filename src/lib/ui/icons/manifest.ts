@@ -28,6 +28,10 @@ export const ICONS = {
   // класса их нет: их открывает не уровень, а очко.
   'ability-sever': { file: 'lorc/tearing.svg', author: 'Lorc' },
   'ability-echo': { file: 'lorc/echo-ripples.svg', author: 'Lorc' },
+  // Венец Оплота и умение его замены — та же пара, что у Гнева: одно
+  // выдаётся талантом, второе подменяет «Скорый выпад».
+  'ability-riposte': { file: 'lorc/bouncing-sword.svg', author: 'Lorc' },
+  'ability-shield-jab': { file: 'delapouite/shield-impact.svg', author: 'Delapouite' },
   'ability-mend-wounds': { file: 'delapouite/first-aid-kit.svg', author: 'Delapouite' },
   'ability-shield-shove': { file: 'delapouite/shield-bash.svg', author: 'Delapouite' },
   'ability-rupture': { file: 'lorc/tearing.svg', author: 'Lorc' },

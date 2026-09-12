@@ -58,17 +58,23 @@ describe('форма ветки — данные', () => {
     expect(shapes.size).toBeGreaterThan(1)
   })
 
-  it('Гнев: семь этажей по десять очков, пять столбцов', () => {
-    const wrath = BRANCH_BY_ID['warden-wrath']
-    expect([wrath.rows, wrath.step, wrath.cols]).toEqual([7, 10, 5])
-    expect(branchDepth('warden-wrath')).toBe(60)
+  // ПЕРЕЕХАВШИЕ ВЕТКИ ПЕРЕЧИСЛЕНЫ ПОИМЁННО, И СПИСОК РАСТЁТ ПО ОДНОЙ СТРОКЕ
+  // НА СТАДИЮ. Так «недоехало» не выглядит как «сломано»: ветка, переехавшая
+  // молча, роняет вторую проверку, а забытая в списке — первую.
+  const MIGRATED = ['warden-wrath', 'warden-bulwark']
+
+  it('переехавшие: семь этажей по десять очков, пять столбцов', () => {
+    for (const id of MIGRATED) {
+      const branch = BRANCH_BY_ID[id]
+      expect([branch.rows, branch.step, branch.cols], id).toEqual([7, 10, 5])
+      expect(branchDepth(branch.id), id).toBe(60)
+    }
   })
 
-  it('остальные восемь веток пока лестницы — это ОСОЗНАННОЕ смешанное состояние', () => {
-    // Машинерия строится и обкатывается на одной ветке; восемь оставшихся
-    // переезжают следующей ночью почти чистыми данными. Пока они здесь,
-    // проверка держит их форму, чтобы «недоехало» не выглядело как «сломано».
-    for (const branch of BRANCHES.filter((b) => b.id !== 'warden-wrath')) {
+  it('оставшиеся — пока лестницы: это ОСОЗНАННОЕ смешанное состояние', () => {
+    // Ветки переезжают по одной, коммит на ветку. Пока остальные здесь,
+    // проверка держит их форму.
+    for (const branch of BRANCHES.filter((b) => !MIGRATED.includes(b.id))) {
       expect([branch.rows, branch.step, branch.cols], branch.id).toEqual([13, 5, 4])
       expect(branchDepth(branch.id), branch.id).toBe(60)
     }

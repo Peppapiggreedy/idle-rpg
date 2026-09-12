@@ -655,7 +655,16 @@ describe('эффекты талантов', () => {
   it('второй поворот ветки живучести сокращает простой после смерти', () => {
     const s = hero(LEVEL_CAP)
     expect(reviveMultiplier(s)).toBe(1)
-    const swift = reachTalent(s, talentsInBranch(BULWARK).find((t) => t.row === keyRowsOf(BULWARK)[1])!.id)
+    // ТАЛАНТ ИЩЕТСЯ ПО ФЛАГУ, А НЕ ПО НОМЕРУ ЭТАЖА. Номер решал это, пока
+    // форма ветки была одной на всех; с переездом Оплота на семь этажей
+    // «второй ключевой ряд» стал другим местом, и тест молча начал мерить
+    // соседний узел вместо воскрешения. Флаг значит одно и то же везде.
+    const revive = talentsInBranch(BULWARK).find(
+      (t) => t.effect.kind === 'flag' && t.effect.flag === 'faster-revive',
+    )!
+    expect(revive, 'в ветке живучести нет таланта на скорость подъёма').toBeTruthy()
+    expect(keyRowsOf(BULWARK), 'узел ускорения подъёма стоит на этаже выбора').toContain(revive.row)
+    const swift = reachTalent(s, revive.id)
     expect(reviveMultiplier(swift)).toBeLessThan(1)
 
     // Проверяем на живом тике: герой с нулевым HP уходит в простой.
