@@ -144,7 +144,7 @@ describe('режим съёмки', () => {
   })
 })
 
-// ПРОГРЕСС НЕЛЬЗЯ ПОТЕРЯТЬ МОЛЧА (находки 2.2, 4.1 в AUDIT.md).
+// ПРОГРЕСС НЕЛЬЗЯ ПОТЕРЯТЬ МОЛЧА (находки 2.2, 4.1 в docs/archive/AUDIT-2025-09.md).
 describe('отказ записи виден игроку', () => {
   function breakStorage(setItem: () => never) {
     ;(globalThis as unknown as { localStorage: unknown }).localStorage = {

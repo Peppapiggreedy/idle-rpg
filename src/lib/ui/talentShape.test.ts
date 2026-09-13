@@ -53,23 +53,21 @@ describe('форма ветки — данные', () => {
     }
   })
 
-  it('форм БОЛЬШЕ ОДНОЙ — иначе форма снова стала бы константой', () => {
-    const shapes = new Set(BRANCHES.map((b) => `${b.rows}/${b.step}/${b.cols}`))
-    expect(shapes.size).toBeGreaterThan(1)
+  it('у каждой ветки СВОЯ запись формы — иначе она снова станет константой', () => {
+    // Числа у всех девяти совпали, и это правильное состояние, а не потеря
+    // свойства: свойство здесь в том, что форма ЗАПИСАНА У ВЕТКИ и её можно
+    // сменить одной строкой, не трогая остальные восемь.
+    const src = readFileSync(new URL('../data/talents.ts', import.meta.url), 'utf8')
+    expect(src.includes('...LADDER')).toBe(false)
+    expect((src.match(/rows: \d+, step: \d+, cols: \d+/g) ?? []).length).toBe(BRANCHES.length)
   })
 
-  it('Гнев: семь этажей по десять очков, пять столбцов', () => {
-    const wrath = BRANCH_BY_ID['warden-wrath']
-    expect([wrath.rows, wrath.step, wrath.cols]).toEqual([7, 10, 5])
-    expect(branchDepth('warden-wrath')).toBe(60)
-  })
-
-  it('остальные восемь веток пока лестницы — это ОСОЗНАННОЕ смешанное состояние', () => {
-    // Машинерия строится и обкатывается на одной ветке; восемь оставшихся
-    // переезжают следующей ночью почти чистыми данными. Пока они здесь,
-    // проверка держит их форму, чтобы «недоехало» не выглядело как «сломано».
-    for (const branch of BRANCHES.filter((b) => b.id !== 'warden-wrath')) {
-      expect([branch.rows, branch.step, branch.cols], branch.id).toEqual([13, 5, 4])
+  it('ВСЕ ДЕВЯТЬ на семи этажах по десять очков и пяти столбцах', () => {
+    // Смешанного состояния больше нет: ночь восьми веток довела до общей формы
+    // все ветки до одной. Глубина при этом та же шестьдесят, что и у прежних
+    // тринадцати этажей, — переезд сменил РИТМ, а не цену ветки.
+    for (const branch of BRANCHES) {
+      expect([branch.rows, branch.step, branch.cols], branch.id).toEqual([7, 10, 5])
       expect(branchDepth(branch.id), branch.id).toBe(60)
     }
   })

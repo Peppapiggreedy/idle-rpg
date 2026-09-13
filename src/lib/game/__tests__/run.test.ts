@@ -262,7 +262,7 @@ describe('полный путь 1..100', () => {
           console.warn(
             `ИЗВЕСТНОЕ РАСХОЖДЕНИЕ ${cls.name}: доля привалов ${(share * 100).toFixed(3)} % ` +
               `против пола ${(REST_SHARE_MIN * 100).toFixed(0)} % (CLAUDE.md обещает 33 % и 36 %). ` +
-              'Механизм не установлен; см. docs/AUDIT-FOLLOWUP.md, стадия 2.',
+              'Механизм не установлен; см. docs/archive/AUDIT-FOLLOWUP.md, стадия 2.',
           )
         }
         expect(

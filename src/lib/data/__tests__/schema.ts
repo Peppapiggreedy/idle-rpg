@@ -4405,21 +4405,11 @@ function tunedAbilityId(talent: TalentDef): string | undefined {
  * тихо разрешит новый повтор.
  */
 const TUNE_DUPLICATE_LEGACY: readonly string[] = [
-  'vigil-lasting-brand',
-  'vigil-endless-mind',
-  'sinew-swift-dig',
-  'sinew-lasting-dig',
-  'sinew-unbroken',
-  'instinct-endless-letting',
-  'instinct-restless',
-  'instinct-endless-roar',
-  'chase-twin-fang',
-  'leash-deep-skulk',
-  'leash-tireless-rally',
-  'leash-shadow-hound',
-  'trail-cheap-undercut',
-  'trail-tireless-flurry',
-  'trail-hunting-breath',
+  // ПУСТО, И ЭТО ИТОГ НОЧИ ВОСЬМИ ВЕТОК. Список держал пятнадцать талантов,
+  // которым разрешался повтор поля внутри ветки; все девять веток пересобраны,
+  // и ни одного повтора не осталось. Обратная проверка списка («числишься в
+  // исключениях, а нарушения нет») поймала их все до одного — без неё
+  // исключение молча разрешало бы НОВЫЙ повтор на том же id.
 ]
 
 function checkTalentTuneDuplicates(content: Content, report: Report): void {
@@ -4526,8 +4516,15 @@ function checkProcTalents(content: Content, report: Report): void {
     }
     const window =
       effect.effect.kind === 'stat-swings' ? effect.effect.swings : effect.effect.durationSec
+    // ПРИБАВКА — НЕ НОЛЬ, А НЕ «БОЛЬШЕ НУЛЯ», И РАЗНИЦА НАСТОЯЩАЯ. Здесь
+    // стояло `> 0`, и это было верно ровно до тех пор, пока все проки
+    // сидели на статах, где БОЛЬШЕ — ЛУЧШЕ. У `regenDelay` и `restDuration`
+    // лучше МЕНЬШЕ: это секунды паузы, и прибавка к ним отрицательная. Такой
+    // прок отвергался как «не делает ничего», хотя делает ровно то, ради чего
+    // заведён. Смысл проверки — «прок обязан что-то менять», и `!== 0`
+    // выражает его точно, а `> 0` заодно предписывал ЗНАК.
     report.need(
-      effect.effect.value > 0 && window > 0,
+      effect.effect.value !== 0 && window > 0,
       where,
       'прок с нулевой прибавкой или нулевым окном не делает НИЧЕГО, а ранг у ' +
         'него растёт и очки за него берут (data/talents.ts)',

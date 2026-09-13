@@ -32,7 +32,7 @@
   import ItemCompare from './ItemCompare.svelte'
   import { RARITY_BY_ID } from '../data/rarity'
   import { itemIcon } from '../data/items'
-  import { UPGRADE_PRIORITIES, type UpgradePriority } from '../data/upgrade'
+  import { UPGRADE_PRIORITIES, type UpgradePriority } from '../data/upgradeAxes'
   import type { GoldUpgradeDef, LootPolicy } from '../data/upgrades'
   import { plural } from './plural'
   import { availableLootPolicies, availableUpgrades, inventorySize, lootPolicyOf } from '../game/upgrades'

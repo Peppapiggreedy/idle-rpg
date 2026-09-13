@@ -51,10 +51,9 @@ export type TalentColumn = 1 | 2 | 3 | 4 | 5
  * глубина СЧИТАЕТСЯ из них (`branchDepth`) и отдельной константой не лежит:
  * два числа, описывающих одно и то же, разъезжаются на первой же правке.
  *
- * СМЕШАННОЕ СОСТОЯНИЕ ЗАКОННО И ВРЕМЕННО. Сегодня Гнев живёт на семи этажах
- * с шагом 10, остальные восемь веток — на тринадцати с шагом 5. Это не
- * недоделка формы, а порядок переезда: машинерия строится и обкатывается на
- * ОДНОЙ ветке, а восемь оставшихся переезжают следом почти чистыми данными.
+ * СМЕШАННОГО СОСТОЯНИЯ БОЛЬШЕ НЕТ: все девять веток стоят на семи этажах с
+ * шагом 10. Форма всё равно остаётся ПОЛЕМ, а не константой — ровно затем,
+ * чтобы следующая ветка могла быть другой, не переписывая остальные восемь.
  */
 
 
@@ -94,9 +93,6 @@ export interface BranchDef {
   cols: TalentColumn
 }
 
-/** Форма, с которой ветки жили до переезда: тринадцать этажей по пять очков. */
-const LADDER = { rows: 13, step: 5, cols: 4 } as const
-
 export const BRANCHES: BranchDef[] = [
   // --- Страж: мана, одноручное и щит ---
   // ГНЕВ ПЕРЕЕХАЛ НА СЕМЬ ЭТАЖЕЙ ПО ДЕСЯТЬ ОЧКОВ. Глубина та же — 60, — но
@@ -105,16 +101,16 @@ export const BRANCHES: BranchDef[] = [
   // уровни героя 10, 20 … 70, и три майлстоуна прокачки (30, 50, 70) падают
   // на этажи 3, 5 и 7 сами собой — ровно туда, где стоят пары выбора.
   { id: 'warden-wrath', name: 'Гнев', classId: 'warden', style: 'damage', rows: 7, step: 10, cols: 5 },
-  { id: 'warden-bulwark', name: 'Оплот', classId: 'warden', style: 'survival', ...LADDER },
-  { id: 'warden-vigil', name: 'Бдение', classId: 'warden', style: 'autonomy', ...LADDER },
+  { id: 'warden-bulwark', name: 'Оплот', classId: 'warden', style: 'survival', rows: 7, step: 10, cols: 5 },
+  { id: 'warden-vigil', name: 'Бдение', classId: 'warden', style: 'autonomy', rows: 7, step: 10, cols: 5 },
   // --- Изувер: ярость, два клинка ---
-  { id: 'reaver-carnage', name: 'Резня', classId: 'reaver', style: 'damage', ...LADDER },
-  { id: 'reaver-sinew', name: 'Жилы', classId: 'reaver', style: 'survival', ...LADDER },
-  { id: 'reaver-instinct', name: 'Чутьё', classId: 'reaver', style: 'autonomy', ...LADDER },
+  { id: 'reaver-carnage', name: 'Резня', classId: 'reaver', style: 'damage', rows: 7, step: 10, cols: 5 },
+  { id: 'reaver-sinew', name: 'Жилы', classId: 'reaver', style: 'survival', rows: 7, step: 10, cols: 5 },
+  { id: 'reaver-instinct', name: 'Чутьё', classId: 'reaver', style: 'autonomy', rows: 7, step: 10, cols: 5 },
   // --- Псарь: энергия, лёгкий клинок и пёс ---
-  { id: 'houndmaster-chase', name: 'Гон', classId: 'houndmaster', style: 'damage', ...LADDER },
-  { id: 'houndmaster-leash', name: 'Привязь', classId: 'houndmaster', style: 'survival', ...LADDER },
-  { id: 'houndmaster-trail', name: 'Тропа', classId: 'houndmaster', style: 'autonomy', ...LADDER },
+  { id: 'houndmaster-chase', name: 'Гон', classId: 'houndmaster', style: 'damage', rows: 7, step: 10, cols: 5 },
+  { id: 'houndmaster-leash', name: 'Привязь', classId: 'houndmaster', style: 'survival', rows: 7, step: 10, cols: 5 },
+  { id: 'houndmaster-trail', name: 'Тропа', classId: 'houndmaster', style: 'autonomy', rows: 7, step: 10, cols: 5 },
 ]
 
 /**
@@ -130,6 +126,21 @@ export function grantedAbilityIds(ranks: Readonly<Record<string, number>>): stri
   for (const talent of TALENTS) {
     const effect = talent.effect
     if (effect.kind !== 'flag' || effect.flag !== 'grant-ability') continue
+    if (rankOf(ranks, talent.id) <= 0) continue
+    if (!out.includes(effect.abilityId)) out.push(effect.abilityId)
+  }
+  return out
+}
+
+/**
+ * Умения, которые талант заставил играть САМИ. Они не занимают слот: ряд
+ * действий их из себя убирает, а модель, тик и оффлайн — добавляют.
+ */
+export function autoAbilityIds(ranks: Readonly<Record<string, number>>): string[] {
+  const out: string[] = []
+  for (const talent of talentsWithFlag('auto-ability')) {
+    const effect = talent.effect
+    if (effect.kind !== 'flag' || effect.flag !== 'auto-ability') continue
     if (rankOf(ranks, talent.id) <= 0) continue
     if (!out.includes(effect.abilityId)) out.push(effect.abilityId)
   }
@@ -223,6 +234,26 @@ export type TalentFlag =
   // УМЕНИЕ ВЫДАЁТСЯ ТАЛАНТОМ: его нет в книге класса, и появляется оно
   // только вместе с очком — ЗАНИМАЯ СЛОТ, как любое другое.
   | 'grant-ability'
+  // УМЕНИЕ РАБОТАЕТ САМО И НЕ ЗАНИМАЕТ СЛОТ. Единственное расширение
+  // закрытых списков за эту ночь, и вот почему оно понадобилось: восемь
+  // талантов (по одному на ветку, все на ключевом пятом этаже) обещают
+  // «умение уходит из четвёрки, слот освобождается», а механизма для этого
+  // не было ни одного.
+  //
+  // СВОЕГО СЛОВАРЯ УСЛОВИЙ ФЛАГ НЕ ЗАВОДИТ, и это главное в его устройстве.
+  // У умения УЖЕ ЕСТЬ пороги автокаста в данных (`autocast`: `heroHpAbove`,
+  // `targetHpAbove`, `resourceBelow`, `houndHpBelow`), и модель боя умеет их
+  // читать. Талант просто говорит «это умение теперь играется само» — когда
+  // именно, по-прежнему решают его собственные пороги, а подвинуть их можно
+  // тем же `AbilityTune`, что и всегда. Второго ответа на вопрос «когда
+  // жать» не появляется.
+  //
+  // ЖЕЛЕЗНОЕ ПРАВИЛО «неположенное в ряд умение не участвует ни в чём»
+  // правится ровно здесь и названо в CLAUDE.md. Писалось оно против умений,
+  // которые молча считаются в модели, хотя игрок их нажать не может; тут
+  // действие игрока ЕСТЬ — вложенное очко, — и обещание модели остаётся
+  // честным.
+  | 'auto-ability'
 
 /**
  * ПРОК — ЭТО ТРИГГЕР ПЛЮС ВРЕМЕННЫЙ ЭФФЕКТ, И ОБА ИЗ ЗАКРЫТЫХ СПИСКОВ.
@@ -412,6 +443,13 @@ export type TalentEffect =
    * до уровня которого герой не дорос.
    */
   | { kind: 'flag'; flag: 'grant-ability'; abilityId: string }
+  /**
+   * УМЕНИЕ ИГРАЕТ САМО И ОСВОБОЖДАЕТ СЛОТ. Payload — только имя умения:
+   * КОГДА его жать, решают его собственные пороги автокаста из данных, а не
+   * этот флаг. Своего словаря условий он не заводит нарочно — иначе на
+   * вопрос «когда» в игре стало бы два ответа.
+   */
+  | { kind: 'flag'; flag: 'auto-ability'; abilityId: string }
 
 /**
  * ЧТО У СПУТНИКА МОЖНО ПРАВИТЬ ТАЛАНТОМ. Список закрыт: поле спутника, которого
@@ -1140,173 +1178,215 @@ const WARDEN_WRATH = branch('warden-wrath', [
   ],
 ])
 
+// ОПЛОТ: СЕМЬ ЭТАЖЕЙ ПО ДЕСЯТЬ ОЧКОВ.
+//
+// Вторая ветка, переехавшая на новую форму, и ритм у неё тот же, что у Гнева:
+// порог этажа стоит десяти очков, а в ряду ждут четыре-пять узлов, из которых
+// возьмёшь не все. Ёмкость ветки 105 очков при глубине 60 — взять её целиком
+// нельзя, и это и есть цена выбора.
+//
+// ВЕТКА ЗАСЛОНА. Блок — не убыток, а ЗАПАС: всё, что герой остановил,
+// возвращается ему ресурсом и уходит обратно ударом. Замысел держится ПАРОЙ
+// узлов на разных этажах — «Хватка щита» (блок наливает ману) и «Ответный
+// удар» (самая дорогая кнопка ветки), — а не одним умением с копилкой.
+// Отдельный счётчик заблокированного урона видел бы ТОЛЬКО ТИК: вход модели
+// боя — статы и моб, а не секунда схватки, и досчитать такую копилку она не
+// смогла бы. Правило «оффлайн ≤ автокаст» ломалось бы молча. Через ресурс ту
+// же связь видят оба: блок уже входит в приход маны (`fromBlock` в
+// `combat.ts`).
+//
+// СТОЛБЕЦ — ЭТО ПОЛОСА, как в Гневе: первый — стена и запас, второй — стойка
+// и переключатели, третий — «Толчок щитом», четвёртый — лечение. Стрелка
+// идёт прямой линией вниз по своей полосе, и держит это `content:check`.
+//
+// РАНГ В ЕДИНИЦУ — ТОЛЬКО НА ЭТАЖЕ ВЫБОРА, и это не оформление. Одноранговый
+// узел на обычном этаже отдаёт очки ВНИЗ по пути покупки: он покупается
+// первым же очком и сдвигает всю лестницу под собой (замер ночи Гнева —
+// двадцать пунктов цены схватки с боссом). Поэтому все восемь
+// переключателей ветки стоят в трёх группах выбора, а на обычных этажах
+// живут только многоранговые узлы. Ранг 2 на ветку ровно один — у прока,
+// потому что прок единственный из флагов ранг читает.
 const WARDEN_BULWARK = branch('warden-bulwark', [
+  // --- ЭТАЖ 1 · порог 0 · с уровня 10 --------------------------------------
   [
     {
       id: 'bulwark-thick-hide',
       name: 'Толстая шкура',
       icon: 'talent-thick-hide',
-      maxRank: 6,
-      col: 2,
-      effect: mods(m('maxHp', 'percent', 0.0293)),
-    },
-    {
-      // Ослабление «Толчка» — 40 % следующего удара цели. Пять рангов дают
-      // +40 % к самой доле, то есть 56 %: удар, который герой всё равно
-      // получит, становится вдвое слабее.
-      id: 'bulwark-press',
-      name: 'Плотный заслон',
-      icon: 'talent-press',
       maxRank: 5,
-      col: 3,
-      effect: tunes('shield-shove', {
-        field: 'weakenDamageShare',
-        kind: 'percent',
-        value: 0.08,
-      }),
+      col: 1,
+      effect: mods(m('maxHp', 'percent', 0.04)),
     },
-  ],
-  [
-    {
-      id: 'bulwark-shield-wall',
-      name: 'Стена щитов',
-      icon: 'talent-shield-wall',
-      maxRank: 6,
-      col: 2,
-      effect: mods(m('blockChance', 'flat', 0.0117)),
-    },
-    {
-      // Щит держится восемь секунд при откате двадцать пять: аптайм — треть.
-      // Пять рангов доводят его до половины схватки.
-      id: 'bulwark-long-wall',
-      name: 'Долгая стена',
-      icon: 'talent-long-wall',
-      maxRank: 5,
-      col: 4,
-      effect: tunes('bulwark', { field: 'absorbDurationSec', kind: 'percent', value: 0.09 }),
-    },
-  ],
-  [
     {
       id: 'bulwark-training',
       name: 'Выучка заслона',
       icon: 'talent-bulwark-training',
-      maxRank: 6,
-      col: 2,
-      effect: mods(m('blockValue', 'percent', 0.117)),
-    },
-    {
-      id: 'bulwark-quick-mend',
-      name: 'Скорое врачевание',
-      icon: 'talent-quick-mend',
       maxRank: 5,
-      col: 3,
-      effect: tunes('mend-wounds', { field: 'cooldownSec', kind: 'percent', value: -0.06 }),
-    },
-  ],
-  [
-    {
-      id: 'bulwark-iron-skin',
-      name: 'Железная кожа',
-      icon: 'talent-iron-skin',
-      maxRank: 6,
       col: 2,
-      effect: mods(m('damageReduction', 'flat', 0.0059)),
+      effect: mods(m('blockValue', 'percent', 0.15)),
     },
     {
-      // Стойка режет 15 % оставшегося урона ценой 30 % своего. Талант растит
-      // ТОЛЬКО смягчение: цена остаётся, и обмен видно.
-      id: 'bulwark-hard-stance',
-      name: 'Крепкая стойка',
-      icon: 'talent-hard-stance',
-      maxRank: 5,
-      col: 1,
-      effect: tunes('stance', { field: 'stanceMitigationShare', kind: 'percent', value: 0.1 }),
-    },
-  ],
-  [
-    // 21-е очко, КОНЦЕПТ. Щит кормит ротацию против дешёвой кнопки, которая
-    // наконец работает.
-    {
-      id: 'bulwark-shield-grip',
-      name: 'Хватка щита',
-      icon: 'talent-block-resource',
-      maxRank: 1,
-      col: 2,
-      exclusiveGroup: 'bulwark-key-5',
-      effect: { kind: 'flag', flag: 'block-restores-resource', resourceShare: 0.05 },
-    },
-    {
-      // БЬЁТ ПО ПРИЧИНЕ ОБЯЗАТЕЛЬНОСТИ «СКОРОГО ВЫПАДА». Ослабление держится
-      // три удара вместо одного: «Толчок щитом» перестаёт быть тычком и
-      // становится главным защитным умением ротации.
-      id: 'bulwark-braced',
-      name: 'Упор',
-      icon: 'talent-braced',
-      maxRank: 1,
+      // Ослабление «Толчка» — 40 % следующего удара цели. Три ранга по
+      // десятой доле доводят его до 52 %: удар, который герой всё равно
+      // получит, становится вдвое слабее.
+      id: 'bulwark-press',
+      name: 'Крепкий толчок',
+      icon: 'talent-press',
+      maxRank: 3,
       col: 3,
-      exclusiveGroup: 'bulwark-key-5',
-      effect: tunes('shield-shove', { field: 'weakenHits', kind: 'percent', value: 2 }),
-    },
-  ],
-  [
-    {
-      id: 'bulwark-sturdy-frame',
-      name: 'Крепость тела',
-      icon: 'talent-vitality',
-      maxRank: 6,
-      col: 2,
-      // Было `vitality flat 3` — плоская характеристика отстаёт от уровня
-      // (см. TALENT_STAT_RULE). Переведено в процент по замеру на 55-м
-      // уровне и срезано общим множителем ветки.
-      effect: mods(m('maxHp', 'percent', 0.0044)),
-    },
-    {
-      id: 'bulwark-thrift-wall',
-      name: 'Скупая стена',
-      icon: 'talent-thrift-wall',
-      maxRank: 5,
-      col: 3,
-      effect: tunes('bulwark', { field: 'manaCost', kind: 'percent', value: -0.07 }),
+      effect: tunes('shield-shove', { field: 'weakenDamageShare', kind: 'percent', value: 0.1 }),
     },
     {
       id: 'bulwark-deep-mend',
       name: 'Глубокое врачевание',
       icon: 'talent-deep-mend',
+      maxRank: 3,
+      col: 4,
+      effect: tunes('mend-wounds', { field: 'healMaxHpShare', kind: 'percent', value: 0.1 }),
+    },
+  ],
+  // --- ЭТАЖ 2 · порог 10 · с уровня 20 -------------------------------------
+  [
+    {
+      id: 'bulwark-shield-wall',
+      name: 'Стена щитов',
+      icon: 'talent-shield-wall',
       maxRank: 5,
       col: 1,
-      effect: tunes('mend-wounds', { field: 'healMaxHpShare', kind: 'percent', value: 0.07 }),
+      effect: mods(m('blockChance', 'flat', 0.02)),
     },
-  ],
-  [
     {
-      id: 'bulwark-battle-breath',
-      name: 'Дыхание в бою',
-      icon: 'talent-second-wind',
-      maxRank: 7,
+      // ЖЕЛЕЗНЫЙ РИТМ — ПРОК, И ОКНО У НЕГО МЕРЯЕТСЯ ЗАМАХАМИ, а не
+      // секундами: «три следующих замаха» у быстрого оружия короче, чем у
+      // медленного, и прибавка сама подгоняется под темп героя.
+      //
+      // СОБЫТИЕ — ПОПАДАНИЕ ГЕРОЯ, А НЕ БЛОК, И ЭТО НЕ ОПИСКА. Блока в
+      // `ProcTrigger` нет вовсе, и причина записана рядом со списком: частота
+      // блока считается из темпа ударов МОБА, которого у модели нет, — такой
+      // прок был бы виден тику и невидим оффлайну, а правило «оффлайн ≤
+      // автокаст» ломалось бы молча.
+      id: 'bulwark-iron-rhythm',
+      name: 'Железный ритм',
+      icon: 'talent-spiked-guard',
+      maxRank: 3,
       col: 2,
-      effect: mods(m('hpRegen', 'percent', 0.0299)),
+      effect: {
+        kind: 'flag',
+        flag: 'proc',
+        trigger: 'hit',
+        everyNth: 3,
+        effect: { kind: 'stat-swings', stat: 'blockChance', value: 0.04, swings: 3 },
+      },
     },
     {
-      // Длительность стойки равна её откату — автокаст держит её постоянно.
-      // Талант этого не ломает, а расширяет запас: с ним стойка переживает
-      // и просадку кулдауна от отката умений.
-      id: 'bulwark-long-stance',
-      name: 'Долгая стойка',
-      icon: 'talent-long-stance',
+      id: 'bulwark-braced',
+      name: 'Двойной толчок',
+      icon: 'talent-braced',
       maxRank: 5,
       col: 3,
-      effect: tunes('stance', { field: 'stanceDurationSec', kind: 'percent', value: 0.06 }),
+      requires: { talentId: 'bulwark-press', minRank: 2 },
+      effect: tunes('shield-shove', { field: 'weakenHits', kind: 'percent', value: 0.2 }),
+    },
+    {
+      id: 'bulwark-quick-mend',
+      name: 'Скорое заживление',
+      icon: 'talent-quick-mend',
+      maxRank: 5,
+      col: 4,
+      requires: { talentId: 'bulwark-deep-mend', minRank: 2 },
+      effect: tunes('mend-wounds', { field: 'cooldownSec', kind: 'percent', value: -0.1 }),
     },
   ],
+  // --- ЭТАЖ 3 · порог 20 · с уровня 30 · ПЕРВЫЙ ВЫБОР ----------------------
+  //
+  // ВЫБОР ЗДЕСЬ ИЗ ТРЁХ, И РАЗВЕДЕНЫ ОНИ ПРЕДМЕТОМ, А НЕ ВЕЛИЧИНОЙ: чем
+  // заполнять паузы, во что обходится смерть, откуда берётся мана. Ни один из
+  // трёх не сильнее — они про разное.
   [
     {
-      id: 'bulwark-unyielding',
-      name: 'Несгибаемость',
-      icon: 'talent-thick-hide',
-      maxRank: 7,
+      id: 'bulwark-iron-skin',
+      name: 'Железная кожа',
+      icon: 'talent-iron-skin',
+      maxRank: 5,
+      col: 1,
+      effect: mods(m('damageReduction', 'flat', 0.01)),
+    },
+    {
+      // ЩИТ И КЛИНОК — ЗАМЕНА УМЕНИЯ ЦЕЛИКОМ, а не правка поля: ослабления у
+      // «Скорого выпада» нет вовсе, и завести его правкой из
+      // `ABILITY_TUNABLE` нельзя. Заполнитель бьёт слабее, зато КАЖДЫЙ раз
+      // делает ответ врага мягче — ветка забирает себе ту кнопку, которую
+      // герой жмёт чаще всего.
+      id: 'bulwark-shield-and-blade',
+      name: 'Щит и клинок',
+      icon: 'ability-shield-jab',
+      maxRank: 1,
       col: 2,
-      effect: mods(m('maxHp', 'percent', 0.0176)),
+      exclusiveGroup: 'bulwark-key-3',
+      effect: { kind: 'flag', flag: 'replace-ability', from: 'quick-strike', to: 'shield-jab' },
+    },
+    {
+      id: 'bulwark-heavy-guard',
+      name: 'Тяжёлый заслон',
+      icon: 'talent-firm-press',
+      maxRank: 5,
+      col: 3,
+      requires: { talentId: 'bulwark-braced', minRank: 3 },
+      effect: tunes('shield-shove', { field: 'cooldownSec', kind: 'percent', value: -0.1 }),
+    },
+    {
+      // Не трогает бой вовсе и отвечает на другой вопрос — что делать, когда
+      // не устоял. Выбор между «реже получать» и «дешевле платить».
+      id: 'bulwark-swift-return',
+      name: 'Скорое возвращение',
+      icon: 'talent-swift-return',
+      maxRank: 1,
+      col: 4,
+      exclusiveGroup: 'bulwark-key-3',
+      effect: { kind: 'flag', flag: 'faster-revive', reviveMultiplier: 0.5 },
+    },
+    {
+      // ХВАТКА ЩИТА — ПЕРВАЯ ПОЛОВИНА ЗАМЫСЛА ВЕТКИ: остановленный удар
+      // возвращается ресурсом. Вторая половина — «Ответный удар» на седьмом
+      // этаже, самая дорогая кнопка ветки, на которую этот ресурс и уходит.
+      // Модель видит приход честно: блок уже входит в неё слагаемым
+      // `fromBlock`.
+      id: 'bulwark-shield-grip',
+      name: 'Хватка щита',
+      icon: 'talent-block-resource',
+      maxRank: 1,
+      col: 5,
+      exclusiveGroup: 'bulwark-key-3',
+      effect: { kind: 'flag', flag: 'block-restores-resource', resourceShare: 0.05 },
+    },
+  ],
+  // --- ЭТАЖ 4 · порог 30 · с уровня 40 -------------------------------------
+  [
+    {
+      id: 'bulwark-wide-wall',
+      name: 'Широкая стена',
+      icon: 'talent-wide-wall',
+      maxRank: 5,
+      col: 1,
+      effect: tunes('bulwark', { field: 'absorbArmorShare', kind: 'percent', value: 0.1 }),
+    },
+    {
+      // Стойка режет 15 % оставшегося урона ценой 30 % своего. Талант растит
+      // ТОЛЬКО смягчение: цена остаётся, и обмен видно.
+      id: 'bulwark-hard-stance',
+      name: 'Твёрдая стойка',
+      icon: 'talent-hard-stance',
+      maxRank: 5,
+      col: 2,
+      effect: tunes('stance', { field: 'stanceMitigationShare', kind: 'percent', value: 0.1 }),
+    },
+    {
+      id: 'bulwark-thrift-press',
+      name: 'Скупой толчок',
+      icon: 'talent-thrift-wall',
+      maxRank: 3,
+      col: 3,
+      effect: tunes('shield-shove', { field: 'manaCost', kind: 'percent', value: -0.1 }),
     },
     {
       // ПОРОГ АВТОКАСТА ЛЕЧЕНИЯ — В ПУНКТАХ: 55 % + 5 рангов по 2 = 65 %.
@@ -1317,216 +1397,275 @@ const WARDEN_BULWARK = branch('warden-bulwark', [
       name: 'Ранний зов',
       icon: 'talent-early-call',
       maxRank: 5,
-      col: 3,
+      col: 4,
+      requires: { talentId: 'bulwark-quick-mend', minRank: 3 },
       effect: tunes('mend-wounds', {
         field: 'healAutocastBelowHpShare',
         kind: 'points',
         value: 0.02,
       }),
     },
-  ],
-  [
-    // 41-е очко, КОНЦЕПТ. Смерть дешевле против того, чтобы не умирать.
     {
-      id: 'bulwark-swift-return',
-      name: 'Скорое возвращение',
-      icon: 'talent-swift-return',
-      maxRank: 1,
-      col: 2,
-      exclusiveGroup: 'bulwark-key-9',
-      effect: { kind: 'flag', flag: 'faster-revive', reviveMultiplier: 0.5 },
+      // ОТДАЧА — ЕДИНСТВЕННЫЙ ТАЛАНТ ВЕТКИ В ДВА РАНГА, и ранг здесь работает:
+      // у прока величина множится на ранг, в отличие от остальных флагов,
+      // которые ранга не читают вовсе. Окно меряется СЕКУНДАМИ — тем и
+      // отличается от «Железного ритма», у которого оно в замахах.
+      id: 'bulwark-recoil',
+      name: 'Отдача',
+      icon: 'talent-guard-echo',
+      maxRank: 2,
+      col: 5,
+      effect: {
+        kind: 'flag',
+        flag: 'proc',
+        trigger: 'crit',
+        everyNth: 2,
+        effect: { kind: 'stat', stat: 'damageReduction', value: 0.03, durationSec: 6 },
+      },
+    },
+  ],
+  // --- ЭТАЖ 5 · порог 40 · с уровня 50 · ВТОРОЙ ВЫБОР ----------------------
+  [
+    {
+      id: 'bulwark-plate-drill',
+      name: 'Латная выучка',
+      icon: 'talent-thick-coat',
+      maxRank: 5,
+      col: 1,
+      effect: mods(m('armor', 'percent', 0.05)),
     },
     {
-      // СТРЕЛКИ ЗДЕСЬ БОЛЬШЕ НЕТ, И ЭТО НЕ ПОТЕРЯ СВЯЗИ, А ПОЧИНКА КАРТИНКИ.
-      // Из «Долгой стены» выходили ДВЕ стрелки — сюда (этаж 9) и на «Широкую
-      // стену» (этаж 10), — обе в четвёртом столбце, одна поверх другой.
-      // Нижняя накрывала верхнюю целиком, и наконечник на девятом этаже
-      // читался как конец чужой линии: ровно жалоба «стрелка тянется не от
-      // предыдущего таланта». Держит `content:check` (одна исходящая на узел).
-      //
-      // Смысл связки при этом никуда не делся: «Стена» стоит на втором этаже
-      // той же ветки, и до девятого этажа игрок всё равно проходит через неё.
+      // ОТКАТ «СТЕНЫ» ПРАВИТ ТОЛЬКО «ЧАСТАЯ СТЕНА» — одно поле в ветке имеет
+      // одного хозяина, иначе это один талант, разрезанный надвое (держит
+      // `content:check`). Здесь — цена: щит стоит 28 маны при запасе, который
+      // ветка же и наливает блоком.
+      id: 'bulwark-thrift-wall',
+      name: 'Скупая стена',
+      icon: 'talent-thrift-wall',
+      maxRank: 5,
+      col: 2,
+      effect: tunes('bulwark', { field: 'manaCost', kind: 'percent', value: -0.1 }),
+    },
+    {
+      id: 'bulwark-soft-stance',
+      name: 'Мягкая стойка',
+      icon: 'talent-thrift-stance',
+      maxRank: 5,
+      col: 3,
+      effect: tunes('stance', { field: 'stanceDamageShare', kind: 'percent', value: -0.1 }),
+    },
+    {
+      // САМО ВСТАЁТ — ЕДИНСТВЕННЫЙ УЗЕЛ ДЕРЕВА, КОТОРЫЙ ОСВОБОЖДАЕТ СЛОТ.
+      // «Стена» перестаёт быть кнопкой: играется она сама, по своим же
+      // порогам автокаста, и место в четвёрке отдаёт обратно. Своего словаря
+      // условий флаг не заводит — когда ставить щит, по-прежнему решает само
+      // умение (см. `auto-ability`).
+      id: 'bulwark-self-raising',
+      name: 'Само встаёт',
+      icon: 'talent-quick-hands',
+      maxRank: 1,
+      col: 4,
+      exclusiveGroup: 'bulwark-key-5',
+      effect: { kind: 'flag', flag: 'auto-ability', abilityId: 'bulwark' },
+    },
+    {
+      // ПАРА РАЗВЕДЕНА РОДОМ: сосед отдаёт слот и оставляет щит как есть, а
+      // «Частая стена» слот не трогает вовсе и меняет РИТМ — щит приходит
+      // вдвое чаще, то есть держится половину схватки вместо трети.
       id: 'bulwark-often-wall',
       name: 'Частая стена',
       icon: 'talent-often-wall',
       maxRank: 1,
-      col: 4,
-      exclusiveGroup: 'bulwark-key-9',
+      col: 5,
+      exclusiveGroup: 'bulwark-key-5',
       effect: tunes('bulwark', { field: 'cooldownSec', kind: 'multiplier', value: 0.5 }),
     },
   ],
+  // --- ЭТАЖ 6 · порог 50 · с уровня 60 -------------------------------------
   [
     {
-      id: 'bulwark-stone-skin',
-      name: 'Каменная кожа',
-      icon: 'talent-iron-skin',
+      // Щит держится восемь секунд при откате двадцать пять: аптайм — треть.
+      // Пять рангов доводят его до половины схватки.
+      id: 'bulwark-long-wall',
+      name: 'Долгая стена',
+      icon: 'talent-long-wall',
       maxRank: 5,
-      col: 2,
-      effect: mods(m('damageReduction', 'flat', 0.0047)),
+      col: 1,
+      effect: tunes('bulwark', { field: 'absorbDurationSec', kind: 'percent', value: 0.1 }),
     },
     {
-      // ВТОРАЯ ИЗ ПАРЫ, У КОТОРОЙ СНЯТА СТРЕЛКА: из «Долгой стены» выходили
-      // две линии в один столбец (подробности — у «Частой стены» выше).
-      // Щит растёт от брони, талант удваивает эту долю, и броня получает
-      // третий адрес после смягчения и блока — это остаётся.
-      id: 'bulwark-wide-wall',
-      name: 'Широкая стена',
-      icon: 'talent-wide-wall',
+      id: 'bulwark-deep-wall',
+      name: 'Глубокая стена',
+      icon: 'talent-spiked-guard',
+      maxRank: 5,
+      col: 2,
+      effect: tunes('bulwark', { field: 'absorbBlockShare', kind: 'percent', value: 0.12 }),
+    },
+    {
+      // Длительность стойки равна её откату — автокаст держит её постоянно.
+      // Талант этого не ломает, а расширяет запас: с ним стойка переживает
+      // и просадку кулдауна от отката умений.
+      id: 'bulwark-long-stance',
+      name: 'Врытая стойка',
+      icon: 'talent-long-stance',
+      maxRank: 5,
+      col: 3,
+      requires: { talentId: 'bulwark-soft-stance', minRank: 3 },
+      effect: tunes('stance', { field: 'stanceDurationSec', kind: 'percent', value: 0.1 }),
+    },
+    {
+      id: 'bulwark-unyielding',
+      name: 'Несгибаемость',
+      icon: 'talent-hard-to-kill',
       maxRank: 5,
       col: 4,
-      effect: tunes('bulwark', { field: 'absorbArmorShare', kind: 'percent', value: 0.14 }),
+      effect: mods(m('maxHp', 'percent', 0.03)),
     },
   ],
+  // --- ЭТАЖ 7 · порог 60 · с уровня 70 · ВЕНЕЦ -----------------------------
+  //
+  // ДВА ВЕНЦА, И ОБМЕН МЕЖДУ НИМИ — МЕСТО В ЧЕТВЁРКЕ. «Ответный удар» —
+  // умение: его открывает очко, и слот он занимает как любое другое.
+  // «Зеркальный щит» слота не занимает вовсе — он и скромнее ровно поэтому.
   [
     {
-      id: 'bulwark-heavy-guard',
-      name: 'Тяжёлый заслон',
-      icon: 'talent-bulwark-training',
-      maxRank: 5,
-      col: 2,
-      effect: mods(m('blockValue', 'percent', 0.0879)),
+      id: 'bulwark-riposte',
+      name: 'Ответный удар',
+      icon: 'ability-riposte',
+      maxRank: 1,
+      col: 1,
+      exclusiveGroup: 'bulwark-key-7',
+      requires: { talentId: 'bulwark-long-wall', minRank: 3 },
+      effect: { kind: 'flag', flag: 'grant-ability', abilityId: 'riposte' },
     },
-    {
-      id: 'bulwark-firm-press',
-      name: 'Крепкий упор',
-      icon: 'talent-firm-press',
-      maxRank: 5,
-      col: 3,
-      effect: tunes('shield-shove', { field: 'cooldownSec', kind: 'percent', value: -0.07 }),
-    },
-  ],
-  [
-    {
-      id: 'bulwark-firm-stance',
-      name: 'Твёрдая стойка',
-      icon: 'talent-shield-wall',
-      maxRank: 5,
-      col: 2,
-      effect: mods(m('blockChance', 'flat', 0.0088)),
-    },
-    {
-      id: 'bulwark-quiet-mend',
-      name: 'Тихое врачевание',
-      icon: 'talent-quiet-mend',
-      maxRank: 3,
-      col: 3,
-      effect: tunes('mend-wounds', { field: 'manaCost', kind: 'percent', value: -0.1 }),
-    },
-  ],
-  [
-    // 61-е очко, ДВА КАПСТОУНА: оборона как источник урона против обороны,
-    // которая больше ничего не стоит.
     {
       id: 'bulwark-mirror-shield',
       name: 'Зеркальный щит',
       icon: 'talent-block-reflect',
       maxRank: 1,
       col: 2,
-      exclusiveGroup: 'bulwark-key-13',
+      exclusiveGroup: 'bulwark-key-7',
+      requires: { talentId: 'bulwark-deep-wall', minRank: 3 },
       effect: { kind: 'flag', flag: 'block-reflects', damageShare: 1 },
-    },
-    {
-      // СТРЕЛКА: венец достаётся тому, кто растил стойку всю ветку. Стойка
-      // перестаёт стоить урона вовсе — прямой обмен превращается в подарок,
-      // и ради этого ветку и добивают.
-      id: 'bulwark-immovable',
-      name: 'Несдвигаемый',
-      icon: 'talent-immovable',
-      maxRank: 1,
-      col: 1,
-      exclusiveGroup: 'bulwark-key-13',
-      requires: { talentId: 'bulwark-hard-stance', minRank: 3 },
-      effect: tunes('stance', { field: 'stanceDamageShare', kind: 'percent', value: -1 }),
     },
   ],
 ])
 
-// БДЕНИЕ: ВСЁ ПРО ПАУЗЫ — И ТЕПЕРЬ ЭТО ВЫБОР.
+// БДЕНИЕ: СЕМЬ ЭТАЖЕЙ ПО ДЕСЯТЬ ОЧКОВ.
 //
-// Ветка ничего не добавляет к удару и почти ничего к запасу HP: её вклад в
-// том, что герой реже ОСТАНАВЛИВАЕТСЯ. Прежние тринадцать талантов правили
-// только числа пауз — реген, задержку, длину привала. Половина ветки теперь
-// правит ЭКОНОМИКУ РОТАЦИИ: цену умений, откат «Сосредоточения» и жизнь
-// «Клейма», то есть то, из-за чего паузы вообще случаются.
+// Третья ветка Стража на новой форме, и с ней класс становится ПЕРВЫМ, у кого
+// все три ветки устроены одинаково. Ёмкость 112 при глубине 60.
 //
-// ТАЛАНТ, БЬЮЩИЙ ПО ПРИЧИНЕ ОБЯЗАТЕЛЬНОСТИ УМЕНИЯ, здесь «Полный разрыв».
-// «Сокрушение» стоит в четвёрке потому, что незаменимо: 5.0 удара оружия —
-// вдвое больше следующего. «Разрыв» со «Рваной раной» бьёт всплеском тоже,
-// но множитель детонации 1.5 не догоняет; три ранга доводят его до 2.2, и
-// связка становится вторым ответом на тот же вопрос.
+// ВЕТКА БДЕНИЯ. Игра идёт, пока игрока нет, и вопрос у ветки один: сколько
+// времени герой тратит ВПУСТУЮ. Она ничего не добавляет к удару и почти
+// ничего к запасу — она сокращает паузы: цену ротации (из-за неё кончается
+// мана), длину привала и то, что привал отнимает.
 //
-// Числа срезаны множителем 0.586 — тем же, что в Гневе и Оплоте.
+// ЧЕМ МЕРЯЕТСЯ ВЕТКА, ТЕМ И НАБИТА. Ось автономности — «во сколько срезан
+// простой», и срезают его РОВНО ДВА рода узлов: длина привала (`restDuration`,
+// флаг `shorter-rest`) и то, из-за чего привал случается, — цена умений
+// против прихода маны. Прежняя ветка этого не различала: путь «Клеймо» состоял
+// из настроек клейма и не трогал паузы ВОВСЕ, отчего и стоял красным на 1.05
+// при ленте 1.2. Теперь узлы привала лежат в обоих путях, а не в одном.
+//
+// СТОЛБЕЦ — ЭТО ПОЛОСА: первый — запас и привал, второй — восстановление и
+// «Сосредоточение», третий и четвёртый — цена конкретных умений.
 const WARDEN_VIGIL = branch('warden-vigil', [
+  // --- ЭТАЖ 1 · порог 0 · с уровня 10 --------------------------------------
   [
     {
       id: 'vigil-steady-breath',
       name: 'Ровное дыхание',
       icon: 'talent-steady-breath',
-      maxRank: 6,
-      col: 2,
-      // Плоское восстановление ресурса отстаёт от уровня (38.7/с на 25-м
-      // против 120.0/с на сотом), поэтому процент; замер на 55-м (72.5/с).
-      effect: mods(m('manaRegen', 'percent', 0.0123)),
+      maxRank: 5,
+      col: 1,
+      effect: mods(m('manaRegen', 'percent', 0.1)),
     },
     {
-      // «Сосредоточение» — откат 45 секунд, самый длинный у класса, и вся
-      // его ценность ЧУЖАЯ: три бесплатных применения. Пять рангов срезают
-      // ожидание на треть.
-      id: 'vigil-quick-focus',
-      name: 'Скорое сосредоточение',
-      icon: 'talent-quick-focus',
+      id: 'vigil-deep-well',
+      name: 'Глубокий колодец',
+      icon: 'talent-deep-well',
       maxRank: 5,
+      col: 2,
+      effect: mods(m('maxMana', 'percent', 0.1)),
+    },
+    {
+      id: 'vigil-thrift-strike',
+      name: 'Бережливый выпад',
+      icon: 'talent-spare-edge',
+      maxRank: 3,
+      col: 3,
+      effect: tunes('quick-strike', { field: 'manaCost', kind: 'percent', value: -0.1 }),
+    },
+    {
+      id: 'vigil-thrift-wound',
+      name: 'Бережливая рана',
+      icon: 'talent-thrift-wound',
+      maxRank: 3,
       col: 4,
-      effect: tunes('focus', { field: 'cooldownSec', kind: 'percent', value: -0.06 }),
+      effect: tunes('rending-wound', { field: 'manaCost', kind: 'percent', value: -0.1 }),
     },
   ],
+  // --- ЭТАЖ 2 · порог 10 · с уровня 20 -------------------------------------
   [
     {
       id: 'vigil-clear-mind',
       name: 'Ясный ум',
       icon: 'talent-clear-mind',
-      // Пауза регенерации — стат: конвейер обрежет её по нулю, в минус не уйдёт.
-      maxRank: 6,
-      col: 2,
-      effect: mods(m('regenDelay', 'flat', -0.176)),
-    },
-    {
-      id: 'vigil-long-brand',
-      name: 'Долгое клеймо',
-      icon: 'talent-long-brand',
       maxRank: 5,
       col: 1,
-      effect: tunes('brand', { field: 'brandDurationSec', kind: 'percent', value: 0.08 }),
+      effect: mods(m('regenDelay', 'flat', -0.2)),
     },
-  ],
-  [
     {
-      id: 'vigil-deep-well',
-      name: 'Глубокий колодец',
-      icon: 'talent-deep-well',
-      // Запас важнее регена: пауза платится один раз за всплеск, и чем глубже
-      // запас, тем реже она приходит.
-      maxRank: 6,
+      id: 'vigil-long-mind',
+      name: 'Долгий настрой',
+      icon: 'talent-long-mind',
+      maxRank: 5,
       col: 2,
-      effect: mods(m('maxMana', 'percent', 0.0586)),
+      effect: tunes('focus', { field: 'freeCastsCasts', kind: 'percent', value: 0.2 }),
     },
     {
-      id: 'vigil-thrift-rupture',
-      name: 'Скупой разрыв',
-      icon: 'talent-thrift-rupture',
+      id: 'vigil-short-strike',
+      name: 'Выпад накоротке',
+      icon: 'talent-quick-hands',
       maxRank: 5,
       col: 3,
-      effect: tunes('rupture', { field: 'manaCost', kind: 'percent', value: -0.08 }),
+      requires: { talentId: 'vigil-thrift-strike', minRank: 2 },
+      effect: tunes('quick-strike', { field: 'cooldownSec', kind: 'percent', value: -0.1 }),
+    },
+    {
+      id: 'vigil-often-wound',
+      name: 'Частая рана',
+      icon: 'talent-open-wound',
+      maxRank: 5,
+      col: 4,
+      requires: { talentId: 'vigil-thrift-wound', minRank: 2 },
+      effect: tunes('rending-wound', { field: 'cooldownSec', kind: 'percent', value: -0.1 }),
     },
   ],
+  // --- ЭТАЖ 3 · порог 20 · с уровня 30 · ПЕРВЫЙ ВЫБОР ----------------------
+  //
+  // ВЫБОР РАЗВЕДЁН РОДОМ: «Трофейный дух» ускоряет ротацию ПО ХОДУ ФАРМА
+  // (каждое убийство сбрасывает часть откатов), «Привычная рука» ОТДАЁТ СЛОТ
+  // — заполнитель уходит из четвёрки и жмётся сам. Первое меняет темп,
+  // второе — состав.
   [
     {
       id: 'vigil-quick-camp',
       name: 'Скорый привал',
       icon: 'talent-quick-camp',
-      maxRank: 6,
+      maxRank: 5,
+      col: 1,
+      effect: mods(m('restDuration', 'flat', -0.2)),
+    },
+    {
+      id: 'vigil-quick-focus',
+      name: 'Скорое сосредоточение',
+      icon: 'talent-quick-focus',
+      maxRank: 5,
       col: 2,
-      effect: mods(m('restDuration', 'flat', -0.293)),
+      requires: { talentId: 'vigil-long-mind', minRank: 3 },
+      effect: tunes('focus', { field: 'cooldownSec', kind: 'percent', value: -0.1 }),
     },
     {
       id: 'vigil-thrift-shatter',
@@ -1534,2088 +1673,2121 @@ const WARDEN_VIGIL = branch('warden-vigil', [
       icon: 'talent-thrift-shatter',
       maxRank: 5,
       col: 3,
-      effect: tunes('shattering-blow', { field: 'manaCost', kind: 'percent', value: -0.07 }),
+      effect: tunes('shattering-blow', { field: 'manaCost', kind: 'percent', value: -0.1 }),
     },
-  ],
-  [
-    // 21-е очко, КОНЦЕПТ. Откаты против ресурса: два разных ответа на вопрос
-    // «почему герой стоит без дела».
     {
       id: 'vigil-trophy-spirit',
       name: 'Трофейный дух',
       icon: 'talent-kill-refund',
       maxRank: 1,
-      col: 2,
-      exclusiveGroup: 'vigil-key-5',
+      col: 4,
+      exclusiveGroup: 'vigil-key-3',
       effect: { kind: 'flag', flag: 'kill-refunds-cooldowns', cooldownShare: 0.75 },
     },
     {
-      // Три бесплатных применения становятся шестью. Умение, у которого своя
-      // ценность около нуля, превращается в половину всплеска — но только у
-      // того, кто носит ДОРОГУЮ четвёрку.
-      id: 'vigil-long-mind',
-      name: 'Долгий настрой',
-      icon: 'talent-long-mind',
+      // ПРИВЫЧНАЯ РУКА — второй узел дерева с флагом `auto-ability`, и оба
+      // отдают слот: у Оплота это «Стена», здесь — заполнитель. Когда жать,
+      // решает само умение своими порогами; своего словаря условий флаг не
+      // заводит.
+      id: 'vigil-habitual-hand',
+      name: 'Привычная рука',
+      icon: 'talent-restless-legs',
       maxRank: 1,
-      col: 3,
-      exclusiveGroup: 'vigil-key-5',
-      effect: tunes('focus', { field: 'freeCastsCasts', kind: 'percent', value: 1 }),
+      col: 5,
+      exclusiveGroup: 'vigil-key-3',
+      effect: { kind: 'flag', flag: 'auto-ability', abilityId: 'quick-strike' },
     },
   ],
+  // --- ЭТАЖ 4 · порог 30 · с уровня 40 -------------------------------------
   [
     {
-      id: 'vigil-learning',
-      name: 'Учёность',
-      icon: 'talent-intellect',
-      maxRank: 6,
-      col: 2,
-      // Было `intellect flat 3` — плоская характеристика отстаёт от уровня.
-      effect: mods(m('maxMana', 'percent', 0.0129)),
+      id: 'vigil-thrift-rupture',
+      name: 'Скупой разрыв',
+      icon: 'talent-thrift-rupture',
+      maxRank: 5,
+      col: 1,
+      effect: tunes('rupture', { field: 'manaCost', kind: 'percent', value: -0.1 }),
     },
     {
-      // ПОРОГ АВТОКАСТА КЛЕЙМА — В ПУНКТАХ: 50 % − 5 рангов по 4 = 30 %.
-      // Автокаст вешает метку и на подраненного, а не только на свежего.
-      id: 'vigil-early-brand',
-      name: 'Ранняя метка',
+      id: 'vigil-thrift-brand',
+      name: 'Скупое клеймо',
       icon: 'talent-early-brand',
       maxRank: 5,
+      col: 2,
+      effect: tunes('brand', { field: 'manaCost', kind: 'percent', value: -0.1 }),
+    },
+    {
+      id: 'vigil-early-brand',
+      name: 'Ранняя метка',
+      icon: 'talent-long-brand',
+      maxRank: 3,
       col: 3,
       effect: tunes('brand', {
         field: 'brandAutocastAboveHpShare',
         kind: 'points',
-        value: -0.04,
+        value: 0.05,
       }),
     },
     {
-      id: 'vigil-thrift-wound',
-      name: 'Скупая рана',
-      icon: 'talent-thrift-wound',
+      // ЯСНОСТЬ — ЕДИНСТВЕННЫЙ ТАЛАНТ ВЕТКИ В ДВА РАНГА: прок читает ранг, а
+      // остальные флаги не читают вовсе. Пауза перед восстановлением — это
+      // прямой простой, и окно режет её там, где герой бьёт.
+      //
+      // СОБЫТИЕ — ПОПАДАНИЕ, А НЕ УБИЙСТВО. Убийства в `ProcTrigger` нет:
+      // его частота — это результат `estimateCombatRate`, то есть той самой
+      // функции, которая прок и считает.
+      id: 'vigil-clarity',
+      name: 'Ясность',
+      icon: 'talent-clear-mind',
+      maxRank: 2,
+      col: 4,
+      effect: {
+        kind: 'flag',
+        flag: 'proc',
+        trigger: 'hit',
+        everyNth: 3,
+        effect: { kind: 'stat', stat: 'regenDelay', value: -0.5, durationSec: 6 },
+      },
+    },
+    {
+      id: 'vigil-thrift-wall',
+      name: 'Скупая стена',
+      icon: 'talent-thrift-wall',
       maxRank: 5,
-      col: 1,
-      effect: tunes('rending-wound', { field: 'manaCost', kind: 'percent', value: -0.07 }),
+      col: 5,
+      effect: tunes('bulwark', { field: 'manaCost', kind: 'percent', value: -0.1 }),
     },
   ],
+  // --- ЭТАЖ 5 · порог 40 · с уровня 50 · ВТОРОЙ ВЫБОР ----------------------
   [
     {
-      // ЗДЕСЬ СТОЯЛА «ПОХОДНАЯ ПЕРЕВЯЗКА» — талант на +2% ПОРОГА привала за ранг,
-      // и он был ошибкой уровня механики, а не числа. Порог привала — НАСТРОЙКА
-      // ИГРОКА: он выставляет её ползунком и ждёт, что игра ей следует. Талант,
-      // который молча двигает чужую настройку, читается как поломка: игрок
-      // ставит 60%, а герой уходит отдыхать на 72% и объяснения этому на экране
-      // нет. Настройки не бывают «прокачиваемыми» — прокачивается то, чем герой
-      // ЯВЛЯЕТСЯ, а не то, что он себе назначил.
-      //
-      // На его месте — настоящая характеристика: длина привала. Процентом, а не
-      // секундами: секунды уже заняты соседним «Скорым лагерем», а процент от
-      // суммы конвейера складывается с ним по-другому и даёт выбор, а не
-      // удвоение одного и того же.
-      id: 'vigil-swift-camp',
-      name: 'Скорые сборы',
-      icon: 'talent-quick-camp',
-      maxRank: 6,
-      col: 2,
-      effect: mods(m('restDuration', 'percent', -0.0234)),
+      id: 'vigil-often-rupture',
+      name: 'Частый разрыв',
+      icon: 'talent-full-rupture',
+      maxRank: 5,
+      col: 1,
+      requires: { talentId: 'vigil-thrift-rupture', minRank: 3 },
+      effect: tunes('rupture', { field: 'cooldownSec', kind: 'percent', value: -0.1 }),
     },
     {
       id: 'vigil-thrift-mercy',
       name: 'Скупая милость',
       icon: 'talent-thrift-mercy',
       maxRank: 5,
-      col: 3,
-      effect: tunes('mercy', { field: 'manaCost', kind: 'percent', value: -0.08 }),
-    },
-  ],
-  [
-    {
-      id: 'vigil-slow-bleeding',
-      name: 'Скорое заживление',
-      icon: 'talent-second-wind',
-      maxRank: 7,
       col: 2,
-      effect: mods(m('hpRegen', 'percent', 0.0223)),
+      effect: tunes('mercy', { field: 'manaCost', kind: 'percent', value: -0.1 }),
     },
     {
-      id: 'vigil-often-brand',
-      name: 'Частая метка',
-      icon: 'talent-often-brand',
+      // ЛЁГКИЕ СБОРЫ — ДОЛЯ, А НЕ СЕКУНДЫ: секунды привала уже режет «Скорый
+      // привал» этажом выше, и два узла на одном роде прибавки — это один
+      // талант, разрезанный надвое.
+      id: 'vigil-light-camp',
+      name: 'Лёгкие сборы',
+      icon: 'talent-short-camp',
       maxRank: 5,
       col: 3,
-      effect: tunes('brand', { field: 'cooldownSec', kind: 'percent', value: -0.07 }),
+      effect: mods(m('restDuration', 'percent', -0.05)),
     },
-  ],
-  [
-    // 41-е очко, КОНЦЕПТ. Привал против метки: снять цену остановки или
-    // сделать так, чтобы метка её пережила.
     {
       id: 'vigil-unbroken-focus',
       name: 'Несбитый настрой',
       icon: 'talent-unbroken-focus',
       maxRank: 1,
-      col: 2,
-      exclusiveGroup: 'vigil-key-9',
+      col: 4,
+      exclusiveGroup: 'vigil-key-5',
       effect: { kind: 'flag', flag: 'rest-clears-cooldowns', cooldownShare: 0 },
     },
     {
-      // СТРЕЛКА: метка, которую герой уже растил. Сорок секунд — дольше
-      // любой обычной схватки: клеймо перестаёт быть решением «на кого» и
-      // становится фоном.
+      // ПАРА РАЗВЕДЕНА РОДОМ: сосед делает бесплатной ПАУЗУ, а «Затяжное
+      // клеймо» убирает кнопку поддержки — клеймо ставится раз в бой и
+      // держится до конца. Один про отдых, другой про ротацию.
       id: 'vigil-lasting-brand',
       name: 'Затяжное клеймо',
       icon: 'talent-lasting-brand',
       maxRank: 1,
+      col: 5,
+      exclusiveGroup: 'vigil-key-5',
+      effect: tunes('brand', { field: 'brandDurationSec', kind: 'multiplier', value: 3 }),
+    },
+  ],
+  // --- ЭТАЖ 6 · порог 50 · с уровня 60 -------------------------------------
+  [
+    {
+      id: 'vigil-thrift-mend',
+      name: 'Скупое заживление',
+      icon: 'talent-quiet-mend',
+      maxRank: 5,
       col: 1,
-      exclusiveGroup: 'vigil-key-9',
-      requires: { talentId: 'vigil-long-brand', minRank: 3 },
-      effect: tunes('brand', { field: 'brandDurationSec', kind: 'multiplier', value: 2 }),
-    },
-  ],
-  [
-    {
-      id: 'vigil-thrift',
-      name: 'Бережливость',
-      icon: 'talent-deep-well',
-      maxRank: 5,
-      col: 2,
-      effect: mods(m('maxMana', 'percent', 0.0469)),
-    },
-    {
-      id: 'vigil-thrift-stance',
-      name: 'Скупая стойка',
-      icon: 'talent-thrift-stance',
-      maxRank: 5,
-      col: 3,
-      effect: tunes('stance', { field: 'manaCost', kind: 'percent', value: -0.08 }),
-    },
-  ],
-  [
-    {
-      id: 'vigil-composure',
-      name: 'Собранность',
-      icon: 'talent-clear-mind',
-      maxRank: 5,
-      col: 2,
-      effect: mods(m('regenDelay', 'flat', -0.117)),
+      effect: tunes('mend-wounds', { field: 'manaCost', kind: 'percent', value: -0.1 }),
     },
     {
       id: 'vigil-quick-mercy',
       name: 'Скорая милость',
       icon: 'talent-quick-mercy',
       maxRank: 5,
-      col: 3,
-      effect: tunes('mercy', { field: 'cooldownSec', kind: 'percent', value: -0.07 }),
-    },
-  ],
-  [
-    {
-      id: 'vigil-light-sleep',
-      name: 'Чуткий сон',
-      icon: 'talent-quick-camp',
-      maxRank: 5,
       col: 2,
-      effect: mods(m('restDuration', 'flat', -0.176)),
+      effect: tunes('mercy', { field: 'cooldownSec', kind: 'percent', value: -0.1 }),
     },
     {
-      // БЬЁТ ПО ПРИЧИНЕ ОБЯЗАТЕЛЬНОСТИ «СОКРУШЕНИЯ». Оно незаменимо потому,
-      // что бьёт вдвое сильнее следующего; «Разрыв» со «Рваной раной» тоже
-      // всплеск, но множитель 1.5 не догоняет. Три ранга доводят его до 2.2 —
-      // и связка становится вторым ответом на тот же вопрос.
-      id: 'vigil-full-rupture',
-      name: 'Полный разрыв',
-      icon: 'talent-full-rupture',
-      maxRank: 3,
+      id: 'vigil-composure',
+      name: 'Собранность',
+      icon: 'talent-even-breath',
+      maxRank: 5,
       col: 3,
-      effect: tunes('rupture', { field: 'detonateMultiplier', kind: 'percent', value: 0.15 }),
+      effect: mods(m('regenDelay', 'flat', -0.1)),
+    },
+    {
+      id: 'vigil-learning',
+      name: 'Учёность',
+      icon: 'talent-intellect',
+      maxRank: 5,
+      col: 4,
+      effect: mods(m('maxMana', 'percent', 0.05)),
     },
   ],
+  // --- ЭТАЖ 7 · порог 60 · с уровня 70 · ВЕНЕЦ -----------------------------
+  //
+  // ОБМЕН МЕЖДУ ВЕНЦАМИ — МЕСТО В ЧЕТВЁРКЕ. «Второе дыхание» это УМЕНИЕ:
+  // очко открывает его, и слот оно занимает как любое другое. «Костёр на
+  // ходу» слота не занимает вовсе и потому скромнее — он просто режет привал
+  // втрое.
   [
-    // 61-е очко, ДВА КАПСТОУНА: привал перестаёт быть налогом против того,
-    // чтобы всплеск приходил вдвое чаще.
+    {
+      id: 'vigil-second-wind',
+      name: 'Второе дыхание',
+      icon: 'ability-second-wind',
+      maxRank: 1,
+      col: 1,
+      exclusiveGroup: 'vigil-key-7',
+      requires: { talentId: 'vigil-thrift-mend', minRank: 3 },
+      effect: { kind: 'flag', flag: 'grant-ability', abilityId: 'second-wind' },
+    },
     {
       id: 'vigil-campfire-on-the-move',
       name: 'Костёр на ходу',
       icon: 'talent-shorter-rest',
       maxRank: 1,
       col: 2,
-      exclusiveGroup: 'vigil-key-13',
+      exclusiveGroup: 'vigil-key-7',
+      requires: { talentId: 'vigil-quick-mercy', minRank: 3 },
       effect: { kind: 'flag', flag: 'shorter-rest', durationMultiplier: 1 / 3 },
-    },
-    {
-      // СТРЕЛКА: венец достаётся тому, кто растил откат всю ветку.
-      id: 'vigil-endless-mind',
-      name: 'Неиссякаемость',
-      icon: 'talent-endless-mind',
-      maxRank: 1,
-      col: 4,
-      exclusiveGroup: 'vigil-key-13',
-      requires: { talentId: 'vigil-quick-focus', minRank: 3 },
-      effect: tunes('focus', { field: 'cooldownSec', kind: 'multiplier', value: 0.5 }),
     },
   ],
 ])
-
-// ---------------------------------------------------------------------------
-// ИЗУВЕР
-// ---------------------------------------------------------------------------
-
-// Резня: тот же стиль, что и Гнев, но растёт в две руки — вместо ускорения
-// на четвёртом этаже стоит сила левой руки, и оба заряда-капстоуна другие.
-// ---------------------------------------------------------------------------
-// ИЗУВЕР
-// ---------------------------------------------------------------------------
-
-// РЕЗНЯ: ВСЁ ПРО УДАР И ПРО ТО, ЧЕМ ЕГО ОПЛАЧИВАЮТ.
+// РЕЗНЯ: СЕМЬ ЭТАЖЕЙ ПО ДЕСЯТЬ ОЧКОВ.
 //
-// Ветка была лестницей из тринадцати одиночных узлов — очки лились в
-// единственный доступный талант, и выбора не было ни на одном этаже. Теперь
-// на этаже двое-трое, ёмкость больше, чем очков у героя, и это и есть цена
-// выбора.
+// Первая ветка Изувера на новой форме. Ёмкость 112 при глубине 60.
 //
-// БОЛЬШЕ ПОЛОВИНЫ ТАЛАНТОВ ПРАВЯТ УМЕНИЯ, и это не украшение: у класса их
-// теперь одиннадцать, и ветка, состоящая из процентов, меняла бы ЧИСЛА, а не
-// ротацию. Ключевые этажи (5, 9, 13) — пары взаимоисключающих, и обе стороны
-// пары различаются РОДОМ, а не величиной.
+// ВЕТКА РЕЗНИ. Ярость у Изувера не валюта, а СОСТОЯНИЕ, и ветка растит именно
+// его: сколько ярости приходит с каждого взмаха, как высоко она забирается и
+// что герой с полной полоски получает. Вопрос класса — «в каком я сейчас» — и
+// столбцы разложены по нему: первый растит полоску и то, что от неё зависит,
+// второй — «Багровую грань» и «Бешенство», третий — «Потрошащий взмах»,
+// четвёртый — «Кровавое исступление» и «Расправу».
+//
+// СТОЛБЕЦ — ЭТО ПОЛОСА, и стрелка идёт по своей полосе прямой линией вниз.
 const REAVER_CARNAGE = branch('reaver-carnage', [
+  // --- ЭТАЖ 1 · порог 0 · с уровня 10 --------------------------------------
   [
     {
       id: 'carnage-bloodlust',
       name: 'Жажда крови',
-      icon: 'talent-honed-edge',
-      maxRank: 6,
-      col: 2,
+      icon: 'talent-strength',
+      maxRank: 5,
+      col: 1,
       effect: mods(m('attackPower', 'percent', 0.02)),
     },
-    {
-      id: 'carnage-quick-cleaver',
-      name: 'Скорый тесак',
-      icon: 'talent-firm-hand',
-      maxRank: 5,
-      col: 3,
-      effect: tunes('gut-rip', { field: 'cooldownSec', kind: 'percent', value: -0.06 }),
-    },
-  ],
-  [
-    {
-      id: 'carnage-predator-eye',
-      name: 'Хищный взгляд',
-      icon: 'talent-keen-eye',
-      maxRank: 6,
-      col: 2,
-      effect: mods(m('critChance', 'flat', 0.012)),
-    },
-    {
-      // ПЕРЕЦЕЛЕН, А НЕ УДАЛЁН. Талант правил урон КРОВОТЕЧЕНИЯ «Кровавого
-      // исступления»; кровотечение уехало Стражу вместе со всем механизмом
-      // меток, и правка стала правкой пустоты — тихой, потому что схема
-      // проверяла только имя поля. Теперь он правит РАЗГОН, то есть то, чем
-      // это умение стало: прирост за каждый свой удар.
-      id: 'carnage-deep-frenzy',
-      name: 'Глубокое исступление',
-      icon: 'talent-bleed-deep',
-      maxRank: 5,
-      col: 3,
-      effect: tunes('blood-frenzy', {
-        field: 'rampPerSwing',
-        kind: 'percent',
-        value: 0.08,
-      }),
-    },
-  ],
-  [
     {
       id: 'carnage-ferocity',
       name: 'Свирепость',
       icon: 'talent-savage-blows',
-      maxRank: 6,
-      col: 1,
-      effect: mods(m('critMultiplier', 'flat', 0.08)),
-    },
-    {
-      id: 'carnage-heavy-splitter',
-      name: 'Тяжёлый череполом',
-      icon: 'talent-heavy-shatter',
       maxRank: 5,
       col: 2,
-      effect: tunes('skull-splitter', {
-        field: 'weaponDamagePercent',
-        kind: 'percent',
-        value: 0.06,
-      }),
+      effect: mods(m('critMultiplier', 'flat', 0.03)),
     },
     {
-      id: 'carnage-thirsty-blade',
-      name: 'Жадный клинок',
-      icon: 'talent-deep-cut',
-      maxRank: 5,
-      col: 3,
-      effect: tunes('blood-thirst', {
-        field: 'weaponDamagePercent',
-        kind: 'percent',
-        value: 0.07,
-      }),
-    },
-  ],
-  [
-    {
-      id: 'carnage-offhand',
-      name: 'Левая рука',
-      icon: 'talent-offhand-mastery',
-      // Штраф левой руки — СТАТ, поэтому талант правит его модификатором.
-      // Со щитом или двуручным он не даёт ничего, и это честно.
-      maxRank: 6,
-      col: 1,
-      effect: mods(m('offhandPenalty', 'flat', 0.03)),
-    },
-    {
-      id: 'carnage-swift-cleaver',
-      name: 'Широкий тесак',
-      icon: 'talent-spare-edge',
-      maxRank: 5,
-      col: 3,
-      effect: tunes('gut-rip', { field: 'weaponDamagePercent', kind: 'percent', value: 0.05 }),
-      // Стрелка по смыслу: оба таланта про «Потрошащий взмах», и второй
-      // буквально дорабатывает первый — сперва чаще, потом сильнее.
-      requires: { talentId: 'carnage-quick-cleaver' },
-    },
-  ],
-  [
-    // 21-е очко, КЛЮЧЕВОЙ ЭТАЖ, И ОН ПЕРЕСОБРАН ЦЕЛИКОМ.
-    //
-    // Пара была такая: слева дешёвый удар НАЧИНАЛ КРОВИТЬ, справа
-    // кровотечение переставало ЖДАТЬ ЗАМАХА. Оба таланта — про метку на
-    // цели, то есть про механизм СТРАЖА, выданный Изуверу под другими
-    // именами; а после того как кровотечение уехало Стражу целиком, правый
-    // и вовсе стал ставить «мгновенное» умению, которое уже мгновенное.
-    // Ключевой этаж, где ОБА варианта ничего не делают, — худшее, что
-    // бывает с деревом: игрок платит 21 очко за выбор между двумя нулями.
-    //
-    // Новая пара — про СБРОС, главную кнопку класса, и различается она
-    // родом: слева меняется МОМЕНТ (автокаст ждёт почти полной полоски),
-    // справа — СПОСОБ (удар перестаёт ждать замаха). Числа тут ни при чём:
-    // при них ротация разная — редкие огромные удары против частых сразу.
-    {
-      id: 'carnage-bleeding-wound',
-      name: 'Полный размах',
-      icon: 'talent-bleed-deep',
-      maxRank: 1,
-      col: 2,
-      exclusiveGroup: 'carnage-key-5',
-      effect: tunes('skull-splitter', {
-        field: 'autocastResourceAbove',
-        kind: 'points',
-        value: 0.3,
-      }),
-    },
-    {
-      id: 'carnage-open-veins',
-      name: 'Рваный размах',
+      id: 'carnage-generous-rip',
+      name: 'Щедрый взмах',
       icon: 'talent-open-vein',
-      maxRank: 1,
+      maxRank: 3,
       col: 3,
-      exclusiveGroup: 'carnage-key-5',
-      effect: tunes('skull-splitter', { field: 'type', kind: 'set', value: 'instant' }),
+      effect: tunes('gut-rip', { field: 'generateResourceShare', kind: 'percent', value: 0.1 }),
+    },
+    {
+      id: 'carnage-deep-frenzy',
+      name: 'Глубокое исступление',
+      icon: 'talent-blood-charge',
+      maxRank: 3,
+      col: 4,
+      effect: tunes('blood-frenzy', { field: 'rampPerSwing', kind: 'percent', value: 0.1 }),
     },
   ],
+  // --- ЭТАЖ 2 · порог 10 · с уровня 20 -------------------------------------
   [
     {
-      id: 'carnage-wild-strength',
-      name: 'Дикая сила',
-      icon: 'talent-strength',
-      maxRank: 6,
-      col: 1,
-      // Процент, а не плоская сила: плоская прибавка к характеристике
-      // обесценивается к сотому уровню (см. TALENT_STAT_RULE).
-      effect: mods(m('attackPower', 'percent', 0.011)),
-    },
-    {
-      // Правил множитель детонации — детонация уехала Стражу. На месте того
-      // же умения теперь ГРАНЬ, и талант правит её силу.
-      id: 'carnage-hungry-tear',
-      name: 'Голодная грань',
-      icon: 'talent-full-rupture',
+      id: 'carnage-keen-eye',
+      name: 'Хищный взгляд',
+      icon: 'talent-keen-eye',
       maxRank: 5,
-      col: 2,
-      effect: tunes('sinew-tear', { field: 'edgeDamagePerShare', kind: 'percent', value: 0.06 }),
-    },
-    {
-      id: 'carnage-brutal-reckoning',
-      name: 'Жестокая расправа',
-      icon: 'talent-wide-mercy',
-      maxRank: 5,
-      col: 3,
-      effect: tunes('reckoning', { field: 'weaponDamagePercent', kind: 'percent', value: 0.07 }),
-    },
-  ],
-  [
-    {
-      id: 'carnage-beast-aim',
-      name: 'Звериный глазомер',
-      icon: 'talent-cold-blood',
-      maxRank: 6,
       col: 1,
       effect: mods(m('critChance', 'flat', 0.01)),
     },
     {
-      // ПОРОГ ДОБИВАНИЯ — В ПУНКТАХ: 20 % + 5 рангов по 2 = 30 %.
-      id: 'carnage-wide-reckoning',
-      name: 'Ранняя расправа',
-      icon: 'talent-quick-mercy',
+      // ЗАПАХ КРОВИ — ПРОК, И СОБЫТИЕ У НЕГО КРИТ, А НЕ «КРИТ ДАЁТ ЯРОСТЬ».
+      // Прибавка прока — обычный модификатор конвейера, то есть
+      // ХАРАКТЕРИСТИКА; «даёт пять ярости» характеристикой не выражается, и
+      // такой прок был бы виден тику и невидим модели.
+      id: 'carnage-blood-scent',
+      name: 'Запах крови',
+      icon: 'talent-cold-blood',
+      maxRank: 5,
+      col: 2,
+      effect: {
+        kind: 'flag',
+        flag: 'proc',
+        trigger: 'crit',
+        everyNth: 2,
+        effect: { kind: 'stat', stat: 'critMultiplier', value: 0.05, durationSec: 6 },
+      },
+    },
+    {
+      id: 'carnage-press',
+      name: 'Напор',
+      icon: 'talent-firm-hand',
       maxRank: 5,
       col: 3,
-      effect: tunes('reckoning', {
-        field: 'executeBelowHpShare',
-        kind: 'points',
-        value: 0.02,
-      }),
+      requires: { talentId: 'carnage-generous-rip', minRank: 2 },
+      effect: tunes('gut-rip', { field: 'weaponDamagePercent', kind: 'percent', value: 0.1 }),
+    },
+    {
+      id: 'carnage-full-frenzy',
+      name: 'Полное исступление',
+      icon: 'talent-blood-charge',
+      maxRank: 5,
+      col: 4,
+      requires: { talentId: 'carnage-deep-frenzy', minRank: 2 },
+      effect: tunes('blood-frenzy', { field: 'rampMaxShare', kind: 'percent', value: 0.1 }),
     },
   ],
+  // --- ЭТАЖ 3 · порог 20 · с уровня 30 · ПЕРВЫЙ ВЫБОР ----------------------
   [
     {
-      id: 'carnage-drive',
-      name: 'Напор',
+      id: 'carnage-rush',
+      name: 'Разгон резни',
       icon: 'talent-frenzy',
-      maxRank: 6,
-      col: 2,
+      maxRank: 5,
+      col: 1,
       effect: mods(m('haste', 'flat', 0.01)),
     },
     {
-      id: 'carnage-long-roar',
-      name: 'Долгий рёв',
-      icon: 'talent-long-focus',
-      maxRank: 5,
-      col: 3,
-      effect: tunes('blood-roar', { field: 'windowDurationSec', kind: 'percent', value: 0.08 }),
-    },
-  ],
-  [
-    // 41-е очко, КЛЮЧЕВОЙ ЭТАЖ. Слева ПРОК (иногда бьёшь дважды), справа —
-    // снятие ожидания замаха у детонатора. Первое добавляет ударов, второе
-    // переставляет их во времени: разные роды, а не разные числа.
-    {
-      id: 'carnage-blade-storm',
-      name: 'Буря клинков',
-      icon: 'talent-double-strike',
+      // ТУПАЯ СТОРОНА — ЗАМЕНА УМЕНИЯ ЦЕЛИКОМ. `spendAll` не поле, а ФОРМА
+      // умения: правкой из `ABILITY_TUNABLE` «тратит всё» в «тратит сорок» не
+      // превратить. «Обух» бьёт сразу, стоит фиксированно и входит в каждый
+      // цикл — удар «всё или ничего» становится ротацией.
+      id: 'carnage-blunt-side',
+      name: 'Тупая сторона',
+      icon: 'ability-blunt-edge',
       maxRank: 1,
       col: 2,
-      exclusiveGroup: 'carnage-key-9',
-      effect: { kind: 'flag', flag: 'double-strike', chance: 0.12 },
+      exclusiveGroup: 'carnage-key-3',
+      effect: { kind: 'flag', flag: 'replace-ability', from: 'skull-splitter', to: 'blunt-edge' },
     },
     {
-      // Ставил «мгновенное» умению, которое стало мгновенным само: после
-      // переделки правая половина ключевого этажа не делала НИЧЕГО. Теперь
-      // она опускает порог ГРАНИ на двадцать пять пунктов — состояние
-      // начинает платить почти сразу и держится всё время, но каждая
-      // единица ярости в нём стоит меньше. Против «Бури клинков» это выбор
-      // рода: лишние замахи рулеткой против ровной прибавки от полоски.
-      id: 'carnage-frenzied-tear',
-      name: 'Через край',
-      icon: 'talent-rupture',
-      maxRank: 1,
+      id: 'carnage-often-rip',
+      name: 'Частый взмах',
+      icon: 'talent-quick-hands',
+      maxRank: 5,
       col: 3,
-      exclusiveGroup: 'carnage-key-9',
-      effect: tunes('sinew-tear', {
-        field: 'edgeResourceAbove',
-        kind: 'points',
-        value: -0.25,
-      }),
+      requires: { talentId: 'carnage-press', minRank: 3 },
+      effect: tunes('gut-rip', { field: 'cooldownSec', kind: 'percent', value: -0.1 }),
+    },
+    {
+      id: 'carnage-long-frenzy',
+      name: 'Долгое исступление',
+      icon: 'talent-blood-charge',
+      maxRank: 5,
+      col: 4,
+      requires: { talentId: 'carnage-full-frenzy', minRank: 3 },
+      effect: tunes('blood-frenzy', { field: 'rampDurationSec', kind: 'percent', value: 0.15 }),
+    },
+    {
+      // ПАРА РАЗВЕДЕНА РОДОМ: сосед меняет, ЧЕМ герой бьёт, а «По живому»
+      // меняет, КОГДА он бьёт сильнее всего — окно открывается только на
+      // израненной цели, то есть в последней трети схватки.
+      id: 'carnage-on-the-quick',
+      name: 'По живому',
+      icon: 'talent-bleed-deep',
+      maxRank: 1,
+      col: 5,
+      exclusiveGroup: 'carnage-key-3',
+      effect: {
+        kind: 'flag',
+        flag: 'proc',
+        trigger: 'crit',
+        when: { kind: 'target-below', share: 0.5 },
+        effect: { kind: 'stat', stat: 'critChance', value: 0.15, durationSec: 6 },
+      },
     },
   ],
+  // --- ЭТАЖ 4 · порог 30 · с уровня 40 -------------------------------------
   [
     {
+      id: 'carnage-heavy-skull',
+      name: 'Тяжёлый череп',
+      icon: 'talent-heavy-shatter',
+      maxRank: 5,
+      col: 1,
+      effect: tunes('skull-splitter', {
+        field: 'weaponDamageFromResource',
+        kind: 'percent',
+        value: 0.1,
+      }),
+    },
+    {
+      id: 'carnage-sharp-edge',
+      name: 'Острая грань',
+      icon: 'talent-honed-edge',
+      maxRank: 5,
+      col: 2,
+      effect: tunes('sinew-tear', { field: 'edgeDamagePerShare', kind: 'percent', value: 0.1 }),
+    },
+    {
+      id: 'carnage-early-reckoning',
+      name: 'Ранняя расправа',
+      icon: 'talent-wide-mercy',
+      maxRank: 3,
+      col: 3,
+      effect: tunes('reckoning', { field: 'executeBelowHpShare', kind: 'points', value: 0.03 }),
+    },
+    {
+      // ЕДИНСТВЕННЫЙ ТАЛАНТ ВЕТКИ В ДВА РАНГА — прок, потому что прок
+      // единственный из флагов читает ранг.
+      id: 'carnage-butchery',
+      name: 'Разгон бойни',
+      icon: 'talent-restless-legs',
+      maxRank: 2,
+      col: 4,
+      effect: {
+        kind: 'flag',
+        flag: 'proc',
+        trigger: 'hit',
+        everyNth: 3,
+        effect: { kind: 'stat', stat: 'haste', value: 0.05, durationSec: 5 },
+      },
+    },
+    {
+      id: 'carnage-fed-reckoning',
+      name: 'Сытая расправа',
+      icon: 'talent-kill-refund',
+      maxRank: 5,
+      col: 5,
+      effect: tunes('reckoning', { field: 'refundResourceShare', kind: 'percent', value: 0.12 }),
+    },
+  ],
+  // --- ЭТАЖ 5 · порог 40 · с уровня 50 · ВТОРОЙ ВЫБОР ----------------------
+  [
+    {
+      id: 'carnage-swift-skull',
+      name: 'Скорый череп',
+      icon: 'talent-swift-shatter',
+      maxRank: 5,
+      col: 1,
+      requires: { talentId: 'carnage-heavy-skull', minRank: 3 },
+      effect: tunes('skull-splitter', { field: 'cooldownSec', kind: 'percent', value: -0.1 }),
+    },
+    {
+      // ЗДЕСЬ ДОЛЖНО БЫЛО СТОЯТЬ ПРОБИВАНИЕ БРОНИ, И ЕГО НЕТ ПО ТОЙ ЖЕ
+      // ПРИЧИНЕ, ЧТО У ГНЕВА: у мобов брони нет вовсе, стат был бы мёртвым.
+      // Место занял узел, которого у Изувера и не хватало: он единственный
+      // класс с ДВУМЯ клинками, а сила левой руки не росла у него ничем.
+      // `offhandPenalty` — доля (`share`), поэтому плоская прибавка законна.
       id: 'carnage-second-hand',
       name: 'Вторая рука',
       icon: 'talent-offhand-mastery',
       maxRank: 5,
-      col: 1,
+      col: 2,
       effect: mods(m('offhandPenalty', 'flat', 0.02)),
     },
     {
-      // Правил ЦЕНУ Череполома. Своей цены у него больше нет вовсе — он
-      // тратит всю полоску, — и скидка в −7 % от нуля была нулём. Талант
-      // переехал к грани, к соседу по столбцу, и стрелка вслед за ним.
-      id: 'carnage-cheap-splitter',
-      name: 'Затяжная грань',
-      icon: 'talent-thrift-shatter',
-      maxRank: 5,
-      col: 2,
-      effect: tunes('sinew-tear', { field: 'edgeDurationSec', kind: 'percent', value: 0.09 }),
-      requires: { talentId: 'carnage-hungry-tear' },
-    },
-    {
-      // Правил число тиков кровотечения — теперь правит то, что от «долгого»
-      // и осталось: сколько секунд держится разгон.
-      id: 'carnage-deeper-frenzy',
-      name: 'Долгое исступление',
-      icon: 'talent-open-wound',
-      maxRank: 3,
-      col: 3,
-      effect: tunes('blood-frenzy', { field: 'rampDurationSec', kind: 'percent', value: 0.2 }),
-      requires: { talentId: 'carnage-deep-frenzy' },
-    },
-  ],
-  [
-    {
-      id: 'carnage-onslaught',
-      name: 'Натиск',
-      icon: 'talent-relentless',
-      maxRank: 6,
-      col: 2,
-      effect: mods(m('attackPower', 'percent', 0.012)),
-    },
-    {
-      id: 'carnage-swift-splitter',
-      name: 'Скорый череполом',
-      icon: 'talent-swift-shatter',
+      id: 'carnage-low-edge',
+      name: 'Низкая грань',
+      icon: 'talent-spare-edge',
       maxRank: 5,
       col: 3,
-      effect: tunes('skull-splitter', { field: 'cooldownSec', kind: 'percent', value: -0.06 }),
-    },
-  ],
-  [
-    {
-      id: 'carnage-blood-charge',
-      name: 'Кровавый разгон',
-      icon: 'talent-blood-charge',
-      maxRank: 5,
-      col: 1,
-      effect: mods(m('haste', 'flat', 0.012)),
+      effect: tunes('sinew-tear', { field: 'edgeResourceAbove', kind: 'points', value: -0.03 }),
     },
     {
-      id: 'carnage-fierce-berserk',
-      name: 'Лютое бешенство',
-      icon: 'talent-hard-stance',
-      maxRank: 5,
-      col: 2,
-      // Доля стойки отрицательная (урон ВЫШЕ), и процент её усиливает —
-      // знак при этом не меняется, обмен остаётся обменом.
-      effect: tunes('berserk', { field: 'stanceDamageShare', kind: 'percent', value: 0.08 }),
+      // САМО СОБОЙ — узел, освобождающий слот: «Кровавое исступление» уходит
+      // из четвёрки и играется само, по своим же порогам автокаста.
+      id: 'carnage-by-itself',
+      name: 'Само собой',
+      icon: 'talent-quick-hands',
+      maxRank: 1,
+      col: 4,
+      exclusiveGroup: 'carnage-key-5',
+      effect: { kind: 'flag', flag: 'auto-ability', abilityId: 'blood-frenzy' },
     },
-  ],
-  [
-    // 61-е очко, ВЕНЕЦ. Слева расправа становится двигателем ротации: вдвое
-    // чаще и вдвое щедрее на ярость. Справа бешенство становится почти
-    // постоянным. Первое про ХВОСТ боя, второе про весь бой целиком.
     {
-      id: 'carnage-carnage',
-      name: 'Резня',
+      // ПАРА РАЗВЕДЕНА РОДОМ: сосед отдаёт слот, а «Второй череп» его не
+      // трогает и меняет РИТМ — козырь копит два заряда и уходит связкой.
+      id: 'carnage-second-skull',
+      name: 'Второй череп',
       icon: 'talent-second-charge',
       maxRank: 1,
-      col: 2,
-      exclusiveGroup: 'carnage-key-13',
-      // ВТОРОЙ ЗАРЯД ДОБИВАНИЯ. Хвост боя срезается дважды подряд, и ярость
-      // возвращается дважды — на следующий бой герой входит не пустым.
+      col: 5,
+      exclusiveGroup: 'carnage-key-5',
       effect: {
         kind: 'flag',
         flag: 'ability-extra-charge',
-        abilityId: 'reckoning',
+        abilityId: 'skull-splitter',
         extraCharges: 1,
       },
     },
+  ],
+  // --- ЭТАЖ 6 · порог 50 · с уровня 60 -------------------------------------
+  [
     {
-      id: 'carnage-red-haze',
-      name: 'Багровая пелена',
-      icon: 'talent-long-stance',
+      id: 'carnage-heavy-reckoning',
+      name: 'Тяжёлая расправа',
+      icon: 'talent-quick-mercy',
+      maxRank: 5,
+      col: 1,
+      effect: tunes('reckoning', { field: 'weaponDamagePercent', kind: 'percent', value: 0.15 }),
+    },
+    {
+      id: 'carnage-long-edge',
+      name: 'Долгая грань',
+      icon: 'talent-long-focus',
+      maxRank: 5,
+      col: 2,
+      effect: tunes('sinew-tear', { field: 'edgeDurationSec', kind: 'percent', value: 0.15 }),
+    },
+    {
+      id: 'carnage-cheap-edge',
+      name: 'Дешёвая грань',
+      icon: 'talent-thrift-rupture',
+      maxRank: 5,
+      col: 3,
+      effect: tunes('sinew-tear', { field: 'manaCost', kind: 'percent', value: -0.1 }),
+    },
+    {
+      id: 'carnage-red-grin',
+      name: 'Хищный оскал',
+      icon: 'talent-fangs-of-old',
+      maxRank: 5,
+      col: 4,
+      effect: mods(m('critChance', 'flat', 0.01)),
+    },
+  ],
+  // --- ЭТАЖ 7 · порог 60 · с уровня 70 · ВЕНЕЦ -----------------------------
+  [
+    {
+      id: 'carnage-endless-reckoning',
+      name: 'Расправа без конца',
+      icon: 'ability-endless-reckoning',
+      maxRank: 1,
+      col: 1,
+      exclusiveGroup: 'carnage-key-7',
+      requires: { talentId: 'carnage-heavy-reckoning', minRank: 3 },
+      effect: { kind: 'flag', flag: 'grant-ability', abilityId: 'endless-reckoning' },
+    },
+    {
+      // КРАСНАЯ ПЕЛЕНА — ПАССИВНЫЙ ВЕНЕЦ: слота не занимает, и потому это
+      // ДОЛЯ, а не состояние. «На полной ярости бьёшь дважды» требовало бы
+      // условия по СВОЕЙ полоске, которого в игре нет ни у прока, ни у
+      // модификатора; четверть автоатак дважды модель считает честно.
+      // ОПОРА ВЕНЦА — УЗЕЛ ЕГО СОБСТВЕННОЙ СБОРКИ. Стояла «Долгая грань»
+      // («Багровая грань»), которой в четвёрке этого пути нет вовсе: путь
+      // тратил на опору пять очков в пустоту и приходил к венцу слабее, чем
+      // ушёл. Опора обязана лежать в той полосе, которой путь и играет.
+      id: 'carnage-red-veil',
+      name: 'Красная пелена',
+      icon: 'talent-double-strike',
       maxRank: 1,
       col: 3,
-      exclusiveGroup: 'carnage-key-13',
-      effect: tunes(
-        'berserk',
-        { field: 'stanceDurationSec', kind: 'multiplier', value: 2 },
-        { field: 'cooldownSec', kind: 'multiplier', value: 0.6 },
-      ),
+      exclusiveGroup: 'carnage-key-7',
+      requires: { talentId: 'carnage-often-rip', minRank: 3 },
+      effect: { kind: 'flag', flag: 'double-strike', chance: 0.25 },
     },
   ],
 ])
-
-// ЖИЛЫ: ЧЕМ ДОЛЬШЕ СТОИШЬ, ТЕМ ДЕШЕВЛЕ СТОЯТЬ.
+// ЖИЛЫ: СЕМЬ ЭТАЖЕЙ ПО ДЕСЯТЬ ОЧКОВ.
 //
-// Ветка живучести класса, у которого нет ни лечащего умения, ни налива
-// ресурса привалом: держится он тем, что БЬЁТ (вампиризм) и тем, что
-// НЕ УХОДИТ (упор). Отсюда и наполнение — половина талантов правит именно
-// эти два умения.
+// Ветка живучести Изувера, и живучесть у него СВОЯ: ни щита, ни лечения по
+// кнопке — только вампиризм «Жажды», стойкость «Упора», растущая с каждым
+// пропущенным ударом, и собственная кровь, идущая в ярость. Чем тяжелее бой,
+// тем крепче герой стоит; в лёгком ветка не даёт почти ничего, и это не
+// дефект, а её вопрос.
+//
+// СТОЛБЕЦ — ЭТО ПОЛОСА: первый — запас и смягчение, второй — блок и
+// «Бешенство», третий — «Упор», четвёртый — «Жажда», пятый отдан «Кровавой
+// плате» и узлам выбора.
 const REAVER_SINEW = branch('reaver-sinew', [
+  // --- ЭТАЖ 1 · порог 0 · с уровня 10 --------------------------------------
   [
     {
       id: 'sinew-beast-hide',
-      name: 'Звериная шкура',
+      name: 'Шкура зверя',
       icon: 'talent-thick-hide',
-      maxRank: 6,
-      col: 2,
-      effect: mods(m('armor', 'percent', 0.03)),
+      maxRank: 5,
+      col: 1,
+      effect: mods(m('maxHp', 'percent', 0.05)),
     },
     {
-      id: 'sinew-braced-guard',
-      name: 'Упрямая стойка',
-      icon: 'talent-braced',
+      id: 'sinew-tanned-skin',
+      name: 'Дублёная кожа',
+      icon: 'talent-iron-skin',
       maxRank: 5,
+      col: 2,
+      effect: mods(m('damageReduction', 'flat', 0.01)),
+    },
+    {
+      id: 'sinew-deep-dig',
+      name: 'Глубокий упор',
+      icon: 'ability-dug-in',
+      maxRank: 3,
       col: 3,
-      effect: tunes('dug-in', { field: 'resolveMaxShare', kind: 'percent', value: 0.06 }),
+      effect: tunes('dug-in', { field: 'resolveMaxShare', kind: 'percent', value: 0.1 }),
+    },
+    {
+      id: 'sinew-greedy-thirst',
+      name: 'Жадная жажда',
+      icon: 'talent-blood-charge',
+      maxRank: 3,
+      col: 4,
+      effect: tunes('blood-thirst', { field: 'leechHealShare', kind: 'percent', value: 0.12 }),
     },
   ],
+  // --- ЭТАЖ 2 · порог 10 · с уровня 20 -------------------------------------
   [
     {
       id: 'sinew-forearm-guard',
-      name: 'Наручи',
-      icon: 'talent-iron-skin',
-      maxRank: 6,
-      col: 2,
-      effect: mods(m('maxHp', 'percent', 0.02)),
-    },
-    {
-      id: 'sinew-thirsty-bite',
-      name: 'Жадный укус',
-      icon: 'talent-deep-mend',
+      name: 'Заслон предплечьем',
+      icon: 'talent-shield-wall',
       maxRank: 5,
-      col: 3,
-      effect: tunes('blood-thirst', { field: 'leechHealShare', kind: 'percent', value: 0.07 }),
-    },
-  ],
-  [
-    {
-      id: 'sinew-tanned-hide',
-      name: 'Дублёная кожа',
-      icon: 'talent-hard-to-kill',
-      maxRank: 6,
       col: 1,
-      effect: mods(m('damageReduction', 'flat', 0.008)),
+      effect: mods(m('blockChance', 'flat', 0.02)),
     },
-    {
-      id: 'sinew-long-dig',
-      name: 'Долгий упор',
-      icon: 'talent-long-wall',
-      maxRank: 5,
-      col: 2,
-      effect: tunes('dug-in', { field: 'resolveDurationSec', kind: 'percent', value: 0.08 }),
-    },
-    {
-      id: 'sinew-cheap-thirst',
-      name: 'Скупая жажда',
-      icon: 'talent-thrift-wound',
-      maxRank: 5,
-      col: 3,
-      effect: tunes('blood-thirst', { field: 'manaCost', kind: 'percent', value: -0.07 }),
-      requires: { talentId: 'sinew-thirsty-bite' },
-    },
-  ],
-  [
-    {
-      id: 'sinew-hardened',
-      name: 'Задубелость',
-      icon: 'talent-bulwark-training',
-      maxRank: 6,
-      col: 1,
-      effect: mods(m('armor', 'percent', 0.025)),
-    },
-    {
-      id: 'sinew-firm-dig',
-      name: 'Твёрдый упор',
-      icon: 'talent-firm-press',
-      maxRank: 5,
-      col: 3,
-      effect: tunes('dug-in', { field: 'resolvePerHitTaken', kind: 'percent', value: 0.08 }),
-      requires: { talentId: 'sinew-braced-guard' },
-    },
-  ],
-  [
-    // 21-е очко, КЛЮЧЕВОЙ ЭТАЖ. Слева блок начинает платить ЯРОСТЬЮ — щит
-    // становится источником ресурса. Справа упор перестаёт быть окном и
-    // держится почти всегда — ресурса не прибавляет, зато счёт меньше. Пара
-    // про одно и то же (как пережить бой), но ответы разного рода.
-    {
-      id: 'sinew-blood-for-blood',
-      name: 'Отдача щита',
-      icon: 'talent-block-resource',
-      maxRank: 1,
-      col: 2,
-      exclusiveGroup: 'sinew-key-5',
-      // ЯРОСТЬ ИЗ БЛОКА. Работает только со щитом в руке, и это осознанно:
-      // сборка «щит и упор» получает ресурс оттуда, откуда обычно приходит
-      // только урон.
-      effect: { kind: 'flag', flag: 'block-restores-resource', resourceShare: 0.08 },
-    },
-    {
-      id: 'sinew-iron-dig',
-      name: 'Железный упор',
-      icon: 'talent-often-wall',
-      maxRank: 1,
-      col: 3,
-      exclusiveGroup: 'sinew-key-5',
-      effect: tunes('dug-in', { field: 'cooldownSec', kind: 'multiplier', value: 0.6 }),
-    },
-  ],
-  [
-    {
-      id: 'sinew-knitting',
-      name: 'Сращение',
-      icon: 'talent-second-wind',
-      maxRank: 6,
-      col: 1,
-      effect: mods(m('hpRegen', 'percent', 0.06)),
-    },
-    {
-      id: 'sinew-deep-price',
-      name: 'Дорогая плата',
-      icon: 'talent-blood-charge',
-      maxRank: 5,
-      col: 2,
-      effect: tunes('blood-price', {
-        field: 'bloodPriceResourceShare',
-        kind: 'percent',
-        value: 0.08,
-      }),
-    },
-  ],
-  [
     {
       id: 'sinew-frame',
       name: 'Костяк',
-      icon: 'talent-vitality',
-      maxRank: 6,
-      col: 1,
-      effect: mods(m('maxHp', 'percent', 0.02)),
+      icon: 'talent-bulwark-training',
+      maxRank: 5,
+      col: 2,
+      effect: mods(m('blockValue', 'percent', 0.15)),
     },
     {
       id: 'sinew-swift-dig',
       name: 'Скорый упор',
-      icon: 'talent-quick-focus',
-      maxRank: 5,
-      col: 2,
-      effect: tunes('dug-in', { field: 'cooldownSec', kind: 'percent', value: -0.06 }),
-    },
-  ],
-  [
-    {
-      id: 'sinew-carapace',
-      name: 'Панцирь',
-      icon: 'talent-shield-wall',
-      maxRank: 6,
-      col: 1,
-      effect: mods(m('armor', 'percent', 0.025)),
-    },
-    {
-      id: 'sinew-guarded-roar',
-      name: 'Осторожный рёв',
-      icon: 'talent-thrift-stance',
+      icon: 'talent-quick-hands',
       maxRank: 5,
       col: 3,
-      effect: tunes('blood-roar', { field: 'manaCost', kind: 'percent', value: -0.08 }),
+      requires: { talentId: 'sinew-deep-dig', minRank: 2 },
+      effect: tunes('dug-in', { field: 'resolvePerHitTaken', kind: 'percent', value: 0.12 }),
+    },
+    {
+      id: 'sinew-often-thirst',
+      name: 'Частая жажда',
+      icon: 'ability-blood-thirst',
+      maxRank: 5,
+      col: 4,
+      requires: { talentId: 'sinew-greedy-thirst', minRank: 2 },
+      effect: tunes('blood-thirst', { field: 'cooldownSec', kind: 'percent', value: -0.1 }),
     },
   ],
-  [
-    // 41-е очко, КЛЮЧЕВОЙ ЭТАЖ. Слева смерть перестаёт быть дорогой, справа
-    // бешенство перестаёт быть опасным. Первое про ПОСЛЕ боя, второе про
-    // сам бой.
-    {
-      id: 'sinew-not-finished',
-      name: 'Не добит',
-      icon: 'talent-swift-return',
-      maxRank: 1,
-      col: 2,
-      exclusiveGroup: 'sinew-key-9',
-      effect: { kind: 'flag', flag: 'faster-revive', reviveMultiplier: 0.5 },
-    },
-    {
-      id: 'sinew-stone-skin',
-      name: 'Каменная кожа',
-      icon: 'talent-guard-echo',
-      maxRank: 1,
-      col: 3,
-      exclusiveGroup: 'sinew-key-9',
-      // Смягчение стойки у «Бешенства» отрицательное (входящее ЖЁСТЧЕ);
-      // множитель 0.4 делает штраф втрое меньше, знак не трогая.
-      effect: tunes('berserk', { field: 'stanceMitigationShare', kind: 'multiplier', value: 0.4 }),
-    },
-  ],
+  // --- ЭТАЖ 3 · порог 20 · с уровня 30 · ПЕРВЫЙ ВЫБОР ----------------------
   [
     {
-      id: 'sinew-counterblow',
-      name: 'Ответный удар',
-      icon: 'talent-block-reflect',
+      id: 'sinew-seasoned',
+      name: 'Матёрость',
+      icon: 'talent-second-wind',
       maxRank: 5,
       col: 1,
-      effect: mods(m('blockValue', 'percent', 0.05)),
+      effect: mods(m('hpRegen', 'percent', 0.1)),
     },
     {
-      // ПОРОГ АВТОКАСТА ПЛАТЫ — В ПУНКТАХ: 65 % − 5 рангов по 3 = 50 %.
-      // Герой начинает платить здоровьем и на просевшей полоске.
-      id: 'sinew-tough-price',
-      name: 'Дешёвая кровь',
-      icon: 'talent-early-brand',
-      maxRank: 5,
+      // КРУГОВОРОТ — ПРОК, И СОБЫТИЕ У НЕГО СВОЙ УДАР, А НЕ ПОЛУЧЕННЫЙ.
+      // Полученного удара в `ProcTrigger` нет: его частота считается из темпа
+      // МОБА, которого у модели нет.
+      id: 'sinew-circuit',
+      name: 'Круговорот',
+      icon: 'talent-hard-to-kill',
+      maxRank: 1,
       col: 2,
-      effect: tunes('blood-price', {
-        field: 'autocastHeroHpAbove',
-        kind: 'points',
-        value: -0.03,
-      }),
-    },
-  ],
-  [
-    {
-      id: 'sinew-brace',
-      name: 'Упрямство',
-      icon: 'talent-press',
-      maxRank: 6,
-      col: 1,
-      effect: mods(m('damageReduction', 'flat', 0.006)),
+      exclusiveGroup: 'sinew-key-3',
+      effect: {
+        kind: 'flag',
+        flag: 'proc',
+        trigger: 'hit',
+        everyNth: 4,
+        effect: { kind: 'stat', stat: 'damageReduction', value: 0.08, durationSec: 8 },
+      },
     },
     {
       id: 'sinew-lasting-dig',
-      name: 'Стойкий упор',
-      icon: 'talent-lasting-brand',
+      name: 'Долгий упор',
+      icon: 'talent-long-stance',
       maxRank: 5,
-      col: 2,
-      effect: tunes('dug-in', { field: 'resolveMaxShare', kind: 'percent', value: 0.05 }),
-      requires: { talentId: 'sinew-long-dig' },
+      col: 3,
+      requires: { talentId: 'sinew-swift-dig', minRank: 3 },
+      effect: tunes('dug-in', { field: 'resolveDurationSec', kind: 'percent', value: 0.15 }),
+    },
+    {
+      id: 'sinew-cheap-thirst',
+      name: 'Дешёвая жажда',
+      icon: 'talent-thrift-wound',
+      maxRank: 5,
+      col: 4,
+      requires: { talentId: 'sinew-often-thirst', minRank: 3 },
+      effect: tunes('blood-thirst', { field: 'manaCost', kind: 'percent', value: -0.1 }),
+    },
+    {
+      // ПАРА РАЗВЕДЕНА РОДОМ: сосед даёт окно смягчения от СВОИХ ударов, а
+      // «Щедрая плата» открывает кнопку, которую боялись жать, — автокаст
+      // берётся за «Кровавую плату» на пятнадцать пунктов ниже по здоровью.
+      id: 'sinew-generous-price',
+      name: 'Щедрая плата',
+      icon: 'ability-blood-price',
+      maxRank: 1,
+      col: 5,
+      exclusiveGroup: 'sinew-key-3',
+      effect: tunes('blood-price', {
+        field: 'autocastHeroHpAbove',
+        kind: 'points',
+        value: -0.15,
+      }),
     },
   ],
+  // --- ЭТАЖ 4 · порог 30 · с уровня 40 -------------------------------------
   [
     {
-      id: 'sinew-spiked-guard',
-      name: 'Шипастая защита',
-      icon: 'talent-spiked-guard',
+      id: 'sinew-stone-skin',
+      name: 'Каменная кожа',
+      icon: 'talent-iron-skin',
       maxRank: 5,
       col: 1,
-      effect: mods(m('armor', 'percent', 0.02)),
+      effect: mods(m('damageReduction', 'flat', 0.01)),
     },
     {
-      id: 'sinew-red-thirst',
-      name: 'Красная жажда',
-      icon: 'talent-quiet-mend',
-      maxRank: 5,
+      // ЕДИНСТВЕННЫЙ ТАЛАНТ ВЕТКИ В ДВА РАНГА — прок читает ранг.
+      id: 'sinew-tempering',
+      name: 'Закалка',
+      icon: 'talent-spiked-guard',
+      maxRank: 2,
       col: 2,
-      effect: tunes('blood-thirst', { field: 'cooldownSec', kind: 'percent', value: -0.06 }),
+      effect: {
+        kind: 'flag',
+        flag: 'proc',
+        trigger: 'crit',
+        everyNth: 2,
+        effect: { kind: 'stat', stat: 'damageReduction', value: 0.04, durationSec: 8 },
+      },
+    },
+    {
+      id: 'sinew-early-dig',
+      name: 'Ранний упор',
+      icon: 'talent-spare-edge',
+      maxRank: 3,
+      col: 3,
+      effect: tunes('dug-in', { field: 'manaCost', kind: 'percent', value: -0.1 }),
+    },
+    {
+      id: 'sinew-late-thirst',
+      name: 'Поздняя жажда',
+      icon: 'ability-blood-frenzy',
+      maxRank: 5,
+      col: 4,
+      effect: tunes('blood-thirst', {
+        field: 'leechHealShareFromResource',
+        kind: 'percent',
+        value: 0.12,
+      }),
+    },
+    {
+      id: 'sinew-rich-blood',
+      name: 'Щедрая кровь',
+      icon: 'talent-blood-charge',
+      maxRank: 5,
+      col: 5,
+      effect: tunes('blood-price', {
+        field: 'bloodPriceResourceShare',
+        kind: 'percent',
+        value: 0.12,
+      }),
     },
   ],
+  // --- ЭТАЖ 5 · порог 40 · с уровня 50 · ВТОРОЙ ВЫБОР ----------------------
   [
-    // 61-е очко, ВЕНЕЦ. Слева упор держится почти постоянно — герой ПЛАТИТ
-    // за бой меньше. Справа блок отвечает шипами — герой платит столько же,
-    // но и берёт с нападающего. Разные ответы на один вопрос.
     {
-      id: 'sinew-unbroken',
-      name: 'Несгибаемый',
-      icon: 'talent-immovable',
-      maxRank: 1,
-      col: 2,
-      exclusiveGroup: 'sinew-key-13',
-      effect: tunes(
-        'dug-in',
-        { field: 'resolveDurationSec', kind: 'multiplier', value: 2 },
-        { field: 'cooldownSec', kind: 'multiplier', value: 0.5 },
-      ),
+      id: 'sinew-thick-hide',
+      name: 'Толстая шкура',
+      icon: 'talent-thick-coat',
+      maxRank: 5,
+      col: 1,
+      effect: mods(m('maxHp', 'percent', 0.03)),
     },
     {
-      id: 'sinew-thorned-answer',
-      name: 'Шипастый ответ',
-      icon: 'talent-block-reflect',
+      // «Бешенство» — обратная стойка: урон выше, смягчение НИЖЕ. Талант
+      // режет именно штраф: доля отрицательная, и процент её уменьшает.
+      id: 'sinew-steady-berserk',
+      name: 'Стойкое бешенство',
+      icon: 'ability-berserk',
+      maxRank: 5,
+      col: 2,
+      effect: tunes('berserk', { field: 'stanceMitigationShare', kind: 'percent', value: -0.12 }),
+    },
+    {
+      // САМ ВПИВАЕТСЯ — «Упор» уходит из четвёрки и работает сам. У героя,
+      // который его в ряд и не ставил, это ЧИСТАЯ ПРИБАВКА: умение
+      // появляется, слота не занимая.
+      id: 'sinew-self-dug',
+      name: 'Сам впивается',
+      icon: 'talent-quick-hands',
       maxRank: 1,
       col: 3,
-      exclusiveGroup: 'sinew-key-13',
-      // Половина поглощённого блоком возвращается бьющему. Как и «Отдача
-      // щита», работает только со щитом — ветка честно предлагает СБОРКУ,
-      // а не прибавку всем.
-      effect: { kind: 'flag', flag: 'block-reflects', damageShare: 0.5 },
+      exclusiveGroup: 'sinew-key-5',
+      effect: { kind: 'flag', flag: 'auto-ability', abilityId: 'dug-in' },
+    },
+    {
+      id: 'sinew-bloodlust',
+      name: 'Жажда крови',
+      icon: 'ability-blood-thirst',
+      maxRank: 5,
+      col: 4,
+      effect: tunes('blood-thirst', { field: 'weaponDamagePercent', kind: 'percent', value: 0.1 }),
+    },
+    {
+      // ПАРА РАЗВЕДЕНА РОДОМ: сосед отдаёт слот, а «Скорая плата» его не
+      // трогает и меняет РИТМ — кровь идёт в ярость вдвое чаще.
+      id: 'sinew-swift-price',
+      name: 'Скорая плата',
+      icon: 'talent-second-charge',
+      maxRank: 1,
+      col: 5,
+      exclusiveGroup: 'sinew-key-5',
+      effect: tunes('blood-price', { field: 'cooldownSec', kind: 'multiplier', value: 0.5 }),
+    },
+  ],
+  // --- ЭТАЖ 6 · порог 50 · с уровня 60 -------------------------------------
+  [
+    {
+      id: 'sinew-tanned-blood',
+      name: 'Дублёная кровь',
+      icon: 'talent-even-breath',
+      maxRank: 5,
+      col: 1,
+      effect: mods(m('hpRegen', 'percent', 0.05)),
+    },
+    {
+      id: 'sinew-long-berserk',
+      name: 'Долгое бешенство',
+      icon: 'talent-long-focus',
+      maxRank: 5,
+      col: 2,
+      effect: tunes('berserk', { field: 'stanceDurationSec', kind: 'percent', value: 0.15 }),
+    },
+    {
+      id: 'sinew-strong-frame',
+      name: 'Крепкий костяк',
+      icon: 'talent-bulwark-training',
+      maxRank: 5,
+      col: 3,
+      effect: mods(m('blockValue', 'percent', 0.1)),
+    },
+    {
+      id: 'sinew-firm-guard',
+      name: 'Твёрдый заслон',
+      icon: 'talent-shield-wall',
+      maxRank: 5,
+      col: 4,
+      effect: mods(m('blockChance', 'flat', 0.01)),
+    },
+  ],
+  // --- ЭТАЖ 7 · порог 60 · с уровня 70 · ВЕНЕЦ -----------------------------
+  [
+    {
+      id: 'sinew-butcher',
+      name: 'Мясник',
+      icon: 'ability-butcher',
+      maxRank: 1,
+      col: 1,
+      exclusiveGroup: 'sinew-key-7',
+      requires: { talentId: 'sinew-tanned-blood', minRank: 3 },
+      effect: { kind: 'flag', flag: 'grant-ability', abilityId: 'butcher' },
+    },
+    {
+      // ВТОРАЯ КРОВЬ — ПАССИВНЫЙ ВЕНЕЦ: слота не занимает. «Смертельный удар
+      // вместо смерти оставляет единицу здоровья» механизма не имеет вовсе, и
+      // завести его значило бы новую ветку в тике и слепое пятно в модели.
+      // Оставлено то, что у смерти можно отнять честно: её ЦЕНУ.
+      id: 'sinew-second-blood',
+      name: 'Вторая кровь',
+      icon: 'talent-fast-return',
+      maxRank: 1,
+      col: 2,
+      exclusiveGroup: 'sinew-key-7',
+      requires: { talentId: 'sinew-long-berserk', minRank: 3 },
+      effect: { kind: 'flag', flag: 'faster-revive', reviveMultiplier: 0.25 },
     },
   ],
 ])
-
-// ЧУТЬЁ: ПРО РЕСУРС И ПРО ВРЕМЯ ВНЕ БОЯ.
+// ЧУТЬЁ: СЕМЬ ЭТАЖЕЙ ПО ДЕСЯТЬ ОЧКОВ.
 //
-// Автономность у класса на ярости — это не «реже отдыхать», а «меньше стоять
-// пустым»: ветка про ёмкость полоски, про разгон и про окно, в котором
-// умения ничего не стоят.
+// Третья ветка Изувера, и с ней класс становится вторым, у кого все три ветки
+// на одной форме. Ёмкость 112 при глубине 60.
+//
+// ВЕТКА ЧУТЬЯ. Шкала не должна быть пустой — ни в начале боя, ни между
+// схватками. Отсюда и ось: ветка меряется не уроном, а тем, во сколько срезан
+// ПРОСТОЙ, и срезают его два рода узлов — длина привала и цена ротации,
+// из-за которой герой стоит с пустой полоской.
+//
+// УЗЛЫ ПРИВАЛА ЛЕЖАТ ВО ВСЕХ ТРЁХ ПУТЯХ, и это не случайность: ровно на этом
+// погорело «Бдение · Клеймо» — путь, не покупающий того, чем ветка меряется,
+// мерит не ветку, а список файла.
 const REAVER_INSTINCT = branch('reaver-instinct', [
+  // --- ЭТАЖ 1 · порог 0 · с уровня 10 --------------------------------------
   [
     {
-      id: 'instinct-beast-breath',
-      name: 'Звериное дыхание',
-      icon: 'talent-steady-breath',
-      maxRank: 6,
-      col: 2,
-      effect: mods(m('hpRegenOutOfCombat', 'percent', 0.06)),
-    },
-    {
-      id: 'instinct-quick-letting',
-      name: 'Скорое кровопускание',
-      icon: 'talent-quick-focus',
-      maxRank: 5,
-      col: 3,
-      effect: tunes('blood-letting', { field: 'cooldownSec', kind: 'percent', value: -0.06 }),
-    },
-  ],
-  [
-    {
+      // ЗАПАС ЯРОСТИ — РОВНО СТО, И ПОДНЯТЬ ЕГО МОЖНО ТОЛЬКО ТАЛАНТАМИ: ни
+      // уровень, ни находки его не двигают (интеллект у Изувера погашен
+      // множителем-нолём). Это единственная дверь.
       id: 'instinct-rage-capacity',
       name: 'Ёмкость ярости',
       icon: 'talent-deep-well',
-      maxRank: 6,
-      col: 2,
-      // ЕДИНСТВЕННЫЙ СПОСОБ поднять запас ярости выше ста: ни уровень, ни
-      // характеристики, ни находки его не двигают.
+      maxRank: 5,
+      col: 1,
       effect: mods(m('maxMana', 'percent', 0.05)),
     },
     {
-      id: 'instinct-rich-letting',
-      name: 'Щедрое кровопускание',
-      icon: 'talent-open-vein',
+      id: 'instinct-short-rest',
+      name: 'Короткий роздых',
+      icon: 'talent-quick-camp',
       maxRank: 5,
+      col: 2,
+      effect: mods(m('restDuration', 'flat', -0.2)),
+    },
+    {
+      id: 'instinct-generous-letting',
+      name: 'Щедрое кровопускание',
+      icon: 'ability-blood-letting',
+      maxRank: 3,
       col: 3,
       effect: tunes('blood-letting', {
         field: 'generateResourceShare',
         kind: 'percent',
-        value: 0.06,
+        value: 0.1,
       }),
-      requires: { talentId: 'instinct-quick-letting' },
+    },
+    {
+      id: 'instinct-long-roar',
+      name: 'Долгий рёв',
+      icon: 'ability-blood-roar',
+      maxRank: 3,
+      col: 4,
+      effect: tunes('blood-roar', { field: 'windowDurationSec', kind: 'percent', value: 0.15 }),
     },
   ],
+  // --- ЭТАЖ 2 · порог 10 · с уровня 20 -------------------------------------
   [
     {
-      id: 'instinct-short-rest',
-      name: 'Короткий привал',
-      icon: 'talent-quick-camp',
-      maxRank: 6,
+      id: 'instinct-beast-breath',
+      name: 'Дыхание зверя',
+      icon: 'talent-even-breath',
+      maxRank: 5,
       col: 1,
-      effect: mods(m('restDuration', 'flat', -0.25)),
+      effect: mods(m('hpRegenOutOfCombat', 'percent', 0.1)),
     },
     {
-      // ПРОЦЕНТОМ, А НЕ СЕКУНДАМИ: секунды уже заняты соседом по этажу
-      // («Короткий привал»), и два одинаковых по роду таланта в одном ряду
-      // выбором не были бы. Это же место — то, куда переехал удалённый
-      // талант на ПОРОГ привала: настройка игрока таланту не принадлежит.
       id: 'instinct-light-camp',
-      name: 'Лёгкий привал',
-      icon: 'talent-shorter-rest',
+      name: 'Лёгкие сборы',
+      icon: 'talent-short-camp',
       maxRank: 5,
       col: 2,
-      effect: mods(m('restDuration', 'percent', -0.0234)),
-    },
-  ],
-  [
-    {
-      id: 'instinct-hardy-stock',
-      name: 'Гулкий рёв',
-      icon: 'talent-early-call',
-      maxRank: 6,
-      col: 1,
-      effect: tunes('blood-roar', { field: 'weaponDamagePercent', kind: 'percent', value: 0.06 }),
+      effect: mods(m('restDuration', 'percent', -0.05)),
     },
     {
-      id: 'instinct-swift-roar',
-      name: 'Скорый рёв',
-      icon: 'talent-early-call',
+      id: 'instinct-swift-letting',
+      name: 'Скорое кровопускание',
+      icon: 'talent-quick-hands',
       maxRank: 5,
       col: 3,
-      effect: tunes('blood-roar', { field: 'cooldownSec', kind: 'percent', value: -0.06 }),
+      requires: { talentId: 'instinct-generous-letting', minRank: 2 },
+      effect: tunes('blood-letting', { field: 'cooldownSec', kind: 'percent', value: -0.1 }),
+    },
+    {
+      id: 'instinct-often-roar',
+      name: 'Частый рёв',
+      icon: 'talent-restless-legs',
+      maxRank: 5,
+      col: 4,
+      requires: { talentId: 'instinct-long-roar', minRank: 2 },
+      effect: tunes('blood-roar', { field: 'cooldownSec', kind: 'percent', value: -0.1 }),
     },
   ],
+  // --- ЭТАЖ 3 · порог 20 · с уровня 30 · ПЕРВЫЙ ВЫБОР ----------------------
   [
-    // 21-е очко, КЛЮЧЕВОЙ ЭТАЖ. Слева убийство сбрасывает откаты — ротация
-    // разгоняется УБИЙСТВАМИ, то есть рывками. Справа разгон жмётся вдвое
-    // чаще — ярость идёт РОВНО. Оба про «меньше стоять без дела», и ответы
-    // у них разного рода.
     {
+      id: 'instinct-wolf-sleep',
+      name: 'Волчий сон',
+      icon: 'talent-second-wind',
+      maxRank: 5,
+      col: 1,
+      effect: mods(m('hpRegen', 'percent', 0.1)),
+    },
+    {
+      // ВКУС ПОБЕДЫ — ФЛАГ, А НЕ ПРОК: событие «убийство» в `ProcTrigger`
+      // закрыто (его частота — результат самой модели), а вот флаг
+      // `kill-refunds-cooldowns` модель считает отдельной формулой.
       id: 'instinct-taste-of-victory',
       name: 'Вкус победы',
       icon: 'talent-kill-refund',
       maxRank: 1,
       col: 2,
-      exclusiveGroup: 'instinct-key-5',
+      exclusiveGroup: 'instinct-key-3',
       effect: { kind: 'flag', flag: 'kill-refunds-cooldowns', cooldownShare: 0.75 },
     },
     {
-      id: 'instinct-endless-letting',
-      name: 'Открытая жила',
+      id: 'instinct-loud-letting',
+      name: 'Громкое кровопускание',
       icon: 'talent-open-vein',
+      maxRank: 5,
+      col: 3,
+      effect: tunes('blood-letting', { field: 'weaponDamagePercent', kind: 'percent', value: 0.1 }),
+    },
+    {
+      id: 'instinct-loud-roar',
+      name: 'Громкий рёв',
+      icon: 'talent-savage-unleash',
+      maxRank: 5,
+      col: 4,
+      effect: tunes('blood-roar', { field: 'weaponDamagePercent', kind: 'percent', value: 0.1 }),
+    },
+    {
+      // ПАРА РАЗВЕДЕНА РОДОМ: сосед платит за УБИЙСТВО, а «Не остывая» — за
+      // ПРИВАЛ. Один ускоряет цепочку, другой делает паузу бесплатной.
+      id: 'instinct-restless',
+      name: 'Не остывая',
+      icon: 'talent-unbroken-focus',
       maxRank: 1,
-      col: 3,
-      exclusiveGroup: 'instinct-key-5',
-      // Разгон вдвое чаще: ярость идёт РОВНО, а не приходит с убийствами.
-      effect: tunes('blood-letting', { field: 'cooldownSec', kind: 'multiplier', value: 0.5 }),
-    },
-  ],
-  [
-    {
-      id: 'instinct-hunger',
-      name: 'Голод',
-      icon: 'talent-intellect',
-      maxRank: 6,
-      col: 2,
-      effect: mods(m('maxMana', 'percent', 0.03)),
-    },
-    {
-      id: 'instinct-cheap-tear',
-      name: 'Скупой разрыв',
-      icon: 'talent-thrift-rupture',
-      maxRank: 5,
-      col: 3,
-      effect: tunes('sinew-tear', { field: 'manaCost', kind: 'percent', value: -0.07 }),
-    },
-  ],
-  [
-    {
-      id: 'instinct-second-breath',
-      name: 'Второе дыхание',
-      icon: 'talent-second-wind',
-      maxRank: 6,
-      col: 1,
-      effect: mods(m('hpRegen', 'percent', 0.05)),
-    },
-    {
-      id: 'instinct-full-roar',
-      name: 'Полный рёв',
-      icon: 'talent-long-focus',
-      maxRank: 5,
-      col: 3,
-      effect: tunes('blood-roar', { field: 'windowDurationSec', kind: 'percent', value: 0.07 }),
-      // Оба про «Кровавый рёв»: сперва чаще, потом дольше.
-      requires: { talentId: 'instinct-swift-roar' },
-    },
-  ],
-  [
-    {
-      id: 'instinct-never-cooling',
-      name: 'Неостывающий',
-      icon: 'talent-relentless',
-      maxRank: 6,
-      col: 2,
-      effect: mods(m('haste', 'flat', 0.008)),
-    },
-    {
-      id: 'instinct-rich-price',
-      name: 'Щедрая плата',
-      icon: 'talent-blood-charge',
-      maxRank: 5,
-      col: 3,
-      effect: tunes('blood-price', {
-        field: 'bloodPriceResourceShare',
-        kind: 'percent',
-        value: 0.07,
-      }),
-    },
-  ],
-  [
-    // 41-е очко, КЛЮЧЕВОЙ ЭТАЖ. Слева герой встаёт с привала с готовыми
-    // умениями — привал перестаёт стоить откатов. Справа окно бесплатных
-    // умений вдвое длиннее — привал реже нужен вовсе. Первое про ПОСЛЕ
-    // привала, второе про то, чтобы до него не доводить.
-    {
-      id: 'instinct-deep-sleep',
-      name: 'Крепкий сон',
-      icon: 'talent-clear-mind',
-      maxRank: 1,
-      col: 2,
-      exclusiveGroup: 'instinct-key-9',
+      col: 5,
+      exclusiveGroup: 'instinct-key-3',
       effect: { kind: 'flag', flag: 'rest-clears-cooldowns', cooldownShare: 0 },
     },
-    {
-      id: 'instinct-restless',
-      name: 'Неугомонный',
-      icon: 'talent-long-focus',
-      maxRank: 1,
-      col: 3,
-      exclusiveGroup: 'instinct-key-9',
-      // Окно вдвое длиннее: шестнадцать секунд, в которые умения не стоят
-      // ничего. Не «отдыхать быстрее», а «дольше не нуждаться в отдыхе».
-      effect: tunes('blood-roar', { field: 'windowDurationSec', kind: 'multiplier', value: 2 }),
-    },
   ],
+  // --- ЭТАЖ 4 · порог 30 · с уровня 40 -------------------------------------
   [
     {
-      id: 'instinct-wide-throat',
-      name: 'Широкая глотка',
-      icon: 'talent-deep-well',
-      maxRank: 6,
+      id: 'instinct-cheap-edge',
+      name: 'Дешёвая грань',
+      icon: 'talent-spare-edge',
+      maxRank: 5,
       col: 1,
-      effect: mods(m('maxMana', 'percent', 0.025)),
+      effect: tunes('sinew-tear', { field: 'manaCost', kind: 'percent', value: -0.1 }),
     },
     {
-      // ТАЛАНТ, КОТОРЫЙ ДЕЛАЕТ РОТАЦИЮ ДРУГОЙ, А НЕ СИЛЬНЕЕ. Правил цену
-      // Череполома, которой больше нет; теперь опускает ПОРОГ, с которого
-      // автокаст решается его бить: полоска сбрасывается раньше и мельче —
-      // чаще, но слабее. Ветка про саму ярость, и это вопрос ровно о ней.
-      id: 'instinct-thrifty-splitter',
-      name: 'Скупой замах',
+      // ЕДИНСТВЕННЫЙ ТАЛАНТ ВЕТКИ В ДВА РАНГА — прок читает ранг.
+      id: 'instinct-long-trail',
+      name: 'Долгий след',
+      icon: 'talent-fast-jaws',
+      maxRank: 2,
+      col: 2,
+      effect: {
+        kind: 'flag',
+        flag: 'proc',
+        trigger: 'crit',
+        everyNth: 2,
+        effect: { kind: 'stat', stat: 'haste', value: 0.04, durationSec: 6 },
+      },
+    },
+    {
+      id: 'instinct-cheap-berserk',
+      name: 'Дешёвое бешенство',
+      icon: 'talent-thrift-stance',
+      maxRank: 3,
+      col: 3,
+      effect: tunes('berserk', { field: 'manaCost', kind: 'percent', value: -0.1 }),
+    },
+    {
+      id: 'instinct-swift-reckoning',
+      name: 'Скорая расправа',
+      icon: 'talent-quick-mercy',
+      maxRank: 5,
+      col: 4,
+      effect: tunes('reckoning', { field: 'cooldownSec', kind: 'percent', value: -0.1 }),
+    },
+    {
+      id: 'instinct-cheap-reckoning',
+      name: 'Дешёвая расправа',
+      icon: 'talent-thrift-mercy',
+      maxRank: 5,
+      col: 5,
+      effect: tunes('reckoning', { field: 'manaCost', kind: 'percent', value: -0.1 }),
+    },
+  ],
+  // --- ЭТАЖ 5 · порог 40 · с уровня 50 · ВТОРОЙ ВЫБОР ----------------------
+  [
+    {
+      id: 'instinct-quiet-step',
+      name: 'Тихий шаг',
+      icon: 'talent-shorter-rest',
+      maxRank: 5,
+      col: 1,
+      effect: mods(m('restDuration', 'flat', -0.1)),
+    },
+    {
+      id: 'instinct-early-roar',
+      name: 'Ранний рёв',
       icon: 'talent-thrift-shatter',
       maxRank: 5,
       col: 2,
-      effect: tunes('skull-splitter', {
-        field: 'autocastResourceAbove',
-        kind: 'points',
-        value: -0.04,
-      }),
+      effect: tunes('blood-roar', { field: 'manaCost', kind: 'percent', value: -0.1 }),
+    },
+    {
+      id: 'instinct-cheap-frenzy',
+      name: 'Дешёвое исступление',
+      icon: 'talent-thrift-rupture',
+      maxRank: 5,
+      col: 3,
+      effect: tunes('blood-frenzy', { field: 'manaCost', kind: 'percent', value: -0.1 }),
+    },
+    {
+      // САМ ПОДНИМЕТСЯ — «Кровавый рёв» уходит из четвёрки и жмётся сам, по
+      // своим же воротам (`requires` выше сорока процентов ярости).
+      id: 'instinct-self-roar',
+      name: 'Сам поднимется',
+      icon: 'talent-quick-hands',
+      maxRank: 1,
+      col: 4,
+      exclusiveGroup: 'instinct-key-5',
+      effect: { kind: 'flag', flag: 'auto-ability', abilityId: 'blood-roar' },
+    },
+    {
+      // ПАРА РАЗВЕДЕНА РОДОМ: сосед отдаёт слот, а «Второй рёв» его не
+      // трогает и копит второй заряд — окно бесплатных умений приходит
+      // связкой, а не по расписанию.
+      id: 'instinct-second-roar',
+      name: 'Второй рёв',
+      icon: 'talent-second-charge',
+      maxRank: 1,
+      col: 5,
+      exclusiveGroup: 'instinct-key-5',
+      effect: {
+        kind: 'flag',
+        flag: 'ability-extra-charge',
+        abilityId: 'blood-roar',
+        extraCharges: 1,
+      },
     },
   ],
+  // --- ЭТАЖ 6 · порог 50 · с уровня 60 -------------------------------------
   [
     {
-      // Второе место удалённого таланта на порог привала — тоже процентом.
       id: 'instinct-wolf-camp',
       name: 'Волчий привал',
       icon: 'talent-quick-camp',
       maxRank: 5,
       col: 1,
-      effect: mods(m('restDuration', 'percent', -0.0234)),
+      effect: mods(m('restDuration', 'percent', -0.05)),
     },
     {
-      id: 'instinct-long-berserk',
-      name: 'Долгое бешенство',
-      icon: 'talent-long-stance',
+      id: 'instinct-deep-rage',
+      name: 'Глубокая ярость',
+      icon: 'talent-deep-well',
       maxRank: 5,
       col: 2,
-      effect: tunes('berserk', { field: 'stanceDurationSec', kind: 'percent', value: 0.08 }),
-    },
-  ],
-  [
-    {
-      id: 'instinct-steady-hand',
-      name: 'Скорая плата',
-      icon: 'talent-firm-hand',
-      maxRank: 5,
-      col: 2,
-      effect: tunes('blood-price', { field: 'cooldownSec', kind: 'percent', value: -0.06 }),
+      effect: mods(m('maxMana', 'percent', 0.03)),
     },
     {
-      id: 'instinct-cheap-roar',
-      name: 'Дешёвый рёв',
-      icon: 'talent-thrift-wall',
+      id: 'instinct-cheap-thirst',
+      name: 'Дешёвая жажда',
+      icon: 'talent-thrift-wound',
       maxRank: 5,
       col: 3,
-      effect: tunes('blood-roar', { field: 'manaCost', kind: 'percent', value: -0.08 }),
-      requires: { talentId: 'instinct-full-roar' },
+      effect: tunes('blood-thirst', { field: 'manaCost', kind: 'percent', value: -0.1 }),
+    },
+    {
+      id: 'instinct-swift-dig',
+      name: 'Скорый упор',
+      icon: 'ability-dug-in',
+      maxRank: 5,
+      col: 4,
+      effect: tunes('dug-in', { field: 'cooldownSec', kind: 'percent', value: -0.1 }),
     },
   ],
+  // --- ЭТАЖ 7 · порог 60 · с уровня 70 · ВЕНЕЦ -----------------------------
   [
-    // 61-е очко, ВЕНЕЦ. Слева привал вдвое короче — герой быстрее
-    // возвращается в бой. Справа окно открывается вдвое чаще — герой реже
-    // упирается в пустую полоску. Время против ресурса.
     {
-      id: 'instinct-wolf-sleep',
-      name: 'Волчий сон',
+      id: 'instinct-call',
+      name: 'Зов',
+      icon: 'ability-call',
+      maxRank: 1,
+      col: 1,
+      exclusiveGroup: 'instinct-key-7',
+      requires: { talentId: 'instinct-wolf-camp', minRank: 3 },
+      effect: { kind: 'flag', flag: 'grant-ability', abilityId: 'call' },
+    },
+    {
+      // НЕ ОСТЫВАЕТ — ПАССИВНЫЙ ВЕНЕЦ: слота не занимает. «Ярость не тает вне
+      // боя» механизма не имеет (убывание лежит числом в `ResourceDef`, а не
+      // статом и не флагом), и завести его значило бы новую машинерию ради
+      // одного узла. Оставлено то, что у простоя можно отнять честно: его
+      // ДЛИНУ — привал втрое короче.
+      id: 'instinct-never-cools',
+      name: 'Не остывает',
       icon: 'talent-shorter-rest',
       maxRank: 1,
       col: 2,
-      exclusiveGroup: 'instinct-key-13',
-      // Привал вдвое короче. Ярость он не наливает — и не должен; венец
-      // ветки автономности торгует ВРЕМЕНЕМ, а не ресурсом.
-      effect: { kind: 'flag', flag: 'shorter-rest', durationMultiplier: 0.5 },
-    },
-    {
-      id: 'instinct-endless-roar',
-      name: 'Бесконечный рёв',
-      icon: 'talent-endless-mind',
-      maxRank: 1,
-      col: 3,
-      exclusiveGroup: 'instinct-key-13',
-      effect: tunes('blood-roar', { field: 'cooldownSec', kind: 'multiplier', value: 0.5 }),
+      exclusiveGroup: 'instinct-key-7',
+      requires: { talentId: 'instinct-deep-rage', minRank: 3 },
+      effect: { kind: 'flag', flag: 'shorter-rest', durationMultiplier: 1 / 3 },
     },
   ],
 ])
-
-// ---------------------------------------------------------------------------
-// ПСАРЬ
-// ---------------------------------------------------------------------------
+// ГОН: СЕМЬ ЭТАЖЕЙ ПО ДЕСЯТЬ ОЧКОВ.
 //
-// ТРИ ВЕТКИ СТРОЯТСЯ СТАДИЯМИ ночи «два тела»: первый этаж заведён вместе с
-// классом, остальные двенадцать приходят своими стадиями — по коммиту на
-// ветку. Первый этаж намеренно из базовых чисел: до появления пса и его
-// команд править умения нечем.
+// Первая ветка Псаря на новой форме. Ёмкость 112 при глубине 60.
 //
-//   ГОН     — урон: герой и пёс вместе.
-//   ПРИВЯЗЬ — живучесть ЧЕРЕЗ ПСА: доля перенаправления, здоровье пса, его
-//             возвращение, — а не щит и не броня героя.
-//   ТРОПА   — автономность ЭНЕРГИИ: скорость восстановления, цена умений,
-//             порог, поведение в оффлайне.
-// ГОН: УРОН — ГЕРОЙ И ПЁС ВМЕСТЕ.
+// ВЕТКА ГОНА. Два тела бьют в такт: ветка растит укус пса и те умения героя,
+// которые пса ЧИТАЮТ, — «Подрез» бьёт сильнее, пока пёс грызёт ту же цель,
+// «Серия» заставляет пса кусать на каждый удар.
 //
-// Ветка Псаря про урон, и урон у него ДВУХТЕЛЫЙ: половина талантов правит
-// команды псу (`hound-tune` на укус и замах, правки травли, спуска, серии),
-// половина — руку героя. Ключевые этажи — пары: «стая» (герой сильнее, пока
-// пёс стоит) против «спуск вдвое злее»; «мститель» (пал пёс — герой в ярости)
-// против «четвёртый удар серии»; венец — «двойной укус спуска» против «второй
-// замах» автоатаки.
+// ЧЕГО ЗДЕСЬ НЕТ — ТАЛАНТА НА КРИТ ПСА, и это не забывчивость. Замер стадии 7
+// показал: `houndCritChance` доходит до `damagePerSecond`, но НЕ доходит до
+// `killsPerSecond` — числа, на котором стоят все контракты, прогноз зоны,
+// оффлайн и обе оси героя. Талант на него был бы виден тику и невидим всему
+// остальному; подробности и воспроизведение — в `docs/TREE-EIGHT.md`.
 const HOUNDMASTER_CHASE = branch('houndmaster-chase', [
+  // --- ЭТАЖ 1 · порог 0 · с уровня 10 --------------------------------------
   [
     {
-      // Ускорение — flat по haste (правило про weaponSpeed см. у Стража).
-      id: 'chase-quick-hands',
-      name: 'Быстрые руки',
-      icon: 'talent-quick-hands',
-      maxRank: 6,
-      col: 2,
-      effect: mods(m('haste', 'flat', 0.00703)),
-    },
-    {
-      id: 'chase-sure-cut',
-      name: 'Верный надрез',
-      icon: 'talent-sure-cut',
+      id: 'chase-light-hand',
+      name: 'Лёгкая рука',
+      icon: 'talent-strength',
       maxRank: 5,
-      col: 3,
-      effect: tunes('undercut', { field: 'weaponDamagePercent', kind: 'percent', value: 0.04 }),
+      col: 1,
+      effect: mods(m('attackPower', 'percent', 0.02)),
     },
-  ],
-  [
     {
-      // ПЁС КУСАЕТ СИЛЬНЕЕ: число спутника правится флагом с payload'ом —
-      // `hound-tune`, поле и операция как у правки умения.
-      id: 'chase-sharp-fangs',
-      name: 'Острые клыки',
-      icon: 'talent-sharp-fangs',
+      id: 'chase-wolf-grip',
+      name: 'Волчья хватка',
+      icon: 'talent-savage-blows',
       maxRank: 5,
       col: 2,
-      effect: houndTune('hitShare', 'percent', 0.06),
+      effect: mods(m('critMultiplier', 'flat', 0.03)),
     },
     {
-      id: 'chase-deep-hamstring',
-      name: 'Глубокий подрез',
-      icon: 'talent-deep-cut',
-      maxRank: 5,
+      id: 'chase-mean-sic',
+      name: 'Злая травля',
+      icon: 'ability-sic',
+      maxRank: 3,
       col: 3,
-      effect: tunes('hamstring', { field: 'weaponDamagePercent', kind: 'percent', value: 0.05 }),
+      effect: tunes('sic', { field: 'houndHasteShare', kind: 'percent', value: 0.1 }),
+    },
+    {
+      id: 'chase-heavy-hamstring',
+      name: 'Тяжёлый подрез',
+      icon: 'ability-hamstring',
+      maxRank: 3,
+      col: 4,
+      effect: tunes('hamstring', { field: 'weaponDamagePercent', kind: 'percent', value: 0.1 }),
     },
   ],
+  // --- ЭТАЖ 2 · порог 10 · с уровня 20 -------------------------------------
   [
     {
-      id: 'chase-keen-eye',
-      name: 'Зоркий глаз',
+      id: 'chase-hunter-eye',
+      name: 'Глаз ловчего',
       icon: 'talent-keen-eye',
       maxRank: 5,
       col: 1,
       effect: mods(m('critChance', 'flat', 0.01)),
     },
     {
-      id: 'chase-long-chase',
-      name: 'Долгий гон',
-      icon: 'talent-long-focus',
-      maxRank: 4,
-      col: 2,
-      effect: tunes('sic', { field: 'houndHasteDurationSec', kind: 'percent', value: 0.15 }),
-    },
-    {
-      id: 'chase-wide-flurry',
-      name: 'Широкая серия',
-      icon: 'talent-savage-blows',
-      maxRank: 5,
-      col: 3,
-      effect: tunes('flurry', { field: 'weaponDamagePercent', kind: 'percent', value: 0.05 }),
-    },
-  ],
-  [
-    {
-      // ЗАМАХ ПСА КОРОЧЕ — процентом от секунд, а не плоско: плоская правка
-      // увела бы замах в ноль тем же путём, что и у оружия героя.
-      id: 'chase-fast-jaws',
-      name: 'Быстрые челюсти',
-      icon: 'talent-fast-jaws',
-      maxRank: 5,
-      col: 2,
-      effect: houndTune('swingTime', 'percent', -0.05),
-    },
-    {
-      id: 'chase-heavy-hand',
-      name: 'Тяжёлая рука',
-      icon: 'talent-heavy-shatter',
-      maxRank: 5,
-      col: 3,
-      effect: mods(m('critMultiplier', 'flat', 0.04)),
-    },
-  ],
-  [
-    // КЛЮЧЕВОЙ ЭТАЖ 5: два поворота, берётся один.
-    {
-      // СТАЯ: пока пёс на ногах, ВЕСЬ урон героя выше. Состояние второго
-      // тела становится множителем первого — вопрос класса в одном флаге.
-      id: 'chase-pack-tactics',
-      name: 'Стая',
-      icon: 'talent-pack-tactics',
-      maxRank: 1,
-      col: 2,
-      exclusiveGroup: 'chase-key-5',
-      effect: { kind: 'flag', flag: 'pack-tactics', bonusShare: 0.12 },
-    },
-    {
-      // ЗЛОЙ СПУСК: укус по команде в полтора раза злее. Всплеск против
-      // ровного множителя стаи — разные роды, а не разные величины.
-      id: 'chase-savage-unleash',
-      name: 'Злой спуск',
-      icon: 'talent-savage-unleash',
-      maxRank: 1,
-      col: 3,
-      exclusiveGroup: 'chase-key-5',
-      effect: tunes('unleash', { field: 'unleashBiteMult', kind: 'percent', value: 0.5 }),
-    },
-  ],
-  [
-    {
-      id: 'chase-honed',
-      name: 'Точёный нож',
-      icon: 'talent-honed-edge',
-      maxRank: 5,
-      col: 2,
-      effect: mods(m('attackPower', 'percent', 0.02)),
-    },
-    {
-      id: 'chase-cheap-cut',
-      name: 'Лёгкая подсечка',
-      icon: 'talent-thrift-wound',
-      maxRank: 5,
-      col: 3,
-      effect: tunes('undercut', { field: 'manaCost', kind: 'percent', value: -0.06 }),
-    },
-    {
-      id: 'chase-sic-fury',
-      name: 'Азарт травли',
-      icon: 'talent-frenzy',
-      maxRank: 4,
-      col: 1,
-      effect: tunes('sic', { field: 'houndHasteShare', kind: 'percent', value: 0.1 }),
-    },
-  ],
-  [
-    {
-      // Стрелка: развивает «Быстрые руки» — тот же столбец, доработка буквально.
-      id: 'chase-swift',
-      name: 'Стремительность',
-      icon: 'talent-headlong',
-      maxRank: 5,
-      col: 2,
-      requires: { talentId: 'chase-quick-hands', minRank: 3 },
-      effect: mods(m('haste', 'flat', 0.007)),
-    },
-    {
-      id: 'chase-crush-grip',
-      name: 'Дробящая хватка',
-      icon: 'talent-firm-press',
-      maxRank: 5,
-      col: 3,
-      effect: tunes('grip', { field: 'weaponDamagePercent', kind: 'percent', value: 0.06 }),
-    },
-  ],
-  [
-    {
-      // Стрелка: развивает «Острые клыки».
-      id: 'chase-relentless',
-      name: 'Неотступный',
-      icon: 'talent-relentless',
-      maxRank: 5,
-      col: 2,
-      requires: { talentId: 'chase-sharp-fangs', minRank: 3 },
-      effect: houndTune('hitShare', 'percent', 0.04),
-    },
-    {
-      id: 'chase-lean-flurry',
-      name: 'Экономная серия',
-      icon: 'talent-thrift-shatter',
-      maxRank: 5,
-      col: 3,
-      effect: tunes('flurry', { field: 'manaCost', kind: 'percent', value: -0.07 }),
-    },
-  ],
-  [
-    // КЛЮЧЕВОЙ ЭТАЖ 9.
-    {
-      // МСТИТЕЛЬ: пал пёс — герой шесть секунд бьёт на треть сильнее. Урон,
-      // растущий из ПОТЕРИ второго тела: наказание за слабого пса становится
-      // окном.
-      id: 'chase-avenger',
-      name: 'Мститель',
-      icon: 'talent-avenger',
-      maxRank: 1,
-      col: 2,
-      exclusiveGroup: 'chase-key-9',
-      effect: { kind: 'flag', flag: 'hound-avenge', bonusShare: 0.3, durationSec: 6 },
-    },
-    {
-      // ЧЕТВЁРТЫЙ УДАР: серия из четырёх, и пёс кусает четыре раза. Ровный
-      // прирост против окна мстителя.
-      id: 'chase-fourth-cut',
-      name: 'Четвёртый удар',
-      icon: 'talent-fourth-cut',
-      maxRank: 1,
-      col: 3,
-      exclusiveGroup: 'chase-key-9',
-      effect: tunes('flurry', { field: 'flurryHits', kind: 'percent', value: 0.34 }),
-    },
-  ],
-  [
-    {
-      id: 'chase-power',
-      name: 'Сила удара',
-      icon: 'talent-strength',
-      maxRank: 5,
-      col: 2,
-      effect: mods(m('attackPower', 'percent', 0.02)),
-    },
-    {
-      id: 'chase-quick-unleash',
-      name: 'Скорый спуск',
-      icon: 'talent-quick-mercy',
-      maxRank: 5,
-      col: 3,
-      effect: tunes('unleash', { field: 'cooldownSec', kind: 'percent', value: -0.08 }),
-    },
-    {
-      id: 'chase-keener-eye',
-      name: 'Зорче',
-      icon: 'talent-wide-mercy',
-      maxRank: 5,
-      col: 1,
-      effect: mods(m('critChance', 'flat', 0.01)),
-    },
-  ],
-  [
-    {
-      // Стрелка: развивает «Неотступного» — третья ступень клыков.
-      id: 'chase-fangs-of-old',
-      name: 'Клыки матёрого',
-      icon: 'talent-fangs-of-old',
-      maxRank: 5,
-      col: 2,
-      requires: { talentId: 'chase-relentless', minRank: 3 },
-      effect: houndTune('hitShare', 'percent', 0.04),
-    },
-    {
-      id: 'chase-pack-cut',
-      name: 'Стайный подрез',
-      icon: 'talent-open-wound',
-      maxRank: 4,
-      col: 3,
-      effect: tunes('hamstring', { field: 'packStrikeBonusShare', kind: 'percent', value: 0.15 }),
-    },
-  ],
-  [
-    {
-      id: 'chase-haste-of-hunt',
-      name: 'Охотничий шаг',
-      icon: 'talent-swift-return',
-      maxRank: 5,
-      col: 2,
-      effect: mods(m('haste', 'flat', 0.007)),
-    },
-    {
-      id: 'chase-cheap-sic',
-      name: 'Лёгкая травля',
-      icon: 'talent-thrift-rupture',
-      maxRank: 5,
-      col: 3,
-      effect: tunes('sic', { field: 'manaCost', kind: 'percent', value: -0.07 }),
-    },
-  ],
-  [
-    // ВЕНЕЦ: два капстоуна, берётся один.
-    {
-      // ДВОЙНОЙ УКУС: спуск вдвое злее. Козырь класса целиком в зубах пса.
-      id: 'chase-twin-fang',
-      name: 'Двойной укус',
-      icon: 'talent-twin-fang',
-      maxRank: 1,
-      col: 2,
-      exclusiveGroup: 'chase-key-13',
-      effect: tunes('unleash', { field: 'unleashBiteMult', kind: 'multiplier', value: 2 }),
-    },
-    {
-      // ВТОРОЙ ЗАМАХ: автоатака героя с шансом бьёт дважды — общий флаг,
-      // урон руки против урона зубов.
-      id: 'chase-double-strike',
-      name: 'Второй замах',
-      icon: 'talent-double-strike',
-      maxRank: 1,
-      col: 3,
-      exclusiveGroup: 'chase-key-13',
-      effect: { kind: 'flag', flag: 'double-strike', chance: 0.2 },
-    },
-  ],
-])
-
-// ПРИВЯЗЬ: ЖИВУЧЕСТЬ ЧЕРЕЗ ПСА.
-//
-// Ветка Псаря про выживание, и выживает он ВТОРЫМ ТЕЛОМ: запас пса, доля
-// ударов, которые он принимает, его возврат и лечение — а не щит и не броня
-// героя. Ключевые пары: «долгое зализывание» (отзыв лечит вдвое) против
-// «второго дыхания» (быстрое воскрешение героя) — пёс живёт против герой не
-// умирает; «железная привязь» (скрадывание вдвое) против «полного оклика»
-// (пёс встаёт целым); венец — «неутомимый оклик» против «тени» (скрадывание
-// вдвое дольше) — часто поднимать против долго прятаться.
-const HOUNDMASTER_LEASH = branch('houndmaster-leash', [
-  [
-    {
-      id: 'leash-thick-coat',
-      name: 'Густая шерсть',
+      id: 'chase-wolf-frame',
+      name: 'Волчья стать',
       icon: 'talent-thick-coat',
       maxRank: 5,
       col: 2,
-      effect: mods(m('maxHp', 'percent', 0.02)),
+      effect: { kind: 'flag', flag: 'hound-tune', field: 'maxHpShare', op: 'percent', value: 0.05 },
     },
     {
-      id: 'leash-steady-breath',
-      name: 'Ровное дыхание',
-      icon: 'talent-even-breath',
+      id: 'chase-long-sic',
+      name: 'Долгая травля',
+      icon: 'talent-long-focus',
       maxRank: 5,
       col: 3,
-      effect: mods(m('hpRegen', 'percent', 0.05)),
+      requires: { talentId: 'chase-mean-sic', minRank: 2 },
+      effect: tunes('sic', { field: 'houndHasteDurationSec', kind: 'percent', value: 0.15 }),
+    },
+    {
+      id: 'chase-cut-trail',
+      name: 'Резаный след',
+      icon: 'talent-quick-hands',
+      maxRank: 5,
+      col: 4,
+      requires: { talentId: 'chase-heavy-hamstring', minRank: 2 },
+      effect: tunes('hamstring', { field: 'cooldownSec', kind: 'percent', value: -0.1 }),
     },
   ],
+  // --- ЭТАЖ 3 · порог 20 · с уровня 30 · ПЕРВЫЙ ВЫБОР ----------------------
   [
     {
-      // ЗАПАС ПСА — доля запаса героя, и талант растит именно доли: пёс
-      // остаётся собой на любом уровне.
-      id: 'leash-tough-hide',
-      name: 'Крепкая шкура',
-      icon: 'talent-thick-hide',
+      id: 'chase-rush',
+      name: 'Разгон',
+      icon: 'talent-frenzy',
+      maxRank: 5,
+      col: 1,
+      effect: mods(m('haste', 'flat', 0.01)),
+    },
+    {
+      id: 'chase-fast-jaws',
+      name: 'Скорые челюсти',
+      icon: 'talent-fast-jaws',
       maxRank: 5,
       col: 2,
-      effect: houndTune('maxHpShare', 'percent', 0.08),
+      effect: { kind: 'flag', flag: 'hound-tune', field: 'swingTime', op: 'percent', value: -0.05 },
     },
     {
-      id: 'leash-quick-bandage',
-      name: 'Быстрая перевязка',
-      icon: 'talent-quick-mend',
+      id: 'chase-often-sic',
+      name: 'Частая травля',
+      icon: 'talent-restless-legs',
       maxRank: 5,
       col: 3,
-      effect: tunes('bandage', { field: 'cooldownSec', kind: 'percent', value: -0.08 }),
+      requires: { talentId: 'chase-long-sic', minRank: 3 },
+      effect: tunes('sic', { field: 'cooldownSec', kind: 'percent', value: -0.1 }),
+    },
+    {
+      // РЫВОК — ПРАВКА УМЕНИЯ: «Отзыв» перестаёт быть лечением и становится
+      // мгновенным возвратом. Защитная кнопка превращается в наступательную.
+      id: 'chase-dash',
+      name: 'Рывок',
+      icon: 'ability-recall',
+      maxRank: 1,
+      col: 4,
+      exclusiveGroup: 'chase-key-3',
+      effect: tunes(
+        'recall',
+        { field: 'recallHealShare', kind: 'multiplier', value: 0.1 },
+        { field: 'recallDurationSec', kind: 'multiplier', value: 0.4 },
+      ),
+    },
+    {
+      // ПАРА РАЗВЕДЕНА РОДОМ: сосед меняет, ЧТО делает кнопка, а «В две пасти»
+      // не трогает ни одной кнопки и открывает окно по СОБЫТИЮ боя.
+      id: 'chase-twin-fang',
+      name: 'В две пасти',
+      icon: 'talent-twin-fang',
+      maxRank: 1,
+      col: 5,
+      exclusiveGroup: 'chase-key-3',
+      effect: {
+        kind: 'flag',
+        flag: 'proc',
+        trigger: 'crit',
+        everyNth: 2,
+        effect: { kind: 'stat', stat: 'haste', value: 0.1, durationSec: 4 },
+      },
     },
   ],
+  // --- ЭТАЖ 4 · порог 30 · с уровня 40 -------------------------------------
   [
     {
-      id: 'leash-firm-grip',
-      name: 'Крепкая хватка',
-      icon: 'talent-firm-press',
+      id: 'chase-strong-bite',
+      name: 'Крепкий укус',
+      icon: 'ability-unleash',
+      maxRank: 5,
+      col: 1,
+      effect: tunes('unleash', { field: 'unleashBiteMult', kind: 'percent', value: 0.12 }),
+    },
+    {
+      id: 'chase-tight-flurry',
+      name: 'Слитная серия',
+      icon: 'ability-flurry',
+      maxRank: 5,
+      col: 2,
+      effect: tunes('flurry', { field: 'flurryHits', kind: 'percent', value: 0.2 }),
+    },
+    {
+      id: 'chase-quick-undercut',
+      name: 'Быстрая подсечка',
+      icon: 'ability-undercut',
+      maxRank: 3,
+      col: 3,
+      effect: tunes('undercut', { field: 'weaponDamagePercent', kind: 'percent', value: 0.1 }),
+    },
+    {
+      // ЕДИНСТВЕННЫЙ ТАЛАНТ ВЕТКИ В ДВА РАНГА — прок читает ранг.
+      id: 'chase-scent',
+      name: 'Запах',
+      icon: 'talent-sharp-fangs',
+      maxRank: 2,
+      col: 4,
+      effect: {
+        kind: 'flag',
+        flag: 'proc',
+        trigger: 'hit',
+        everyNth: 4,
+        effect: { kind: 'stat', stat: 'critChance', value: 0.05, durationSec: 6 },
+      },
+    },
+    {
+      id: 'chase-long-grip',
+      name: 'Долгая хватка',
+      icon: 'ability-grip',
+      maxRank: 5,
+      col: 5,
+      effect: tunes('grip', { field: 'gripDurationSec', kind: 'percent', value: 0.1 }),
+    },
+  ],
+  // --- ЭТАЖ 5 · порог 40 · с уровня 50 · ВТОРОЙ ВЫБОР ----------------------
+  [
+    {
+      id: 'chase-fang',
+      name: 'Клык',
+      icon: 'talent-sharp-fangs',
+      maxRank: 5,
+      col: 1,
+      effect: { kind: 'flag', flag: 'hound-tune', field: 'hitShare', op: 'percent', value: 0.04 },
+    },
+    {
+      id: 'chase-swift-unleash',
+      name: 'Скорый спуск',
+      icon: 'talent-savage-unleash',
+      maxRank: 5,
+      col: 2,
+      effect: tunes('unleash', { field: 'cooldownSec', kind: 'percent', value: -0.1 }),
+    },
+    {
+      id: 'chase-fierce-leader',
+      name: 'Ярый вожак',
+      icon: 'talent-hound-mending',
+      maxRank: 5,
+      col: 3,
+      effect: {
+        kind: 'flag',
+        flag: 'hound-tune',
+        field: 'regenInCombat',
+        op: 'percent',
+        value: 0.1,
+      },
+    },
+    {
+      // САМА СПУСКАЕТСЯ — «Травля» уходит из четвёрки и жмётся сама.
+      id: 'chase-self-sic',
+      name: 'Сама спускается',
+      icon: 'talent-quick-hands',
+      maxRank: 1,
+      col: 4,
+      exclusiveGroup: 'chase-key-5',
+      effect: { kind: 'flag', flag: 'auto-ability', abilityId: 'sic' },
+    },
+    {
+      // ПАРА РАЗВЕДЕНА РОДОМ: сосед отдаёт слот, а «Загонный лай» слота не
+      // трогает и открывает окно по СОБЫТИЮ — каждый третий удар героя.
+      id: 'chase-bay',
+      name: 'Загонный лай',
+      icon: 'talent-fangs-of-old',
+      maxRank: 1,
+      col: 5,
+      exclusiveGroup: 'chase-key-5',
+      effect: {
+        kind: 'flag',
+        flag: 'proc',
+        trigger: 'hit',
+        everyNth: 3,
+        effect: { kind: 'stat', stat: 'critMultiplier', value: 0.25, durationSec: 6 },
+      },
+    },
+  ],
+  // --- ЭТАЖ 6 · порог 50 · с уровня 60 -------------------------------------
+  [
+    {
+      id: 'chase-strong-beast',
+      name: 'Сильный зверь',
+      icon: 'ability-grip',
       maxRank: 5,
       col: 1,
       effect: tunes('grip', { field: 'gripSlowShare', kind: 'percent', value: 0.08 }),
     },
     {
-      // ДОЛЯ ПЕРЕНАПРАВЛЕНИЯ — В ПУНКТАХ: она доля, и «на 10 % больше» от 0.3
-      // игрок прочитал бы как 40 %, а не 33.
-      id: 'leash-fur-shield',
-      name: 'Живой щит',
-      icon: 'talent-fur-shield',
+      id: 'chase-clinging-grip',
+      name: 'Цепкая хватка',
+      icon: 'talent-firm-press',
       maxRank: 5,
       col: 2,
-      effect: houndTune('redirectShare', 'points', 0.03),
+      effect: tunes('grip', { field: 'cooldownSec', kind: 'percent', value: -0.1 }),
     },
     {
-      id: 'leash-deep-bandage',
-      name: 'Тугая перевязка',
-      icon: 'talent-deep-mend',
+      id: 'chase-heavy-flurry',
+      name: 'Тяжёлая серия',
+      icon: 'ability-flurry',
       maxRank: 5,
       col: 3,
-      effect: tunes('bandage', { field: 'houndHealMaxHpShare', kind: 'percent', value: 0.08 }),
+      effect: tunes('flurry', { field: 'weaponDamagePercent', kind: 'percent', value: 0.1 }),
+    },
+    {
+      // ЦЕНУ «ПОДРЕЗА» РЕЖЕТ ТРОПА, А НЕ ГОН. Проценты одного поля
+      // СКЛАДЫВАЮТСЯ по всем веткам класса, и две ветки по −50 % на потолке
+      // рангов сделали бы умение бесплатным. Поймал `content:check`.
+      id: 'chase-sharp-sic',
+      name: 'Резкая травля',
+      icon: 'ability-sic',
+      maxRank: 5,
+      col: 4,
+      effect: tunes('sic', { field: 'weaponDamagePercent', kind: 'percent', value: 0.1 }),
     },
   ],
+  // --- ЭТАЖ 7 · порог 60 · с уровня 70 · ВЕНЕЦ -----------------------------
   [
     {
-      id: 'leash-fast-return',
-      name: 'Скорый возврат',
-      icon: 'talent-fast-return',
-      maxRank: 5,
-      col: 2,
-      effect: houndTune('returnSec', 'percent', -0.08),
+      id: 'chase-pack-release',
+      name: 'Спуск своры',
+      icon: 'ability-pack-release',
+      maxRank: 1,
+      col: 1,
+      exclusiveGroup: 'chase-key-7',
+      requires: { talentId: 'chase-strong-beast', minRank: 3 },
+      effect: { kind: 'flag', flag: 'grant-ability', abilityId: 'pack-release' },
     },
     {
-      id: 'leash-cheap-recall',
-      name: 'Лёгкий отзыв',
-      icon: 'talent-thrift-mercy',
-      maxRank: 5,
-      col: 3,
-      effect: tunes('recall', { field: 'manaCost', kind: 'percent', value: -0.07 }),
-    },
-  ],
-  [
-    // КЛЮЧЕВОЙ ЭТАЖ 5.
-    {
-      // ДОЛГОЕ ЗАЛИЗЫВАНИЕ: отзыв лечит вдвое. Пёс живёт — герой платит уроном.
-      id: 'leash-long-lick',
-      name: 'Зализать раны',
-      icon: 'talent-quiet-mend',
+      // ЭХО СВОРЫ — ПАССИВНЫЙ ВЕНЕЦ: слота не занимает. «Пёс повторяет каждое
+      // умение героя» механизма не имеет (эхо у Стража — поле самого умения, а
+      // не таланта), и `pack-tactics` даёт ту же мысль честно: пока пёс на
+      // ногах, весь урон героя выше.
+      id: 'chase-pack-echo',
+      name: 'Эхо своры',
+      icon: 'talent-pack-tactics',
       maxRank: 1,
       col: 2,
-      exclusiveGroup: 'leash-key-5',
-      effect: tunes('recall', { field: 'recallHealShare', kind: 'percent', value: 1.0 }),
-    },
-    {
-      // ВТОРОЕ ДЫХАНИЕ: герой воскресает вдвое быстрее — общий флаг. Другой род:
-      // не пёс не падает, а смерть героя стоит дешевле.
-      id: 'leash-second-wind',
-      name: 'Второе дыхание',
-      icon: 'talent-second-wind',
-      maxRank: 1,
-      col: 3,
-      exclusiveGroup: 'leash-key-5',
-      effect: { kind: 'flag', flag: 'faster-revive', reviveMultiplier: 0.5 },
+      exclusiveGroup: 'chase-key-7',
+      requires: { talentId: 'chase-clinging-grip', minRank: 3 },
+      effect: { kind: 'flag', flag: 'pack-tactics', bonusShare: 0.18 },
     },
   ],
+])
+// ПРИВЯЗЬ: СЕМЬ ЭТАЖЕЙ ПО ДЕСЯТЬ ОЧКОВ.
+//
+// Ветка живучести Псаря, и живучесть у него ЧУЖАЯ: удар принимает пёс. Всё,
+// что растит ветка, — это способность второго тела стоять под ударом:
+// перенаправление, запас пса, его броня и уворот, лечение и скорость подъёма.
+const HOUNDMASTER_LEASH = branch('houndmaster-leash', [
+  // --- ЭТАЖ 1 · порог 0 · с уровня 10 --------------------------------------
   [
     {
-      id: 'leash-hound-mending',
-      name: 'Зализывание на ходу',
-      icon: 'talent-hound-mending',
+      id: 'leash-strong-breed',
+      name: 'Крепкая порода',
+      icon: 'talent-thick-coat',
       maxRank: 5,
       col: 1,
-      effect: houndTune('regenInCombat', 'points', 0.01),
+      effect: mods(m('houndMaxHp', 'flat', 0.05)),
     },
     {
-      id: 'leash-vitality',
-      name: 'Крепость тела',
-      icon: 'talent-vitality',
+      id: 'leash-own-hide',
+      name: 'Своя шкура',
+      icon: 'talent-thick-hide',
       maxRank: 5,
       col: 2,
-      effect: mods(m('maxHp', 'percent', 0.02)),
-    },
-    {
-      id: 'leash-long-skulk',
-      name: 'Долгое скрадывание',
-      icon: 'talent-long-stance',
-      maxRank: 5,
-      col: 3,
-      effect: tunes('skulk', { field: 'skulkDurationSec', kind: 'percent', value: 0.12 }),
-    },
-  ],
-  [
-    {
-      id: 'leash-armor',
-      name: 'Кожаный доспех',
-      icon: 'talent-shield-wall',
-      maxRank: 5,
-      col: 2,
-      effect: mods(m('armor', 'percent', 0.03)),
-    },
-    {
-      id: 'leash-cheap-bandage',
-      name: 'Лёгкая перевязка',
-      icon: 'talent-thrift-wall',
-      maxRank: 5,
-      col: 3,
-      effect: tunes('bandage', { field: 'manaCost', kind: 'percent', value: -0.07 }),
-    },
-  ],
-  [
-    {
-      // Стрелка: развивает «Крепкую шкуру».
-      id: 'leash-thicker-hide',
-      name: 'Толстая шкура',
-      icon: 'talent-hard-to-kill',
-      maxRank: 5,
-      col: 2,
-      requires: { talentId: 'leash-tough-hide', minRank: 3 },
-      effect: houndTune('maxHpShare', 'percent', 0.06),
-    },
-    {
-      id: 'leash-quick-rally',
-      name: 'Скорый оклик',
-      icon: 'talent-early-call',
-      maxRank: 5,
-      col: 3,
-      effect: tunes('rally', { field: 'cooldownSec', kind: 'percent', value: -0.1 }),
-    },
-  ],
-  [
-    // КЛЮЧЕВОЙ ЭТАЖ 9.
-    {
-      // ЖЕЛЕЗНАЯ ПРИВЯЗЬ: скрадывание перекладывает на пса вдвое больше.
-      id: 'leash-iron-leash',
-      name: 'Железная привязь',
-      icon: 'talent-immovable',
-      maxRank: 1,
-      col: 2,
-      exclusiveGroup: 'leash-key-9',
-      effect: tunes('skulk', { field: 'skulkRedirectBonus', kind: 'percent', value: 1.0 }),
-    },
-    {
-      // ПОЛНЫЙ ОКЛИК: павший пёс встаёт целым. Не «пёс держит больше», а
-      // «падение стоит меньше» — другой род.
-      id: 'leash-full-rally',
-      name: 'Полный оклик',
-      icon: 'talent-full-rally',
-      maxRank: 1,
-      col: 3,
-      exclusiveGroup: 'leash-key-9',
-      effect: tunes('rally', { field: 'rallyHpShare', kind: 'percent', value: 1.0 }),
-    },
-  ],
-  [
-    {
-      id: 'leash-even-breath',
-      name: 'Глубокое дыхание',
-      icon: 'talent-steady-breath',
-      maxRank: 5,
-      col: 2,
-      effect: mods(m('hpRegen', 'percent', 0.05)),
-    },
-    {
-      // Стрелка: развивает «Долгое скрадывание» — тот же столбец.
-      id: 'leash-deep-skulk',
-      name: 'Глубокое скрадывание',
-      icon: 'talent-spiked-guard',
-      maxRank: 5,
-      col: 3,
-      requires: { talentId: 'leash-long-skulk', minRank: 2 },
-      effect: tunes('skulk', { field: 'skulkRedirectBonus', kind: 'percent', value: 0.1 }),
-    },
-  ],
-  [
-    {
-      // Стрелка: развивает «Скорый возврат».
-      id: 'leash-swift-return',
-      name: 'Стремительный возврат',
-      icon: 'talent-swift-return',
-      maxRank: 5,
-      col: 2,
-      requires: { talentId: 'leash-fast-return', minRank: 3 },
-      effect: houndTune('returnSec', 'percent', -0.06),
-    },
-    {
-      id: 'leash-long-recall',
-      name: 'Долгий отзыв',
-      icon: 'talent-long-wall',
-      maxRank: 4,
-      col: 3,
-      effect: tunes('recall', { field: 'recallDurationSec', kind: 'percent', value: 0.15 }),
-    },
-  ],
-  [
-    {
-      id: 'leash-hardened',
-      name: 'Закалка',
-      icon: 'talent-bulwark-training',
-      maxRank: 5,
-      col: 2,
-      effect: mods(m('maxHp', 'percent', 0.02)),
+      effect: mods(m('maxHp', 'percent', 0.04)),
     },
     {
       id: 'leash-long-grip',
       name: 'Долгая хватка',
-      icon: 'talent-braced',
-      maxRank: 5,
+      icon: 'ability-grip',
+      maxRank: 3,
       col: 3,
-      effect: tunes('grip', { field: 'gripDurationSec', kind: 'percent', value: 0.12 }),
+      effect: tunes('grip', { field: 'gripDurationSec', kind: 'percent', value: 0.1 }),
+    },
+    {
+      id: 'leash-tight-grip',
+      name: 'Тугая хватка',
+      icon: 'talent-spare-edge',
+      maxRank: 3,
+      col: 4,
+      effect: tunes('grip', { field: 'manaCost', kind: 'percent', value: -0.1 }),
     },
   ],
+  // --- ЭТАЖ 2 · порог 10 · с уровня 20 -------------------------------------
   [
-    // ВЕНЕЦ.
     {
-      // НЕУТОМИМЫЙ ОКЛИК: откат оклика в два с половиной раза короче —
-      // павший пёс почти не лежит.
-      id: 'leash-tireless-rally',
-      name: 'Неутомимый оклик',
-      icon: 'ability-rally',
-      maxRank: 1,
-      col: 2,
-      exclusiveGroup: 'leash-key-13',
-      effect: tunes('rally', { field: 'cooldownSec', kind: 'multiplier', value: 0.4 }),
+      id: 'leash-tanned-hide',
+      name: 'Дублёная шкура',
+      icon: 'talent-iron-skin',
+      maxRank: 5,
+      col: 1,
+      effect: mods(m('damageReduction', 'flat', 0.01)),
     },
     {
-      // ТЕНЬ: скрадывание вдвое дольше — герой почти не выходит из-за пса.
-      id: 'leash-shadow-hound',
-      name: 'Тень пса',
-      icon: 'ability-skulk',
-      maxRank: 1,
+      id: 'leash-thick-fur',
+      name: 'Толстая шерсть',
+      icon: 'talent-fur-shield',
+      maxRank: 5,
+      col: 2,
+      effect: mods(m('houndArmor', 'flat', 0.04)),
+    },
+    {
+      id: 'leash-tight-bandage',
+      name: 'Тугая перевязка',
+      icon: 'ability-bandage',
+      maxRank: 5,
       col: 3,
-      exclusiveGroup: 'leash-key-13',
-      effect: tunes('skulk', { field: 'skulkDurationSec', kind: 'multiplier', value: 2 }),
+      requires: { talentId: 'leash-long-grip', minRank: 2 },
+      effect: tunes('bandage', { field: 'houndHealMaxHpShare', kind: 'percent', value: 0.12 }),
+    },
+    {
+      id: 'leash-swift-bandage',
+      name: 'Скорая перевязка',
+      icon: 'talent-quick-mend',
+      maxRank: 5,
+      col: 4,
+      requires: { talentId: 'leash-tight-grip', minRank: 2 },
+      effect: tunes('bandage', { field: 'cooldownSec', kind: 'percent', value: -0.1 }),
+    },
+  ],
+  // --- ЭТАЖ 3 · порог 20 · с уровня 30 · ПЕРВЫЙ ВЫБОР ----------------------
+  [
+    {
+      id: 'leash-hardy-hound',
+      name: 'Живучий пёс',
+      icon: 'talent-hard-to-kill',
+      maxRank: 5,
+      col: 1,
+      effect: { kind: 'flag', flag: 'hound-tune', field: 'maxHpShare', op: 'percent', value: 0.06 },
+    },
+    {
+      id: 'leash-long-skulk',
+      name: 'Долгое скрадывание',
+      icon: 'ability-skulk',
+      maxRank: 5,
+      col: 2,
+      effect: tunes('skulk', { field: 'skulkDurationSec', kind: 'percent', value: 0.15 }),
+    },
+    {
+      id: 'leash-deep-bandage',
+      name: 'Ранняя перевязка',
+      icon: 'talent-early-call',
+      maxRank: 5,
+      col: 3,
+      requires: { talentId: 'leash-tight-bandage', minRank: 3 },
+      effect: tunes('bandage', {
+        field: 'houndHealAutocastBelowHpShare',
+        kind: 'points',
+        value: 0.05,
+      }),
+    },
+    {
+      // ПАРА РАЗВЕДЕНА РОДОМ: «Не бросит» открывает окно по СОБЫТИЮ боя,
+      // «Крепкий поводок» меняет, ЧТО делает кнопка отзыва.
+      id: 'leash-wont-leave',
+      name: 'Не бросит',
+      icon: 'talent-hound-rests',
+      maxRank: 1,
+      col: 4,
+      exclusiveGroup: 'leash-key-3',
+      effect: {
+        kind: 'flag',
+        flag: 'proc',
+        trigger: 'hit',
+        everyNth: 4,
+        effect: { kind: 'stat', stat: 'houndDodge', value: 0.1, durationSec: 6 },
+      },
+    },
+    {
+      id: 'leash-strong-lead',
+      name: 'Крепкий поводок',
+      icon: 'ability-recall',
+      maxRank: 1,
+      col: 5,
+      exclusiveGroup: 'leash-key-3',
+      effect: tunes('recall', { field: 'recallHealShare', kind: 'percent', value: 1 }),
+    },
+  ],
+  // --- ЭТАЖ 4 · порог 30 · с уровня 40 -------------------------------------
+  [
+    {
+      id: 'leash-stone-skin',
+      name: 'Каменная кожа',
+      icon: 'talent-iron-skin',
+      maxRank: 5,
+      col: 1,
+      effect: mods(m('damageReduction', 'flat', 0.01)),
+    },
+    {
+      id: 'leash-leader-hide',
+      name: 'Шкура вожака',
+      icon: 'talent-fur-shield',
+      maxRank: 5,
+      col: 2,
+      effect: mods(m('houndArmor', 'flat', 0.03)),
+    },
+    {
+      // ЕДИНСТВЕННЫЙ ТАЛАНТ ВЕТКИ В ДВА РАНГА — прок читает ранг.
+      id: 'leash-tempering',
+      name: 'Закалка',
+      icon: 'talent-spiked-guard',
+      maxRank: 2,
+      col: 3,
+      effect: {
+        kind: 'flag',
+        flag: 'proc',
+        trigger: 'crit',
+        everyNth: 2,
+        effect: { kind: 'stat', stat: 'damageReduction', value: 0.04, durationSec: 8 },
+      },
+    },
+    {
+      id: 'leash-tight-rally',
+      name: 'Тугой оклик',
+      icon: 'ability-rally',
+      maxRank: 5,
+      col: 4,
+      effect: tunes('rally', { field: 'rallyHpShare', kind: 'percent', value: 0.12 }),
+    },
+    {
+      id: 'leash-swift-rally',
+      name: 'Скорый оклик',
+      icon: 'talent-full-rally',
+      maxRank: 5,
+      col: 5,
+      effect: tunes('rally', { field: 'cooldownSec', kind: 'percent', value: -0.1 }),
+    },
+  ],
+  // --- ЭТАЖ 5 · порог 40 · с уровня 50 · ВТОРОЙ ВЫБОР ----------------------
+  [
+    {
+      id: 'leash-own-blood',
+      name: 'Своя кровь',
+      icon: 'talent-vitality',
+      maxRank: 5,
+      col: 1,
+      effect: mods(m('maxHp', 'percent', 0.03)),
+    },
+    {
+      id: 'leash-quick-rise',
+      name: 'Быстрый подъём',
+      icon: 'talent-fast-return',
+      maxRank: 5,
+      col: 2,
+      effect: mods(m('houndReviveSpeed', 'flat', 0.05)),
+    },
+    {
+      id: 'leash-wide-guard',
+      name: 'Широкий заслон',
+      icon: 'talent-fur-shield',
+      maxRank: 5,
+      col: 3,
+      effect: {
+        kind: 'flag',
+        flag: 'hound-tune',
+        field: 'redirectShare',
+        op: 'percent',
+        value: 0.1,
+      },
+    },
+    {
+      // САМ ПРИКРОЕТ — «Скрадывание» уходит из четвёрки и жмётся само.
+      id: 'leash-self-skulk',
+      name: 'Сам прикроет',
+      icon: 'talent-quick-hands',
+      maxRank: 1,
+      col: 4,
+      exclusiveGroup: 'leash-key-5',
+      effect: { kind: 'flag', flag: 'auto-ability', abilityId: 'skulk' },
+    },
+    {
+      // ПАРА РАЗВЕДЕНА РОДОМ: сосед отдаёт слот, а «Скорое возвращение» слота
+      // не трогает и правит ЧИСЛО спутника — пёс лежит вдвое меньше.
+      id: 'leash-swift-return',
+      name: 'Скорое возвращение',
+      icon: 'talent-hound-sleeps',
+      maxRank: 1,
+      col: 5,
+      exclusiveGroup: 'leash-key-5',
+      effect: { kind: 'flag', flag: 'hound-tune', field: 'returnSec', op: 'percent', value: -0.5 },
+    },
+  ],
+  // --- ЭТАЖ 6 · порог 50 · с уровня 60 -------------------------------------
+  [
+    {
+      id: 'leash-beast-hound',
+      name: 'Пёс-зверь',
+      icon: 'talent-hard-to-kill',
+      maxRank: 5,
+      col: 1,
+      effect: { kind: 'flag', flag: 'hound-tune', field: 'maxHpShare', op: 'percent', value: 0.05 },
+    },
+    {
+      id: 'leash-dodge',
+      name: 'Уворот',
+      icon: 'talent-quick-hands',
+      maxRank: 5,
+      col: 2,
+      effect: mods(m('houndDodge', 'flat', 0.03)),
+    },
+    {
+      id: 'leash-hound-breath',
+      name: 'Дыхание пса',
+      icon: 'talent-hound-mending',
+      maxRank: 5,
+      col: 3,
+      effect: {
+        kind: 'flag',
+        flag: 'hound-tune',
+        field: 'regenInCombat',
+        op: 'percent',
+        value: 0.1,
+      },
+    },
+    {
+      id: 'leash-even-breath',
+      name: 'Ровное дыхание',
+      icon: 'talent-even-breath',
+      maxRank: 5,
+      col: 4,
+      effect: mods(m('hpRegen', 'percent', 0.05)),
+    },
+  ],
+  // --- ЭТАЖ 7 · порог 60 · с уровня 70 · ВЕНЕЦ -----------------------------
+  [
+    {
+      id: 'leash-swap',
+      name: 'Подмена',
+      icon: 'ability-swap',
+      maxRank: 1,
+      col: 1,
+      exclusiveGroup: 'leash-key-7',
+      requires: { talentId: 'leash-beast-hound', minRank: 3 },
+      effect: { kind: 'flag', flag: 'grant-ability', abilityId: 'swap' },
+    },
+    {
+      // ЖИВОЙ ЩИТ — ПАССИВНЫЙ ВЕНЕЦ: слота не занимает. «Смертельный удар
+      // целиком уходит в пса» механизма не имеет — это отмена смерти, а её
+      // модель не считает. Оставлено то, что ветка и обещает: доля входящего,
+      // уходящая в пса, растёт вдвое.
+      id: 'leash-living-shield',
+      name: 'Живой щит',
+      icon: 'talent-fur-shield',
+      maxRank: 1,
+      col: 2,
+      exclusiveGroup: 'leash-key-7',
+      requires: { talentId: 'leash-dodge', minRank: 3 },
+      effect: {
+        kind: 'flag',
+        flag: 'hound-tune',
+        field: 'redirectShare',
+        op: 'percent',
+        value: 1,
+      },
     },
   ],
 ])
-
-// ТРОПА: АВТОНОМНОСТЬ ЭНЕРГИИ.
+// ТРОПА: СЕМЬ ЭТАЖЕЙ ПО ДЕСЯТЬ ОЧКОВ.
 //
-// Ветка Псаря про то, сколько игра идёт сама: скорость возвращения энергии,
-// цена команд, длина привала, восстановление вне боя — героя и пса. Ключевые
-// пары — про РИТМ, а не про числа: «привал снимает откаты» против «убийство
-// срезает откаты» (пауза против непрерывности); «привал вдвое короче» против
-// «второй заряд серии» (меньше ждать против больше выстрелить); венец —
-// «неутомимая серия» (вдвое дешевле) против «дыхания охоты» (травля дешевле и
-// дольше) — рука против пса.
+// Третья ветка Псаря, и с ней ВСЕ ДЕВЯТЬ веток игры стоят на одной форме.
+// Ёмкость 112 при глубине 60.
+//
+// ВЕТКА ТРОПЫ. Псарь не останавливается: энергия возвращается сама, и вся
+// беда в другом — в привале. Ветка режет его длину, делает команды псу
+// дешевле и приводит к венцу, которого у класса не было вовсе, — ЛЕЧЕНИЮ.
 const HOUNDMASTER_TRAIL = branch('houndmaster-trail', [
-  [
-    {
-      // Энергия восстанавливается статом manaRegen: процент от постоянной
-      // базы — единственная законная правка её скорости.
-      id: 'trail-restless-legs',
-      name: 'Неутомимые ноги',
-      icon: 'talent-restless-legs',
-      maxRank: 5,
-      col: 2,
-      effect: mods(m('manaRegen', 'percent', 0.04)),
-    },
-    {
-      id: 'trail-short-camp',
-      name: 'Короткая стоянка',
-      icon: 'talent-short-camp',
-      maxRank: 5,
-      col: 3,
-      effect: mods(m('restDuration', 'percent', -0.04)),
-    },
-  ],
+  // --- ЭТАЖ 1 · порог 0 · с уровня 10 --------------------------------------
   [
     {
       id: 'trail-light-step',
       name: 'Лёгкий шаг',
-      icon: 'talent-thrift-wound',
-      maxRank: 5,
-      col: 2,
-      effect: tunes('undercut', { field: 'manaCost', kind: 'percent', value: -0.06 }),
-    },
-    {
-      id: 'trail-second-breath',
-      name: 'Второе дыхание тропы',
-      icon: 'talent-clear-mind',
-      maxRank: 5,
-      col: 3,
-      effect: mods(m('hpRegenOutOfCombat', 'percent', 0.06)),
-    },
-  ],
-  [
-    {
-      id: 'trail-quick-camp',
-      name: 'Быстрый лагерь',
       icon: 'talent-quick-camp',
       maxRank: 5,
       col: 1,
-      effect: mods(m('restDuration', 'percent', -0.04)),
+      effect: mods(m('restDuration', 'flat', -0.2)),
     },
     {
-      // Стрелка: развивает «Неутомимые ноги».
-      id: 'trail-flow',
-      name: 'Ровный ток',
-      icon: 'talent-deep-well',
-      maxRank: 5,
-      col: 2,
-      requires: { talentId: 'trail-restless-legs', minRank: 3 },
-      effect: mods(m('manaRegen', 'percent', 0.04)),
-    },
-    {
-      id: 'trail-cheap-sic',
-      name: 'Лёгкая команда',
-      icon: 'talent-thrift-rupture',
-      maxRank: 5,
-      col: 3,
-      effect: tunes('sic', { field: 'manaCost', kind: 'percent', value: -0.07 }),
-    },
-  ],
-  [
-    {
-      // ПЁС ОТДЫХАЕТ ВМЕСТЕ С ГЕРОЕМ: восстановление вне боя — в пунктах доли
-      // запаса в секунду.
-      id: 'trail-hound-rests',
-      name: 'Пёс у костра',
+      id: 'trail-fed-hound',
+      name: 'Сытый пёс',
       icon: 'talent-hound-rests',
       maxRank: 5,
       col: 2,
-      effect: houndTune('regenOutOfCombat', 'points', 0.02),
-    },
-    {
-      id: 'trail-cheap-grip',
-      name: 'Лёгкая хватка',
-      icon: 'talent-thrift-stance',
-      maxRank: 5,
-      col: 3,
-      effect: tunes('grip', { field: 'manaCost', kind: 'percent', value: -0.07 }),
-    },
-  ],
-  [
-    // КЛЮЧЕВОЙ ЭТАЖ 5: пауза против непрерывности.
-    {
-      id: 'trail-camp-refresh',
-      name: 'Отдых снимает усталость',
-      icon: 'talent-quick-focus',
-      maxRank: 1,
-      col: 2,
-      exclusiveGroup: 'trail-key-5',
-      effect: { kind: 'flag', flag: 'rest-clears-cooldowns', cooldownShare: 0.5 },
-    },
-    {
-      id: 'trail-hunt-rhythm',
-      name: 'Ритм охоты',
-      icon: 'talent-kill-refund',
-      maxRank: 1,
-      col: 3,
-      exclusiveGroup: 'trail-key-5',
-      effect: { kind: 'flag', flag: 'kill-refunds-cooldowns', cooldownShare: 0.7 },
-    },
-  ],
-  [
-    {
-      id: 'trail-quick-undercut',
-      name: 'Частая подсечка',
-      icon: 'talent-firm-hand',
-      maxRank: 5,
-      col: 1,
-      effect: tunes('undercut', { field: 'cooldownSec', kind: 'percent', value: -0.05 }),
-    },
-    {
-      id: 'trail-deep-breath',
-      name: 'Глубокий вдох',
-      icon: 'talent-long-mind',
-      maxRank: 5,
-      col: 2,
-      effect: mods(m('manaRegen', 'percent', 0.04)),
-    },
-    {
-      id: 'trail-cheap-flurry',
-      name: 'Лёгкая серия',
-      icon: 'talent-thrift-shatter',
-      maxRank: 5,
-      col: 3,
-      effect: tunes('flurry', { field: 'manaCost', kind: 'percent', value: -0.06 }),
-    },
-  ],
-  [
-    {
-      id: 'trail-lean-bandage',
-      name: 'Бережная перевязка',
-      icon: 'talent-thrift-wall',
-      maxRank: 5,
-      col: 2,
-      effect: tunes('bandage', { field: 'manaCost', kind: 'percent', value: -0.08 }),
-    },
-    {
-      id: 'trail-cheap-unleash',
-      name: 'Лёгкий спуск',
-      icon: 'talent-thrift-mercy',
-      maxRank: 5,
-      col: 3,
-      effect: tunes('unleash', { field: 'manaCost', kind: 'percent', value: -0.06 }),
-    },
-  ],
-  [
-    {
-      // Стрелка: развивает «Короткую стоянку».
-      id: 'trail-brief-camp',
-      name: 'Стоянка на ходу',
-      icon: 'talent-shorter-rest',
-      maxRank: 5,
-      col: 3,
-      requires: { talentId: 'trail-short-camp', minRank: 3 },
-      effect: mods(m('restDuration', 'percent', -0.04)),
+      effect: {
+        kind: 'flag',
+        flag: 'hound-tune',
+        field: 'regenOutOfCombat',
+        op: 'percent',
+        value: 0.1,
+      },
     },
     {
       id: 'trail-cheap-hamstring',
-      name: 'Лёгкий подрез',
+      name: 'Дешёвый подрез',
       icon: 'talent-spare-edge',
-      maxRank: 5,
-      col: 2,
-      effect: tunes('hamstring', { field: 'manaCost', kind: 'percent', value: -0.06 }),
-    },
-  ],
-  [
-    // КЛЮЧЕВОЙ ЭТАЖ 9: меньше ждать против больше выстрелить.
-    {
-      id: 'trail-short-rest',
-      name: 'Полпривала',
-      icon: 'stat-hpRegenOutOfCombat',
-      maxRank: 1,
-      col: 2,
-      exclusiveGroup: 'trail-key-9',
-      effect: { kind: 'flag', flag: 'shorter-rest', durationMultiplier: 0.5 },
-    },
-    {
-      id: 'trail-flurry-charge',
-      name: 'Вторая серия',
-      icon: 'talent-second-charge',
-      maxRank: 1,
+      maxRank: 3,
       col: 3,
-      exclusiveGroup: 'trail-key-9',
-      effect: { kind: 'flag', flag: 'ability-extra-charge', abilityId: 'flurry', extraCharges: 1 },
+      effect: tunes('hamstring', { field: 'manaCost', kind: 'percent', value: -0.1 }),
+    },
+    {
+      id: 'trail-cheap-undercut',
+      name: 'Дешёвая подсечка',
+      icon: 'talent-thrift-wound',
+      maxRank: 3,
+      col: 4,
+      effect: tunes('undercut', { field: 'manaCost', kind: 'percent', value: -0.1 }),
     },
   ],
+  // --- ЭТАЖ 2 · порог 10 · с уровня 20 -------------------------------------
   [
     {
-      id: 'trail-out-regen',
-      name: 'Отдых у тропы',
-      icon: 'talent-cold-blood',
+      id: 'trail-short-camp',
+      name: 'Короткий привал',
+      icon: 'talent-short-camp',
       maxRank: 5,
       col: 1,
-      effect: mods(m('hpRegenOutOfCombat', 'percent', 0.06)),
+      effect: mods(m('restDuration', 'percent', -0.05)),
     },
     {
-      id: 'trail-endless-legs',
-      name: 'Бесконечные ноги',
-      icon: 'talent-endless-mind',
+      id: 'trail-light-sleep',
+      name: 'Чуткий сон',
+      icon: 'talent-even-breath',
       maxRank: 5,
       col: 2,
-      effect: mods(m('manaRegen', 'percent', 0.04)),
+      effect: mods(m('hpRegenOutOfCombat', 'percent', 0.1)),
     },
     {
-      id: 'trail-cheap-skulk',
-      name: 'Лёгкое скрадывание',
-      icon: 'talent-thrift-stance',
+      // ОТКАТ «ПОДРЕЗА» РЕЖЕТ ГОН — см. «Резкую травлю» там же: одно поле, две
+      // ветки и потолок рангов уводили откат в ноль.
+      id: 'trail-cheap-recall',
+      name: 'Дешёвый отзыв',
+      icon: 'ability-recall',
       maxRank: 5,
       col: 3,
-      effect: tunes('skulk', { field: 'manaCost', kind: 'percent', value: -0.06 }),
+      effect: tunes('recall', { field: 'manaCost', kind: 'percent', value: -0.1 }),
+    },
+    {
+      id: 'trail-swift-undercut',
+      name: 'Скорая подсечка',
+      icon: 'talent-restless-legs',
+      maxRank: 5,
+      col: 4,
+      requires: { talentId: 'trail-cheap-undercut', minRank: 2 },
+      effect: tunes('undercut', { field: 'cooldownSec', kind: 'percent', value: -0.1 }),
     },
   ],
+  // --- ЭТАЖ 3 · порог 20 · с уровня 30 · ПЕРВЫЙ ВЫБОР ----------------------
   [
     {
-      // Стрелка: развивает «Пса у костра».
-      id: 'trail-hound-sleeps',
-      name: 'Пёс спит у ног',
-      icon: 'talent-hound-sleeps',
+      id: 'trail-wolf-sleep',
+      name: 'Волчий сон',
+      icon: 'talent-second-wind',
+      maxRank: 5,
+      col: 1,
+      effect: mods(m('hpRegen', 'percent', 0.1)),
+    },
+    {
+      id: 'trail-long-recall',
+      name: 'Долгий отзыв',
+      icon: 'ability-recall',
       maxRank: 5,
       col: 2,
-      requires: { talentId: 'trail-hound-rests', minRank: 3 },
-      effect: houndTune('regenOutOfCombat', 'points', 0.02),
+      effect: tunes('recall', { field: 'recallDurationSec', kind: 'percent', value: 0.15 }),
+    },
+    {
+      id: 'trail-tight-recall',
+      name: 'Тугой отзыв',
+      icon: 'talent-hound-mending',
+      maxRank: 5,
+      col: 3,
+      effect: tunes('recall', { field: 'recallHealShare', kind: 'percent', value: 0.12 }),
+    },
+    {
+      // ПАРА РАЗВЕДЕНА РОДОМ: «Вкус охоты» платит за УБИЙСТВО, «Не остывая» —
+      // за ПРИВАЛ. Один ускоряет цепочку, другой делает паузу бесплатной.
+      id: 'trail-taste-of-hunt',
+      name: 'Вкус охоты',
+      icon: 'talent-kill-refund',
+      maxRank: 1,
+      col: 4,
+      exclusiveGroup: 'trail-key-3',
+      effect: { kind: 'flag', flag: 'kill-refunds-cooldowns', cooldownShare: 0.75 },
+    },
+    {
+      id: 'trail-not-cooling',
+      name: 'Не остывая',
+      icon: 'talent-unbroken-focus',
+      maxRank: 1,
+      col: 5,
+      exclusiveGroup: 'trail-key-3',
+      effect: { kind: 'flag', flag: 'rest-clears-cooldowns', cooldownShare: 0 },
+    },
+  ],
+  // --- ЭТАЖ 4 · порог 30 · с уровня 40 -------------------------------------
+  [
+    {
+      // ЗАПАС ЭНЕРГИИ — РОВНО СТО, и поднять его может только талант: у Псаря
+      // интеллект погашен множителем-нолём, и ни вещи, ни уровень запаса не
+      // двигают.
+      id: 'trail-deep-wind',
+      name: 'Второе дыхание',
+      icon: 'talent-deep-well',
+      maxRank: 5,
+      col: 1,
+      effect: mods(m('maxMana', 'percent', 0.05)),
+    },
+    {
+      // ЕДИНСТВЕННЫЙ ТАЛАНТ ВЕТКИ В ДВА РАНГА — прок читает ранг.
+      id: 'trail-long-trace',
+      name: 'Долгий след',
+      icon: 'talent-fast-jaws',
+      maxRank: 2,
+      col: 2,
+      effect: {
+        kind: 'flag',
+        flag: 'proc',
+        trigger: 'crit',
+        everyNth: 2,
+        effect: { kind: 'stat', stat: 'haste', value: 0.04, durationSec: 6 },
+      },
+    },
+    {
+      id: 'trail-cheap-sic',
+      name: 'Дешёвая травля',
+      icon: 'ability-sic',
+      maxRank: 3,
+      col: 3,
+      effect: tunes('sic', { field: 'manaCost', kind: 'percent', value: -0.1 }),
+    },
+    {
+      id: 'trail-cheap-grip',
+      name: 'Дешёвая хватка',
+      icon: 'ability-grip',
+      maxRank: 5,
+      col: 4,
+      effect: tunes('grip', { field: 'manaCost', kind: 'percent', value: -0.1 }),
     },
     {
       id: 'trail-cheap-rally',
-      name: 'Лёгкий оклик',
-      icon: 'talent-early-call',
-      maxRank: 4,
-      col: 3,
+      name: 'Дешёвый оклик',
+      icon: 'ability-rally',
+      maxRank: 5,
+      col: 5,
       effect: tunes('rally', { field: 'manaCost', kind: 'percent', value: -0.1 }),
     },
   ],
+  // --- ЭТАЖ 5 · порог 40 · с уровня 50 · ВТОРОЙ ВЫБОР ----------------------
   [
     {
-      id: 'trail-short-halt',
-      name: 'Короткий привал',
-      icon: 'talent-long-focus',
+      id: 'trail-quiet-step',
+      name: 'Тихий шаг',
+      icon: 'talent-shorter-rest',
       maxRank: 5,
-      col: 2,
-      effect: mods(m('restDuration', 'percent', -0.04)),
+      col: 1,
+      effect: mods(m('restDuration', 'flat', -0.1)),
     },
     {
-      // БЫЛ «ЛЁГКИЙ ЗОВ» — СКИДКА НА «СВОРУ», И ОН УМЕР ВМЕСТЕ С ЕЁ ЦЕНОЙ.
-      // «Свора» стала пассивной, её цена — ноль, а процент от нуля есть ноль:
-      // талант проходил бы все ссылочные проверки и не делал РОВНО НИЧЕГО.
-      // Ловит это `checkTalentTunes` (TUNE_NEEDS.manaCost требует цены), и
-      // поймал он это сразу — то есть правило работает ровно так, как
-      // задумано: тихая поломка дерева стала громкой.
-      //
-      // НА ЕГО МЕСТЕ — СКИДКА НА ПОДСЕЧКУ, единственное умение класса, цены
-      // которого «Тропа» ещё не касалась (откат ей режет «Частая подсечка»
-      // этажом выше). Ставка ВТРОЕ МЕНЬШЕ соседей по ветке (-0.03 против
-      // -0.06…-0.10) нарочно: те режут цену умений с откатом в 14–45 секунд,
-      // а подсечка жмётся раз в две секунды — та же доля стоила бы на порядок
-      // дороже в энергии за минуту.
-      id: 'trail-cheap-undercut',
-      name: 'Лёгкая подсечка',
-      icon: 'talent-unbroken-focus',
+      id: 'trail-cheap-skulk',
+      name: 'Дешёвое скрадывание',
+      icon: 'ability-skulk',
+      maxRank: 5,
+      col: 2,
+      effect: tunes('skulk', { field: 'manaCost', kind: 'percent', value: -0.1 }),
+    },
+    {
+      id: 'trail-cheap-flurry',
+      name: 'Дешёвая серия',
+      icon: 'ability-flurry',
       maxRank: 5,
       col: 3,
-      effect: tunes('undercut', { field: 'manaCost', kind: 'percent', value: -0.03 }),
+      effect: tunes('flurry', { field: 'manaCost', kind: 'percent', value: -0.1 }),
+    },
+    {
+      // САМ ВЕРНЁТСЯ — «Отзыв» уходит из четвёрки и жмётся сам, по своему же
+      // порогу здоровья пса.
+      id: 'trail-self-recall',
+      name: 'Сам вернётся',
+      icon: 'talent-quick-hands',
+      maxRank: 1,
+      col: 4,
+      exclusiveGroup: 'trail-key-5',
+      effect: { kind: 'flag', flag: 'auto-ability', abilityId: 'recall' },
+    },
+    {
+      // ПАРА РАЗВЕДЕНА РОДОМ: сосед отдаёт слот, а «Второй оклик» слота не
+      // трогает и копит заряд — павший пёс встаёт дважды подряд.
+      id: 'trail-second-rally',
+      name: 'Второй оклик',
+      icon: 'talent-second-charge',
+      maxRank: 1,
+      col: 5,
+      exclusiveGroup: 'trail-key-5',
+      effect: {
+        kind: 'flag',
+        flag: 'ability-extra-charge',
+        abilityId: 'rally',
+        extraCharges: 1,
+      },
     },
   ],
+  // --- ЭТАЖ 6 · порог 50 · с уровня 60 -------------------------------------
   [
-    // ВЕНЕЦ: рука против пса.
     {
-      id: 'trail-tireless-flurry',
-      name: 'Неутомимая серия',
-      icon: 'ability-flurry',
-      maxRank: 1,
-      col: 2,
-      exclusiveGroup: 'trail-key-13',
-      effect: tunes('flurry', { field: 'manaCost', kind: 'multiplier', value: 0.5 }),
+      id: 'trail-wolf-camp',
+      name: 'Волчий привал',
+      icon: 'talent-quick-camp',
+      maxRank: 5,
+      col: 1,
+      effect: mods(m('restDuration', 'percent', -0.05)),
     },
     {
-      id: 'trail-hunting-breath',
-      name: 'Дыхание охоты',
-      icon: 'ability-sic',
-      maxRank: 1,
+      id: 'trail-fed-pack',
+      name: 'Сытая свора',
+      icon: 'talent-hound-sleeps',
+      maxRank: 5,
+      col: 2,
+      effect: {
+        kind: 'flag',
+        flag: 'hound-tune',
+        field: 'regenOutOfCombat',
+        op: 'percent',
+        value: 0.08,
+      },
+    },
+    {
+      id: 'trail-cheap-bandage',
+      name: 'Дешёвая перевязка',
+      icon: 'ability-bandage',
+      maxRank: 5,
       col: 3,
-      exclusiveGroup: 'trail-key-13',
-      effect: tunes(
-        'sic',
-        { field: 'manaCost', kind: 'multiplier', value: 0.5 },
-        { field: 'houndHasteDurationSec', kind: 'multiplier', value: 1.5 },
-      ),
+      effect: tunes('bandage', { field: 'manaCost', kind: 'percent', value: -0.1 }),
+    },
+    {
+      id: 'trail-cheap-unleash',
+      name: 'Дешёвый спуск',
+      icon: 'ability-unleash',
+      maxRank: 5,
+      col: 4,
+      effect: tunes('unleash', { field: 'manaCost', kind: 'percent', value: -0.1 }),
+    },
+  ],
+  // --- ЭТАЖ 7 · порог 60 · с уровня 70 · ВЕНЕЦ -----------------------------
+  [
+    {
+      id: 'trail-breather',
+      name: 'Передышка',
+      icon: 'ability-breather',
+      maxRank: 1,
+      col: 1,
+      exclusiveGroup: 'trail-key-7',
+      requires: { talentId: 'trail-wolf-camp', minRank: 3 },
+      effect: { kind: 'flag', flag: 'grant-ability', abilityId: 'breather' },
+    },
+    {
+      // СВОИМ ХОДОМ — ПАССИВНЫЙ ВЕНЕЦ: слота не занимает. «Пёс дерётся, пока
+      // герой на привале» механизма не имеет — привал останавливает бой
+      // целиком, и разводить эти два состояния значило бы переписать тик.
+      // Оставлено то, что у простоя можно отнять честно: его ДЛИНУ.
+      id: 'trail-on-the-move',
+      name: 'Своим ходом',
+      icon: 'talent-shorter-rest',
+      maxRank: 1,
+      col: 2,
+      exclusiveGroup: 'trail-key-7',
+      requires: { talentId: 'trail-fed-pack', minRank: 3 },
+      effect: { kind: 'flag', flag: 'shorter-rest', durationMultiplier: 1 / 3 },
     },
   ],
 ])
@@ -4023,590 +4195,799 @@ const BRANCH_PATHS: Partial<Record<BranchId, TalentPath[]>> = {
   ],
   'warden-bulwark': [
     {
-      // ЗАСЛОН. Ставка на щит и блок: «Стена» держится дольше и приходит
-      // чаще, ослабление «Толчка» — на три удара вместо одного. Четвёрка та
-      // же, что у героя по умолчанию: первый путь ветки — прибор, и мерить
-      // он обязан того, кто ничего не менял.
+      // ЗАСЛОН. Ставка на то, что герой и так жмёт: запас, блок, лечение.
+      // Венец — «Зеркальный щит»: слота он не занимает, поэтому четвёрка
+      // остаётся четвёркой ПО УМОЛЧАНИЮ, а первый путь ветки это прибор и
+      // мерить он обязан того, кто ничего не менял.
+      //
+      // ПОРЯДОК ЗДЕСЬ ЧИТАЕТСЯ ВМЕСТЕ С ЧЕТВЁРКОЙ. В ней нет ни «Толчка», ни
+      // «Стены», ни «Стойки» — значит их настройки не делают НИЧЕГО, и стоят
+      // они в хвосте, куда шестьдесят пять очков не доходят. Это не
+      // небрежность: талант, правящий умение вне ряда, — потраченное очко, и
+      // прибор обязан мерить сборку, а не список файла.
       id: 'bulwark-guard',
       name: 'Заслон',
       abilities: ['quick-strike', 'rending-wound', 'mend-wounds', 'shattering-blow'],
       order: [
         // КЛЮЧЕВЫЕ И ИХ ОПОРЫ — В ГОЛОВЕ ПУТИ. Путь — список приоритетов, и
-        // ключевые этажи это то, ради чего сборка существует: стоя в хвосте,
+        // этажи выбора это то, ради чего сборка существует: стоя в хвосте,
         // они не покупались вовсе — очки кончались раньше.
-        'bulwark-shield-grip',
-        'bulwark-long-wall',
+        'bulwark-shield-and-blade',
+        'bulwark-deep-wall',
         'bulwark-often-wall',
         'bulwark-mirror-shield',
         'bulwark-thick-hide',
-        'bulwark-shield-wall',
         'bulwark-training',
+        'bulwark-shield-wall',
         'bulwark-iron-skin',
-        'bulwark-press',
-        'bulwark-sturdy-frame',
-        'bulwark-battle-breath',
+        'bulwark-plate-drill',
         'bulwark-unyielding',
-        'bulwark-braced',
-        'bulwark-wide-wall',
-        'bulwark-stone-skin',
-        'bulwark-heavy-guard',
-        'bulwark-firm-stance',
-        'bulwark-thrift-wall',
-        'bulwark-firm-press',
-        'bulwark-quick-mend',
         'bulwark-deep-mend',
+        'bulwark-quick-mend',
         'bulwark-early-call',
+        'bulwark-iron-rhythm',
+        'bulwark-recoil',
+        'bulwark-press',
+        'bulwark-braced',
+        'bulwark-heavy-guard',
+        'bulwark-thrift-press',
+        'bulwark-wide-wall',
+        'bulwark-long-wall',
+        'bulwark-thrift-wall',
         'bulwark-hard-stance',
+        'bulwark-soft-stance',
         'bulwark-long-stance',
-        'bulwark-quiet-mend',
-        'bulwark-swift-return',
-        'bulwark-immovable',
       ],
     },
     {
-      // СТОЙКА И ЛЕЧЕНИЕ. Другой ответ на тот же вопрос: не поглощать удар
-      // щитом, а не получать его вовсе и доливать полоску. Венец — стойка,
-      // которая больше не стоит урона.
-      id: 'bulwark-warden',
-      name: 'Стойка',
-      abilities: ['quick-strike', 'shield-shove', 'mend-wounds', 'stance'],
+      // ОТВЕТ. Замысел ветки целиком: блок наливает ману («Хватка щита»), а
+      // мана уходит в «Ответный удар» — венец, который ЗАНИМАЕТ СЛОТ.
+      // Четвёрка несёт его, и это его цена: одна кнопка ротации.
+      id: 'bulwark-riposte-path',
+      name: 'Ответ',
+      abilities: ['riposte', 'shield-shove', 'mend-wounds', 'bulwark'],
       order: [
-        // КЛЮЧЕВЫЕ И ИХ ОПОРЫ — В ГОЛОВЕ ПУТИ. Путь — список приоритетов, и
-        // ключевые этажи это то, ради чего сборка существует: стоя в хвосте,
-        // они не покупались вовсе — очки кончались раньше.
-        'bulwark-braced',
-        'bulwark-swift-return',
-        'bulwark-hard-stance',
-        'bulwark-immovable',
-        'bulwark-thick-hide',
-        'bulwark-iron-skin',
-        'bulwark-quick-mend',
-        'bulwark-press',
-        'bulwark-deep-mend',
-        'bulwark-long-stance',
-        'bulwark-early-call',
-        'bulwark-unyielding',
-        'bulwark-battle-breath',
-        'bulwark-sturdy-frame',
-        'bulwark-stone-skin',
-        'bulwark-quiet-mend',
-        'bulwark-firm-press',
-        'bulwark-shield-wall',
-        'bulwark-training',
-        'bulwark-heavy-guard',
-        'bulwark-firm-stance',
         'bulwark-shield-grip',
         'bulwark-long-wall',
-        'bulwark-wide-wall',
-        'bulwark-thrift-wall',
         'bulwark-often-wall',
+        'bulwark-riposte',
+        'bulwark-press',
+        'bulwark-braced',
+        'bulwark-heavy-guard',
+        'bulwark-thrift-press',
+        'bulwark-wide-wall',
+        'bulwark-deep-wall',
+        'bulwark-thrift-wall',
+        'bulwark-training',
+        'bulwark-shield-wall',
+        'bulwark-thick-hide',
+        'bulwark-iron-skin',
+        'bulwark-plate-drill',
+        'bulwark-unyielding',
+        'bulwark-deep-mend',
+        'bulwark-quick-mend',
+        'bulwark-early-call',
+        'bulwark-iron-rhythm',
+        'bulwark-recoil',
+      ],
+    },
+    {
+      // САМО ВСТАЁТ. Третий путь существует ради одного узла, и узел этот
+      // единственный в дереве: «Стена» уходит из четвёрки и играется сама.
+      // Поэтому четвёрка здесь БЕЗ «Стены» — она приходит сверху, бесплатно,
+      // и весь смысл сборки в том, что слот занят чем-то ещё.
+      id: 'bulwark-self-raising-path',
+      name: 'Само встаёт',
+      abilities: ['quick-strike', 'shield-shove', 'mend-wounds', 'stance'],
+      order: [
+        'bulwark-swift-return',
+        'bulwark-self-raising',
+        'bulwark-deep-wall',
         'bulwark-mirror-shield',
+        'bulwark-wide-wall',
+        'bulwark-long-wall',
+        'bulwark-thrift-wall',
+        'bulwark-hard-stance',
+        'bulwark-soft-stance',
+        'bulwark-long-stance',
+        'bulwark-press',
+        'bulwark-braced',
+        'bulwark-heavy-guard',
+        'bulwark-thrift-press',
+        'bulwark-training',
+        'bulwark-shield-wall',
+        'bulwark-thick-hide',
+        'bulwark-iron-skin',
+        'bulwark-plate-drill',
+        'bulwark-unyielding',
+        'bulwark-deep-mend',
+        'bulwark-quick-mend',
+        'bulwark-early-call',
+        'bulwark-iron-rhythm',
+        'bulwark-recoil',
       ],
     },
   ],
   'warden-vigil': [
     {
-      // ЭКОНОМИЯ. Ставка на цену ротации: каждое умение дешевле, запас глубже,
-      // пауза короче. Четвёрка по умолчанию — первый путь ветки это прибор.
+      // ЭКОНОМИЯ. Ставка на цену ротации: каждое умение дешевле, запас
+      // глубже, пауза короче. Четвёрка по умолчанию — первый путь ветки это
+      // прибор.
       id: 'vigil-thrifty',
       name: 'Экономия',
       abilities: ['quick-strike', 'rending-wound', 'mend-wounds', 'shattering-blow'],
       order: [
-        // КЛЮЧЕВЫЕ И ИХ ОПОРЫ — В ГОЛОВЕ ПУТИ. Путь — список приоритетов, и
-        // ключевые этажи это то, ради чего сборка существует: стоя в хвосте,
-        // они не покупались вовсе — очки кончались раньше.
+        // КЛЮЧЕВЫЕ И ИХ ОПОРЫ — В ГОЛОВЕ ПУТИ, а сразу за ними УЗЛЫ ПРИВАЛА.
+        // Ветка меряется тем, во сколько срезан простой, и путь, не купивший
+        // ни одного узла привала, мерит не ветку, а список файла.
         'vigil-trophy-spirit',
+        'vigil-quick-mercy',
         'vigil-unbroken-focus',
         'vigil-campfire-on-the-move',
-        'vigil-steady-breath',
-        'vigil-clear-mind',
-        'vigil-deep-well',
         'vigil-quick-camp',
-        'vigil-thrift-wound',
-        'vigil-thrift-shatter',
-        'vigil-learning',
-        'vigil-swift-camp',
-        'vigil-slow-bleeding',
-        'vigil-thrift',
+        'vigil-light-camp',
+        'vigil-clear-mind',
         'vigil-composure',
-        'vigil-light-sleep',
-        'vigil-thrift-rupture',
-        'vigil-thrift-mercy',
-        'vigil-thrift-stance',
-        'vigil-quick-mercy',
-        'vigil-full-rupture',
-        'vigil-quick-focus',
+        'vigil-steady-breath',
+        'vigil-deep-well',
+        'vigil-learning',
+        'vigil-thrift-strike',
+        'vigil-short-strike',
+        'vigil-thrift-wound',
+        'vigil-often-wound',
+        'vigil-thrift-shatter',
+        'vigil-clarity',
         'vigil-long-mind',
-        'vigil-endless-mind',
-        'vigil-long-brand',
+        'vigil-quick-focus',
+        'vigil-thrift-mend',
+        'vigil-thrift-mercy',
+        'vigil-thrift-rupture',
+        'vigil-often-rupture',
+        'vigil-thrift-brand',
         'vigil-early-brand',
-        'vigil-often-brand',
-        'vigil-lasting-brand',
+        'vigil-thrift-wall',
       ],
     },
     {
-      // КЛЕЙМО. Другой ответ: не экономить на каждом умении, а поставить метку
-      // и бить сквозь неё. Венец другой — «Неиссякаемость»: всплеск приходит
-      // вдвое чаще, и метка успевает окупиться.
-      id: 'vigil-brandbearer',
-      name: 'Клеймо',
-      abilities: ['quick-strike', 'brand', 'mend-wounds', 'focus'],
+      // ДЫХАНИЕ. Венец-умение занимает слот, и платит за него ЗАПОЛНИТЕЛЬ:
+      // «Привычная рука» убирает «Скорый выпад» из четвёрки, а освободившееся
+      // место берёт «Второе дыхание». Обмен виден целиком — одна кнопка
+      // уходит, другая приходит.
+      id: 'vigil-breath',
+      name: 'Дыхание',
+      abilities: ['second-wind', 'rending-wound', 'mend-wounds', 'shattering-blow'],
       order: [
-        // КЛЮЧЕВЫЕ И ИХ ОПОРЫ — В ГОЛОВЕ ПУТИ. Путь — список приоритетов, и
-        // ключевые этажи это то, ради чего сборка существует: стоя в хвосте,
-        // они не покупались вовсе — очки кончались раньше.
-        'vigil-long-mind',
-        'vigil-long-brand',
-        'vigil-lasting-brand',
-        'vigil-quick-focus',
-        'vigil-endless-mind',
-        'vigil-early-brand',
-        'vigil-often-brand',
+        'vigil-habitual-hand',
+        'vigil-thrift-mend',
+        'vigil-unbroken-focus',
+        'vigil-second-wind',
+        'vigil-quick-camp',
+        'vigil-light-camp',
         'vigil-steady-breath',
         'vigil-deep-well',
         'vigil-clear-mind',
-        'vigil-learning',
-        'vigil-thrift',
-        'vigil-full-rupture',
-        'vigil-quick-mercy',
-        'vigil-thrift-mercy',
-        'vigil-thrift-stance',
-        'vigil-thrift-rupture',
-        'vigil-thrift-wound',
-        'vigil-thrift-shatter',
-        'vigil-quick-camp',
-        'vigil-swift-camp',
-        'vigil-light-sleep',
         'vigil-composure',
-        'vigil-slow-bleeding',
+        'vigil-learning',
+        'vigil-thrift-wound',
+        'vigil-often-wound',
+        'vigil-thrift-shatter',
+        'vigil-clarity',
+        'vigil-thrift-strike',
+        'vigil-short-strike',
+        'vigil-long-mind',
+        'vigil-quick-focus',
+        'vigil-thrift-mercy',
+        'vigil-quick-mercy',
+        'vigil-thrift-rupture',
+        'vigil-often-rupture',
+        'vigil-thrift-brand',
+        'vigil-early-brand',
+        'vigil-thrift-wall',
+      ],
+    },
+    {
+      // КЛЕЙМО. Третий ответ на тот же вопрос: не дешевле жать, а РЕЖЕ.
+      // «Затяжное клеймо» держится втрое дольше, то есть ставится раз в бой,
+      // и кнопка поддержки перестаёт быть кнопкой.
+      //
+      // ПУТЬ ПЕРЕСОБРАН, И ЭТО ТОТ САМЫЙ КРАСНЫЙ. Прежний «Клеймоносец»
+      // состоял из настроек клейма и не покупал НИ ОДНОГО узла привала — при
+      // оси «во сколько срезан простой» он мерил 1.05 при ленте 1.2. Узлы
+      // привала и венец, режущий привал втрое, стоят теперь и здесь.
+      id: 'vigil-brandbearer',
+      name: 'Клеймо',
+      abilities: ['brand', 'quick-strike', 'mend-wounds', 'shattering-blow'],
+      order: [
         'vigil-trophy-spirit',
-        'vigil-unbroken-focus',
+        'vigil-quick-mercy',
+        'vigil-lasting-brand',
         'vigil-campfire-on-the-move',
+        'vigil-quick-camp',
+        'vigil-light-camp',
+        'vigil-thrift-brand',
+        'vigil-early-brand',
+        'vigil-clear-mind',
+        'vigil-composure',
+        'vigil-steady-breath',
+        'vigil-deep-well',
+        'vigil-learning',
+        'vigil-thrift-strike',
+        'vigil-short-strike',
+        'vigil-thrift-shatter',
+        'vigil-clarity',
+        'vigil-thrift-mend',
+        'vigil-long-mind',
+        'vigil-quick-focus',
+        'vigil-thrift-wound',
+        'vigil-often-wound',
+        'vigil-thrift-mercy',
+        'vigil-thrift-rupture',
+        'vigil-often-rupture',
+        'vigil-thrift-wall',
       ],
     },
   ],
-  // ИЗУВЕР. По два пути на ветку, как у Стража: первый — ПРИБОР (по нему
-  // считается «чистая ветка»), второй — вторая сторона ключевых этажей.
-  // Без явных путей ветку заливала бы жадность сверху вниз, а ёмкость здесь
-  // больше, чем очков у героя: до венца заливка не доходит вовсе.
   'reaver-carnage': [
     {
-      // КРОВЬ. Дешёвый удар учится кровить, автоатака иногда бьёт дважды,
-      // добивание получает второй заряд. Урон идёт РОВНО.
+      // КРОВЬ. Четвёрка по умолчанию — первый путь ветки это прибор. Ставка
+      // на взмах и разгон: полоска наливается быстрее, держится выше и
+      // дольше, «Череполом» копит второй заряд, а венец удваивает четверть
+      // автоатак.
+      //
+      // ПОРЯДОК ЧИТАЕТСЯ ВМЕСТЕ С ЧЕТВЁРКОЙ. «Багровая грань», «Расправа» и
+      // «Обух» в ней не стоят, значит их настройки не делают НИЧЕГО и лежат
+      // в хвосте, куда шестьдесят пять очков не доходят.
       id: 'carnage-blood',
       name: 'Кровь',
-      abilities: ['gut-rip', 'blood-letting', 'blood-frenzy', 'blood-thirst'],
+      abilities: ['gut-rip', 'blood-frenzy', 'blood-thirst', 'skull-splitter'],
       order: [
-        'carnage-bleeding-wound',
-        'carnage-blade-storm',
-        'carnage-carnage',
-        'carnage-bloodlust',
-        'carnage-quick-cleaver',
-        'carnage-predator-eye',
+        // Опора венца — первой: она же и полезна пути.
+        'carnage-generous-rip',
+        'carnage-press',
+        'carnage-often-rip',
+        'carnage-on-the-quick',
+        'carnage-second-skull',
+        'carnage-red-veil',
         'carnage-deep-frenzy',
-        'carnage-ferocity',
-        'carnage-heavy-splitter',
-        'carnage-thirsty-blade',
-        'carnage-offhand',
-        'carnage-swift-cleaver',
-        'carnage-wild-strength',
-        'carnage-hungry-tear',
-        'carnage-brutal-reckoning',
-        'carnage-beast-aim',
-        'carnage-wide-reckoning',
-        'carnage-drive',
-        'carnage-long-roar',
+        'carnage-full-frenzy',
+        'carnage-long-frenzy',
+        'carnage-heavy-skull',
+        'carnage-swift-skull',
+        'carnage-bloodlust',
         'carnage-second-hand',
-        'carnage-cheap-splitter',
-        'carnage-deeper-frenzy',
-        'carnage-onslaught',
-        'carnage-swift-splitter',
-        'carnage-blood-charge',
-        'carnage-fierce-berserk',
+        'carnage-ferocity',
+        'carnage-keen-eye',
+        'carnage-red-grin',
+        'carnage-rush',
+        'carnage-blood-scent',
+        'carnage-butchery',
+        'carnage-sharp-edge',
+        'carnage-low-edge',
+        'carnage-long-edge',
+        'carnage-cheap-edge',
+        'carnage-early-reckoning',
+        'carnage-fed-reckoning',
+        'carnage-heavy-reckoning',
       ],
     },
     {
-      // ЯРОСТЬ. Кровотечение и разрыв перестают ждать замаха, бешенство
-      // держится почти постоянно. Урон идёт ВСПЛЕСКАМИ, и четвёрка другая.
-      id: 'carnage-fury',
-      name: 'Ярость',
-      abilities: ['gut-rip', 'blood-letting', 'reckoning', 'berserk'],
+      // РАСПРАВА. Венец занимает слот, и четвёрка его несёт. «Кровавое
+      // исступление» при этом играется САМО («Само собой»), то есть слот под
+      // венец освобождает именно оно — обмен виден целиком.
+      id: 'carnage-reckoning-path',
+      name: 'Расправа',
+      abilities: ['endless-reckoning', 'gut-rip', 'sinew-tear', 'blood-thirst'],
       order: [
-        'carnage-open-veins',
-        'carnage-frenzied-tear',
-        'carnage-red-haze',
+        // ОПОРА ВЕНЦА КУПЛЕНА, А ОСТАЛЬНЫЕ НАСТРОЙКИ «РАСПРАВЫ» — В ХВОСТЕ, И
+        // ЭТО НЕ НЕБРЕЖНОСТЬ. «Расправа без конца» — ОТДЕЛЬНОЕ УМЕНИЕ со
+        // своим id: таланты, правящие `reckoning`, до него не достают. Опора
+        // стоит здесь потому, что её требует стрелка, а не потому, что она
+        // работает.
+        'carnage-heavy-reckoning',
+        'carnage-on-the-quick',
+        'carnage-by-itself',
+        'carnage-endless-reckoning',
+        'carnage-sharp-edge',
+        'carnage-low-edge',
+        'carnage-long-edge',
+        'carnage-cheap-edge',
+        'carnage-generous-rip',
+        'carnage-press',
+        'carnage-often-rip',
         'carnage-bloodlust',
-        'carnage-quick-cleaver',
-        'carnage-predator-eye',
-        'carnage-deep-frenzy',
-        'carnage-ferocity',
-        'carnage-heavy-splitter',
-        'carnage-thirsty-blade',
-        'carnage-offhand',
-        'carnage-swift-cleaver',
-        'carnage-wild-strength',
-        'carnage-hungry-tear',
-        'carnage-brutal-reckoning',
-        'carnage-beast-aim',
-        'carnage-wide-reckoning',
-        'carnage-drive',
-        'carnage-long-roar',
         'carnage-second-hand',
-        'carnage-cheap-splitter',
-        'carnage-deeper-frenzy',
-        'carnage-onslaught',
-        'carnage-swift-splitter',
-        'carnage-blood-charge',
-        'carnage-fierce-berserk',
+        'carnage-ferocity',
+        'carnage-keen-eye',
+        'carnage-red-grin',
+        'carnage-rush',
+        'carnage-blood-scent',
+        'carnage-butchery',
+        'carnage-deep-frenzy',
+        'carnage-full-frenzy',
+        'carnage-long-frenzy',
+        'carnage-heavy-skull',
+        'carnage-swift-skull',
+        'carnage-early-reckoning',
+        'carnage-fed-reckoning',
+      ],
+    },
+    {
+      // ОБУХ. Третий путь существует ради замены: «Череполом» перестаёт быть
+      // ударом «всё или ничего» и входит в каждый цикл. Четвёрка та же, что у
+      // «Крови», — играется в ней ДРУГОЕ умение под тем же слотом, и именно
+      // это замена и значит.
+      id: 'carnage-blunt-path',
+      name: 'Обух',
+      // ЧЕТВЁРКА БЕЗ «ИССТУПЛЕНИЯ»: его отдаёт «Само собой», и освободившийся
+      // слот занят «Багровой гранью». Ради этого узел и берут.
+      abilities: ['gut-rip', 'sinew-tear', 'blood-thirst', 'skull-splitter'],
+      order: [
+        'carnage-generous-rip',
+        'carnage-press',
+        'carnage-often-rip',
+        'carnage-blunt-side',
+        'carnage-second-skull',
+        'carnage-red-veil',
+        'carnage-heavy-skull',
+        'carnage-swift-skull',
+        'carnage-deep-frenzy',
+        'carnage-full-frenzy',
+        'carnage-long-frenzy',
+        'carnage-bloodlust',
+        'carnage-second-hand',
+        'carnage-ferocity',
+        'carnage-keen-eye',
+        'carnage-red-grin',
+        'carnage-rush',
+        'carnage-blood-scent',
+        'carnage-butchery',
+        'carnage-sharp-edge',
+        'carnage-low-edge',
+        'carnage-long-edge',
+        'carnage-cheap-edge',
+        'carnage-early-reckoning',
+        'carnage-fed-reckoning',
+        'carnage-heavy-reckoning',
       ],
     },
   ],
   'reaver-sinew': [
     {
-      // УПОР. Смягчение за непрерывность держится почти весь бой, смерть
-      // дешевеет. Сборка без щита: герой просто не уходит.
+      // УПОР. Четвёрка по умолчанию — первый путь ветки это прибор. Ставка на
+      // то, что герой и так носит: запас, смягчение, блок и вампиризм
+      // «Жажды». «Сам впивается» здесь ЧИСТАЯ ПРИБАВКА: «Упора» в ряду нет, а
+      // талант даёт его, слота не занимая.
       id: 'sinew-dug',
       name: 'Упор',
-      abilities: ['gut-rip', 'blood-letting', 'blood-thirst', 'dug-in'],
+      abilities: ['gut-rip', 'blood-frenzy', 'blood-thirst', 'skull-splitter'],
       order: [
-        'sinew-iron-dig',
-        'sinew-not-finished',
-        'sinew-unbroken',
+        'sinew-circuit',
+        'sinew-self-dug',
+        'sinew-long-berserk',
+        'sinew-second-blood',
         'sinew-beast-hide',
-        'sinew-braced-guard',
+        'sinew-tanned-skin',
+        'sinew-stone-skin',
+        'sinew-thick-hide',
         'sinew-forearm-guard',
-        'sinew-thirsty-bite',
-        'sinew-tanned-hide',
-        'sinew-long-dig',
-        'sinew-cheap-thirst',
-        'sinew-hardened',
-        'sinew-firm-dig',
-        'sinew-knitting',
-        'sinew-deep-price',
         'sinew-frame',
+        'sinew-seasoned',
+        'sinew-tanned-blood',
+        'sinew-greedy-thirst',
+        'sinew-often-thirst',
+        'sinew-cheap-thirst',
+        'sinew-late-thirst',
+        'sinew-bloodlust',
+        'sinew-tempering',
+        'sinew-strong-frame',
+        'sinew-firm-guard',
+        'sinew-deep-dig',
         'sinew-swift-dig',
-        'sinew-carapace',
-        'sinew-guarded-roar',
-        'sinew-counterblow',
-        'sinew-tough-price',
-        'sinew-brace',
         'sinew-lasting-dig',
-        'sinew-spiked-guard',
-        'sinew-red-thirst',
+        'sinew-early-dig',
+        'sinew-rich-blood',
       ],
     },
     {
-      // ЩИТ. Блок платит ЯРОСТЬЮ и отвечает шипами, бешенство перестаёт быть
-      // опасным. Единственная сборка Изувера, которой нужен щит в руке.
-      id: 'sinew-shield',
-      name: 'Щит',
-      abilities: ['gut-rip', 'blood-thirst', 'dug-in', 'berserk'],
+      // МЯСНИК. Венец занимает слот, и четвёрка его несёт: своя кровь идёт в
+      // ярость, а «Упор» стоит в ряду и растёт всей полосой.
+      id: 'sinew-butcher-path',
+      name: 'Мясник',
+      // ЧЕТВЁРКА ДЕРЖИТ КОЗЫРЬ, А «УПОР» ПРИХОДИТ БЕСПЛАТНО. Первый замер
+      // дал 1.071 якоря: путь отдавал под «Упор» слот и терял «Череполом» —
+      // на оси живучести это тоже потеря, потому что мерится она убийствами
+      // ТАМ, ГДЕ ЯКОРЬ ГИБНЕТ, а не одним лишь выживанием.
+      abilities: ['butcher', 'gut-rip', 'blood-thirst', 'skull-splitter'],
       order: [
-        'sinew-blood-for-blood',
-        'sinew-stone-skin',
-        'sinew-thorned-answer',
-        'sinew-beast-hide',
-        'sinew-braced-guard',
-        'sinew-forearm-guard',
-        'sinew-thirsty-bite',
-        'sinew-tanned-hide',
-        'sinew-long-dig',
-        'sinew-cheap-thirst',
-        'sinew-hardened',
-        'sinew-firm-dig',
-        'sinew-knitting',
-        'sinew-deep-price',
-        'sinew-frame',
+        'sinew-generous-price',
+        'sinew-tanned-blood',
+        'sinew-self-dug',
+        'sinew-butcher',
+        'sinew-deep-dig',
         'sinew-swift-dig',
-        'sinew-carapace',
-        'sinew-guarded-roar',
-        'sinew-counterblow',
-        'sinew-tough-price',
-        'sinew-brace',
         'sinew-lasting-dig',
-        'sinew-spiked-guard',
-        'sinew-red-thirst',
+        'sinew-early-dig',
+        'sinew-greedy-thirst',
+        'sinew-often-thirst',
+        'sinew-cheap-thirst',
+        'sinew-late-thirst',
+        'sinew-bloodlust',
+        'sinew-beast-hide',
+        'sinew-tanned-skin',
+        'sinew-stone-skin',
+        'sinew-thick-hide',
+        'sinew-forearm-guard',
+        'sinew-frame',
+        'sinew-seasoned',
+        'sinew-tempering',
+        'sinew-strong-frame',
+        'sinew-firm-guard',
+        'sinew-rich-blood',
+        'sinew-steady-berserk',
+        'sinew-long-berserk',
+      ],
+    },
+    {
+      // КРОВЬ. Третий ответ: не терпеть удары, а платить за ярость своей
+      // кровью и жить вампиризмом. «Бешенство» в ряду — ветка режет его штраф
+      // к защите, и обратная стойка перестаёт быть самоубийством.
+      id: 'sinew-blood-path',
+      name: 'Кровь',
+      abilities: ['gut-rip', 'blood-thirst', 'blood-price', 'berserk'],
+      order: [
+        'sinew-generous-price',
+        'sinew-swift-price',
+        'sinew-long-berserk',
+        'sinew-second-blood',
+        'sinew-rich-blood',
+        'sinew-steady-berserk',
+        'sinew-greedy-thirst',
+        'sinew-often-thirst',
+        'sinew-cheap-thirst',
+        'sinew-late-thirst',
+        'sinew-bloodlust',
+        'sinew-beast-hide',
+        'sinew-tanned-skin',
+        'sinew-stone-skin',
+        'sinew-thick-hide',
+        'sinew-forearm-guard',
+        'sinew-frame',
+        'sinew-seasoned',
+        'sinew-tanned-blood',
+        'sinew-tempering',
+        'sinew-strong-frame',
+        'sinew-firm-guard',
+        'sinew-deep-dig',
+        'sinew-swift-dig',
+        'sinew-lasting-dig',
+        'sinew-early-dig',
       ],
     },
   ],
   'reaver-instinct': [
     {
-      // РЁВ. Убийство сбрасывает откаты, привал возвращает готовые умения и
-      // сам вдвое короче. Ветка про то, чтобы меньше стоять без дела.
+      // РЁВ. Четвёрка по умолчанию — первый путь ветки это прибор. «Кровавый
+      // рёв» в ряду не стоит, и его приносит «Сам поднимется»: умение
+      // появляется, слота не занимая.
       id: 'instinct-roar',
       name: 'Рёв',
-      abilities: ['gut-rip', 'blood-letting', 'blood-frenzy', 'blood-thirst'],
+      abilities: ['gut-rip', 'blood-frenzy', 'blood-thirst', 'skull-splitter'],
       order: [
         'instinct-taste-of-victory',
-        'instinct-deep-sleep',
-        'instinct-wolf-sleep',
-        'instinct-beast-breath',
-        'instinct-quick-letting',
-        'instinct-rage-capacity',
-        'instinct-rich-letting',
+        'instinct-deep-rage',
+        'instinct-self-roar',
+        'instinct-never-cools',
         'instinct-short-rest',
         'instinct-light-camp',
-        'instinct-hardy-stock',
-        'instinct-swift-roar',
-        'instinct-hunger',
-        'instinct-cheap-tear',
-        'instinct-second-breath',
-        'instinct-full-roar',
-        'instinct-never-cooling',
-        'instinct-rich-price',
-        'instinct-wide-throat',
-        'instinct-thrifty-splitter',
+        'instinct-quiet-step',
         'instinct-wolf-camp',
-        'instinct-long-berserk',
-        'instinct-steady-hand',
-        'instinct-cheap-roar',
+        'instinct-rage-capacity',
+        'instinct-long-roar',
+        'instinct-often-roar',
+        'instinct-early-roar',
+        'instinct-loud-roar',
+        'instinct-cheap-frenzy',
+        'instinct-cheap-thirst',
+        'instinct-long-trail',
+        'instinct-wolf-sleep',
+        'instinct-beast-breath',
+        'instinct-generous-letting',
+        'instinct-swift-letting',
+        'instinct-loud-letting',
+        'instinct-cheap-edge',
+        'instinct-cheap-berserk',
+        'instinct-swift-reckoning',
+        'instinct-cheap-reckoning',
+        'instinct-swift-dig',
       ],
     },
     {
-      // ОКНО. Разгон вдвое чаще, окно вдвое длиннее и вдвое чаще: ярость
-      // перестаёт быть узким местом, и четвёрка собрана вокруг рёва.
-      id: 'instinct-window',
-      name: 'Окно',
-      abilities: ['gut-rip', 'blood-letting', 'blood-roar', 'blood-frenzy'],
+      // ЗОВ. Венец занимает слот, и четвёрка его несёт: одно нажатие наливает
+      // полоску доверху, а ветка режет привал, чтобы цепочка боёв не
+      // прерывалась вовсе.
+      id: 'instinct-call-path',
+      name: 'Зов',
+      abilities: ['call', 'gut-rip', 'blood-frenzy', 'skull-splitter'],
       order: [
-        'instinct-endless-letting',
         'instinct-restless',
-        'instinct-endless-roar',
-        'instinct-beast-breath',
-        'instinct-quick-letting',
-        'instinct-rage-capacity',
-        'instinct-rich-letting',
+        'instinct-wolf-camp',
+        'instinct-self-roar',
+        'instinct-call',
         'instinct-short-rest',
         'instinct-light-camp',
-        'instinct-hardy-stock',
-        'instinct-swift-roar',
-        'instinct-hunger',
-        'instinct-cheap-tear',
-        'instinct-second-breath',
-        'instinct-full-roar',
-        'instinct-never-cooling',
-        'instinct-rich-price',
-        'instinct-wide-throat',
-        'instinct-thrifty-splitter',
+        'instinct-quiet-step',
+        'instinct-rage-capacity',
+        'instinct-deep-rage',
+        'instinct-cheap-frenzy',
+        'instinct-long-trail',
+        'instinct-wolf-sleep',
+        'instinct-beast-breath',
+        'instinct-long-roar',
+        'instinct-often-roar',
+        'instinct-early-roar',
+        'instinct-loud-roar',
+        'instinct-generous-letting',
+        'instinct-swift-letting',
+        'instinct-loud-letting',
+        'instinct-cheap-thirst',
+        'instinct-cheap-edge',
+        'instinct-cheap-berserk',
+        'instinct-swift-reckoning',
+        'instinct-cheap-reckoning',
+        'instinct-swift-dig',
+      ],
+    },
+    {
+      // ОКНО. Третий ответ: «Кровавый рёв» стоит в ряду сам и копит второй
+      // заряд — окно бесплатных умений приходит связкой.
+      id: 'instinct-window',
+      name: 'Окно',
+      abilities: ['blood-roar', 'gut-rip', 'blood-thirst', 'skull-splitter'],
+      order: [
+        'instinct-taste-of-victory',
+        'instinct-deep-rage',
+        'instinct-second-roar',
+        'instinct-never-cools',
+        'instinct-long-roar',
+        'instinct-often-roar',
+        'instinct-early-roar',
+        'instinct-loud-roar',
+        'instinct-short-rest',
+        'instinct-light-camp',
+        'instinct-quiet-step',
         'instinct-wolf-camp',
-        'instinct-long-berserk',
-        'instinct-steady-hand',
-        'instinct-cheap-roar',
+        'instinct-rage-capacity',
+        'instinct-cheap-thirst',
+        'instinct-long-trail',
+        'instinct-wolf-sleep',
+        'instinct-beast-breath',
+        'instinct-generous-letting',
+        'instinct-swift-letting',
+        'instinct-loud-letting',
+        'instinct-cheap-frenzy',
+        'instinct-cheap-edge',
+        'instinct-cheap-berserk',
+        'instinct-swift-reckoning',
+        'instinct-cheap-reckoning',
+        'instinct-swift-dig',
       ],
     },
   ],
   'houndmaster-chase': [
     {
-      // СТАЯ. Герой и пёс сильнее вместе: стая, мститель, двойной укус —
-      // всё про то, чтобы пёс стоял и кусал, а герой бил рядом. Четвёрка —
-      // та же, что по умолчанию: первый путь — прибор.
+      // СТАЯ. Четвёрка по умолчанию — первый путь ветки это прибор. Ставка на
+      // укус: пёс бьёт чаще и тяжелее, «Подрез» читает его хватку.
       id: 'chase-pack',
       name: 'Стая',
       abilities: ['undercut', 'sic', 'hamstring', 'recall'],
       order: [
-        'chase-pack-tactics',
-        'chase-avenger',
+        'chase-mean-sic',
+        'chase-long-sic',
+        'chase-often-sic',
         'chase-twin-fang',
-        'chase-sharp-fangs',
-        'chase-quick-hands',
-        'chase-sure-cut',
-        'chase-deep-hamstring',
-        'chase-long-chase',
+        'chase-bay',
+        'chase-clinging-grip',
+        'chase-pack-echo',
+        'chase-fang',
         'chase-fast-jaws',
-        'chase-keen-eye',
-        'chase-heavy-hand',
-        'chase-sic-fury',
-        'chase-honed',
-        'chase-cheap-cut',
-        'chase-relentless',
-        'chase-swift',
-        'chase-crush-grip',
-        'chase-lean-flurry',
-        'chase-power',
-        'chase-keener-eye',
-        'chase-fangs-of-old',
-        'chase-pack-cut',
-        'chase-haste-of-hunt',
-        'chase-cheap-sic',
-        'chase-quick-unleash',
-        'chase-wide-flurry',
+        'chase-wolf-frame',
+        'chase-fierce-leader',
+        'chase-heavy-hamstring',
+        'chase-cut-trail',
+        'chase-sharp-sic',
+        'chase-quick-undercut',
+        'chase-light-hand',
+        'chase-wolf-grip',
+        'chase-hunter-eye',
+        'chase-rush',
+        'chase-scent',
+        'chase-strong-bite',
+        'chase-swift-unleash',
+        'chase-tight-flurry',
+        'chase-heavy-flurry',
+        'chase-long-grip',
+        'chase-strong-beast',
       ],
     },
     {
-      // ЗУБЫ И СЕРИЯ. Всплески: злой спуск, четвёртый удар серии, второй
-      // замах героя. Четвёрка другая — спуск и серия вместо отзыва и подреза.
+      // ЗУБЫ. Венец занимает слот, и четвёрка его несёт: «Спуск своры»
+      // удваивает укус, «Серия» заставляет пса кусать на каждый удар.
       id: 'chase-burst',
       name: 'Зубы',
-      abilities: ['undercut', 'sic', 'flurry', 'unleash'],
+      abilities: ['pack-release', 'undercut', 'hamstring', 'flurry'],
       order: [
-        'chase-savage-unleash',
-        'chase-fourth-cut',
-        'chase-double-strike',
-        'chase-wide-flurry',
-        'chase-quick-unleash',
-        'chase-lean-flurry',
-        'chase-sharp-fangs',
-        'chase-quick-hands',
-        'chase-sure-cut',
+        'chase-dash',
+        'chase-strong-beast',
+        'chase-self-sic',
+        'chase-pack-release',
+        'chase-tight-flurry',
+        'chase-heavy-flurry',
+        'chase-fang',
         'chase-fast-jaws',
-        'chase-heavy-hand',
-        'chase-keen-eye',
-        'chase-long-chase',
-        'chase-sic-fury',
-        'chase-honed',
-        'chase-cheap-cut',
-        'chase-relentless',
-        'chase-swift',
-        'chase-crush-grip',
-        'chase-power',
-        'chase-keener-eye',
-        'chase-fangs-of-old',
-        'chase-haste-of-hunt',
-        'chase-cheap-sic',
-        'chase-deep-hamstring',
-        'chase-pack-cut',
+        'chase-wolf-frame',
+        'chase-fierce-leader',
+        'chase-heavy-hamstring',
+        'chase-cut-trail',
+        'chase-sharp-sic',
+        'chase-quick-undercut',
+        'chase-light-hand',
+        'chase-wolf-grip',
+        'chase-hunter-eye',
+        'chase-rush',
+        'chase-scent',
+        'chase-strong-bite',
+        'chase-swift-unleash',
+        'chase-long-grip',
+        'chase-clinging-grip',
+        'chase-mean-sic',
+        'chase-long-sic',
+        'chase-often-sic',
       ],
     },
   ],
   'houndmaster-leash': [
     {
-      // ПРИВЯЗЬ. Пёс стоит: крепче, чаще возвращается, отзыв лечит вдвое,
-      // оклик почти без отката. Четвёрка по умолчанию — первый путь прибор.
+      // ПРИВЯЗЬ. Четвёрка по умолчанию — первый путь ветки это прибор. Ставка
+      // на второе тело: пёс крепче, брони и уворота больше, «Хватка» держит
+      // цель дольше.
       id: 'leash-hold',
       name: 'Привязь',
       abilities: ['undercut', 'sic', 'hamstring', 'recall'],
       order: [
-        'leash-long-lick',
-        'leash-iron-leash',
-        'leash-tireless-rally',
-        'leash-tough-hide',
-        'leash-thick-coat',
-        'leash-steady-breath',
-        'leash-fur-shield',
-        'leash-fast-return',
-        'leash-cheap-recall',
-        'leash-hound-mending',
-        'leash-vitality',
-        'leash-thicker-hide',
-        'leash-quick-rally',
-        'leash-even-breath',
+        'leash-wont-leave',
+        'leash-dodge',
         'leash-swift-return',
-        'leash-long-recall',
-        'leash-hardened',
-        'leash-firm-grip',
-        'leash-armor',
-        'leash-quick-bandage',
-        'leash-deep-bandage',
-        'leash-cheap-bandage',
+        'leash-living-shield',
+        'leash-strong-breed',
+        'leash-hardy-hound',
+        'leash-beast-hound',
+        'leash-thick-fur',
+        'leash-leader-hide',
+        'leash-wide-guard',
+        'leash-quick-rise',
+        'leash-own-hide',
+        'leash-own-blood',
+        'leash-tanned-hide',
+        'leash-stone-skin',
+        'leash-hound-breath',
+        'leash-even-breath',
+        'leash-tempering',
         'leash-long-grip',
+        'leash-tight-grip',
+        'leash-tight-bandage',
+        'leash-swift-bandage',
+        'leash-deep-bandage',
+        'leash-tight-rally',
+        'leash-swift-rally',
         'leash-long-skulk',
-        'leash-deep-skulk',
       ],
     },
     {
-      // ТЕНЬ. Герой прячется за псом: скрадывание вдвое и вдвое дольше, пёс
-      // встаёт целым, герой воскресает вдвое быстрее. Четвёрка другая.
+      // ТЕНЬ. Венец занимает слот, и четвёрка его несёт: «Подмена» уводит
+      // удар в пса, «Скрадывание» и «Перевязка» держат его на ногах.
       id: 'leash-shadow',
       name: 'Тень',
-      abilities: ['undercut', 'skulk', 'bandage', 'rally'],
+      abilities: ['swap', 'undercut', 'bandage', 'skulk'],
       order: [
-        'leash-second-wind',
-        'leash-full-rally',
-        'leash-shadow-hound',
+        'leash-strong-lead',
+        'leash-beast-hound',
+        'leash-self-skulk',
+        'leash-swap',
         'leash-long-skulk',
-        'leash-deep-skulk',
-        'leash-quick-bandage',
+        'leash-tight-bandage',
+        'leash-swift-bandage',
         'leash-deep-bandage',
-        'leash-cheap-bandage',
-        'leash-quick-rally',
-        'leash-tough-hide',
-        'leash-thick-coat',
-        'leash-steady-breath',
-        'leash-fur-shield',
-        'leash-fast-return',
-        'leash-hound-mending',
-        'leash-vitality',
-        'leash-thicker-hide',
+        'leash-strong-breed',
+        'leash-hardy-hound',
+        'leash-thick-fur',
+        'leash-leader-hide',
+        'leash-wide-guard',
+        'leash-quick-rise',
+        'leash-dodge',
+        'leash-own-hide',
+        'leash-own-blood',
+        'leash-tanned-hide',
+        'leash-stone-skin',
+        'leash-hound-breath',
         'leash-even-breath',
-        'leash-swift-return',
-        'leash-hardened',
-        'leash-armor',
-        'leash-firm-grip',
+        'leash-tempering',
+        'leash-tight-rally',
+        'leash-swift-rally',
         'leash-long-grip',
-        'leash-cheap-recall',
-        'leash-long-recall',
+        'leash-tight-grip',
       ],
     },
   ],
   'houndmaster-trail': [
     {
-      // ТРОПА. Привал снимает откаты и короче вдвое, травля дешевле и дольше:
-      // герой идёт сам и почти не стоит. Четвёрка по умолчанию — прибор.
+      // ТРОПА. Четвёрка по умолчанию — первый путь ветки это прибор. Узлы
+      // привала стоят в голове: ветка меряется тем, во сколько срезан простой.
       id: 'trail-walk',
       name: 'Тропа',
       abilities: ['undercut', 'sic', 'hamstring', 'recall'],
       order: [
-        'trail-camp-refresh',
-        'trail-short-rest',
-        'trail-hunting-breath',
-        'trail-restless-legs',
-        'trail-short-camp',
+        'trail-taste-of-hunt',
+        'trail-fed-pack',
+        'trail-self-recall',
+        'trail-on-the-move',
         'trail-light-step',
-        'trail-second-breath',
-        'trail-flow',
-        'trail-cheap-sic',
-        'trail-quick-camp',
-        'trail-hound-rests',
-        'trail-cheap-grip',
-        'trail-quick-undercut',
-        'trail-deep-breath',
-        'trail-lean-bandage',
-        'trail-brief-camp',
+        'trail-short-camp',
+        'trail-quiet-step',
+        'trail-wolf-camp',
+        'trail-wolf-sleep',
+        'trail-light-sleep',
+        'trail-fed-hound',
+        'trail-deep-wind',
+        'trail-long-trace',
         'trail-cheap-hamstring',
-        'trail-out-regen',
-        'trail-endless-legs',
-        'trail-hound-sleeps',
-        'trail-cheap-rally',
-        'trail-short-halt',
-        'trail-cheap-flurry',
-        'trail-cheap-unleash',
-        'trail-cheap-skulk',
+        'trail-cheap-recall',
         'trail-cheap-undercut',
+        'trail-swift-undercut',
+        'trail-cheap-sic',
+        'trail-long-recall',
+        'trail-tight-recall',
+        'trail-cheap-grip',
+        'trail-cheap-rally',
+        'trail-cheap-skulk',
+        'trail-cheap-flurry',
+        'trail-cheap-bandage',
+        'trail-cheap-unleash',
       ],
     },
     {
-      // РИТМ. Убийство срезает откаты, серия с двумя зарядами и вдвое
-      // дешевле: непрерывный бой без пауз. Четвёрка — всплесковая.
+      // ПЕРЕДЫШКА. Венец занимает слот, и четвёрка его несёт: у Псаря
+      // появляется ЛЕЧЕНИЕ, которого у класса не было вовсе, — и простой от
+      // привала режется не длиной, а тем, что привал не случается.
       id: 'trail-rhythm',
-      name: 'Ритм',
-      abilities: ['undercut', 'sic', 'flurry', 'unleash'],
+      name: 'Передышка',
+      abilities: ['breather', 'undercut', 'sic', 'hamstring'],
       order: [
-        'trail-hunt-rhythm',
-        'trail-flurry-charge',
-        'trail-tireless-flurry',
-        'trail-cheap-flurry',
-        'trail-cheap-unleash',
-        'trail-restless-legs',
+        'trail-not-cooling',
+        'trail-wolf-camp',
+        'trail-second-rally',
+        'trail-breather',
         'trail-light-step',
-        'trail-flow',
-        'trail-cheap-sic',
-        'trail-quick-undercut',
-        'trail-deep-breath',
-        'trail-endless-legs',
         'trail-short-camp',
-        'trail-second-breath',
-        'trail-quick-camp',
-        'trail-hound-rests',
-        'trail-cheap-grip',
-        'trail-lean-bandage',
-        'trail-brief-camp',
+        'trail-quiet-step',
+        'trail-wolf-sleep',
+        'trail-light-sleep',
+        'trail-fed-hound',
+        'trail-fed-pack',
+        'trail-deep-wind',
+        'trail-long-trace',
         'trail-cheap-hamstring',
-        'trail-out-regen',
-        'trail-hound-sleeps',
-        'trail-cheap-rally',
-        'trail-short-halt',
-        'trail-cheap-skulk',
+        'trail-cheap-recall',
         'trail-cheap-undercut',
+        'trail-swift-undercut',
+        'trail-cheap-sic',
+        'trail-long-recall',
+        'trail-tight-recall',
+        'trail-cheap-grip',
+        'trail-cheap-rally',
+        'trail-cheap-skulk',
+        'trail-cheap-flurry',
+        'trail-cheap-bandage',
+        'trail-cheap-unleash',
       ],
     },
   ],

@@ -1,7 +1,7 @@
 // Игровое состояние и его создание. Отдельный модуль, чтобы tick, loot и save
 // зависели от него, а не друг от друга.
 import { Decimal } from './numbers'
-import { DEFAULT_UPGRADE_PRIORITY, type UpgradePriority } from '../data/upgrade'
+import { DEFAULT_UPGRADE_PRIORITY, type UpgradePriority } from '../data/upgradeAxes'
 import { DEFAULT_LOOT_POLICY, type LootPolicy } from '../data/upgrades'
 import { xpToNextLevel } from './formulas'
 import { randomSeed } from './rng'
@@ -9,7 +9,9 @@ import { buildMonster } from '../data/monsters'
 import { SAFE_ZONE, spawnLevelWeights, type Zone } from '../data/zones'
 import { ABILITY_BY_ID, type AbilityDef } from '../data/abilities'
 import { CLASS_BY_ID, DEFAULT_CLASS, classById, type ClassDef } from '../data/classes'
-import { grantedAbilityIds } from '../data/talents'
+import { grantedAbilityIds,
+  autoAbilityIds,
+} from '../data/talents'
 import { RARITY_BY_ID } from '../data/rarity'
 import { ARMOR_NOUNS, SHIELD_BY_ID, WEAPON_BY_ID } from '../data/items'
 import { armorMods, shieldMods, weaponMods } from './loot'
@@ -511,8 +513,42 @@ export interface Rotation {
   resourceFloor: number
 }
 
+/**
+ * РЯД, КАКИМ ЕГО ВИДИТ ИГРА. Умение, которое талант сделал автоматическим,
+ * ИЗ РЯДА УХОДИТ: слот становится пустым, и в него можно положить другое.
+ * Сам `abilitySlots` при этом не трогается — ряд производный, и снятие очка
+ * возвращает умение на место само, без миграции сейва и без записи в него.
+ */
+export function effectiveSlots(
+  state: Pick<GameState, 'abilitySlots' | 'talents'>,
+): (string | null)[] {
+  const auto = autoAbilityIds(state.talents)
+  if (auto.length === 0) return state.abilitySlots
+  return state.abilitySlots.map((id) => (id !== null && auto.includes(id) ? null : id))
+}
+
+/**
+ * ВСЁ, ЧТО СЕЙЧАС РАБОТАЕТ: ряд плюс умения, играющие сами. Через неё читают
+ * ряд ВСЕ — автокаст, модель боя, оффлайн, ёмкость своры, эхо, — иначе они
+ * разъедутся на первом же таланте.
+ *
+ * КОГДА жать автоматическое умение, решают ЕГО СОБСТВЕННЫЕ пороги автокаста
+ * из данных (`autocast`), а не флаг: своего словаря условий у флага нет.
+ */
+export function activeAbilityIds(
+  state: Pick<GameState, 'abilitySlots' | 'talents'>,
+): string[] {
+  const row = effectiveSlots(state).filter((id): id is string => id !== null)
+  const auto = autoAbilityIds(state.talents)
+  return [...row, ...auto.filter((id) => !row.includes(id))]
+}
+
 export const rotationOf = (state: GameState): Rotation => ({
-  slots: state.abilitySlots,
+  // РЯД ЗДЕСЬ ЭФФЕКТИВНЫЙ: умение, которое талант сделал автоматическим,
+  // из слотов убрано и добавлено в конец. Правка ровно в одной точке —
+  // ротацию читают автокаст, модель боя, оффлайн и контракты, и разойтись
+  // они не могут по построению.
+  slots: activeAbilityIds(state),
   settings: heroSettings(state),
   talents: state.talents,
   boons: equippedBoons(state.equipment),

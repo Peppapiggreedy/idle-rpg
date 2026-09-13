@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
 import { Decimal } from './numbers'
 import { STEP_MS } from './loop'
 import { createInitialState, manualOnlySettings, tick, type GameState } from './tick'
@@ -240,13 +241,22 @@ describe('данные дерева', () => {
   })
 
   it('форма ветки лежит в ДАННЫХ, а не общей константой', () => {
-    // Сторож против возврата: пока форма была одной на всех, «13» и «5»
-    // стояли константами и читались как закон мира. Теперь их две разных, и
-    // это проверяется по самим данным.
-    const shapes = new Set(BRANCHES.map((b) => `${b.rows}×${b.step}×${b.cols}`))
-    expect(shapes.size, 'форм должно быть больше одной, иначе форма не данные').toBeGreaterThan(1)
+    // СТОРОЖ СМЕНИЛ ПРИЗНАК, И ЭТО НЕ ОСЛАБЛЕНИЕ. Пока формы было две, хватало
+    // «их больше одной»; теперь все девять веток на семи этажах, и прежняя
+    // проверка стала бы ложной ровно там, где всё правильно. Признак, который
+    // держится при любом числе форм, — ЗАПИСЬ У КАЖДОЙ ВЕТКИ СВОЯ: в файле
+    // данных нет ни одного разделяемого объекта формы, и опечатка в одной
+    // ветке не расползётся по остальным восьми.
+    const src = readFileSync(new URL('../data/talents.ts', import.meta.url), 'utf8')
+    const list = src.slice(src.indexOf('export const BRANCHES'), src.indexOf('export function branchDepth'))
+    expect(list.includes('...LADDER'), 'форма снова стала общей константой').toBe(false)
+    expect((list.match(/rows: \d+, step: \d+, cols: \d+/g) ?? []).length).toBe(BRANCHES.length)
+    for (const branch of BRANCHES) {
+      expect(branch.rows, branch.id).toBe(7)
+      expect(branch.step, branch.id).toBe(10)
+      expect(branchDepth(branch.id), branch.id).toBe(60)
+    }
     expect(BRANCH_BY_ID[WRATH].rows).toBe(7)
-    expect(BRANCH_BY_ID[WRATH].step).toBe(10)
   })
 
   it('ёмкость ветки — сумма рангов, и она НЕ равна глубине', () => {
@@ -655,7 +665,16 @@ describe('эффекты талантов', () => {
   it('второй поворот ветки живучести сокращает простой после смерти', () => {
     const s = hero(LEVEL_CAP)
     expect(reviveMultiplier(s)).toBe(1)
-    const swift = reachTalent(s, talentsInBranch(BULWARK).find((t) => t.row === keyRowsOf(BULWARK)[1])!.id)
+    // ТАЛАНТ ИЩЕТСЯ ПО ФЛАГУ, А НЕ ПО НОМЕРУ ЭТАЖА. Номер решал это, пока
+    // форма ветки была одной на всех; с переездом Оплота на семь этажей
+    // «второй ключевой ряд» стал другим местом, и тест молча начал мерить
+    // соседний узел вместо воскрешения. Флаг значит одно и то же везде.
+    const revive = talentsInBranch(BULWARK).find(
+      (t) => t.effect.kind === 'flag' && t.effect.flag === 'faster-revive',
+    )!
+    expect(revive, 'в ветке живучести нет таланта на скорость подъёма').toBeTruthy()
+    expect(keyRowsOf(BULWARK), 'узел ускорения подъёма стоит на этаже выбора').toContain(revive.row)
+    const swift = reachTalent(s, revive.id)
     expect(reviveMultiplier(swift)).toBeLessThan(1)
 
     // Проверяем на живом тике: герой с нулевым HP уходит в простой.

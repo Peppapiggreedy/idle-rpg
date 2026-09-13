@@ -331,7 +331,9 @@ describe('порог привала ползунком', () => {
     // Изувера целиком, и «Неугомонный» переехал на ключевой этаж; место
     // удалённого таланта на ПОРОГ привала держит «Волчий привал» — тот же
     // род (длина привала, процентом), тот же смысл проверки.
-    const replaced = ['vigil-swift-camp', 'instinct-light-camp', 'instinct-wolf-camp']
+    // «Скорые сборы» стали «Лёгкими сборами» вместе с пересборкой Бдения:
+    // id другой, род тот же — длина привала процентом.
+    const replaced = ['vigil-light-camp', 'instinct-light-camp', 'instinct-wolf-camp']
     for (const id of replaced) {
       const talent = TALENT_BY_ID[id]
       expect(talent, id).toBeDefined()

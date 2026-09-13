@@ -28,6 +28,22 @@ export const ICONS = {
   // класса их нет: их открывает не уровень, а очко.
   'ability-sever': { file: 'lorc/tearing.svg', author: 'Lorc' },
   'ability-echo': { file: 'lorc/echo-ripples.svg', author: 'Lorc' },
+  // Венец Оплота и умение его замены — та же пара, что у Гнева: одно
+  // выдаётся талантом, второе подменяет «Скорый выпад».
+  'ability-riposte': { file: 'lorc/bouncing-sword.svg', author: 'Lorc' },
+  'ability-shield-jab': { file: 'delapouite/shield-impact.svg', author: 'Delapouite' },
+  // Венец Бдения — умение от таланта: разом наливает треть запаса.
+  'ability-second-wind': { file: 'delapouite/lungs.svg', author: 'Delapouite' },
+  // Венцы Изувера: «Обух» подменяет «Череполом», «Расправа без конца»
+  // выдаётся талантом.
+  'ability-blunt-edge': { file: 'lorc/hammer-nails.svg', author: 'Lorc' },
+  'ability-endless-reckoning': { file: 'lorc/guillotine.svg', author: 'Lorc' },
+  'ability-butcher': { file: 'lorc/meat-cleaver.svg', author: 'Lorc' },
+  'ability-call': { file: 'lorc/wolf-howl.svg', author: 'Lorc' },
+  // Венцы Псаря: спуск своры, подмена и передышка.
+  'ability-pack-release': { file: 'lorc/direwolf.svg', author: 'Lorc' },
+  'ability-swap': { file: 'lorc/return-arrow.svg', author: 'Lorc' },
+  'ability-breather': { file: 'delapouite/hot-meal.svg', author: 'Delapouite' },
   'ability-mend-wounds': { file: 'delapouite/first-aid-kit.svg', author: 'Delapouite' },
   'ability-shield-shove': { file: 'delapouite/shield-bash.svg', author: 'Delapouite' },
   'ability-rupture': { file: 'lorc/tearing.svg', author: 'Lorc' },
@@ -114,7 +130,6 @@ export const ICONS = {
   'talent-wide-wall': { file: 'lorc/surrounded-shield.svg', author: 'Lorc' },
   'talent-firm-press': { file: 'lorc/checked-shield.svg', author: 'Lorc' },
   'talent-quiet-mend': { file: 'lorc/rosa-shield.svg', author: 'Lorc' },
-  'talent-immovable': { file: 'lorc/cracked-shield.svg', author: 'Lorc' },
 
   // --- Таланты, правящие умения: ветка «Бдение» ---
   'talent-quick-focus': { file: 'lorc/concentration-orb.svg', author: 'Lorc' },
@@ -125,12 +140,10 @@ export const ICONS = {
   'talent-early-brand': { file: 'lorc/burning-eye.svg', author: 'Lorc' },
   'talent-thrift-wound': { file: 'lorc/fire-silhouette.svg', author: 'Lorc' },
   'talent-thrift-mercy': { file: 'lorc/inner-self.svg', author: 'Lorc' },
-  'talent-often-brand': { file: 'lorc/lightning-frequency.svg', author: 'Lorc' },
   'talent-lasting-brand': { file: 'lorc/eclipse-flare.svg', author: 'Lorc' },
   'talent-thrift-stance': { file: 'lorc/mineral-heart.svg', author: 'Lorc' },
   'talent-quick-mercy': { file: 'lorc/stopwatch.svg', author: 'Lorc' },
   'talent-full-rupture': { file: 'lorc/vortex.svg', author: 'Lorc' },
-  'talent-endless-mind': { file: 'lorc/book-aura.svg', author: 'Lorc' },
 
   // --- Травы и зелья ---
   'herb-bitterleaf': { file: 'delapouite/dandelion-flower.svg', author: 'Delapouite' },
@@ -211,8 +224,6 @@ export const ICONS = {
   'talent-fast-jaws': { file: 'lorc/croc-jaws.svg', author: 'Lorc' },
   'talent-pack-tactics': { file: 'lorc/paw-front.svg', author: 'Lorc' },
   'talent-savage-unleash': { file: 'delapouite/wolverine-claws.svg', author: 'Delapouite' },
-  'talent-avenger': { file: 'lorc/fanged-skull.svg', author: 'Lorc' },
-  'talent-fourth-cut': { file: 'lorc/claw-slashes.svg', author: 'Lorc' },
   'talent-fangs-of-old': { file: 'lorc/pretty-fangs.svg', author: 'Lorc' },
   'talent-twin-fang': { file: 'lorc/snake-bite.svg', author: 'Lorc' },
   // Таланты Псаря — ветка Привязь.
@@ -226,7 +237,6 @@ export const ICONS = {
 
   // --- Таланты Псаря ---
   'talent-quick-hands': { file: 'lorc/sprint.svg', author: 'Lorc' },
-  'talent-sure-cut': { file: 'lorc/crossed-slashes.svg', author: 'Lorc' },
   'talent-thick-coat': { file: 'delapouite/animal-hide.svg', author: 'Delapouite' },
   'talent-even-breath': { file: 'delapouite/lungs.svg', author: 'Delapouite' },
   'talent-restless-legs': { file: 'lorc/run.svg', author: 'Lorc' },

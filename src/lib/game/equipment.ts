@@ -16,7 +16,7 @@ import {
   UPGRADE_RULES,
   type UpgradeAxis,
   type UpgradePriority,
-} from '../data/upgrade'
+} from '../data/upgradeAxes'
 
 /**
  * ПРАВИЛА ХВАТА. Живут ЗДЕСЬ, а не в данных слотов: слот — это перечень мест,

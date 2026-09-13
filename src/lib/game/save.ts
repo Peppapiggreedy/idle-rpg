@@ -86,7 +86,7 @@ import {
   DEFAULT_UPGRADE_PRIORITY,
   UPGRADE_PRIORITIES,
   type UpgradePriority,
-} from '../data/upgrade'
+} from '../data/upgradeAxes'
 import {
   DEFAULT_LOOT_POLICY,
   GOLD_UPGRADE_BY_ID,
@@ -1656,7 +1656,7 @@ export const MIGRATIONS: Record<number, (raw: RawSave) => RawSave> = {
     // осмысленное, теперь сохраняется.
     next.templeCleared = raw.templeCleared === true
 
-    // РАЗОВАЯ ПОЧИНКА УЖЕ ИСПОРЧЕННЫХ СЕЙВОВ (находка 2.1 в AUDIT.md).
+    // РАЗОВАЯ ПОЧИНКА УЖЕ ИСПОРЧЕННЫХ СЕЙВОВ (находка 2.1 в docs/archive/AUDIT-2025-09.md).
     //
     // Пункта выше мало: у тех, кто уже загружался со сломанной сборкой, флаг
     // в сейве стёрт, а вернуть его игра не может — платят только этажи ВЫШЕ

@@ -11,6 +11,7 @@ import {
 import { estimateCombatRate } from './combat'
 import { createInitialState, monsterFromTemplate, type GameState } from './state'
 import { ensureStats } from './stats'
+import { CLASSES } from '../data/classes'
 import { ABILITIES, ABILITY_BY_ID } from '../data/abilities'
 import { AUTOCAST_DELAY_MS } from '../data/balance'
 import { representativeMonster, ZONES, zoneMonsterVariants } from '../data/zones'
@@ -38,8 +39,23 @@ function healer(level: number, hpShare: number, mana?: number): GameState {
 }
 
 describe('лечащее умение', () => {
-  it('в данных ровно одно лечение, и оно у Стража на раннем уровне', () => {
-    expect(ABILITIES.filter((a) => a.heal)).toHaveLength(1)
+  it('лечение у класса не больше одного, и у Стража оно на раннем уровне', () => {
+    // БЫЛО «ровно одно на игру», и это было верно ровно до тех пор, пока
+    // лечение было только у Стража. Ночь восьми веток дала «Передышку» венцу
+    // Тропы: у Псаря лечения не было вовсе, а ось ветки — простой, который
+    // лечение и режет. Правило, которое тут держится, другое и важнее: у
+    // КЛАССА лечение одно — иначе автокаст выбирал бы между двумя, а правило
+    // «лечение впереди урона» перестало бы иметь единственный адрес.
+    for (const cls of CLASSES) {
+      const heals = cls.abilityIds
+        .map((id) => ABILITY_BY_ID[id])
+        .filter((a) => a?.heal).length
+      const granted = ABILITIES.filter(
+        (a) => a.heal && !CLASSES.some((c) => c.abilityIds.includes(a.id)),
+      ).length
+      expect(heals, cls.id).toBeLessThanOrEqual(1)
+      expect(granted, 'лечения от талантов').toBeLessThanOrEqual(1)
+    }
     expect(HEAL.type).toBe('instant')
     expect(HEAL.unlockLevel).toBeGreaterThanOrEqual(4)
     expect(HEAL.unlockLevel).toBeLessThanOrEqual(6)

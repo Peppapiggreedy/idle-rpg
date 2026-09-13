@@ -40,6 +40,7 @@ import type { Monster } from '../types'
 import { SAFE_ZONE, ZONE_BY_ID, zoneSpawnVariants, type Zone } from '../data/zones'
 import { equippedBoons, monsterFromTemplate, type AbilitySettings, type Rotation,
   heroSettings,
+  activeAbilityIds,
 } from './state'
 import { ABILITY_BY_ID, MODEL_RESOURCE_FILL, type AbilityDef } from '../data/abilities'
 import { classById } from '../data/classes'
@@ -559,7 +560,7 @@ export function fightDeathChance(loss: number, enterLow: number, enterHigh: numb
  * равно `запас/цена + 1/2`, и именно это среднее здесь считается. Прежняя
  * модель брала floor/ceil одного цикла, и оценка была ступенчатой: лишняя
  * единица силы атаки перекидывала цикл с двух боёв на один или с привала на
- * смерть, и темп убийств прыгал втрое (откат 4a000e4, AUDIT.md). Метрикой
+ * смерть, и темп убийств прыгал втрое (откат 4a000e4, docs/archive/AUDIT-2025-09.md). Метрикой
  * сравнения предметов такое число служить не может.
  *
  * По той же логике смерть — не флаг, а ВЕРОЯТНОСТЬ: запас на входе в
@@ -898,7 +899,7 @@ function hitStream(
   // killsPerSecond — единственная мера «лучше» в игре: сравнение предметов,
   // значок «Апгрейд», автопродажа при полной сумке, прогноз зоны и оффлайн.
   // Без крита в потоке предмет с критом показывал «без изменений», а при
-  // полной сумке игра его продавала (AUDIT.md, 1.1). Правка откатывалась
+  // полной сумке игра его продавала (docs/archive/AUDIT-2025-09.md, 1.1). Правка откатывалась
   // (4a000e4), пока метрика была ступенчатой; теперь она непрерывна.
   //
   // procDamage возвращается БЕЗ крита намеренно: rawRate домножает его сам,
@@ -1231,7 +1232,9 @@ function rawRate(state: GameState, plan: RotationPlan): CombatRate {
   // Свойства надетых вещей — тем же поездом и по тому же доводу: сборка
   // правит умение, и модель обязана считать по правленому.
   const heroRotation: Rotation = {
-    slots: s.abilitySlots,
+    // Эффективный ряд: автоматические умения модель обязана видеть, иначе
+    // «оффлайн <= автокаст» сломается молча — тик-то их видит.
+    slots: activeAbilityIds(s),
     settings,
     talents: s.talents,
     boons: equippedBoons(s.equipment),
